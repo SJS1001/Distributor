@@ -4581,6 +4581,104 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
       exact: true,
     }),
   ).toHaveCount(0);
+  const review = operation("invoice").getByRole("region", {
+    name: "QuickBooks balance review",
+  });
+  await expect(review).toContainText(
+    "No QuickBooks balance comparison recorded.",
+  );
+  const balanceKeys: string[] = [];
+  let lostBalance = false;
+  await page.route(
+    `**/api/effects/${invoiceEffect.id}/balance`,
+    async (route) => {
+      balanceKeys.push(route.request().headers()["idempotency-key"]!);
+      if (!lostBalance) {
+        lostBalance = true;
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await review
+    .getByRole("button", { name: "Check QuickBooks balance", exact: true })
+    .click();
+  await expect(review.getByRole("alert")).toBeVisible();
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(review).toContainText("Balance difference");
+  await review
+    .getByRole("button", { name: "Check QuickBooks balance", exact: true })
+    .click();
+  await expect(review.getByRole("alert")).toHaveCount(0);
+  expect(balanceKeys).toHaveLength(2);
+  expect(balanceKeys[0]).toBe(balanceKeys[1]);
+  await review
+    .getByRole("button", { name: "View balance history", exact: true })
+    .click();
+  const balanceHistory = review.getByLabel("Balance history", { exact: true });
+  await expect(balanceHistory.getByRole("listitem")).toHaveCount(1);
+  await expect(balanceHistory).toContainText(
+    "QuickBooks CA$0.00, Distributor -CA$113.00; difference CA$113.00",
+  );
+  await review
+    .getByRole("button", { name: "Check QuickBooks balance", exact: true })
+    .click();
+  await expect(balanceHistory.getByRole("listitem")).toHaveCount(2);
+  expect(balanceKeys[2]).not.toBe(balanceKeys[0]);
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(review).toContainText("Balance difference");
+  expect(
+    (
+      await page.request
+        .get(`/api/effects/${invoiceEffect.id}/balance-history?limit=20`)
+        .then((r) => r.json())
+    ).items,
+  ).toHaveLength(2);
+  const balanceCsrf = (
+    await page.request.get("/api/session").then((r) => r.json())
+  ).csrf;
+  for (let i = 0; i < 19; i++) {
+    const response = await page.request.post(
+      `/api/effects/${invoiceEffect.id}/balance`,
+      {
+        headers: {
+          origin: "http://127.0.0.1:3117",
+          "x-csrf-token": balanceCsrf,
+          "idempotency-key": crypto.randomUUID(),
+        },
+      },
+    );
+    expect(response.status()).toBe(200);
+  }
+  await review
+    .getByRole("button", { name: "View balance history", exact: true })
+    .click();
+  await expect(balanceHistory.getByRole("listitem")).toHaveCount(20);
+  let lostBalancePage = false;
+  await page.route(
+    `**/api/effects/${invoiceEffect.id}/balance-history?limit=20&after=*`,
+    async (route) => {
+      if (!lostBalancePage) {
+        lostBalancePage = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await balanceHistory
+    .getByRole("button", { name: "Load more balance checks" })
+    .click();
+  await expect(review.getByRole("alert")).toBeVisible();
+  await expect(balanceHistory.getByRole("listitem")).toHaveCount(20);
+  await balanceHistory
+    .getByRole("button", { name: "Load more balance checks" })
+    .click();
+  await expect(balanceHistory.getByRole("listitem")).toHaveCount(21);
+  await expect(
+    balanceHistory.getByRole("button", { name: "Load more balance checks" }),
+  ).toHaveCount(0);
   const creditedAfter = await (await page.request.get("/api/dashboard")).json();
   expect(creditedAfter.stock).toEqual(creditedBefore.stock);
   expect(creditedAfter.orders).toEqual(creditedBefore.orders);

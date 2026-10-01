@@ -1109,6 +1109,52 @@ export async function createHttp(app: Application, options: HttpOptions) {
     async (request) =>
       providers().refreshRefund(actor(request), request.params.effectId),
   );
+  http.post<{ Params: { effectId: string } }>(
+    "/api/effects/:effectId/balance",
+    {
+      preValidation: async (request) => {
+        check(
+          request.body === undefined ||
+            (request.body !== null &&
+              typeof request.body === "object" &&
+              !Array.isArray(request.body) &&
+              Object.keys(request.body).length === 0),
+          "VALIDATION",
+          "Balance checks accept no request fields.",
+          400,
+        );
+      },
+      schema: {
+        params: obj({ effectId: str }),
+        headers: {
+          type: "object",
+          properties: {
+            "idempotency-key": { type: "string", minLength: 1, maxLength: 128 },
+          },
+          required: ["idempotency-key"],
+        },
+      },
+    },
+    async (request) =>
+      providers().refreshAccountingBalance(
+        actor(request),
+        request.params.effectId,
+        String(request.headers["idempotency-key"]),
+      ),
+  );
+  http.get<{
+    Params: { effectId: string };
+    Querystring: { after?: string; limit?: string };
+  }>(
+    "/api/effects/:effectId/balance-history",
+    { schema: { params: obj({ effectId: str }), querystring: noticeQuery } },
+    async (request) =>
+      app.integration.balances.history(
+        actor(request),
+        request.params.effectId,
+        noticePage(request.query),
+      ),
+  );
   http.get("/api/provider-callbacks", async (request) =>
     app.integration.callbacks(actor(request)),
   );

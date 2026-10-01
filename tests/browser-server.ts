@@ -191,6 +191,22 @@ const syntheticAccounting: Adapter = {
     throw Error("Synthetic lost accounting send response");
   },
   lookup: async (effect) => accountingResults.get(effect.id) ?? null,
+  readInvoiceBalance: async (effect) => {
+    const p = JSON.parse(effect.payload),
+      paid = f.app.integration
+        .list(f.actor)
+        .filter((e) => e.kind === "payment" && e.state === "completed")
+        .map((e) => JSON.parse(f.app.integration.effect(f.actor, e.id).payload))
+        .filter((p) => p.invoiceEffectId === effect.id)
+        .reduce((sum, p) => sum + p.appliedAmount, 0);
+    return {
+      reference: effect.external_ref!,
+      total: p.invoice.total,
+      currency: p.invoice.currency,
+      balance: p.invoice.total - paid,
+      syncToken: "1",
+    };
+  },
 };
 // Independent browser-only refund fixture. No SDK, token or provider network is used.
 const noticeBuyer = f.app.identity.createCustomer(f.actor, "notice-account", {

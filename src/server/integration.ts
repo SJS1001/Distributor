@@ -13,6 +13,10 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
+import {
+  IntegrationAccountingBalances,
+  type AccountingBalance,
+} from "./integration-accounting-balances.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
 import { IntegrationRefundCallbacks } from "./integration-refund-callbacks.ts";
 import { IntegrationRefunds } from "./integration-refunds.ts";
@@ -44,6 +48,7 @@ export type EffectResult = {
 export type Adapter = {
   execute(effect: Effect): Promise<EffectResult>;
   lookup(effect: Effect): Promise<EffectResult | null>;
+  readInvoiceBalance?(effect: Effect): Promise<AccountingBalance>;
 };
 export type AccountingPaymentIntent = {
   payment: RecordedPayment;
@@ -82,6 +87,7 @@ export type Callback = {
 };
 export class Integration {
   private store: Store;
+  readonly balances: IntegrationAccountingBalances;
   readonly refunds: IntegrationRefunds;
   readonly refundCallbacks: IntegrationRefundCallbacks;
   private readonly operations: IntegrationOperations;
@@ -105,6 +111,14 @@ export class Integration {
       this.store,
       platform,
       identity,
+      this,
+    );
+    this.balances = new IntegrationAccountingBalances(
+      database,
+      this.store,
+      platform,
+      identity,
+      billing,
       this,
     );
     this.refunds = new IntegrationRefunds(
@@ -153,6 +167,13 @@ export class Integration {
           e.result && !this.platform.recoveryHold()
             ? JSON.parse(e.result)
             : null,
+        accountingBalance:
+          ["admin", "finance"].includes(actor.role) &&
+          e.provider === "quickbooks" &&
+          e.kind === "invoice" &&
+          e.state === "completed"
+            ? this.balances.latest(actor, e.id)
+            : undefined,
         recoveryHold: !!this.platform.recoveryHold(),
       }));
   }
@@ -699,6 +720,7 @@ export class Integration {
     return this.database.transaction(
       () =>
         this.operations.recover(milliseconds, orgId) +
+        this.balances.recover(milliseconds, orgId) +
         Number(
           this.store.run(
             "UPDATE integration_effects SET state='unknown',error='Worker interrupted; reconcile provider outcome before retry.' WHERE state='running' AND started_at<? AND (? IS NULL OR org_id=?)",

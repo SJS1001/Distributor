@@ -127,6 +127,14 @@ export class ProviderRuntime {
       false,
     );
   }
+  async refreshAccountingBalance(actor: Actor, effectId: string, key: string) {
+    return this.app.integration.balances.refresh(
+      actor,
+      effectId,
+      key,
+      this.adapter(actor, "quickbooks"),
+    );
+  }
   receiveStripe(bindingId: string, raw: Buffer, signature: unknown) {
     const binding = this.bindings.find((b) => b.id === bindingId);
     check(binding?.stripe, "NOT_FOUND", "Webhook endpoint not found.", 404);

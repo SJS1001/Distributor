@@ -8,6 +8,7 @@ import {
   downloadStockLabel,
   downloadInboxDocument,
 } from "./api.ts";
+import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
@@ -2390,35 +2391,47 @@ function App() {
                       "Awaiting configured provider processing")
                     ),
                     can("finance", "support") ? (
-                      <div className="actions">
-                        {(e.kind !== "refund" || can("finance")) &&
-                          e.state === "pending" &&
-                          button("Send to provider", () => {
-                            void run(() =>
-                              request(`/api/effects/${e.id}/execute`, {
-                                method: "POST",
-                              }),
-                            ).catch(() => {});
-                          })}
+                      <div>
                         {can("finance") &&
-                          e.kind === "refund" &&
-                          e.state === "completed" &&
-                          button("Refresh refund status", () => {
-                            void run(() =>
-                              request(`/api/effects/${e.id}/refresh-refund`, {
-                                method: "POST",
-                              }),
-                            ).catch(() => {});
-                          })}
-                        {(e.kind !== "refund" || can("finance")) &&
-                          e.state === "unknown" &&
-                          button("Check provider outcome", () => {
-                            void run(() =>
-                              request(`/api/effects/${e.id}/reconcile`, {
-                                method: "POST",
-                              }),
-                            ).catch(() => {});
-                          })}
+                          e.provider === "quickbooks" &&
+                          e.kind === "invoice" &&
+                          e.state === "completed" && (
+                            <AccountingBalanceReview
+                              effectId={e.id}
+                              latest={e.accountingBalance ?? null}
+                              refresh={refresh}
+                            />
+                          )}
+                        <div className="actions">
+                          {(e.kind !== "refund" || can("finance")) &&
+                            e.state === "pending" &&
+                            button("Send to provider", () => {
+                              void run(() =>
+                                request(`/api/effects/${e.id}/execute`, {
+                                  method: "POST",
+                                }),
+                              ).catch(() => {});
+                            })}
+                          {can("finance") &&
+                            e.kind === "refund" &&
+                            e.state === "completed" &&
+                            button("Refresh refund status", () => {
+                              void run(() =>
+                                request(`/api/effects/${e.id}/refresh-refund`, {
+                                  method: "POST",
+                                }),
+                              ).catch(() => {});
+                            })}
+                          {(e.kind !== "refund" || can("finance")) &&
+                            e.state === "unknown" &&
+                            button("Check provider outcome", () => {
+                              void run(() =>
+                                request(`/api/effects/${e.id}/reconcile`, {
+                                  method: "POST",
+                                }),
+                              ).catch(() => {});
+                            })}
+                        </div>
                       </div>
                     ) : (
                       ""

@@ -396,6 +396,48 @@ export class QuickBooksAdapter implements Adapter {
       },
     };
   }
+  async readInvoiceBalance(effect: Effect) {
+    check(
+      effect.provider === "quickbooks" &&
+        effect.kind === "invoice" &&
+        effect.state === "completed" &&
+        effect.external_ref,
+      "ACCOUNTING_INVOICE_REQUIRED",
+      "A completed invoice is required for a balance read.",
+    );
+    const payload = JSON.parse(effect.payload) as QboPayload;
+    const response = await this.request(
+      effect,
+      `/invoice/${encodeURIComponent(effect.external_ref)}`,
+    );
+    check(
+      response.Invoice,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks did not return the requested invoice.",
+    );
+    const invoice = response.Invoice;
+    this.result(invoice, payload, effect.id);
+    const cents = Math.round(Number(invoice.Balance) * 100);
+    check(
+      invoice.Id === effect.external_ref &&
+        typeof invoice.Balance === "number" &&
+        Number.isSafeInteger(cents) &&
+        cents >= 0 &&
+        cents <= payload.invoice.total &&
+        amount(cents) === invoice.Balance &&
+        typeof invoice.SyncToken === "string" &&
+        /^\d{1,160}$/.test(invoice.SyncToken),
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks balance or exact invoice identity differs; finance review required.",
+    );
+    return {
+      reference: invoice.Id,
+      total: payload.invoice.total,
+      currency: payload.invoice.currency,
+      balance: cents,
+      syncToken: invoice.SyncToken,
+    };
+  }
   private paymentResult(effect: Effect, payment: QboPayment): EffectResult {
     const p = JSON.parse(effect.payload) as AccountingPaymentIntent,
       lines = payment.Line ?? [];
