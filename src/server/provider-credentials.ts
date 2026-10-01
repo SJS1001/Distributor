@@ -4,6 +4,8 @@ import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
 import { Platform } from "./platform.ts";
 import { type Effect } from "./integration.ts";
+import { QuickBooksAuthorization } from "./quickbooks-authorization.ts";
+import { exchangeQuickBooksToken } from "./quickbooks-oauth-protocol.ts";
 
 export type CredentialBinding = {
   id: string;
@@ -34,6 +36,7 @@ type Credential = {
 export class ProviderCredentials {
   private store: Store;
   private key?: Buffer;
+  readonly authorization: QuickBooksAuthorization;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -53,6 +56,15 @@ export class ProviderCredentials {
       revision INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','refreshing','unknown','disabled')),
       material TEXT,claim TEXT,started_at INTEGER,PRIMARY KEY(org_id,binding_id)
     ) STRICT;`);
+    this.authorization = new QuickBooksAuthorization(
+      database,
+      platform,
+      identity,
+      this.store,
+      this,
+      (binding, revision, bundle) =>
+        this.writeInstall(binding, revision, bundle),
+    );
   }
   get available() {
     return !!this.key;
@@ -232,44 +244,52 @@ export class ProviderCredentials {
   }
   // Filesystem-authorized operator API; secrets arrive via protected stdin in the CLI.
   install(binding: CredentialBinding, revision: number, input: TokenBundle) {
+    return this.database.transaction(() =>
+      this.writeInstall(binding, revision, input),
+    );
+  }
+  // Used only by native installation and authorization inside their owning transaction.
+  private writeInstall(
+    binding: CredentialBinding,
+    revision: number,
+    input: TokenBundle,
+  ) {
     const bundle = this.validateBundle(input, true);
     integer(revision, "credential revision");
-    return this.database.transaction(() => {
-      const actor = this.authorize(binding),
-        old = this.row(binding);
-      check(
-        (old?.revision ?? 0) === revision,
-        "REVISION",
-        "Credentials changed; inspect current state before replacement.",
-      );
-      const row: Credential = {
-        org_id: binding.orgId,
-        binding_id: binding.id,
-        realm: binding.realm,
-        client_id: binding.clientId,
-        revision: revision + 1,
-        state: "ready",
-        material: null,
-        claim: null,
-        started_at: null,
-      };
-      const material = this.encrypt(row, bundle);
-      this.store.run(
-        "INSERT INTO integration_credentials VALUES(?,?,?,?,?,'ready',?,NULL,NULL) ON CONFLICT(org_id,binding_id) DO UPDATE SET revision=excluded.revision,state='ready',material=excluded.material,claim=NULL,started_at=NULL",
-        row.org_id,
-        row.binding_id,
-        row.realm,
-        row.client_id,
-        row.revision,
-        material,
-      );
-      this.platform.audit(actor, "provider.credentials.install", binding.id, {
-        revision: row.revision,
-        provider: "quickbooks",
-        environment: "sandbox",
-      });
-      return this.status(binding);
+    const actor = this.authorize(binding),
+      old = this.row(binding);
+    check(
+      (old?.revision ?? 0) === revision,
+      "REVISION",
+      "Credentials changed; inspect current state before replacement.",
+    );
+    const row: Credential = {
+      org_id: binding.orgId,
+      binding_id: binding.id,
+      realm: binding.realm,
+      client_id: binding.clientId,
+      revision: revision + 1,
+      state: "ready",
+      material: null,
+      claim: null,
+      started_at: null,
+    };
+    const material = this.encrypt(row, bundle);
+    this.store.run(
+      "INSERT INTO integration_credentials VALUES(?,?,?,?,?,'ready',?,NULL,NULL) ON CONFLICT(org_id,binding_id) DO UPDATE SET revision=excluded.revision,state='ready',material=excluded.material,claim=NULL,started_at=NULL",
+      row.org_id,
+      row.binding_id,
+      row.realm,
+      row.client_id,
+      row.revision,
+      material,
+    );
+    this.platform.audit(actor, "provider.credentials.install", binding.id, {
+      revision: row.revision,
+      provider: "quickbooks",
+      environment: "sandbox",
     });
+    return this.status(binding);
   }
   disable(binding: CredentialBinding, revision: number) {
     return this.database.transaction(() => {
@@ -299,6 +319,7 @@ export class ProviderCredentials {
   }
   // Snapshot refresh tokens may have rotated or been revoked after the cutoff.
   invalidateRestoredCredentials() {
+    this.authorization.invalidateRestoredAttempts();
     return Number(
       this.store.run(
         "UPDATE integration_credentials SET revision=revision+1,state='disabled',material=NULL,claim=NULL,started_at=NULL",
@@ -358,7 +379,7 @@ export class ProviderCredentials {
         binding.orgId,
         binding.id,
       );
-      return { row, bundle, token, requestedAt: Date.now() } as const;
+      return { row, bundle, token } as const;
     });
     if ("expiredClaim" in claim)
       throw new DomainError(
@@ -367,93 +388,20 @@ export class ProviderCredentials {
         503,
       );
     if ("accessToken" in claim) return claim.accessToken!;
-    const { row, bundle, token, requestedAt } = claim;
+    const { row, bundle, token } = claim;
     try {
       this.authorize(binding, effect);
-      const response = await fetch(
-        "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
-        {
-          method: "POST",
-          redirect: "error",
-          signal: AbortSignal.timeout(20000),
-          headers: {
-            Authorization: `Basic ${Buffer.from(`${binding.clientId}:${clientSecret}`).toString("base64")}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-            Accept: "application/json",
-            "x-include-refresh-token-hard-expires-in": "true",
-          },
-          body: new URLSearchParams({
+      const next = this.validateBundle(
+        await exchangeQuickBooksToken(
+          binding,
+          clientSecret,
+          {
             grant_type: "refresh_token",
             refresh_token: bundle.refreshToken,
-          }).toString(),
-        },
-      );
-      check(
-        response.status === 200,
-        "CREDENTIAL_REFRESH",
-        "QuickBooks token refresh did not return a valid response.",
-        503,
-      );
-      // Read bounded bytes; never put provider bodies in errors or operational output.
-      check(
-        response.body,
-        "CREDENTIAL_REFRESH",
-        "QuickBooks token response is missing.",
-        503,
-      );
-      const reader = response.body.getReader(),
-        chunks: Uint8Array[] = [];
-      let bytes = 0;
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          bytes += value.byteLength;
-          check(
-            bytes <= 65536,
-            "CREDENTIAL_REFRESH",
-            "QuickBooks token response exceeds the allowed size.",
-            503,
-          );
-          chunks.push(value);
-        }
-      } finally {
-        await reader.cancel();
-      }
-      const result = JSON.parse(Buffer.concat(chunks).toString());
-      check(
-        typeof result.token_type === "string" &&
-          result.token_type.toLowerCase() === "bearer",
-        "CREDENTIAL_REFRESH",
-        "Unsupported token response.",
-        503,
-      );
-      const seconds = (value: unknown, max: number) =>
-        integer(value, "token lifetime", 1, max) * 1000;
-      const hardExpiresAt = Math.min(
-        bundle.hardExpiresAt ?? Infinity,
-        result.x_refresh_token_hard_expires_in === undefined
-          ? Infinity
-          : requestedAt +
-              seconds(result.x_refresh_token_hard_expires_in, 366 * 86400),
-      );
-      const next = this.validateBundle(
-        {
-          accessToken: result.access_token,
-          refreshToken: result.refresh_token,
-          accessExpiresAt: requestedAt + seconds(result.expires_in, 86400),
-          refreshExpiresAt:
-            requestedAt +
-            seconds(result.x_refresh_token_expires_in, 366 * 86400),
-          ...(Number.isFinite(hardExpiresAt) ? { hardExpiresAt } : {}),
-        },
+          },
+          bundle.hardExpiresAt,
+        ),
         true,
-      );
-      check(
-        next.accessExpiresAt > Date.now() + 30000,
-        "CREDENTIAL_REFRESH",
-        "Returned access token is already expiring.",
-        503,
       );
       return this.database.transaction(() => {
         const actor = this.authorize(binding, effect),

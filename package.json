@@ -20,7 +20,8 @@
     "verify:plan": "python3 scripts/verify_plan.py",
     "format:check": "prettier --check src tests vite.config.ts playwright.config.ts tsconfig.json package.json index.html",
     "test:e2e": "npm run build && playwright test",
-    "provider:credentials": "tsx src/server/provider-credentials-cli.ts"
+    "provider:credentials": "tsx src/server/provider-credentials-cli.ts",
+    "provider:authorize": "tsx src/server/quickbooks-authorization-cli.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
