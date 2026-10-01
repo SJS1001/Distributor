@@ -9,6 +9,7 @@ import {
   downloadStockLabel,
   downloadInboxDocument,
 } from "./api.ts";
+import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
@@ -48,20 +49,6 @@ const money = (value: number, currency = "CAD") =>
   new Intl.NumberFormat("en", { style: "currency", currency }).format(
     value / 100,
   );
-const checkoutUrl = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" &&
-      url.hostname === "checkout.stripe.com" &&
-      !url.username &&
-      !url.password
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
-};
 function App() {
   const [actor, setActor] = useState<Item | null>(null),
     [data, setData] = useState<Item | null>(null),
@@ -3134,14 +3121,12 @@ function App() {
                         </small>
                       )}
                     </>,
-                    checkoutUrl(e.result?.checkoutUrl) ? (
-                      <a
-                        href={checkoutUrl(e.result.checkoutUrl)!}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open secure checkout
-                      </a>
+                    e.checkout ? (
+                      <CheckoutAction
+                        key={e.id}
+                        effectId={e.id}
+                        checkout={e.checkout}
+                      />
                     ) : (
                       (e.error ??
                       e.external_ref ??
@@ -3149,6 +3134,23 @@ function App() {
                     ),
                     can("finance", "support") ? (
                       <div>
+                        {e.provider === "stripe" &&
+                          e.kind === "checkout" &&
+                          e.state === "completed" && (
+                            <button
+                              onClick={() =>
+                                void run(() =>
+                                  request(
+                                    `/api/effects/${encodeURIComponent(e.id)}/refresh-checkout`,
+                                    { method: "POST" },
+                                  ),
+                                ).catch(() => {})
+                              }
+                            >
+                              Refresh checkout status
+                            </button>
+                          )}
+
                         {can("finance") &&
                           e.provider === "quickbooks" &&
                           e.kind === "invoice" &&

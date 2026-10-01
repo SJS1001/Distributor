@@ -2,6 +2,173 @@ import { test, expect, type Page } from "@playwright/test";
 import { totp } from "../src/server/totp.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+test("browser: checkout rechecks stale balance, refreshes expiry, cancels navigation reads and opens only after a fresh scoped request", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const login = async (p: Page, email: string) => {
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    const reply = p.waitForResponse(
+      (r) => r.url().endsWith("/api/login") && r.request().method() === "POST",
+    );
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    const csrf = (await (await reply).json()).csrf;
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    return csrf;
+  };
+  // Separate cookie jars keep the actual buyer and administrator sessions independent.
+  const adminContext = await context
+    .browser()!
+    .newContext({ baseURL: "http://127.0.0.1:3117" });
+  const admin = await adminContext.newPage();
+  try {
+    const csrf = await login(admin, "admin@example.test");
+    await login(page, "checkout-buyer@example.test");
+    await nav(page, "Billing");
+    const effects = await (await page.request.get("/api/effects")).json();
+    expect(effects).toHaveLength(3);
+    expect(effects.every((e: any) => e.result === null)).toBe(true);
+    const [stale, expiry] = effects.filter((e: any) => e.state === "completed");
+    const pending = effects.find((e: any) => e.state === "pending");
+    const checkoutRow = (p: Page, e: any) =>
+      p
+        .getByRole("row")
+        .filter({
+          has: p.getByText(e.checkout.invoiceNumber, { exact: false }),
+        })
+        .filter({ hasText: "stripe · checkout" });
+    const invoiceBefore = (
+      await (await page.request.get("/api/dashboard")).json()
+    ).invoices;
+    await expect(
+      checkoutRow(page, stale).getByRole("button", {
+        name: "Open secure checkout",
+        exact: true,
+      }),
+    ).toBeVisible();
+    const paid = await admin.request.post(
+      "/api/commands/billing.payment.manual",
+      {
+        headers: {
+          "x-csrf-token": csrf,
+          "idempotency-key": "browser-checkout-bank",
+          origin: "http://127.0.0.1:3117",
+        },
+        data: {
+          invoiceId: stale.reference,
+          amount: 11300,
+          reference: "BROWSER-CHECKOUT-BANK",
+          reason: "Synthetic bank evidence",
+        },
+      },
+    );
+    expect(paid.status()).toBe(200);
+    await checkoutRow(page, stale)
+      .getByRole("button", { name: "Open secure checkout", exact: true })
+      .click();
+    await expect(checkoutRow(page, stale).getByRole("alert")).toContainText(
+      "CHECKOUT_UNAVAILABLE",
+    );
+    expect(page.url()).toContain("127.0.0.1:3117");
+    await nav(admin, "Billing");
+    await checkoutRow(admin, expiry)
+      .getByRole("button", { name: "Refresh checkout status", exact: true })
+      .click();
+    await expect(checkoutRow(admin, expiry)).toContainText("Checkout expired");
+    await expect(
+      checkoutRow(admin, expiry).getByRole("button", {
+        name: "Open secure checkout",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await checkoutRow(admin, pending)
+      .getByRole("button", { name: "Send to provider", exact: true })
+      .click();
+    await expect(
+      checkoutRow(admin, pending).getByRole("button", {
+        name: "Open secure checkout",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.reload();
+    await nav(page, "Billing");
+    await expect(checkoutRow(page, stale)).toContainText(
+      "no amount left to pay",
+    );
+    await expect(checkoutRow(page, expiry)).toContainText("Checkout expired");
+    const path = `**/api/effects/${pending.id}/checkout`;
+    let finish!: () => void;
+    const held = new Promise<void>((r) => {
+      finish = r;
+    });
+    let handled!: () => void;
+    const handlerDone = new Promise<void>((r) => {
+      handled = r;
+    });
+    await page.route(path, async () => {
+      // The browser abort itself handles this route; retain the handler until it does.
+      await held;
+      handled();
+    });
+    const failed = page.waitForEvent("requestfailed", {
+      predicate: (r) => r.url().endsWith(`/api/effects/${pending.id}/checkout`),
+    });
+    const started = page.waitForRequest((r) =>
+      r.url().endsWith(`/api/effects/${pending.id}/checkout`),
+    );
+    await checkoutRow(page, pending)
+      .getByRole("button", { name: "Open secure checkout", exact: true })
+      .click();
+    await started;
+    await nav(page, "Overview");
+    await failed;
+    finish();
+    await handlerDone;
+    await page.unroute(path);
+    await nav(page, "Billing");
+    await expect(
+      checkoutRow(page, pending).getByRole("button", {
+        name: "Open secure checkout",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    expect(
+      (await (await page.request.get("/api/dashboard")).json()).invoices,
+    ).toEqual(
+      invoiceBefore.map((i: any) =>
+        i.id === stale.reference ? { ...i, balance: 0, paid: 11300 } : i,
+      ),
+    );
+    // Fulfill the destination locally: this verifies navigation without any Stripe network request.
+    await page.route("https://checkout.stripe.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<h1>Synthetic checkout destination</h1>",
+      }),
+    );
+    await checkoutRow(page, pending)
+      .getByRole("button", { name: "Open secure checkout", exact: true })
+      .click();
+    await expect(page).toHaveURL(
+      "https://checkout.stripe.com/synthetic-browser",
+    );
+    await expect(
+      page.getByRole("heading", { name: "Synthetic checkout destination" }),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await adminContext.close();
+  }
+});
 test("browser: supplier finance follows credit, received replacement, reviewed closure, correction and bounded history without changing stock or cash", async ({
   page,
 }) => {
@@ -1637,18 +1804,19 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
     (i: { order_id: string }) => i.order_id === orderId,
   );
   expect(invoice).toBeDefined();
+  const invoiceRow = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("button", {
+        name: "Download invoice PDF",
+        exact: true,
+      }),
+    })
+    .filter({ hasText: invoice.number });
   await expect(
-    page
-      .getByRole("row")
-      .filter({
-        has: page.getByRole("button", {
-          name: "Download invoice PDF",
-          exact: true,
-        }),
-      })
-      .getByRole("cell", { name: "CA$169.50", exact: true }),
+    invoiceRow.getByRole("cell", { name: "CA$169.50", exact: true }),
   ).toHaveCount(2);
-  await page
+  await invoiceRow
     .getByRole("button", { name: "Request Stripe checkout", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("RESIDENCY_BLOCKED");
@@ -1690,20 +1858,24 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Billing");
-  await page
+  await invoiceRow
     .getByRole("button", { name: "Request Stripe checkout", exact: true })
     .click();
+  const checkoutEffectRow = page
+    .getByRole("row")
+    .filter({ hasText: invoice.number })
+    .filter({ hasText: "stripe · checkout" });
   await expect(
-    page.getByRole("cell", { name: "pending", exact: true }),
+    checkoutEffectRow.getByRole("cell", { name: "pending", exact: true }),
   ).toBeVisible();
-  await page
+  await checkoutEffectRow
     .getByRole("button", { name: "Send to provider", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("PROVIDER_DISABLED");
   await expect(
-    page.getByRole("cell", { name: "pending", exact: true }),
+    checkoutEffectRow.getByRole("cell", { name: "pending", exact: true }),
   ).toBeVisible();
-  await page
+  await invoiceRow
     .getByRole("button", { name: "Record payment", exact: true })
     .click();
   await page

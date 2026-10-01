@@ -350,7 +350,11 @@ test("Stripe SDK refund calls use minimal identity, stable idempotency and a ret
     amount_received: 11300,
     currency: "cad",
   } as Stripe.PaymentIntent;
-  t.mock.method(a.client.paymentIntents, "retrieve", async () => payment);
+  const retrieve = t.mock.method(
+    a.client.paymentIntents,
+    "retrieve",
+    async () => payment,
+  );
   let refund = {
     id: "re_synthetic",
     object: "refund",
@@ -361,6 +365,14 @@ test("Stripe SDK refund calls use minimal identity, stable idempotency and a ret
     metadata: { effect_id: f.effect.id, refund_id: f.refundId },
   } as unknown as Stripe.Refund;
   const create = t.mock.method(a.client.refunds, "create", async () => refund);
+  await assert.rejects(
+    a.execute(f.effect, () => {
+      assert.equal(retrieve.mock.callCount(), 1);
+      throw new Error("Synthetic changed permission");
+    }),
+    /Synthetic changed permission/,
+  );
+  assert.equal(create.mock.callCount(), 0);
   const actual = await a.execute(f.effect);
   assert.equal(actual.result.status, "pending");
   assert.equal(actual.result.effectId, f.effect.id);
@@ -617,7 +629,15 @@ test("restore hold blocks cached refund queues and all refund provider reads", a
 test("buyer and commercial effect lists omit internal refunds and billing evidence reads deny those roles", (t) => {
   const f = setup(t);
   for (const role of ["buyer", "commercial"] as const) {
-    const actor = { ...f.actor, role, accountId: f.buyer };
+    const user = f.app.identity.createUser(f.actor, `restricted-${role}`, {
+      email: `${role}@example.test`,
+      name: "Synthetic restricted user",
+      password: "long-test-only-password",
+      role,
+      ...(role === "buyer" ? { accountId: f.buyer } : {}),
+      sites: [f.w1],
+    });
+    const actor = f.app.identity.currentActor({ ...f.actor, id: user.id });
     assert.equal(
       f.app.integration.list(actor).filter((e) => e.kind === "refund").length,
       0,
@@ -628,15 +648,29 @@ test("buyer and commercial effect lists omit internal refunds and billing eviden
     assert.throws(() => f.app.billing.refunds.payments(actor), {
       code: "FORBIDDEN",
     });
-    if (role === "buyer")
+    if (role === "buyer") {
+      const other = f.app.identity.createCustomer(f.actor, "stranger", {
+        name: "Other buyer",
+        tier: "standard",
+        creditLimit: 1,
+      });
+      const stranger = f.app.identity.createUser(f.actor, "stranger-user", {
+        email: "stranger@example.test",
+        name: "Other buyer",
+        password: "long-test-only-password",
+        role: "buyer",
+        accountId: other.id,
+        sites: [f.w1],
+      });
       assert.throws(
         () =>
           f.app.integration.effect(
-            { ...actor, accountId: "other" },
+            f.app.identity.currentActor({ ...f.actor, id: stranger.id }),
             f.effect.id,
           ),
         { code: "FORBIDDEN" },
       );
+    }
   }
   assert.equal(
     f.app.integration.list(f.actor).filter((e) => e.kind === "refund").length,

@@ -1495,6 +1495,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/effects", async (request) =>
     app.integration.list(actor(request)),
   );
+  http.get<{ Params: { effectId: string } }>(
+    "/api/effects/:effectId/checkout",
+    { schema: { params: obj({ effectId: str }) } },
+    async (request) =>
+      app.integration.checkouts.open(actor(request), request.params.effectId),
+  );
   const providers = () => {
     check(
       options.providers,
@@ -1511,6 +1517,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
       async (request) =>
         providers()[operation](actor(request), request.params.effectId),
     );
+  http.post<{ Params: { effectId: string } }>(
+    "/api/effects/:effectId/refresh-checkout",
+    {
+      preValidation: async (request) => {
+        check(
+          request.body === undefined ||
+            (request.body !== null &&
+              typeof request.body === "object" &&
+              !Array.isArray(request.body) &&
+              Object.keys(request.body).length === 0),
+          "VALIDATION",
+          "Checkout refresh accepts no request fields.",
+          400,
+        );
+      },
+      schema: { params: obj({ effectId: str }) },
+    },
+    async (request) =>
+      providers().refreshCheckout(actor(request), request.params.effectId),
+  );
   http.post<{ Params: { effectId: string } }>(
     "/api/effects/:effectId/refresh-refund",
     { schema: { params: obj({ effectId: str }) } },

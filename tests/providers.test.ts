@@ -41,6 +41,10 @@ test("Stripe rejects conflicting checkout identity/money/mode/URLs before bindin
     );
   let response = {
     id: "cs_test_synthetic",
+    object: "checkout.session",
+    status: "open",
+    payment_status: "unpaid",
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
     mode: "payment",
     livemode: false,
     metadata: { effect_id: f.checkout.id },
@@ -62,6 +66,13 @@ test("Stripe rejects conflicting checkout identity/money/mode/URLs before bindin
   assert.equal(options!.idempotencyKey, `distributor:${f.checkout.id}`);
   const valid = response;
   for (const change of [
+    { object: "customer" },
+    { id: "cs_live_synthetic" },
+    { status: "invented" },
+    { payment_status: "invented" },
+    { expires_at: null },
+    { expires_at: 1.5 },
+    { url: "https://checkout.stripe.com:8443/x" },
     { metadata: { effect_id: "different" } },
     { amount_total: 11301 },
     { currency: "usd" },

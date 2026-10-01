@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { checkoutUrl } from "../shared/checkout.ts";
 import { refundStatuses, type RefundIntent } from "./billing-refunds.ts";
 import { check, integer } from "./core.ts";
 import {
@@ -44,31 +45,37 @@ export class StripeAdapter implements Adapter {
       currency: string;
     };
     check(
-      session.mode === "payment" &&
-        !session.livemode &&
+      session.object === "checkout.session" &&
+        /^cs_test_[a-zA-Z0-9_]+$/.test(session.id) &&
+        (!effect.external_ref || session.id === effect.external_ref) &&
+        ["open", "complete", "expired"].includes(session.status ?? "") &&
+        ["unpaid", "paid", "no_payment_required"].includes(
+          session.payment_status,
+        ) &&
+        Number.isSafeInteger(session.expires_at) &&
+        session.expires_at > 0 &&
+        session.mode === "payment" &&
+        session.livemode === false &&
         session.metadata?.effect_id === effect.id &&
         session.amount_total === payload.amount &&
         session.currency === payload.currency,
       "PAYMENT_MISMATCH",
       "Stripe checkout identity or money differs from the intent.",
     );
-    if (session.url) {
-      const url = new URL(session.url);
-      check(
-        url.protocol === "https:" &&
-          url.hostname === "checkout.stripe.com" &&
-          !url.username &&
-          !url.password,
-        "PROVIDER_RESPONSE",
-        "Stripe returned an unsupported checkout URL.",
-      );
-    }
+    check(
+      !session.url || checkoutUrl(session.url),
+      "PROVIDER_RESPONSE",
+      "Stripe returned an unsupported checkout URL.",
+    );
     return {
       reference: session.id,
       result: {
         checkoutUrl: session.url,
         amount: payload.amount,
         currency: payload.currency,
+        status: session.status,
+        paymentStatus: session.payment_status,
+        expiresAt: session.expires_at,
       },
     };
   }
@@ -159,10 +166,14 @@ export class StripeAdapter implements Adapter {
       "Refund lookup exceeded the review limit; absence is not confirmed.",
     );
   }
-  async execute(effect: Effect): Promise<EffectResult> {
+  async execute(
+    effect: Effect,
+    beforeWrite: () => void = () => {},
+  ): Promise<EffectResult> {
     this.allow();
     if (effect.kind === "refund") {
       const p = await this.refundPayment(effect);
+      beforeWrite();
       return this.refundResult(
         effect,
         await this.client.refunds.create(
@@ -186,6 +197,7 @@ export class StripeAdapter implements Adapter {
       currency: string;
       number: string;
     };
+    beforeWrite();
     const session = await this.client.checkout.sessions.create(
       {
         mode: "payment",
@@ -217,6 +229,11 @@ export class StripeAdapter implements Adapter {
       "PROVIDER_OPERATION",
       "Unsupported Stripe operation.",
     );
+    if (effect.external_ref)
+      return this.checkoutResult(
+        effect,
+        await this.client.checkout.sessions.retrieve(effect.external_ref),
+      );
     const created = Math.floor(Date.parse(effect.created_at) / 1000);
     let inspected = 0;
     for await (const s of this.client.checkout.sessions.list({

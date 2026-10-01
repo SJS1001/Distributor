@@ -17,6 +17,7 @@ import {
   IntegrationAccountingBalances,
   type AccountingBalance,
 } from "./integration-accounting-balances.ts";
+import { IntegrationCheckouts } from "./integration-checkouts.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
 import { IntegrationCosts } from "./integration-costs.ts";
 import { Inventory } from "./inventory.ts";
@@ -148,6 +149,12 @@ export class Integration {
     CREATE INDEX IF NOT EXISTS integration_credit_application_invoice ON integration_credit_applications(org_id,invoice_id);
     CREATE INDEX IF NOT EXISTS integration_credit_application_credit ON integration_credit_applications(org_id,credit_id);
   `);
+    this.checkouts = new IntegrationCheckouts(
+      identity,
+      billing,
+      platform,
+      this,
+    );
     this.operations = new IntegrationOperations(
       database,
       this.store,
@@ -179,6 +186,7 @@ export class Integration {
       this,
     );
   }
+  readonly checkouts: IntegrationCheckouts;
   effect(actor: Actor, effectId: string): Effect {
     const row = this.store.get<Effect>(
       "SELECT * FROM integration_effects WHERE org_id=? AND id=?",
@@ -190,6 +198,7 @@ export class Integration {
     return row;
   }
   list(actor: Actor) {
+    actor = this.identity.currentActor(actor);
     permit(actor, ["finance", "support", "commercial", "buyer"]);
     return this.store
       .all<Effect>(
@@ -212,9 +221,15 @@ export class Integration {
       .map((e) => ({
         ...e,
         payload: undefined,
+        checkout:
+          e.provider === "stripe" && e.kind === "checkout"
+            ? this.checkouts.describe(actor, e)
+            : undefined,
         result:
-          e.result && !this.platform.recoveryHold()
-            ? JSON.parse(e.result)
+          e.provider !== "stripe" || e.kind !== "checkout"
+            ? e.result && !this.platform.recoveryHold()
+              ? JSON.parse(e.result)
+              : null
             : null,
         accountingBalance:
           ["admin", "finance"].includes(actor.role) &&
@@ -1221,6 +1236,9 @@ export class Integration {
     if (this.effect(actor, effectId).kind === "refund")
       return this.refunds.run(actor, effectId, adapter, true);
     return this.operations.run(actor, effectId, adapter, true);
+  }
+  async refreshCheckout(actor: Actor, effectId: string, adapter: Adapter) {
+    return this.operations.run(actor, effectId, adapter, false, true);
   }
   async reconcile(actor: Actor, effectId: string, adapter: Adapter) {
     if (this.effect(actor, effectId).kind === "refund")

@@ -400,6 +400,86 @@ for (const [email, accountId] of [
   });
 }
 const refundReads = new Map<string, number>();
+// Independent invoice checkout fixture. Hosted navigation is intercepted by the
+// browser test; these values never contact Stripe or represent received cash.
+const checkoutBuyer = f.app.identity.createCustomer(f.actor, "checkout-buyer", {
+  name: "Synthetic checkout buyer",
+  tier: "standard",
+  creditLimit: 1000000,
+}).id;
+f.app.identity.createUser(f.actor, "checkout-user", {
+  email: "checkout-buyer@example.test",
+  name: "Synthetic checkout buyer",
+  password: "long-test-only-password",
+  role: "buyer",
+  accountId: checkoutBuyer,
+  sites: [],
+});
+chooseProviders(f, f.actor, "checkout-permission", {
+  accountId: checkoutBuyer,
+  region: "CA",
+  mode: "provider-exceptions",
+  providers: ["stripe"],
+  version: 1,
+  acknowledgment: "Synthetic browser acceptance",
+});
+const checkoutProduct = f.app.catalog.create(f.actor, "checkout-product", {
+  sku: "CHECKOUT-1",
+  name: "Synthetic checkout item",
+  serialized: false,
+  unitPrice: 10000,
+  taxBasisPoints: 1300,
+}).id;
+const checkoutPo = f.app.procurement.create(f.actor, "checkout-po", {
+  supplierId: f.supplier,
+  warehouseId: f.w1,
+  lines: [{ productId: checkoutProduct, quantity: 3, unitCost: 6000 }],
+}).id;
+f.app.procurement.receive(f.actor, "checkout-stock", {
+  poId: checkoutPo,
+  lineId: String(
+    f.app.procurement.orders(f.actor).find((p) => p.id === checkoutPo)!
+      .lines[0]!.id,
+  ),
+  deliveryRef: "CHECKOUT-STOCK",
+  quantity: 3,
+  serials: [],
+  bin: "CHECKOUT-1",
+  quarantine: false,
+});
+const checkoutFixture = {
+  ...f,
+  buyer: checkoutBuyer,
+  product: checkoutProduct,
+};
+const checkoutResult = (
+  effect: import("../src/server/integration.ts").Effect,
+  status = "open",
+) => ({
+  reference: `cs_test_${effect.id.replaceAll("-", "")}`,
+  result: {
+    amount: JSON.parse(effect.payload).amount,
+    currency: "cad",
+    status,
+    paymentStatus: "unpaid",
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    checkoutUrl: "https://checkout.stripe.com/synthetic-browser",
+  },
+});
+for (let i = 0; i < 3; i++) {
+  const invoiceId = ship(
+    checkoutFixture,
+    accept(checkoutFixture, 1, `checkout-order-${i}`).id,
+  ).invoiceId;
+  const effect = f.app.integration.checkout(f.actor, `checkout-queue-${i}`, {
+    invoiceId,
+  });
+  if (i < 2)
+    await f.app.integration.execute(f.actor, effect.id, {
+      execute: async (e) => checkoutResult(e),
+      lookup: async (e) => checkoutResult(e),
+    });
+}
 const refundResult = (
   effect: import("../src/server/integration.ts").Effect,
   status: string,
@@ -408,8 +488,13 @@ const refundResult = (
   result: { ...JSON.parse(effect.payload), effectId: effect.id, status },
 });
 const syntheticRefunds: StripeGateway = {
-  execute: async (effect) => refundResult(effect, "requires_action"),
+  execute: async (effect) =>
+    effect.kind === "checkout" && effect.account_id === checkoutBuyer
+      ? checkoutResult(effect)
+      : refundResult(effect, "requires_action"),
   lookup: async (effect) => {
+    if (effect.kind === "checkout" && effect.account_id === checkoutBuyer)
+      return checkoutResult(effect, "expired");
     const reads = (refundReads.get(effect.id) ?? 0) + 1;
     refundReads.set(effect.id, reads);
     return refundResult(effect, reads === 1 ? "succeeded" : "failed");
@@ -493,10 +578,12 @@ for (let i = 0; i < 22; i++) {
 class BrowserProviders extends ProviderRuntime {
   override async execute(actor: Actor, effectId: string) {
     const effect = f.app.integration.effect(actor, effectId);
-    // The new refund-read fixture must not enable checkout sends for the
-    // existing disabled-provider journey. Reject before acquiring its claim.
+    // Synthetic refund and isolated checkout fixtures preserve the existing
+    // buyer's disabled-provider journey. Reject before acquiring its claim.
     check(
-      effect.provider !== "stripe" || effect.kind === "refund",
+      effect.provider !== "stripe" ||
+        effect.kind === "refund" ||
+        effect.account_id === checkoutBuyer,
       "PROVIDER_DISABLED",
       "Stripe checkout is disabled in this browser fixture.",
       503,

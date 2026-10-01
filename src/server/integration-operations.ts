@@ -80,7 +80,13 @@ export class IntegrationOperations {
       this.platform.audit(actor, "integration.unknown", effect.id, {});
     });
   }
-  async run(actor: Actor, effectId: string, adapter: Adapter, send: boolean) {
+  async run(
+    actor: Actor,
+    effectId: string,
+    adapter: Adapter,
+    send: boolean,
+    refreshCheckout = false,
+  ) {
     const token = id();
     const effect = this.database.transaction(() => {
       actor = this.principal(actor);
@@ -91,15 +97,27 @@ export class IntegrationOperations {
         "STATE",
         "Refunds require their own cash verification.",
       );
+      if (refreshCheckout)
+        check(
+          e.provider === "stripe" && e.kind === "checkout",
+          "STATE",
+          "Only checkout sessions may be refreshed here.",
+        );
       check(
-        e.state === (send ? "pending" : "unknown"),
+        e.state ===
+          (send ? "pending" : refreshCheckout ? "completed" : "unknown"),
         "STATE",
         send
           ? "Only pending operations may be sent."
-          : "Only unknown outcomes need reconciliation.",
+          : refreshCheckout
+            ? "Only completed checkouts may be refreshed."
+            : "Only unknown outcomes need reconciliation.",
       );
       this.identity.providerAllowed(actor, e.account_id, e.provider);
-      if (send) this.integration.assertAccountingRefundReady(actor, e);
+      if (send) {
+        this.integration.assertAccountingRefundReady(actor, e);
+        this.integration.checkouts.assertReadyToSend(actor, e);
+      }
       this.store.run(
         "INSERT OR IGNORE INTO integration_operation_leases(effect_id,org_id) VALUES(?,?)",
         effectId,
@@ -121,6 +139,12 @@ export class IntegrationOperations {
         Date.now(),
         effectId,
       );
+      if (refreshCheckout)
+        this.store.run(
+          "UPDATE integration_effects SET error=? WHERE id=?",
+          "Checkout verification is in progress.",
+          effectId,
+        );
       if (send)
         this.store.run(
           "UPDATE integration_effects SET state='running',started_at=?,error=NULL WHERE id=?",
@@ -151,6 +175,7 @@ export class IntegrationOperations {
               "Provider write claim is no longer active.",
             );
             this.integration.assertAccountingRefundReady(actor, effect);
+            this.integration.checkouts.assertReadyToSend(actor, effect);
           })
         : await adapter.lookup(effect);
     } catch (error) {
@@ -177,23 +202,39 @@ export class IntegrationOperations {
         );
         const current = this.integration.effect(actor, effectId);
         check(
-          current.state === (send ? "running" : "unknown"),
+          current.state ===
+            (send ? "running" : refreshCheckout ? "completed" : "unknown"),
           "STATE",
           "Provider operation changed during verification.",
         );
         // Current consent authorized this I/O. Retain its observed result even if
         // consent changed during the call; subsequent calls still require consent.
         if (result) {
+          check(
+            effect.provider !== "stripe" ||
+              effect.kind !== "checkout" ||
+              !effect.external_ref ||
+              result.reference === effect.external_ref,
+            "PAYMENT_MISMATCH",
+            "Provider reference changed during reconciliation.",
+          );
           this.store.run(
             "UPDATE integration_effects SET state='completed',external_ref=?,result=?,error=NULL WHERE id=?",
             text(result.reference, "provider reference"),
             canonical(result.result),
             effectId,
           );
-          this.platform.event(actor, "integration.completed", effectId, {
-            provider: effect.provider,
-            reference: result.reference,
-          });
+          this.platform.event(
+            actor,
+            refreshCheckout
+              ? "integration.checkout-refreshed"
+              : "integration.completed",
+            effectId,
+            {
+              provider: effect.provider,
+              reference: result.reference,
+            },
+          );
         } else {
           this.store.run(
             "UPDATE integration_effects SET state='unknown',error=? WHERE id=?",
