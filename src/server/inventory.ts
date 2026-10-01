@@ -392,6 +392,19 @@ export class Inventory {
       quantity,
     });
   }
+  assertNewSerials(actor: Actor, serials: string[]) {
+    permit(actor, ["warehouse"]);
+    for (const serial of serials)
+      check(
+        !this.store.get(
+          "SELECT id FROM inventory_units WHERE org_id=? AND serial=?",
+          actor.orgId,
+          text(serial, "serial"),
+        ),
+        "DUPLICATE_SERIAL",
+        "Serial already has a custody record.",
+      );
+  }
   receive(
     actor: Actor,
     input: {

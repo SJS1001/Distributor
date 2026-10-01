@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { command, request, setCsrf, downloadDocument } from "./api.ts";
+import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
 type Field = {
@@ -13,6 +14,7 @@ type Field = {
   help?: string;
   max?: number;
   min?: number;
+  scan?: "single" | "lines";
 };
 type Dialog = {
   title: string;
@@ -182,6 +184,69 @@ function App() {
     name: string,
     transform: (v: Item) => unknown = (v) => v,
   ) => open(title, fields, (v) => command(name, transform(v)));
+  const receiptDraft = (po: Item, draft?: Item) => {
+    const saved = draft?.input;
+    open(
+      draft ? "Resume receipt scans" : "Start receipt draft",
+      [
+        ...(draft
+          ? []
+          : [
+              select(
+                "lineId",
+                "Purchase line",
+                po.lines.filter((l: Item) => l.received < l.quantity),
+                (l) =>
+                  `${productName(l.product_id)} · ${l.quantity - l.received} remaining`,
+              ),
+              { name: "deliveryRef", label: "Supplier delivery reference" },
+            ]),
+        {
+          name: "observedSku",
+          label: "Observed SKU on delivery",
+          value: saved?.observedSku ?? "",
+          scan: "single",
+        },
+        {
+          name: "quantity",
+          label: "Units",
+          type: "number",
+          min: 1,
+          value: saved?.quantity ?? 1,
+        },
+        {
+          name: "serials",
+          label: "Serials, one per line (blank for bulk)",
+          type: "textarea",
+          optional: true,
+          value: saved?.serials.join("\n") ?? "",
+          scan: "lines",
+        },
+        { name: "bin", label: "Receiving bin", value: saved?.bin ?? "" },
+        {
+          name: "quarantine",
+          label: "Requires inspection / quarantine",
+          type: "checkbox",
+          value: saved?.quarantine ?? true,
+        },
+      ],
+      (v) =>
+        command("purchase.draft.save", {
+          ...v,
+          draftId: draft?.id ?? null,
+          revision: draft?.revision ?? 0,
+          poId: po.id,
+          lineId: saved?.lineId ?? v.lineId,
+          deliveryRef: saved?.deliveryRef ?? v.deliveryRef,
+          serials: v.serials
+            .split(/\r?\n/)
+            .map((serial: string) => serial.trim())
+            .filter(Boolean),
+        }),
+      "Save incomplete scans to resume later. Stock changes only after Review and receive. Unsaved changes stay in this dialog; saving requires a connection.",
+      "Save draft",
+    );
+  };
   const staff = actor?.role !== "buyer",
     admin = actor?.role === "admin",
     can = (...roles: string[]) => admin || roles.includes(actor?.role ?? "");
@@ -633,6 +698,7 @@ function App() {
                               ),
                               {
                                 name: "serial",
+                                scan: "single",
                                 label: "Scan serial (leave blank for bulk)",
                                 optional: true,
                               },
@@ -815,7 +881,13 @@ function App() {
               {button("Find serial", () =>
                 open(
                   "Serial history",
-                  [{ name: "serial", label: "Scan or enter serial" }],
+                  [
+                    {
+                      name: "serial",
+                      scan: "single",
+                      label: "Scan or enter serial",
+                    },
+                  ],
                   async (v) => {
                     const trace = await request(
                       `/api/serials/${encodeURIComponent(v.serial)}`,
@@ -1083,6 +1155,7 @@ function App() {
                                       },
                                       {
                                         name: "serial",
+                                        scan: "single",
                                         label:
                                           "Scan recovered serial (leave blank for bulk)",
                                         optional: !line.serial,
@@ -1139,6 +1212,7 @@ function App() {
                                       },
                                       {
                                         name: "serial",
+                                        scan: "single",
                                         label:
                                           "Scan transferred serial (leave blank for bulk)",
                                         optional: !line.serial,
@@ -1184,6 +1258,7 @@ function App() {
                                         },
                                         {
                                           name: "serial",
+                                          scan: "single",
                                           label:
                                             "Confirm missing serial (leave blank for bulk)",
                                           optional: !line.serial,
@@ -1291,54 +1366,88 @@ function App() {
                 po.state,
                 po.state === "open" &&
                   can("warehouse") &&
-                  button("Receive", () =>
-                    simple(
-                      "Receive delivery",
-                      [
-                        select(
-                          "lineId",
-                          "Purchase line",
-                          po.lines,
-                          (l) =>
-                            `${productName(l.product_id)} · ${l.quantity - l.received} remaining`,
+                  button("Start receipt draft", () => receiptDraft(po)),
+              ],
+            )}
+            <h2>Saved receipt scans</h2>
+            <p>
+              Drafts do not reserve or receive stock. Review the saved SKU,
+              quantity, serials, bin and inspection choice before receiving.
+            </p>
+            {table(
+              ["Delivery", "Warehouse / SKU", "Scans", "Status", "Actions"],
+              extra.purchases?.drafts ?? [],
+              (draft: Item) => [
+                draft.delivery_ref,
+                `${warehouseName(draft.warehouse_id)} · ${draft.input.observedSku}`,
+                <div>
+                  {draft.input.serials.length} scans · {draft.input.quantity}{" "}
+                  units · {draft.input.bin}
+                  <br />
+                  {draft.input.quarantine
+                    ? "Inspection required"
+                    : "Available on receipt"}
+                </div>,
+                `${draft.state} · v${draft.revision}`,
+                <div className="actions">
+                  {draft.state === "draft" && can("warehouse") && (
+                    <>
+                      {button("Resume scans", () =>
+                        receiptDraft(
+                          extra.purchases.orders.find(
+                            (po: Item) => po.id === draft.po_id,
+                          ),
+                          draft,
                         ),
-                        {
-                          name: "deliveryRef",
-                          label: "Supplier delivery reference",
-                        },
-                        {
-                          name: "quantity",
-                          label: "Units",
-                          type: "number",
-                          value: 1,
-                        },
-                        {
-                          name: "serials",
-                          label: "Serials, one per line (blank for bulk)",
-                          type: "textarea",
-                          optional: true,
-                        },
-                        { name: "bin", label: "Receiving bin" },
-                        {
-                          name: "quarantine",
-                          label: "Requires inspection / quarantine",
-                          type: "checkbox",
-                          value: true,
-                        },
-                      ],
-                      "purchase.receive",
-                      (v) => ({
-                        ...v,
-                        poId: po.id,
-                        serials: v.serials
-                          ? v.serials
-                              .split(/\r?\n/)
-                              .map((s: string) => s.trim())
-                              .filter(Boolean)
-                          : [],
+                      )}
+                      {button("Review and receive", () =>
+                        open(
+                          "Review physical receipt",
+                          [],
+                          () =>
+                            command("purchase.draft.confirm", {
+                              draftId: draft.id,
+                              revision: draft.revision,
+                            }),
+                          `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "bulk (no serials)"}. Confirm only after checking the physical delivery.`,
+                          "Receive stock",
+                        ),
+                      )}
+                      {button("Discard draft", () =>
+                        simple(
+                          "Discard receipt draft",
+                          [reason],
+                          "purchase.draft.discard",
+                          (v) => ({
+                            draftId: draft.id,
+                            revision: draft.revision,
+                            reason: v.reason,
+                          }),
+                        ),
+                      )}
+                    </>
+                  )}
+                  {button(
+                    "View draft history",
+                    () =>
+                      void run(async () => {
+                        const history = await request(
+                          `/api/purchases/drafts/${encodeURIComponent(draft.id)}/history`,
+                        );
+                        open(
+                          "Receipt draft history",
+                          [],
+                          async () => ({}),
+                          history
+                            .map(
+                              (entry: Item) =>
+                                `v${entry.revision} · ${entry.state} · ${entry.created_at} · ${entry.actor_id} · ${entry.reason} · SKU ${entry.input.observedSku} · ${entry.input.quantity} units · ${entry.input.bin} · ${entry.input.serials.join(", ") || "bulk"}`,
+                            )
+                            .join("\n"),
+                        );
                       }),
-                    ),
-                  ),
+                  )}
+                </div>,
               ],
             )}
             <h2>Purchase receipts and supplier returns</h2>
@@ -1385,6 +1494,7 @@ function App() {
                         },
                         {
                           name: "serial",
+                          scan: "single",
                           label: "Scan serial (blank for bulk)",
                           optional: true,
                         },
@@ -1955,7 +2065,11 @@ function App() {
                             (w) => w.name,
                           ),
                           { name: "bin", label: "Quarantine bin" },
-                          { name: "serial", label: "Scan returned serial" },
+                          {
+                            name: "serial",
+                            scan: "single",
+                            label: "Scan returned serial",
+                          },
                         ],
                         "warranty.receive",
                         (v) => ({ ...v, claimId: c.id }),
@@ -3182,9 +3296,11 @@ function Modal({
           }}
         >
           {dialog.fields.map((f) => (
-            <label
+            <div
               key={f.name}
-              className={f.type === "checkbox" ? "check" : ""}
+              className={
+                f.type === "checkbox" ? "form-field check" : "form-field"
+              }
             >
               {f.type === "checkbox" ? (
                 <input
@@ -3218,6 +3334,15 @@ function Modal({
                     </option>
                   ))}
                 </select>
+              ) : f.scan ? (
+                <ScanInput
+                  name={f.name}
+                  label={f.label}
+                  value={String(f.value ?? "")}
+                  multiline={f.scan === "lines"}
+                  optional={Boolean(f.optional)}
+                  disabled={busy}
+                />
               ) : f.type === "textarea" ? (
                 <textarea
                   name={f.name}
@@ -3238,7 +3363,7 @@ function Modal({
                 />
               )}{" "}
               {f.help && <small>{f.help}</small>}
-            </label>
+            </div>
           ))}
           <div className="actions">
             <button

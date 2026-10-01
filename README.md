@@ -21,6 +21,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Decisions and inputs](docs/DECISIONS.md) | Confirmed direction, proposed choices and unanswered business questions |
 | [Reuse assessment](docs/REUSE.md) | OPUS extraction, open-source shortlist, licensing and UB readiness |
 | [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
+| [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets and session revocation |
 | [Providers, residency and devices](docs/PROVIDERS.md) | Customer choice, major-provider candidates and local provider operations |
 | [Evidence instructions](docs/evidence/README.md) | Receipt template for future verification |

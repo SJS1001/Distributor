@@ -2,6 +2,61 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+async function installScanHarness(page: Page) {
+  // Real local MediaStream lifetime, synthetic decoding/permission outcomes; no physical camera claim.
+  await page.addInitScript(() => {
+    const harness: any = {
+      queue: [],
+      requests: 0,
+      stops: 0,
+      mode: "allow",
+      resolve: null,
+    };
+    (window as any).__scanHarness = harness;
+    class SyntheticDetector {
+      static async getSupportedFormats() {
+        return ["code_128", "qr_code"];
+      }
+      async detect() {
+        return (harness.queue.shift() ?? []).map((rawValue: string) => ({
+          rawValue,
+        }));
+      }
+    }
+    harness.detector = SyntheticDetector;
+    (window as any).BarcodeDetector = SyntheticDetector;
+    const capture = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 100;
+      canvas.height = 100;
+      const context = canvas.getContext("2d")!;
+      context.fillRect(0, 0, 100, 100);
+      const stream = canvas.captureStream(10);
+      const timer = setInterval(() => context.fillRect(0, 0, 100, 100), 50);
+      const track = stream.getTracks()[0]!,
+        original = track.stop.bind(track);
+      track.stop = () => {
+        harness.stops++;
+        clearInterval(timer);
+        original();
+      };
+      return stream;
+    };
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: async () => {
+        harness.requests++;
+        if (harness.mode === "deny")
+          throw new DOMException("Synthetic denial", "NotAllowedError");
+        if (harness.mode === "pending")
+          return new Promise((resolve) => {
+            harness.resolve = () => resolve(capture());
+          });
+        return capture();
+      },
+    });
+  });
+}
 test("browser: reviewed customer/catalog imports retain rejects, explicit matches and strict defaults and recover a lost approval response once", async ({
   page,
 }) => {
@@ -1955,4 +2010,307 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     await workerContext.close();
     await secondContext.close();
   }
+});
+
+test("browser: receipt scans save without stock, resume after reload, review camera values and retry one confirmed receipt", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await installScanHarness(page);
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Catalog");
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
+  await page.getByLabel("SKU", { exact: true }).fill("BROWSER-SCAN");
+  await page
+    .getByLabel("Product name", { exact: true })
+    .fill("Synthetic scanned equipment");
+  await page.getByLabel("Unit price in cents", { exact: true }).fill("10000");
+  await page
+    .getByLabel("Tax rate in basis points", { exact: true })
+    .fill("1300");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await nav(page, "Purchasing");
+  await page
+    .getByRole("button", { name: "Purchase order", exact: true })
+    .click();
+  await page
+    .getByLabel("Warehouse", { exact: true })
+    .selectOption({ label: "Toronto" });
+  await page
+    .getByLabel("Product", { exact: true })
+    .selectOption({ label: "BROWSER-SCAN · Synthetic scanned equipment" });
+  await page.getByLabel("Units", { exact: true }).fill("2");
+  await page.getByLabel("Unit cost in cents", { exact: true }).fill("6000");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const poRow = page
+    .getByRole("row")
+    .filter({ hasText: "BROWSER-SCAN · 0/2 received" });
+  await poRow
+    .getByRole("button", { name: "Start receipt draft", exact: true })
+    .click();
+  await page
+    .getByLabel("Supplier delivery reference", { exact: true })
+    .fill("BROWSER-SCAN-DELIVERY");
+  await page
+    .getByLabel("Observed SKU on delivery", { exact: true })
+    .fill("WRONG-SKU");
+  await page.getByLabel("Units", { exact: true }).fill("2");
+  await page
+    .getByLabel("Serials, one per line (blank for bulk)", { exact: true })
+    .fill("BROWSER-D1");
+  await page.getByLabel("Receiving bin", { exact: true }).fill("SCAN-BIN");
+  const saveDraft = () =>
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Save draft", exact: true })
+      .click();
+  await saveDraft();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Observed SKU",
+  );
+  const skuScanner = page.getByRole("region", {
+    name: "Scanner for Observed SKU on delivery",
+    exact: true,
+  });
+  await page.evaluate(() =>
+    (window as any).__scanHarness.queue.push(["BROWSER-SCAN"]),
+  );
+  await skuScanner
+    .getByRole("button", { name: "Scan with camera", exact: true })
+    .click();
+  await expect(skuScanner).toContainText("Detected: BROWSER-SCAN");
+  await expect(
+    page.getByLabel("Observed SKU on delivery", { exact: true }),
+  ).toHaveValue("WRONG-SKU");
+  await skuScanner
+    .getByRole("button", { name: "Use detected value", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Observed SKU on delivery", { exact: true }),
+  ).toHaveValue("BROWSER-SCAN");
+  expect(await page.evaluate(() => (window as any).__scanHarness.stops)).toBe(
+    1,
+  );
+  const saveKeys: string[] = [];
+  await page.route("**/api/commands/purchase.draft.save", async (route) => {
+    saveKeys.push(route.request().headers()["idempotency-key"]!);
+    if (saveKeys.length === 1) {
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await saveDraft();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await saveDraft();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(saveKeys).toHaveLength(2);
+  expect(saveKeys[0]).toBe(saveKeys[1]);
+  await page.unroute("**/api/commands/purchase.draft.save");
+  const draftRow = page
+    .getByRole("row")
+    .filter({ hasText: "BROWSER-SCAN-DELIVERY" });
+  await expect(draftRow).toContainText("draft · v1");
+  await expect(poRow).toContainText("0/2 received");
+  await page.reload();
+  await nav(page, "Purchasing");
+  await draftRow
+    .getByRole("button", { name: "Review and receive", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Receive stock", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "exactly one unique serial",
+  );
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await draftRow
+    .getByRole("button", { name: "Resume scans", exact: true })
+    .click();
+  const serials = page.getByLabel("Serials, one per line (blank for bulk)", {
+    exact: true,
+  });
+  await expect(serials).toHaveValue("BROWSER-D1");
+  const scanner = page.getByRole("region", {
+    name: "Scanner for Serials, one per line (blank for bulk)",
+    exact: true,
+  });
+  const detect = async (values: string[]) => {
+    await page.evaluate(
+      (values) => (window as any).__scanHarness.queue.push(values),
+      values,
+    );
+    await scanner
+      .getByRole("button", { name: "Scan with camera", exact: true })
+      .click();
+  };
+  await detect(["BROWSER-D1", "BROWSER-D2"]);
+  await expect(scanner).toContainText("More than one label");
+  await page.evaluate(() =>
+    (window as any).__scanHarness.queue.push(["BROWSER-D1"]),
+  );
+  await expect(scanner).toContainText("Detected: BROWSER-D1");
+  await scanner
+    .getByRole("button", { name: "Use detected value", exact: true })
+    .click();
+  await expect(scanner).toContainText("already in the list");
+  await expect(serials).toHaveValue("BROWSER-D1");
+  await detect(["BROWSER-D2"]);
+  await expect(scanner).toContainText("Detected: BROWSER-D2");
+  await scanner
+    .getByRole("button", { name: "Use detected value", exact: true })
+    .click();
+  await expect(serials).toHaveValue("BROWSER-D1\nBROWSER-D2");
+  await saveDraft();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(draftRow).toContainText("draft · v2");
+  const confirmKeys: string[] = [];
+  await page.route("**/api/commands/purchase.draft.confirm", async (route) => {
+    confirmKeys.push(route.request().headers()["idempotency-key"]!);
+    if (confirmKeys.length === 1) {
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await draftRow
+    .getByRole("button", { name: "Review and receive", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "BROWSER-D1, BROWSER-D2",
+  );
+  const receive = () =>
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Receive stock", exact: true })
+      .click();
+  await receive();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await receive();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(confirmKeys).toHaveLength(2);
+  expect(confirmKeys[0]).toBe(confirmKeys[1]);
+  const savedRow = draftRow.filter({ hasText: "received · v3" });
+  await expect(savedRow).toHaveCount(1);
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const draft = purchases.drafts.find(
+    (d: any) => d.delivery_ref === "BROWSER-SCAN-DELIVERY",
+  );
+  expect(
+    purchases.receipts.filter((r: any) => r.po_id === draft.po_id),
+  ).toHaveLength(1);
+  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const stock = dashboard.stock.filter((u: any) =>
+    ["BROWSER-D1", "BROWSER-D2"].includes(u.serial),
+  );
+  expect(stock).toHaveLength(2);
+  expect(stock.reduce((s: number, u: any) => s + u.quantity * u.cost, 0)).toBe(
+    12000,
+  );
+  expect(stock.every((u: any) => u.condition === "quarantine")).toBe(true);
+  await savedRow
+    .getByRole("button", { name: "View draft history", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("v1 · draft");
+  await expect(page.getByRole("dialog")).toContainText("v3 · received");
+  expect(errors).toEqual([]);
+});
+
+test("browser: camera fallback, Enter suffix and cancelled pending access preserve manual entry and release late streams", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await installScanHarness(page);
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Inventory");
+  const open = () =>
+    page.getByRole("button", { name: "Find serial", exact: true }).click();
+  await open();
+  const scanner = page.getByRole("region", {
+    name: "Scanner for Scan or enter serial",
+    exact: true,
+  });
+  await page.evaluate(() => {
+    (window as any).BarcodeDetector = undefined;
+  });
+  await scanner
+    .getByRole("button", { name: "Scan with camera", exact: true })
+    .click();
+  await expect(scanner).toContainText("unavailable in this browser");
+  expect(
+    await page.evaluate(() => (window as any).__scanHarness.requests),
+  ).toBe(0);
+  await page.getByLabel("Scan or enter serial", { exact: true }).fill("S1");
+  await page.getByLabel("Scan or enter serial", { exact: true }).press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Serial history", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).BarcodeDetector = (window as any).__scanHarness.detector;
+    (window as any).__scanHarness.mode = "deny";
+  });
+  await scanner
+    .getByRole("button", { name: "Scan with camera", exact: true })
+    .click();
+  await expect(scanner).toContainText("Camera access unavailable");
+  await expect(
+    page.getByLabel("Scan or enter serial", { exact: true }),
+  ).toHaveValue("S1");
+  await page.evaluate(() => {
+    (window as any).__scanHarness.mode = "pending";
+  });
+  await scanner
+    .getByRole("button", { name: "Scan with camera", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => Boolean((window as any).__scanHarness.resolve)),
+    )
+    .toBe(true);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.evaluate(() => (window as any).__scanHarness.resolve());
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__scanHarness.stops))
+    .toBe(1);
+  await open();
+  await page.evaluate(() => {
+    (window as any).__scanHarness.mode = "allow";
+  });
+  await scanner
+    .getByRole("button", { name: "Scan with camera", exact: true })
+    .click();
+  await expect(scanner.getByRole("status")).toContainText("Show one label");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__scanHarness.stops))
+    .toBe(2);
+  expect(errors).toEqual([]);
 });

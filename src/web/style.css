@@ -66,7 +66,8 @@ a:focus-visible {
   outline: 3px solid #67b6a4;
   outline-offset: 2px;
 }
-label {
+label,
+.form-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -399,4 +400,16 @@ a {
   .login {
     margin: 3vh auto;
   }
+}
+
+.scan-controls {
+  font-weight: 400;
+}
+.scan-controls video {
+  width: 100%;
+  max-height: 240px;
+  background: #111;
+}
+.scan-controls p {
+  overflow-wrap: anywhere;
 }

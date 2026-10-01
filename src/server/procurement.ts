@@ -14,6 +14,11 @@ import { Database, type Store } from "./database.ts";
 import { Catalog } from "./catalog.ts";
 import { Inventory } from "./inventory.ts";
 import { Platform } from "./platform.ts";
+import {
+  ReceiptDrafts,
+  type DraftInput,
+  type ReceiptInput,
+} from "./receipt-drafts.ts";
 type PurchaseOrder = {
   id: string;
   org_id: string;
@@ -66,6 +71,7 @@ type SupplierReturn = {
 };
 export class Procurement {
   private store: Store;
+  readonly drafts: ReceiptDrafts;
   constructor(
     database: Database,
     private platform: Platform,
@@ -80,6 +86,90 @@ export class Procurement {
     CREATE TABLE IF NOT EXISTS procurement_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,quantity INTEGER NOT NULL,unit_ids TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,po_id,delivery_ref,line_id)) STRICT;
     CREATE TABLE IF NOT EXISTS procurement_returns(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,receipt_id TEXT NOT NULL,po_id TEXT NOT NULL,supplier_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),serial TEXT,return_ref TEXT NOT NULL,reason TEXT NOT NULL,handover_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,return_ref)) STRICT;
   `);
+    this.drafts = new ReceiptDrafts(database, platform, {
+      authorize: (actor, poId) => {
+        this.receiptOrder(actor, poId);
+      },
+      context: (actor, input, ready) => this.draftContext(actor, input, ready),
+      receive: (actor, input) => this.receiveStock(actor, input),
+    });
+  }
+  private receiptOrder(actor: Actor, poId: string) {
+    permit(actor, ["warehouse"]);
+    const po = this.store.get<PurchaseOrder>(
+      "SELECT * FROM procurement_orders WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(poId, "purchase order ID"),
+    );
+    check(po, "NOT_FOUND", "Purchase order not found.", 404);
+    site(actor, po.warehouse_id);
+    return po;
+  }
+  private draftContext(actor: Actor, input: DraftInput, ready: boolean) {
+    const po = this.receiptOrder(actor, input.poId);
+    const line = this.store.get(
+      "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=? AND id=?",
+      actor.orgId,
+      po.id,
+      text(input.lineId, "purchase line ID"),
+    );
+    check(line, "NOT_FOUND", "Purchase line not found.", 404);
+    const product = this.catalog.product(actor, String(line.product_id));
+    check(
+      product.active && text(input.observedSku, "observed SKU") === product.sku,
+      "SKU",
+      "Observed SKU must match the selected purchase line.",
+    );
+    const quantity = integer(
+      input.quantity,
+      "draft quantity",
+      1,
+      product.serialized ? 500 : 100000,
+    );
+    check(
+      quantity <= Number(line.quantity) - Number(line.received),
+      "OVER_RECEIPT",
+      "Draft exceeds the purchase line's current remaining quantity.",
+    );
+    check(
+      typeof input.quarantine === "boolean",
+      "VALIDATION",
+      "quarantine must be a boolean.",
+      400,
+    );
+    text(input.bin, "bin");
+    const deliveryRef = text(input.deliveryRef, "delivery reference");
+    check(
+      !this.store.get(
+        "SELECT id FROM procurement_receipts WHERE org_id=? AND po_id=? AND line_id=? AND delivery_ref=?",
+        actor.orgId,
+        po.id,
+        input.lineId,
+        deliveryRef,
+      ),
+      "DELIVERY_RECEIVED",
+      "This purchase line and delivery reference was already received.",
+    );
+    check(
+      Array.isArray(input.serials) && input.serials.length <= 500,
+      "VALIDATION",
+      "Supply at most 500 serial scans.",
+      400,
+    );
+    const serials = input.serials.map((s) => text(s, "serial"));
+    check(
+      product.serialized
+        ? serials.length <= quantity &&
+            new Set(serials).size === serials.length &&
+            (!ready || serials.length === quantity)
+        : serials.length === 0,
+      "SERIAL",
+      ready
+        ? "Scan exactly one unique serial per serialized unit before receiving."
+        : "Serials must be unique and within the draft quantity; bulk lines have no serials.",
+    );
+    this.inventory.assertNewSerials(actor, serials);
+    return { warehouseId: po.warehouse_id };
   }
   suppliers(actor: Actor) {
     permit(actor, ["warehouse", "commercial", "finance"]);
@@ -195,109 +285,92 @@ export class Procurement {
         ),
       }));
   }
-  receive(
-    actor: Actor,
-    key: string,
-    input: {
-      poId: string;
-      lineId: string;
-      deliveryRef: string;
-      quantity: number;
-      serials: string[];
-      bin: string;
-      quarantine: boolean;
-    },
-  ) {
+  receive(actor: Actor, key: string, input: ReceiptInput) {
     return this.platform.command(
       actor,
       "purchase.receive",
       key,
       input,
       () => {
-        permit(actor, ["warehouse"]);
-        const po = this.store.get(
-          "SELECT * FROM procurement_orders WHERE org_id=? AND id=?",
-          actor.orgId,
-          input.poId,
-        );
-        check(po, "NOT_FOUND", "Purchase order not found.", 404);
-        site(actor, String(po.warehouse_id));
+        this.receiptOrder(actor, input.poId);
       },
-      () => {
-        const po = this.store.get(
-          "SELECT * FROM procurement_orders WHERE org_id=? AND id=?",
-          actor.orgId,
-          input.poId,
-        )!;
-        const line = this.store.get(
-          "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=? AND id=?",
-          actor.orgId,
-          input.poId,
-          input.lineId,
-        );
-        check(line, "NOT_FOUND", "Purchase line not found.", 404);
-        const qty = integer(input.quantity, "quantity", 1, 100000),
-          delivery = text(input.deliveryRef, "delivery reference");
-        check(
-          !this.store.get(
-            "SELECT id FROM procurement_receipts WHERE org_id=? AND po_id=? AND delivery_ref=? AND line_id=?",
-            actor.orgId,
-            input.poId,
-            delivery,
-            input.lineId,
-          ),
-          "DUPLICATE_DELIVERY",
-          "This delivery line was already received.",
-        );
-        check(
-          po.state === "open" &&
-            Number(line.received) + qty <= Number(line.quantity),
-          "QUANTITY",
-          "Receipt exceeds the remaining purchase quantity.",
-        );
-        const receiptId = id(),
-          units = this.inventory.receive(
-            actor,
-            {
-              productId: String(line.product_id),
-              warehouseId: String(po.warehouse_id),
-              bin: input.bin,
-              quantity: qty,
-              unitCost: Number(line.unit_cost),
-              serials: input.serials,
-              quarantine: input.quarantine,
-            },
-            receiptId,
-          );
-        this.store.run(
-          "INSERT INTO procurement_receipts VALUES(?,?,?,?,?,?,?,?)",
-          receiptId,
-          actor.orgId,
-          input.poId,
-          input.lineId,
-          delivery,
-          qty,
-          JSON.stringify(units),
-          now(),
-        );
-        this.store.run(
-          "UPDATE procurement_lines SET received=received+? WHERE id=?",
-          qty,
-          input.lineId,
-        );
-        if (
-          !this.store.get(
-            "SELECT id FROM procurement_lines WHERE po_id=? AND received<quantity",
-            input.poId,
-          )
-        )
-          this.store.run(
-            "UPDATE procurement_orders SET state='received' WHERE id=?",
-            input.poId,
-          );
-        return { id: receiptId, unitIds: units };
-      },
+      () => this.receiveStock(actor, input),
     );
+  }
+  private receiveStock(actor: Actor, input: ReceiptInput) {
+    this.receiptOrder(actor, input.poId);
+    const po = this.store.get(
+      "SELECT * FROM procurement_orders WHERE org_id=? AND id=?",
+      actor.orgId,
+      input.poId,
+    )!;
+    const line = this.store.get(
+      "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=? AND id=?",
+      actor.orgId,
+      input.poId,
+      input.lineId,
+    );
+    check(line, "NOT_FOUND", "Purchase line not found.", 404);
+    const qty = integer(input.quantity, "quantity", 1, 100000),
+      delivery = text(input.deliveryRef, "delivery reference");
+    check(
+      !this.store.get(
+        "SELECT id FROM procurement_receipts WHERE org_id=? AND po_id=? AND delivery_ref=? AND line_id=?",
+        actor.orgId,
+        input.poId,
+        delivery,
+        input.lineId,
+      ),
+      "DUPLICATE_DELIVERY",
+      "This delivery line was already received.",
+    );
+    check(
+      po.state === "open" &&
+        Number(line.received) + qty <= Number(line.quantity),
+      "QUANTITY",
+      "Receipt exceeds the remaining purchase quantity.",
+    );
+    const receiptId = id(),
+      units = this.inventory.receive(
+        actor,
+        {
+          productId: String(line.product_id),
+          warehouseId: String(po.warehouse_id),
+          bin: input.bin,
+          quantity: qty,
+          unitCost: Number(line.unit_cost),
+          serials: input.serials,
+          quarantine: input.quarantine,
+        },
+        receiptId,
+      );
+    this.store.run(
+      "INSERT INTO procurement_receipts VALUES(?,?,?,?,?,?,?,?)",
+      receiptId,
+      actor.orgId,
+      input.poId,
+      input.lineId,
+      delivery,
+      qty,
+      JSON.stringify(units),
+      now(),
+    );
+    this.store.run(
+      "UPDATE procurement_lines SET received=received+? WHERE id=?",
+      qty,
+      input.lineId,
+    );
+    if (
+      !this.store.get(
+        "SELECT id FROM procurement_lines WHERE po_id=? AND received<quantity",
+        input.poId,
+      )
+    )
+      this.store.run(
+        "UPDATE procurement_orders SET state='received' WHERE id=?",
+        input.poId,
+      );
+    return { id: receiptId, unitIds: units };
   }
   receipts(actor: Actor) {
     permit(actor, ["warehouse", "commercial", "finance"]);

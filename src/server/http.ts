@@ -269,6 +269,29 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.procurement.create(a, k, p),
     },
+    "purchase.draft.save": {
+      schema: obj({
+        draftId: { anyOf: [str, { type: "null" }] },
+        revision: num,
+        poId: str,
+        lineId: str,
+        deliveryRef: str,
+        observedSku: str,
+        quantity: num,
+        serials: { type: "array", maxItems: 500, items: str },
+        bin: str,
+        quarantine: bool,
+      }),
+      run: (a, k, p) => app.procurement.drafts.save(a, k, p),
+    },
+    "purchase.draft.confirm": {
+      schema: obj({ draftId: str, revision: num }),
+      run: (a, k, p) => app.procurement.drafts.confirm(a, k, p),
+    },
+    "purchase.draft.discard": {
+      schema: obj({ draftId: str, revision: num, reason: str }),
+      run: (a, k, p) => app.procurement.drafts.discard(a, k, p),
+    },
     "purchase.receive": {
       schema: obj({
         poId: str,
@@ -562,6 +585,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
   };
   http.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
+    reply.header("Permissions-Policy", "camera=(self), microphone=()");
     if (!request.url.startsWith("/api/") || request.url === "/api/health")
       return;
     if (["POST", "PUT", "DELETE", "PATCH"].includes(request.method))
@@ -676,7 +700,14 @@ export async function createHttp(app: Application, options: HttpOptions) {
     orders: app.procurement.orders(actor(request)),
     receipts: app.procurement.receipts(actor(request)),
     returns: app.procurement.returns(actor(request)),
+    drafts: app.procurement.drafts.list(actor(request)),
   }));
+  http.get<{ Params: { draftId: string } }>(
+    "/api/purchases/drafts/:draftId/history",
+    { schema: { params: obj({ draftId: str }) } },
+    async (request) =>
+      app.procurement.drafts.history(actor(request), request.params.draftId),
+  );
   http.get("/api/transfers", async (request) =>
     app.inventory.transfers(actor(request)),
   );
