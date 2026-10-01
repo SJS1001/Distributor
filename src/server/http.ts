@@ -643,6 +643,17 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.orders.cancel(a, k, p),
     },
+    "order.amend": {
+      schema: obj({
+        orderId: str,
+        lineId: str,
+        revision: num,
+        quantity: num,
+        allowBackorder: bool,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.amend(a, k, p),
+    },
     "fulfillment.pick": {
       schema: obj(
         {
@@ -1201,6 +1212,23 @@ export async function createHttp(app: Application, options: HttpOptions) {
     "/api/orders/:orderId/picks",
     async (request) =>
       app.fulfillment.picks(actor(request), request.params.orderId),
+  );
+  http.get<{ Params: { orderId: string }; Querystring: { after?: string } }>(
+    "/api/orders/:orderId/amendments",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,15}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.orders.amendments(
+        actor(request),
+        request.params.orderId,
+        request.query.after,
+      ),
   );
   http.get<{ Params: { orderId: string }; Querystring: { after?: string } }>(
     "/api/orders/:orderId/short-picks",

@@ -8910,3 +8910,315 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
   ).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("browser: phone order amendments retain accepted money, retry lost responses and page scoped history", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const login = async (email: string) => {
+    await page.goto("/");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  const cmd = async (name: string, data: unknown) => {
+    const session = await (await page.request.get("/api/session")).json();
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        origin: "http://127.0.0.1:3117",
+        "x-csrf-token": session.csrf,
+        "idempotency-key": crypto.randomUUID(),
+      },
+      data,
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  };
+  const dashboard = async () =>
+    await (await page.request.get("/api/dashboard")).json();
+  await login("admin@example.test");
+  const account = await cmd("account.create", {
+    name: "Synthetic amendment phone customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "AMEND-PHONE",
+    name: "Synthetic amendment equipment",
+    serialized: false,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const warehouseId = (await dashboard()).warehouses[0].id;
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const accepted = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: true,
+  });
+  const original = (await dashboard()).orders.find(
+    (o: any) => o.id === accepted.id,
+  );
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await nav(page, "Orders");
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "Synthetic amendment phone customer" })
+    .filter({
+      has: page.getByRole("button", {
+        name: "View amendment history",
+        exact: true,
+      }),
+    });
+  const history = page.getByRole("region", {
+    name: "Order amendment history",
+    exact: true,
+  });
+  const opener = row.getByRole("button", {
+    name: "View amendment history",
+    exact: true,
+  });
+  await opener.click();
+  await expect(history).toContainText("No order amendments recorded.");
+  await expect(history.getByRole("heading")).toBeFocused();
+  await history
+    .getByRole("button", { name: "Close amendment history", exact: true })
+    .click();
+  await expect(opener).toBeFocused();
+  const keys: string[] = [];
+  await page.route("**/api/commands/order.amend", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (keys.length === 1) {
+      expect((await route.fetch()).status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await row
+    .getByRole("button", {
+      name: "Amend quantity: AMEND-PHONE",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(
+    "Accepted unit price CA$100.00 and unit tax CA$13.00 are retained.",
+  );
+  await expect(dialog).toContainText("Picked stock must be unpicked");
+  await page.getByLabel("New total ordered units", { exact: true }).fill("2");
+  await page
+    .getByLabel("Allow backorder for additional units", { exact: true })
+    .check();
+  await page
+    .getByLabel("Buyer-visible reason for amendment", { exact: true })
+    .fill("Synthetic buyer asked for a second unit");
+  await dialog
+    .getByRole("button", { name: "Save amendment", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(
+    page.getByLabel("New total ordered units", { exact: true }),
+  ).toHaveValue("2");
+  await dialog
+    .getByRole("button", { name: "Save amendment", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await page.unroute("**/api/commands/order.amend");
+  await expect(row).toContainText("2 ordered / 0 reserved");
+  const amended = (await dashboard()).orders.find(
+    (o: any) => o.id === accepted.id,
+  );
+  expect(amended.warehouse_id).toBe(original.warehouse_id);
+  expect(amended.lines[0].product_id).toBe(original.lines[0].product_id);
+  expect(amended.lines[0].unit_price).toBe(10000);
+  expect(amended.lines[0].unit_tax).toBe(1300);
+  let records = await (
+    await page.request.get(`/api/orders/${accepted.id}/amendments`)
+  ).json();
+  expect(records.items).toHaveLength(1);
+  expect(records.items[0]).toMatchObject({
+    before_quantity: 1,
+    after_quantity: 2,
+    before_total: 11300,
+    after_total: 22600,
+    allocated_delta: 0,
+  });
+  let revision = amended.revision;
+  for (let i = 0; i < 21; i++) {
+    await cmd("order.amend", {
+      orderId: accepted.id,
+      lineId: original.lines[0].id,
+      revision,
+      quantity: i % 2 === 0 ? 3 : 2,
+      allowBackorder: true,
+      reason: `Synthetic amendment history ${i + 1}`,
+    });
+    revision++;
+  }
+  await cmd("user.create", {
+    name: "Synthetic amendment buyer",
+    email: "amendment-phone@example.test",
+    password: "long-test-only-password",
+    role: "buyer",
+    accountId: account.id,
+    sites: [],
+    requirePasswordChange: false,
+    currentPassword: "long-test-only-password",
+  });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  await login("amendment-phone@example.test");
+  await nav(page, "Orders");
+  await expect(
+    page.getByRole("button", { name: "View amendment history", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    row.getByRole("button", {
+      name: "Amend quantity: AMEND-PHONE",
+      exact: true,
+    }),
+  ).toBeVisible();
+  let failOlder = true;
+  await page.route(
+    `**/api/orders/${accepted.id}/amendments?after=*`,
+    async (route) => {
+      if (failOlder) {
+        failOlder = false;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "Synthetic history unavailable" }),
+        });
+      } else await route.continue();
+    },
+  );
+  const firstHistoryPath = `**/api/orders/${accepted.id}/amendments`;
+  await page.route(firstHistoryPath, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Synthetic first history unavailable" }),
+    }),
+  );
+  await opener.click();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic first history unavailable",
+  );
+  await expect(history.getByRole("listitem")).toHaveCount(0);
+  await page.unroute(firstHistoryPath);
+  await history
+    .getByRole("button", { name: "Retry amendment history", exact: true })
+    .click();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await history
+    .getByRole("button", { name: "Load older amendments", exact: true })
+    .click();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic history unavailable",
+  );
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await history
+    .getByRole("button", { name: "Retry amendment history", exact: true })
+    .click();
+  await expect(history.getByRole("listitem")).toHaveCount(22);
+  await expect(history).toContainText(
+    "Synthetic buyer asked for a second unit",
+  );
+  await expect(
+    history.getByRole("button", { name: "Load older amendments", exact: true }),
+  ).toHaveCount(0);
+  await page.unroute(`**/api/orders/${accepted.id}/amendments?after=*`);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(history).toHaveCount(0);
+  await opener.click();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await nav(page, "Overview");
+  await expect(history).toHaveCount(0);
+  await nav(page, "Orders");
+  await expect(history).toHaveCount(0);
+  // Hold a real history request until navigation aborts it; no stale history may reappear.
+  let finish!: () => void;
+  let handled!: () => void;
+  const held = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const done = new Promise<void>((resolve) => {
+    handled = resolve;
+  });
+  const path = `**/api/orders/${accepted.id}/amendments`;
+  await page.route(path, async () => {
+    await held;
+    handled();
+  });
+  const started = page.waitForRequest((r) =>
+    r.url().endsWith(`/api/orders/${accepted.id}/amendments`),
+  );
+  const aborted = page.waitForEvent("requestfailed", {
+    predicate: (r) => r.url().endsWith(`/api/orders/${accepted.id}/amendments`),
+  });
+  await opener.click();
+  await started;
+  await expect(history).toContainText("Loading amendment history…");
+  await nav(page, "Overview");
+  await aborted;
+  finish();
+  await done;
+  await page.unroute(path);
+  await nav(page, "Orders");
+  await expect(history).toHaveCount(0);
+  await opener.click();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await history
+    .getByRole("button", { name: "Close amendment history", exact: true })
+    .click();
+  await row
+    .getByRole("button", { name: "Amend quantity: AMEND-PHONE", exact: true })
+    .click();
+  await page.getByLabel("New total ordered units", { exact: true }).fill("1");
+  await expect(
+    page.getByLabel("Allow backorder for additional units", { exact: true }),
+  ).not.toBeChecked();
+  await page
+    .getByLabel("Buyer-visible reason for amendment", { exact: true })
+    .fill("Synthetic buyer reduced the backorder");
+  await dialog
+    .getByRole("button", { name: "Save amendment", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText("1 ordered / 0 reserved");
+  records = await (
+    await page.request.get(`/api/orders/${accepted.id}/amendments`)
+  ).json();
+  expect(records.items[0]).toMatchObject({
+    before_quantity: 3,
+    after_quantity: 1,
+    before_total: 33900,
+    after_total: 11300,
+    unit_price: 10000,
+    unit_tax: 1300,
+    allocated_delta: 0,
+  });
+  await opener.click();
+  await expect(history).toContainText("Synthetic buyer reduced the backorder");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(history).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

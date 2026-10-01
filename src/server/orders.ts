@@ -64,6 +64,8 @@ export class Orders {
     CREATE TABLE IF NOT EXISTS orders_quotes(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,cart_revision INTEGER NOT NULL,lines TEXT NOT NULL,currency TEXT NOT NULL,total INTEGER NOT NULL,expires_at INTEGER NOT NULL,order_id TEXT,policy_version TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS orders_orders(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',revision INTEGER NOT NULL DEFAULT 1,currency TEXT NOT NULL,total INTEGER NOT NULL CHECK(total>=0),created_at TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS orders_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,description TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),shipped INTEGER NOT NULL DEFAULT 0,canceled INTEGER NOT NULL DEFAULT 0,allocated INTEGER NOT NULL DEFAULT 0,unit_price INTEGER NOT NULL CHECK(unit_price>=0),unit_tax INTEGER NOT NULL CHECK(unit_tax>=0),CHECK(shipped>=0 AND canceled>=0 AND allocated>=0 AND shipped+canceled+allocated<=quantity),UNIQUE(order_id,product_id)) STRICT;
+    CREATE TABLE IF NOT EXISTS orders_amendments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,line_id TEXT NOT NULL,revision INTEGER NOT NULL,before_quantity INTEGER NOT NULL,after_quantity INTEGER NOT NULL,unit_price INTEGER NOT NULL,unit_tax INTEGER NOT NULL,before_total INTEGER NOT NULL,after_total INTEGER NOT NULL,allocated_delta INTEGER NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT;
+    CREATE INDEX IF NOT EXISTS orders_amendment_history ON orders_amendments(org_id,order_id,revision);
   `);
   }
   order(actor: Actor, orderId: string): Order {
@@ -413,6 +415,202 @@ export class Orders {
           order.id,
         );
         return { id: order.id, revision: order.revision + 1 };
+      },
+    );
+  }
+  private amendmentActor(actor: Actor, write = false) {
+    const current = this.identity.currentActor(actor);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing orders.",
+      403,
+    );
+    permit(
+      current,
+      write
+        ? ["commercial", "buyer"]
+        : ["commercial", "buyer", "warehouse", "finance", "support"],
+    );
+    return current;
+  }
+  amendments(actor: Actor, orderId: string, after?: string) {
+    actor = this.amendmentActor(actor);
+    this.order(actor, orderId);
+    check(
+      after === undefined || /^[1-9][0-9]{0,15}$/.test(after),
+      "VALIDATION",
+      "Invalid amendment cursor.",
+      400,
+    );
+    const cursor =
+      after === undefined ? Number.MAX_SAFE_INTEGER : Number(after);
+    integer(cursor, "amendment cursor", 1, Number.MAX_SAFE_INTEGER);
+    const rows = this.store.all(
+      "SELECT * FROM orders_amendments WHERE org_id=? AND order_id=? AND revision<? ORDER BY revision DESC LIMIT 21",
+      actor.orgId,
+      orderId,
+      cursor,
+    );
+    const items = rows.slice(0, 20);
+    return {
+      items,
+      next: rows.length > 20 ? String(items.at(-1)!.revision) : null,
+    };
+  }
+  amend(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      lineId: string;
+      revision: number;
+      quantity: number;
+      allowBackorder: boolean;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.amend",
+      key,
+      input,
+      () => {
+        actor = this.amendmentActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.order(actor, input.orderId),
+          line = this.lines(actor, order.id).find((l) => l.id === input.lineId),
+          quantity = integer(input.quantity, "amended quantity", 1, 100000),
+          reason = text(input.reason, "amendment reason", 1000);
+        integer(input.revision, "order revision", 1, Number.MAX_SAFE_INTEGER);
+        check(
+          typeof input.allowBackorder === "boolean",
+          "VALIDATION",
+          "Backorder choice is required.",
+          400,
+        );
+        check(line, "NOT_FOUND", "Order line not found.", 404);
+        check(
+          order.state === "open" && order.revision === input.revision,
+          "REVISION",
+          "Order changed or is closed; refresh before amending.",
+        );
+        check(
+          quantity !== line.quantity,
+          "QUANTITY",
+          "Amended quantity must change.",
+        );
+        check(
+          quantity >= line.shipped + line.canceled,
+          "QUANTITY",
+          "Shipped or canceled units cannot be removed by amendment.",
+        );
+        const delta = quantity - line.quantity,
+          amount = delta * (line.unit_price + line.unit_tax),
+          total = integer(order.total + amount, "amended order total", 0, 1e12);
+        let allocatedDelta = 0;
+        if (delta > 0) {
+          check(
+            this.catalog.product(actor, line.product_id).active,
+            "PRODUCT",
+            "Product is inactive.",
+          );
+          // Even a zero-price increase must respect a current customer hold.
+          check(
+            !this.identity.customer(actor, order.account_id).held,
+            "CREDIT_HOLD",
+            "Account is on hold.",
+          );
+          if (amount > 0)
+            this.billing.increaseExposure(
+              actor,
+              order.account_id,
+              order.id,
+              amount,
+            );
+          allocatedDelta = this.inventory.reserve(
+            actor,
+            order.id,
+            line.product_id,
+            order.warehouse_id,
+            delta,
+          );
+          check(
+            input.allowBackorder || allocatedDelta === delta,
+            "STOCK",
+            "Insufficient additional stock; approve backorder or change quantity.",
+          );
+        } else {
+          const backorder =
+              line.quantity - line.shipped - line.canceled - line.allocated,
+            release = Math.max(0, -delta - backorder);
+          check(
+            this.inventory.release(
+              actor,
+              order.id,
+              line.product_id,
+              release,
+            ) === release,
+            "ALLOCATION",
+            "Reservation release failed.",
+          );
+          allocatedDelta = release === 0 ? 0 : -release;
+          this.billing.releaseExposure(actor, order.id, -amount);
+        }
+        this.store.run(
+          "UPDATE orders_lines SET quantity=?,allocated=allocated+? WHERE org_id=? AND id=?",
+          quantity,
+          allocatedDelta,
+          actor.orgId,
+          line.id,
+        );
+        this.store.run(
+          "UPDATE orders_orders SET total=? WHERE org_id=? AND id=?",
+          total,
+          actor.orgId,
+          order.id,
+        );
+        this.refresh(actor, order.id);
+        const amendmentId = id(),
+          revision = order.revision + 1;
+        this.store.run(
+          "INSERT INTO orders_amendments VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          amendmentId,
+          actor.orgId,
+          order.id,
+          line.id,
+          revision,
+          line.quantity,
+          quantity,
+          line.unit_price,
+          line.unit_tax,
+          order.total,
+          total,
+          allocatedDelta,
+          reason,
+          actor.id,
+          now(),
+        );
+        this.platform.event(actor, "orders.amended", order.id, {
+          amendmentId,
+          lineId: line.id,
+          revision,
+          beforeQuantity: line.quantity,
+          quantity,
+          total,
+          currency: order.currency,
+          allocatedDelta,
+        });
+        return {
+          id: order.id,
+          amendmentId,
+          revision,
+          quantity,
+          total,
+          allocatedDelta,
+        };
       },
     );
   }

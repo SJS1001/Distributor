@@ -1580,17 +1580,27 @@ export class Inventory {
   }
   release(actor: Actor, orderId: string, productId: string, quantity: number) {
     if (quantity === 0) return 0;
-    let remaining = quantity;
-    for (const a of this.allocations(actor, orderId).filter(
+    const allocations = this.allocations(actor, orderId).filter(
       (a) => a.product_id === productId,
-    )) {
+    );
+    const available = allocations.reduce(
+      (sum, a) =>
+        sum +
+        (a.stage === "reserved" ? a.quantity - a.consumed - a.released : 0),
+      0,
+    );
+    check(
+      available >= quantity ||
+        !allocations.some(
+          (a) => a.stage === "picked" && a.quantity > a.consumed + a.released,
+        ),
+      "PICKED",
+      "Unpick stock before removing picked units.",
+    );
+    let remaining = quantity;
+    for (const a of allocations.filter((a) => a.stage === "reserved")) {
       const open = a.quantity - a.consumed - a.released;
       if (!open) continue;
-      check(
-        a.stage === "reserved",
-        "PICKED",
-        "Unpick stock before cancelling.",
-      );
       const qty = Math.min(open, remaining);
       this.store.run(
         "UPDATE inventory_allocations SET released=released+? WHERE id=?",

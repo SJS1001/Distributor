@@ -270,6 +270,38 @@ export class Billing {
       orderId,
     );
   }
+  increaseExposure(
+    actor: Actor,
+    accountId: string,
+    orderId: string,
+    amount: number,
+  ) {
+    integer(amount, "additional order exposure", 1, 1e12);
+    const customer = this.identity.customer(actor, accountId),
+      hold = this.store.get(
+        "SELECT account_id,amount FROM billing_holds WHERE org_id=? AND order_id=?",
+        actor.orgId,
+        orderId,
+      );
+    check(
+      hold && hold.account_id === accountId,
+      "EXPOSURE",
+      "Order exposure is unavailable.",
+    );
+    check(!customer.held, "CREDIT_HOLD", "Account is on hold.");
+    check(
+      this.exposure(actor, accountId).total + amount <= customer.credit_limit,
+      "CREDIT_LIMIT",
+      "Amendment exceeds the account credit limit.",
+    );
+    integer(Number(hold.amount) + amount, "order exposure", 0, 1e12);
+    this.store.run(
+      "UPDATE billing_holds SET amount=amount+? WHERE org_id=? AND order_id=?",
+      amount,
+      actor.orgId,
+      orderId,
+    );
+  }
   issue(
     actor: Actor,
     accountId: string,

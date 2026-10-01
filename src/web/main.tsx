@@ -17,6 +17,7 @@ import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
 import { DisclosureReview } from "./provider-disclosures.tsx";
 import { ProviderHistory } from "./provider-history.tsx";
+import { OrderAmendments } from "./order-amendments.tsx";
 import { SupplierReturnHistory } from "./supplier-return-history.tsx";
 import { AuditHistory } from "./audit-history.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
@@ -68,6 +69,8 @@ function App() {
     null,
   );
   const supplierHistoryOpener = useRef<HTMLElement | null>(null);
+  const [amendmentOrderId, setAmendmentOrderId] = useState<string | null>(null);
+  const amendmentOpener = useRef<HTMLElement | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
@@ -79,6 +82,8 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setAmendmentOrderId(null);
+    amendmentOpener.current = null;
     const epoch = ++shipmentEpoch.current;
     shipmentRequest.current = null;
     setShipmentsLoading(false);
@@ -210,6 +215,8 @@ function App() {
     setEvidenceClaim(null);
     setProviderHistoryAccount(null);
     setSupplierHistoryId(null);
+    setAmendmentOrderId(null);
+    amendmentOpener.current = null;
     supplierHistoryOpener.current = null;
     providerHistoryOpener.current = null;
     evidenceOpener.current = null;
@@ -804,6 +811,8 @@ function App() {
                 setPage(p);
                 setProviderHistoryAccount(null);
                 setSupplierHistoryId(null);
+                setAmendmentOrderId(null);
+                amendmentOpener.current = null;
                 setError("");
               }}
             >
@@ -969,10 +978,79 @@ function App() {
                     {productName(l.product_id)} · {l.quantity} ordered /{" "}
                     {l.allocated} reserved / {l.shipped} shipped / {l.canceled}{" "}
                     canceled
+                    {o.state === "open" &&
+                      can("commercial", "buyer") &&
+                      button(
+                        `Amend quantity: ${productName(l.product_id)}`,
+                        () =>
+                          open(
+                            "Amend ordered quantity",
+                            [
+                              {
+                                name: "quantity",
+                                label: "New total ordered units",
+                                type: "number",
+                                value: l.quantity,
+                                min: Math.max(1, l.shipped + l.canceled),
+                                help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
+                              },
+                              {
+                                name: "allowBackorder",
+                                label: "Allow backorder for additional units",
+                                type: "checkbox",
+                              },
+                              {
+                                name: "reason",
+                                label: "Buyer-visible reason for amendment",
+                                type: "textarea",
+                              },
+                            ],
+                            (v) =>
+                              command("order.amend", {
+                                orderId: o.id,
+                                lineId: l.id,
+                                revision: o.revision,
+                                quantity: v.quantity,
+                                allowBackorder: v.allowBackorder,
+                                reason: v.reason,
+                              }),
+                            <>
+                              <p>
+                                {productName(l.product_id)}: the quantity is the
+                                new total ordered, including shipped and
+                                canceled units.
+                              </p>
+                              <p>
+                                Accepted unit price{" "}
+                                {money(l.unit_price, currency)} and unit tax{" "}
+                                {money(l.unit_tax, currency)} are retained.
+                                Product and warehouse stay the same.
+                              </p>
+                              <p>
+                                Decreases remove backorder first. Picked stock
+                                must be unpicked before it can be removed. The
+                                reason is visible to the buyer.
+                              </p>
+                            </>,
+                            "Save amendment",
+                          ),
+                      )}
                   </div>
                 )),
                 <span className="badge">{o.state}</span>,
                 <div className="actions">
+                  {can(
+                    "commercial",
+                    "buyer",
+                    "warehouse",
+                    "finance",
+                    "support",
+                  ) &&
+                    button("View amendment history", () => {
+                      amendmentOpener.current =
+                        document.activeElement as HTMLElement | null;
+                      setAmendmentOrderId(o.id);
+                    })}
                   {o.state === "open" &&
                     can("commercial") &&
                     button("Allocate", () => {
@@ -1174,6 +1252,23 @@ function App() {
                 </div>,
               ],
             )}
+            {amendmentOrderId &&
+              data.orders.some((o: Item) => o.id === amendmentOrderId) && (
+                <OrderAmendments
+                  key={`${amendmentOrderId}:${eventViewEpoch}`}
+                  orderId={amendmentOrderId}
+                  lines={
+                    data.orders.find((o: Item) => o.id === amendmentOrderId)!
+                      .lines
+                  }
+                  currency={currency}
+                  onClose={() => {
+                    setAmendmentOrderId(null);
+                    amendmentOpener.current?.focus();
+                    amendmentOpener.current = null;
+                  }}
+                />
+              )}
             <section aria-label="Shipment history">
               <h2 ref={shipmentHeading} tabIndex={-1}>
                 Shipments
