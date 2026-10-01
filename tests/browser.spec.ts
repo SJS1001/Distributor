@@ -11452,3 +11452,382 @@ test("browser: required MFA authenticator replacement verifies both factors, can
   await expect(panel).toContainText("9 unused recovery codes");
   expect(errors).toEqual([]);
 });
+
+test("browser: recorded payment pages preserve USD without dashboard invoices, retry and cancel reads", async ({
+  page,
+}) => {
+  const origin = "http://127.0.0.1:3118",
+    errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const login = async (email: string) => {
+    await page.goto(origin);
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await login("admin@example.test");
+  const initialResponse = await page.request.get(
+    origin + "/api/billing/payments/page",
+  );
+  expect(initialResponse.status()).toBe(200);
+  const initial = await initialResponse.json();
+  expect(initial.items).toHaveLength(20);
+  expect(initial.items.every((p: any) => p.currency === "USD")).toBe(true);
+  const before = await (
+    await page.request.get(origin + "/api/dashboard")
+  ).json();
+  const paymentsBefore = await (
+    await page.request.get(origin + "/api/billing/payments")
+  ).json();
+  // Remove every dashboard invoice to exercise the summary's original invoice facts.
+  await page.route("**/api/dashboard", async (route) => {
+    const response = await route.fetch(),
+      dashboard = await response.json();
+    await route.fulfill({ response, json: { ...dashboard, invoices: [] } });
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await nav(page, "Billing");
+  const payments = page.getByRole("region", {
+    name: "Recorded cash payments",
+    exact: true,
+  });
+  await expect(payments.getByRole("status")).toHaveText("20 payments loaded");
+  const firstRow = payments.getByRole("row").filter({
+    has: page.getByRole("cell", {
+      name: `manual · ${initial.items[0].external_ref}`,
+      exact: true,
+    }),
+  });
+  await expect(firstRow).toContainText(initial.items[0].invoiceNumber);
+  await expect(
+    firstRow.getByRole("cell", { name: "$0.01", exact: true }),
+  ).toBeVisible();
+  await firstRow
+    .getByRole("button", { name: "Queue QuickBooks payment", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Queue QuickBooks payment",
+    exact: true,
+  });
+  await expect(dialog).toContainText(`Record $0.01 already received`);
+  await expect(dialog).toContainText(initial.items[0].invoiceNumber);
+  await expect(dialog).not.toContainText("CA$");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  let fail = true;
+  await page.route("**/api/billing/payments/page?after=*", async (route) => {
+    if (fail) {
+      fail = false;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          message: "Synthetic older payment read failed",
+        }),
+      });
+    } else await route.continue();
+  });
+  await payments
+    .getByRole("button", { name: "Load older payments", exact: true })
+    .click();
+  await expect(payments.getByRole("alert")).toContainText(
+    "Synthetic older payment read failed",
+  );
+  await expect(payments.getByRole("status")).toHaveText("20 payments loaded");
+  await payments
+    .getByRole("button", { name: "Retry older payments", exact: true })
+    .click();
+  await expect(payments.getByRole("status")).toHaveText("40 payments loaded");
+  await payments
+    .getByRole("button", { name: "Load older payments", exact: true })
+    .click();
+  await expect(payments.getByRole("status")).toHaveText("43 payments loaded");
+  await expect(payments.getByRole("heading")).toBeFocused();
+  await expect(
+    payments.getByRole("button", { name: "Load older payments", exact: true }),
+  ).toHaveCount(0);
+  const displayed = await payments
+    .locator("tbody tr td:nth-child(3)")
+    .allTextContents();
+  expect(new Set(displayed).size).toBe(43);
+  expect(displayed.every((text) => text.includes("SYNTHETIC-USD-PAGE-"))).toBe(
+    true,
+  );
+  await page.unroute("**/api/billing/payments/page?after=*");
+  for (const action of ["navigate", "refresh", "signout"] as const) {
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(payments.getByRole("status")).toHaveText("20 payments loaded");
+    let entered!: () => void, release!: () => void;
+    const reading = new Promise<void>((resolve) => (entered = resolve)),
+      paused = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/api/billing/payments/page?after=*", async (route) => {
+      const response = await route.fetch();
+      entered();
+      await paused;
+      try {
+        await route.fulfill({ response });
+      } catch {
+        /* Expected cancellation after unmount. */
+      }
+    });
+    const aborted = page.waitForEvent("requestfailed", {
+      predicate: (request) =>
+        request.url().includes("/api/billing/payments/page?after="),
+    });
+    await payments
+      .getByRole("button", { name: "Load older payments", exact: true })
+      .click();
+    await reading;
+    await expect(payments.getByRole("status")).toHaveText(
+      "20 payments loaded · Loading…",
+    );
+    if (action === "navigate") await nav(page, "Overview");
+    if (action === "refresh")
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    if (action === "signout")
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await aborted;
+    release();
+    await page.unroute("**/api/billing/payments/page?after=*");
+    if (action === "navigate") await nav(page, "Billing");
+    if (action !== "signout")
+      await expect(payments.getByRole("status")).toHaveText(
+        "20 payments loaded",
+      );
+  }
+  await expect(payments).toHaveCount(0);
+  await page.unroute("**/api/dashboard");
+  await login("admin@example.test");
+  const after = await (
+    await page.request.get(origin + "/api/dashboard")
+  ).json();
+  for (const key of ["invoices", "stock", "orders", "accounts"])
+    expect(after[key]).toEqual(before[key]);
+  expect(
+    await (await page.request.get(origin + "/api/billing/payments")).json(),
+  ).toEqual(paymentsBefore);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await login("payment-pages-buyer@example.test");
+  expect(
+    (await page.request.get(origin + "/api/billing/payments/page")).status(),
+  ).toBe(403);
+  await nav(page, "Billing");
+  await expect(payments).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("browser: invoice refund payment selection pages, retries and cancels before reserving original cash", async ({
+  page,
+}) => {
+  const origin = "http://127.0.0.1:3118",
+    errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin);
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, data: any) => {
+    const csrf = (
+      await (await page.request.get(origin + "/api/session")).json()
+    ).csrf;
+    const response = await page.request.post(origin + `/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin,
+      },
+      data,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const initial = await (
+    await page.request.get(origin + "/api/billing/payments/page")
+  ).json();
+  const invoiceId = initial.items[0].invoice_id;
+  const dashboard = await (
+    await page.request.get(origin + "/api/dashboard")
+  ).json();
+  const invoice = dashboard.invoices.find((i: any) => i.id === invoiceId);
+  await cmd("billing.credit", {
+    invoiceId,
+    reference: "SYNTHETIC-PAGED-REFUND-CREDIT",
+    reason: "Synthetic selection qualification",
+    lines: [{ lineId: invoice.lines[0].id, quantity: 1 }],
+  });
+  const before = await (
+    await page.request.get(origin + "/api/dashboard")
+  ).json();
+  const beforePayments = await (
+    await page.request.get(origin + "/api/billing/payments")
+  ).json();
+  const endpoint = origin + `/api/billing/invoices/${invoiceId}/payments/page`;
+  const first = await (await page.request.get(endpoint)).json();
+  const middle = await (
+    await page.request.get(endpoint + "?after=" + first.next)
+  ).json();
+  const last = await (
+    await page.request.get(endpoint + "?after=" + middle.next)
+  ).json();
+  expect(last.items).toHaveLength(3);
+  const target = last.items[2];
+  await page.reload();
+  await nav(page, "Billing");
+  const invoiceRow = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("cell", { name: invoice.number, exact: false }),
+    })
+    .filter({
+      has: page.getByRole("button", { name: "Request refund", exact: true }),
+    });
+  const open = async () => {
+    await invoiceRow
+      .getByRole("button", { name: "Request refund", exact: true })
+      .click();
+  };
+  const dialog = page.getByRole("dialog", {
+    name: "Request credited cash refund",
+    exact: true,
+  });
+  await open();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "20 invoice payments loaded",
+  );
+  const selector = dialog.getByLabel("Original payment", { exact: true });
+  await expect(selector).toHaveValue(first.items[0].id);
+  let failed = false;
+  const pagePattern = "**/api/billing/invoices/*/payments/page?after=*";
+  await page.route(pagePattern, async (route) => {
+    if (!failed) {
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        json: { message: "Synthetic invoice payment read failed" },
+      });
+    } else await route.continue();
+  });
+  await dialog
+    .getByRole("button", { name: "Load older invoice payments", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Synthetic invoice payment read failed",
+  );
+  await expect(selector).toHaveValue(first.items[0].id);
+  await expect(selector.getByRole("option")).toHaveCount(21);
+  await dialog
+    .getByRole("button", { name: "Retry invoice payments", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "40 invoice payments loaded",
+  );
+  await selector.selectOption(middle.items[5].id);
+  await dialog
+    .getByRole("button", { name: "Load older invoice payments", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "43 invoice payments loaded",
+  );
+  await expect(selector).toHaveValue(middle.items[5].id);
+  await expect(selector).toBeFocused();
+  await selector.selectOption(target.id);
+  await expect(selector.getByRole("option", { selected: true })).toContainText(
+    target.external_ref,
+  );
+  await expect(selector.getByRole("option", { selected: true })).toContainText(
+    "$0.01",
+  );
+  await expect(
+    dialog.getByRole("button", {
+      name: "Load older invoice payments",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.unroute(pagePattern);
+  // The dialog owns the first read as well as its continuation.
+  let entered!: () => void, release!: () => void;
+  const reading = new Promise<void>((resolve) => (entered = resolve)),
+    paused = new Promise<void>((resolve) => (release = resolve));
+  const firstPattern = "**/api/billing/invoices/*/payments/page";
+  await page.route(firstPattern, async (route) => {
+    const response = await route.fetch();
+    entered();
+    await paused;
+    try {
+      await route.fulfill({ response });
+    } catch {
+      /* Expected cancellation after close. */
+    }
+  });
+  const aborted = page.waitForEvent("requestfailed", {
+    predicate: (r) => r.url() === endpoint,
+  });
+  await open();
+  await reading;
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await aborted;
+  release();
+  await page.unroute(firstPattern);
+  expect(
+    await (await page.request.get(origin + "/api/dashboard")).json(),
+  ).toEqual(before);
+  expect(
+    await (await page.request.get(origin + "/api/billing/payments")).json(),
+  ).toEqual(beforePayments);
+  await open();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "20 invoice payments loaded",
+  );
+  await dialog
+    .getByRole("button", { name: "Load older invoice payments", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "40 invoice payments loaded",
+  );
+  await dialog
+    .getByRole("button", { name: "Load older invoice payments", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "43 invoice payments loaded",
+  );
+  await selector.selectOption(target.id);
+  await dialog.getByLabel("Amount in cents", { exact: true }).fill("1");
+  await dialog
+    .getByLabel("Unique refund reference", { exact: true })
+    .fill("SYNTHETIC-OLDER-PAYMENT-REFUND");
+  await dialog
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic original payment selection");
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const refunds = await (
+    await page.request.get(origin + "/api/billing/refunds")
+  ).json();
+  const refund = refunds.find(
+    (r: any) => r.reference === "SYNTHETIC-OLDER-PAYMENT-REFUND",
+  );
+  expect(refund.payment_id).toBe(target.id);
+  expect(refund.amount).toBe(1);
+  expect(refund.state).toBe("pending");
+  const after = await (
+    await page.request.get(origin + "/api/dashboard")
+  ).json();
+  for (const key of ["invoices", "stock", "orders"])
+    expect(after[key]).toEqual(before[key]);
+  expect(
+    await (await page.request.get(origin + "/api/billing/payments")).json(),
+  ).toEqual(beforePayments);
+  expect(errors).toEqual([]);
+});

@@ -14,6 +14,8 @@ import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
+import { RefundPaymentSelect } from "./refund-payment-select.tsx";
+import { CashPayments } from "./cash-payments.tsx";
 import { CashRefunds } from "./cash-refunds.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
@@ -45,6 +47,7 @@ type Field = {
   value?: string | number | boolean | string[];
   optional?: boolean;
   help?: string;
+  content?: React.ReactNode;
   max?: number;
   maxLength?: number;
   min?: number;
@@ -102,7 +105,11 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
-    setExtra((current) => ({ ...current, refunds: undefined }));
+    setExtra((current) => ({
+      ...current,
+      refunds: undefined,
+      payments: undefined,
+    }));
     setCarrierShipmentId(null);
     carrierOpener.current = null;
     setReservationOrderId(null);
@@ -141,7 +148,8 @@ function App() {
     if (["admin", "finance", "support"].includes(actor?.role ?? ""))
       e.callbacks = await request("/api/provider-callbacks");
     if (["admin", "finance", "support"].includes(actor?.role ?? "")) {
-      e.payments = await request("/api/billing/payments");
+      e.payments = await request("/api/billing/payments/page");
+      e.paymentRefresh = crypto.randomUUID();
       e.refunds = await request("/api/billing/refunds/page");
       e.refundRefresh = crypto.randomUUID();
     }
@@ -2751,15 +2759,11 @@ function App() {
                       simple(
                         "Request credited cash refund",
                         [
-                          select(
-                            "paymentId",
-                            "Original payment",
-                            (extra.payments ?? []).filter(
-                              (p: Item) => p.invoice_id === i.id,
-                            ),
-                            (p) =>
-                              `${p.provider} · ${money(p.amount, i.currency)} · ${p.external_ref}`,
-                          ),
+                          {
+                            name: "paymentId",
+                            label: "Original payment",
+                            content: <RefundPaymentSelect invoiceId={i.id} />,
+                          },
                           {
                             name: "amount",
                             label: "Amount in cents",
@@ -3187,67 +3191,56 @@ function App() {
                 )}
               </>
             )}
-            {extra.payments?.length > 0 && (
-              <>
-                <h2>Recorded cash payments</h2>
-                {table(
-                  ["Invoice", "Cash", "Source", "QuickBooks handoff"],
-                  extra.payments,
-                  (p: Item) => {
-                    const invoice = data.invoices.find(
-                        (i: Item) => i.id === p.invoice_id,
-                      ),
-                      posted = extra.effects?.find(
-                        (e: Item) =>
-                          e.provider === "quickbooks" &&
-                          e.kind === "payment" &&
-                          e.reference === p.id,
-                      ),
-                      parent = extra.effects?.find(
-                        (e: Item) =>
-                          e.provider === "quickbooks" &&
-                          e.kind === "invoice" &&
-                          e.reference === p.invoice_id &&
-                          e.state === "completed",
-                      );
-                    return [
-                      invoice?.number ?? p.invoice_id,
-                      money(p.amount, invoice?.currency ?? "CAD"),
-                      `${p.provider} · ${p.external_ref}`,
-                      posted
-                        ? posted.state
-                        : can("finance") && parent
-                          ? button("Queue QuickBooks payment", () =>
-                              open(
-                                "Queue QuickBooks payment",
-                                [
-                                  {
-                                    name: "appliedAmount",
-                                    label: "Apply to invoice (cents)",
-                                    type: "number",
-                                    value: 0,
-                                    min: 0,
-                                    max: p.amount,
-                                  },
-                                  {
-                                    name: "depositAccountRef",
-                                    label: "QuickBooks deposit account ID",
-                                  },
-                                ],
-                                (v) =>
-                                  command("quickbooks.payment", {
-                                    ...v,
-                                    paymentId: p.id,
-                                  }),
-                                `Record ${money(p.amount, invoice?.currency ?? "CAD")} already received. Choose the amount to apply to ${invoice?.number}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
-                                "Queue payment",
-                              ),
-                            )
-                          : "Reconcile QuickBooks invoice first",
-                    ];
-                  },
-                )}
-              </>
+            {extra.payments && (
+              <CashPayments
+                key={extra.paymentRefresh}
+                initial={extra.payments}
+                renderActions={(p) => {
+                  const posted = extra.effects?.find(
+                      (e: Item) =>
+                        e.provider === "quickbooks" &&
+                        e.kind === "payment" &&
+                        e.reference === p.id,
+                    ),
+                    parent = extra.effects?.find(
+                      (e: Item) =>
+                        e.provider === "quickbooks" &&
+                        e.kind === "invoice" &&
+                        e.reference === p.invoice_id &&
+                        e.state === "completed",
+                    );
+                  return posted
+                    ? posted.state
+                    : can("finance") && parent
+                      ? button("Queue QuickBooks payment", () =>
+                          open(
+                            "Queue QuickBooks payment",
+                            [
+                              {
+                                name: "appliedAmount",
+                                label: "Apply to invoice (cents)",
+                                type: "number",
+                                value: 0,
+                                min: 0,
+                                max: p.amount,
+                              },
+                              {
+                                name: "depositAccountRef",
+                                label: "QuickBooks deposit account ID",
+                              },
+                            ],
+                            (v) =>
+                              command("quickbooks.payment", {
+                                ...v,
+                                paymentId: p.id,
+                              }),
+                            `Record ${money(p.amount, p.currency)} already received. Choose the amount to apply to ${p.invoiceNumber}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
+                            "Queue payment",
+                          ),
+                        )
+                      : "Reconcile QuickBooks invoice first";
+                }}
+              />
             )}
             {extra.refunds && (
               <CashRefunds
@@ -5523,58 +5516,59 @@ function Modal({
                 />
               ) : null}
               <span id={`field-label-${f.name}`}>{f.label}</span>
-              {f.type === "checkbox" ? null : f.options ? (
-                <select
-                  name={f.name}
-                  aria-labelledby={`field-label-${f.name}`}
-                  multiple={f.type === "multiselect"}
-                  required={!f.optional}
-                  defaultValue={
-                    f.type === "multiselect"
-                      ? Array.isArray(f.value)
-                        ? f.value
-                        : []
-                      : String(f.value ?? f.options[0]?.value ?? "")
-                  }
-                >
-                  <option value="" disabled>
-                    Select…
-                  </option>
-                  {f.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
+              {f.content ??
+                (f.type === "checkbox" ? null : f.options ? (
+                  <select
+                    name={f.name}
+                    aria-labelledby={`field-label-${f.name}`}
+                    multiple={f.type === "multiselect"}
+                    required={!f.optional}
+                    defaultValue={
+                      f.type === "multiselect"
+                        ? Array.isArray(f.value)
+                          ? f.value
+                          : []
+                        : String(f.value ?? f.options[0]?.value ?? "")
+                    }
+                  >
+                    <option value="" disabled>
+                      Select…
                     </option>
-                  ))}
-                </select>
-              ) : f.scan ? (
-                <ScanInput
-                  name={f.name}
-                  label={f.label}
-                  value={String(f.value ?? "")}
-                  multiline={f.scan === "lines"}
-                  optional={Boolean(f.optional)}
-                  disabled={busy}
-                />
-              ) : f.type === "textarea" ? (
-                <textarea
-                  name={f.name}
-                  aria-labelledby={`field-label-${f.name}`}
-                  required={!f.optional}
-                  maxLength={f.maxLength}
-                  defaultValue={String(f.value ?? "")}
-                />
-              ) : (
-                <input
-                  name={f.name}
-                  aria-labelledby={`field-label-${f.name}`}
-                  type={f.type ?? "text"}
-                  required={!f.optional}
-                  min={f.type === "number" ? (f.min ?? 0) : undefined}
-                  max={f.max}
-                  step={f.type === "number" ? 1 : undefined}
-                  defaultValue={String(f.value ?? "")}
-                />
-              )}{" "}
+                    {f.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : f.scan ? (
+                  <ScanInput
+                    name={f.name}
+                    label={f.label}
+                    value={String(f.value ?? "")}
+                    multiline={f.scan === "lines"}
+                    optional={Boolean(f.optional)}
+                    disabled={busy}
+                  />
+                ) : f.type === "textarea" ? (
+                  <textarea
+                    name={f.name}
+                    aria-labelledby={`field-label-${f.name}`}
+                    required={!f.optional}
+                    maxLength={f.maxLength}
+                    defaultValue={String(f.value ?? "")}
+                  />
+                ) : (
+                  <input
+                    name={f.name}
+                    aria-labelledby={`field-label-${f.name}`}
+                    type={f.type ?? "text"}
+                    required={!f.optional}
+                    min={f.type === "number" ? (f.min ?? 0) : undefined}
+                    max={f.max}
+                    step={f.type === "number" ? 1 : undefined}
+                    defaultValue={String(f.value ?? "")}
+                  />
+                ))}{" "}
               {f.help && <small>{f.help}</small>}
             </div>
           ))}

@@ -697,6 +697,68 @@ f.app.identity.createUser(f.actor, "carrier-browser-reader", {
   sites: [f.w2],
 });
 
+// Independent US payment-history fixture; never enters the shared CA dashboard.
+const paymentPages = fixture({ after: (fn) => cleanup.push(fn) }, {}, "US");
+const paymentInvoice = ship(paymentPages, accept(paymentPages).id).invoiceId;
+for (let i = 0; i < 43; i++)
+  paymentPages.app.database.transaction(() =>
+    paymentPages.app.billing.verifiedPayment(
+      paymentPages.actor,
+      paymentInvoice,
+      1,
+      "manual",
+      `SYNTHETIC-USD-PAGE-${i}`,
+    ),
+  );
+paymentPages.app.database
+  .owned("billing")
+  .run(
+    "UPDATE billing_payments SET created_at='2026-10-01T00:00:00.000Z' WHERE org_id=?",
+    paymentPages.actor.orgId,
+  );
+chooseProviders(paymentPages, paymentPages.actor, "payment-page-choice", {
+  accountId: paymentPages.buyer,
+  region: "US",
+  mode: "provider-exceptions",
+  providers: ["quickbooks"],
+  version: 1,
+  acknowledgment: "Synthetic named accounting choice",
+});
+const paymentParent = paymentPages.app.integration.accounting(
+  paymentPages.actor,
+  "payment-page-invoice",
+  {
+    invoiceId: paymentInvoice,
+    customerRef: "synthetic-us-customer",
+    itemRefs: { [paymentPages.product]: "synthetic-us-item" },
+    taxCodeRef: "synthetic-tax",
+    taxRateRef: "synthetic-rate",
+  },
+);
+await paymentPages.app.integration.execute(
+  paymentPages.actor,
+  paymentParent.id,
+  {
+    execute: async () => ({
+      reference: "invoice:synthetic-us-invoice",
+      result: {},
+    }),
+    lookup: async () => null,
+  },
+);
+paymentPages.app.identity.createUser(paymentPages.actor, "payment-page-buyer", {
+  name: "Synthetic US buyer",
+  email: "payment-pages-buyer@example.test",
+  password: "long-test-only-password",
+  role: "buyer",
+  sites: [],
+  accountId: paymentPages.buyer,
+});
+const paymentHttp = await createHttp(paymentPages.app, {
+  origin: "http://127.0.0.1:3118",
+});
+await paymentHttp.listen({ host: "127.0.0.1", port: 3118 });
+
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -715,6 +777,7 @@ const http = await createHttp(f.app, {
 await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
   await http.close();
+  await paymentHttp.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);
 };

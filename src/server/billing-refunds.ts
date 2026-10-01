@@ -271,15 +271,6 @@ export class BillingRefunds {
     });
   }
   payments(actor: Actor) {
-    permit(actor, ["finance", "support"]);
-    return this.store
-      .all(
-        "SELECT p.* FROM billing_payments p JOIN billing_invoices i ON i.id=p.invoice_id AND i.org_id=p.org_id WHERE p.org_id=? ORDER BY p.created_at DESC",
-        actor.orgId,
-      )
-      .filter((row) => {
-        this.billing.invoice(actor, String(row.invoice_id));
-        return true;
-      });
+    return this.billing.paymentHistory.list(actor);
   }
 }

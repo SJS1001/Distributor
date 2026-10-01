@@ -1563,6 +1563,39 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/billing/payments", async (request) =>
     app.billing.refunds.payments(actor(request)),
   );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/billing/payments/page",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.billing.paymentHistory.page(actor(request), request.query.after),
+  );
+  http.get<{ Params: { invoiceId: string }; Querystring: { after?: string } }>(
+    "/api/billing/invoices/:invoiceId/payments/page",
+    {
+      schema: {
+        params: obj({
+          invoiceId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.billing.paymentHistory.page(
+        actor(request),
+        request.query.after,
+        request.params.invoiceId,
+      ),
+  );
   http.get("/api/billing/refunds", async (request) =>
     app.billing.refunds.list(actor(request)),
   );

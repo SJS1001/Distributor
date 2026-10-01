@@ -11,6 +11,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
 import { Platform } from "./platform.ts";
+import { BillingPaymentHistory } from "./billing-payment-history.ts";
 import { BillingRefunds } from "./billing-refunds.ts";
 import { BillingOpening } from "./billing-opening.ts";
 import { BillingDocuments } from "./billing-documents.ts";
@@ -73,6 +74,7 @@ export class Billing {
   private store: Store;
   readonly opening: BillingOpening;
   readonly refunds: BillingRefunds;
+  readonly paymentHistory: BillingPaymentHistory;
   readonly documents: BillingDocuments;
   readonly delivery: BillingDelivery;
   constructor(
@@ -93,6 +95,11 @@ export class Billing {
     CREATE TABLE IF NOT EXISTS billing_refunds(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),reference TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','unknown','completed','rejected')),created_at TEXT NOT NULL,UNIQUE(org_id,reference)) STRICT;
     CREATE TABLE IF NOT EXISTS billing_refund_proofs(org_id TEXT NOT NULL,external_ref TEXT NOT NULL,refund_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(org_id,external_ref),UNIQUE(refund_id)) STRICT;
   `);
+    this.paymentHistory = new BillingPaymentHistory(
+      database,
+      this.store,
+      identity,
+    );
     this.refunds = new BillingRefunds(
       database,
       identity,
