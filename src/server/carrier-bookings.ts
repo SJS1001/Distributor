@@ -34,7 +34,10 @@ export type CarrierResult = {
   reviewHash: string;
   reference: string;
   tracking: string;
-  label: { mediaType: "application/pdf" | "image/png"; bytes: Buffer };
+  label: {
+    mediaType: "application/pdf" | "image/png" | "image/gif";
+    bytes: Buffer;
+  };
 };
 // Trusted adapters must call beforeWrite immediately before their only provider write.
 // A lookup is read-only. No adapter may retry a write after an uncertain response.
@@ -523,7 +526,7 @@ export class CarrierBookings {
       "No confirmed carrier label is available.",
     );
     const bytes = Buffer.from(booking.label_bytes);
-    validateLabel({ mediaType: booking.label_type, bytes });
+    validateCarrierLabel({ mediaType: booking.label_type, bytes });
     check(
       digest(bytes) === booking.label_hash,
       "CARRIER_RESULT",
@@ -643,7 +646,10 @@ function exactFields(value: unknown, fields: string[]) {
     "Carrier result has missing or unsupported fields.",
   );
 }
-function validateLabel(label: { mediaType: string; bytes: Buffer }) {
+export function validateCarrierLabel(label: {
+  mediaType: string;
+  bytes: Buffer;
+}) {
   exactFields(label, ["mediaType", "bytes"]);
   check(
     label &&
@@ -659,7 +665,15 @@ function validateLabel(label: { mediaType: string; bytes: Buffer }) {
       (label.mediaType === "image/png" &&
         label.bytes
           .subarray(0, 8)
-          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))),
+          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) ||
+      (label.mediaType === "image/gif" &&
+        label.bytes.length >= 14 &&
+        ["GIF87a", "GIF89a"].includes(
+          label.bytes.subarray(0, 6).toString("ascii"),
+        ) &&
+        label.bytes.readUInt16LE(6) > 0 &&
+        label.bytes.readUInt16LE(8) > 0 &&
+        label.bytes.at(-1) === 0x3b),
     "CARRIER_RESULT",
     "Carrier label type and file signature must agree.",
   );
@@ -692,7 +706,7 @@ function validateResult(
     "CARRIER_RESULT",
     "Provider references must be canonical identifiers, not URLs.",
   );
-  validateLabel(result.label);
+  validateCarrierLabel(result.label);
   return {
     bookingId: result.bookingId,
     reviewHash: result.reviewHash,

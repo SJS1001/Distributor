@@ -37,3 +37,8 @@ Read-only evidence: current README, source `src/bus.ts` constructor and `src/con
 Benefits to evaluate: import/customer/supplier-source normalization, reviewed external IDs, provenance, context/freshness views and replayable reconciliation. UB financial references do not post accounting entries; inventory context does not allocate or transact distributor stock. A local publication receipt does not certify external business completion.
 
 Recommendation: preserve an optional adapter boundary now, qualify one synthetic context workflow later, adopt live connectivity only when source rights, security, exact-version compatibility, recovery and real provider evidence exist. The distributor's ordering/billing/warehouse operations must continue with UB disabled. D-042–D-044 are separately estimated and do not block native product delivery.
+
+
+## Original UPS protocol implementation — 2026-10-01
+
+The default-disabled UPS CIE client was written originally against public UPS API field contracts. The actual [UPS API documentation license](https://github.com/UPS-API/api-documentation/blob/main/LICENSE) was read: MIT, copyright 2023 UPS-API. No SDK/vendor implementation, generated schema, source sample or actual label was imported into this repository. Synthetic label bytes are original fixtures. No dependency/lockfile change or new copied-code notice is required by this checkpoint. Any later copying/generation must preserve applicable notices and undergo its own review; vendor API/account agreements and product publication rights remain separate and unresolved. The [local receipt](evidence/LOCAL-UPS-SANDBOX-2026-10-01.md) binds private downloaded reference/license hashes.

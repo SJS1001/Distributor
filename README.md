@@ -47,4 +47,4 @@ The planning package is complete as a reviewable draft. Owner/operator answers a
 
 The [latest planning choices/access review](docs/evidence/PLANNING-CHOICES-2026-09-30.md) records customer residency acceptance criteria and fresh read-only GitHub access. Historical implementation receipts remain separate from planning acceptance.
 
-Reviewed ordinary carrier booking coordination and its default-disabled adapter boundary are described in [the carrier runbook](docs/CARRIER-BOOKINGS.md). Actual carrier protocols/services and product gates remain unqualified.
+Reviewed ordinary carrier booking coordination and its default-disabled adapter boundary are described in [the carrier runbook](docs/CARRIER-BOOKINGS.md). An original default-disabled UPS sandbox protocol client has local synthetic coverage; actual carrier protocols/services and product gates remain unqualified.
