@@ -14,6 +14,7 @@ import { Database, type Store } from "./database.ts";
 import { Catalog } from "./catalog.ts";
 import { Platform } from "./platform.ts";
 import { InventoryCosts } from "./inventory-costs.ts";
+import { Identity } from "./iam.ts";
 export type Unit = {
   id: string;
   org_id: string;
@@ -100,6 +101,35 @@ type Count = {
   start_hash: string;
   decision_result: string | null;
 };
+type SerialReview = {
+  id: string;
+  org_id: string;
+  unit_id: string;
+  warehouse_id: string;
+  product_id: string;
+  serial: string;
+  bin: string;
+  stock_revision: number;
+  unit_cost: number;
+  review_ref: string;
+  reason: string;
+  observed_by: string;
+  created_at: string;
+  input_hash: string;
+  state: "submitted" | "approved" | "rejected" | "recovered";
+  decision: "approve" | "reject" | null;
+  decision_reason: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_result: string | null;
+  recovery_ref: string | null;
+  recovery_reason: string | null;
+  recovery_bin: string | null;
+  recovered_by: string | null;
+  recovered_at: string | null;
+  recovery_hash: string | null;
+  recovery_result: string | null;
+};
 export class Inventory {
   private store: Store;
   readonly costs: InventoryCosts;
@@ -107,6 +137,7 @@ export class Inventory {
     database: Database,
     private platform: Platform,
     private catalog: Catalog,
+    private identity: Identity,
   ) {
     this.store = database.owned("inventory");
     this.costs = new InventoryCosts(this.store);
@@ -128,6 +159,19 @@ export class Inventory {
       CREATE TABLE IF NOT EXISTS inventory_transfer_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,line_id TEXT NOT NULL,unit_id TEXT NOT NULL,receipt_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),bin TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,line_id,receipt_ref)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_transfer_losses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,line_id TEXT NOT NULL,loss_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,line_id,loss_ref)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_transfer_recoveries(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,loss_id TEXT NOT NULL,unit_id TEXT NOT NULL,receipt_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),bin TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,loss_id,receipt_ref)) STRICT;
+      CREATE TABLE IF NOT EXISTS inventory_serial_reviews(
+        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,serial TEXT NOT NULL,bin TEXT NOT NULL,stock_revision INTEGER NOT NULL,
+        unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),review_ref TEXT NOT NULL,reason TEXT NOT NULL,
+        observed_by TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','recovered')),
+        decision TEXT CHECK(decision IN('approve','reject')),decision_reason TEXT,decided_by TEXT,decided_at TEXT,decision_result TEXT,
+        recovery_ref TEXT,recovery_reason TEXT,recovery_bin TEXT,recovered_by TEXT,recovered_at TEXT,recovery_hash TEXT,recovery_result TEXT,
+        UNIQUE(org_id,review_ref)) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS inventory_serial_review_pending ON inventory_serial_reviews(org_id,unit_id) WHERE state='submitted';
+      CREATE UNIQUE INDEX IF NOT EXISTS inventory_serial_review_missing ON inventory_serial_reviews(org_id,unit_id) WHERE state='approved';
+      CREATE UNIQUE INDEX IF NOT EXISTS inventory_serial_recovery_reference ON inventory_serial_reviews(org_id,recovery_ref) WHERE recovery_ref IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS inventory_serial_review_history ON inventory_serial_reviews(org_id,created_at,id);
       CREATE TABLE IF NOT EXISTS inventory_counts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,product_id TEXT NOT NULL,bin TEXT NOT NULL,condition TEXT NOT NULL,stock_revision INTEGER NOT NULL,expected_quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,count_ref TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('draft','submitted','approved','rejected')),observed_quantity INTEGER CHECK(observed_quantity>=0),observation_reason TEXT,observed_by TEXT,observed_at TEXT,decision_reason TEXT,decided_by TEXT,decided_at TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL,start_hash TEXT NOT NULL,decision_result TEXT,UNIQUE(org_id,count_ref)) STRICT;
       INSERT OR IGNORE INTO inventory_transfer_manifest
         SELECT l.id,l.org_id,l.transfer_id,l.unit_id,u.product_id,u.serial,-m.quantity,m.unit_cost
@@ -667,9 +711,9 @@ export class Inventory {
           "Stock changed; refresh before inspecting.",
         );
         check(
-          u.state === "stock" && this.reserved(u.id) === 0,
+          u.state === "stock" && u.quantity > 0 && this.reserved(u.id) === 0,
           "STATE",
-          "Only unallocated stock can be inspected.",
+          "Only present, unallocated stock can be inspected.",
         );
         check(
           ["usable", "quarantine", "damaged"].includes(input.condition),
@@ -777,6 +821,389 @@ export class Inventory {
             : (c.observed_quantity - c.expected_quantity) * c.unit_cost,
         result: decision_result ? JSON.parse(decision_result) : null,
       }));
+  }
+  private custodyActor(actor: Actor, roles: Actor["role"][]) {
+    const current = this.identity.currentActor(actor);
+    permit(current, roles);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing serial custody.",
+      403,
+    );
+    return current;
+  }
+  private serialReview(actor: Actor, reviewId: string) {
+    const row = this.store.get<SerialReview>(
+      "SELECT * FROM inventory_serial_reviews WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(reviewId, "Serial review ID"),
+    );
+    check(row, "NOT_FOUND", "Serial custody review not found.", 404);
+    site(actor, row.warehouse_id);
+    return row;
+  }
+  serialReviews(actor: Actor, after?: string) {
+    actor = this.custodyActor(actor, ["warehouse", "finance", "support"]);
+    const cursor =
+      after === undefined ? undefined : this.serialReview(actor, after);
+    const rows = this.store.all<SerialReview>(
+      `SELECT * FROM inventory_serial_reviews WHERE org_id=?
+       ${actor.role === "admin" ? "" : `AND warehouse_id IN (${actor.sites.map(() => "?").join(",") || "NULL"})`}
+       AND (? IS NULL OR created_at>? OR (created_at=? AND id>?)) ORDER BY created_at,id LIMIT 21`,
+      actor.orgId,
+      ...(actor.role === "admin" ? [] : actor.sites),
+      cursor?.created_at ?? null,
+      cursor?.created_at ?? null,
+      cursor?.created_at ?? null,
+      cursor?.id ?? null,
+    );
+    const items = rows
+      .slice(0, 20)
+      .map(
+        ({
+          input_hash,
+          recovery_hash,
+          decision_result,
+          recovery_result,
+          ...r
+        }) => {
+          const u = this.unit(actor, r.unit_id);
+          return {
+            ...r,
+            currentRevision: u.revision,
+            currentQuantity: u.quantity,
+            decisionResult: decision_result
+              ? JSON.parse(decision_result)
+              : null,
+            recoveryResult: recovery_result
+              ? JSON.parse(recovery_result)
+              : null,
+          };
+        },
+      );
+    return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
+  }
+  reportSerialMissing(
+    actor: Actor,
+    key: string,
+    input: {
+      unitId: string;
+      revision: number;
+      serial: string;
+      reviewRef: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "serial.missing.report",
+      key,
+      input,
+      (cached) => {
+        actor = this.custodyActor(actor, ["warehouse"]);
+        if (cached) this.serialReview(actor, cached.id);
+        site(actor, this.unit(actor, input.unitId).warehouse_id);
+      },
+      () => {
+        const normalized = {
+          unitId: text(input.unitId, "Stock ID"),
+          revision: integer(input.revision, "Stock revision", 1),
+          serial: text(input.serial, "Expected serial"),
+          reviewRef: text(input.reviewRef, "Review reference"),
+          reason: text(input.reason, "Missing serial evidence", 1000),
+        };
+        const hash = digest(canonical(normalized)),
+          old = this.store.get<SerialReview>(
+            "SELECT * FROM inventory_serial_reviews WHERE org_id=? AND review_ref=?",
+            actor.orgId,
+            normalized.reviewRef,
+          );
+        if (old) {
+          site(actor, old.warehouse_id);
+          check(
+            old.input_hash === hash,
+            "RECEIPT_CONFLICT",
+            "Review reference already records different evidence.",
+          );
+          return { id: old.id };
+        }
+        const u = this.unit(actor, normalized.unitId);
+        check(
+          u.revision === normalized.revision,
+          "REVISION",
+          "Stock changed; refresh before recording custody evidence.",
+        );
+        check(
+          u.state === "stock" &&
+            u.quantity === 1 &&
+            u.serial !== null &&
+            u.condition === "quarantine",
+          "STATE",
+          "Quarantine a present serialized stock record before reporting it missing.",
+        );
+        check(
+          u.serial === normalized.serial,
+          "SERIAL",
+          "Expected serial does not match the held stock record.",
+        );
+        check(
+          this.reserved(u.id) === 0,
+          "ALLOCATION",
+          "Reconcile order and replacement reservations before custody review.",
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM inventory_serial_reviews WHERE org_id=? AND unit_id=? AND state='submitted'",
+            actor.orgId,
+            u.id,
+          ),
+          "REVIEW_PENDING",
+          "This serial already has an unresolved custody review.",
+        );
+        const reviewId = id();
+        this.store.run(
+          `INSERT INTO inventory_serial_reviews(id,org_id,unit_id,warehouse_id,product_id,serial,bin,stock_revision,unit_cost,review_ref,reason,observed_by,created_at,input_hash,state)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'submitted')`,
+          reviewId,
+          actor.orgId,
+          u.id,
+          u.warehouse_id,
+          u.product_id,
+          u.serial,
+          u.bin,
+          u.revision,
+          u.cost,
+          normalized.reviewRef,
+          normalized.reason,
+          actor.id,
+          now(),
+          hash,
+        );
+        this.platform.event(actor, "SerialMissingReported", reviewId, {
+          unitId: u.id,
+          serial: u.serial,
+          stockRevision: u.revision,
+          unitCost: u.cost,
+        });
+        return { id: reviewId };
+      },
+    );
+  }
+  decideSerialMissing(
+    actor: Actor,
+    key: string,
+    input: { reviewId: string; decision: "approve" | "reject"; reason: string },
+  ) {
+    return this.platform.command(
+      actor,
+      "serial.missing.decide",
+      key,
+      input,
+      () => {
+        actor = this.custodyActor(actor, []);
+        this.serialReview(actor, input.reviewId);
+      },
+      () => {
+        const r = this.serialReview(actor, input.reviewId),
+          reason = text(input.reason, "Custody review decision", 1000);
+        check(
+          ["approve", "reject"].includes(input.decision),
+          "VALIDATION",
+          "Unknown custody decision.",
+          400,
+        );
+        if (r.decision !== null) {
+          check(
+            r.decision === input.decision && r.decision_reason === reason,
+            "RECEIPT_CONFLICT",
+            "Custody review already has a different decision.",
+          );
+          return JSON.parse(r.decision_result!) as {
+            id: string;
+            state: string;
+            unitId: string;
+            revision: number;
+            valueDelta: number;
+          };
+        }
+        check(
+          r.state === "submitted",
+          "STATE",
+          "Custody review is not awaiting a decision.",
+        );
+        const u = this.unit(actor, r.unit_id);
+        let revision = u.revision;
+        if (input.decision === "approve") {
+          check(
+            u.revision === r.stock_revision,
+            "REVISION",
+            "Stock changed after observation; reject this review and record fresh evidence.",
+          );
+          check(
+            u.state === "stock" &&
+              u.condition === "quarantine" &&
+              u.quantity === 1 &&
+              u.serial === r.serial &&
+              u.cost === r.unit_cost &&
+              u.warehouse_id === r.warehouse_id &&
+              u.bin === r.bin &&
+              u.product_id === r.product_id,
+            "STATE",
+            "Original held stock no longer matches custody evidence.",
+          );
+          check(
+            this.reserved(u.id) === 0,
+            "ALLOCATION",
+            "Reconcile reservations before approving a serial loss.",
+          );
+          this.store.run(
+            "UPDATE inventory_units SET quantity=0,revision=revision+1 WHERE org_id=? AND id=?",
+            actor.orgId,
+            u.id,
+          );
+          this.movement(actor, u, "serial.loss", -1, r.id, reason);
+          revision++;
+        }
+        const state = input.decision === "approve" ? "approved" : "rejected";
+        const result = {
+          id: r.id,
+          state,
+          unitId: u.id,
+          revision,
+          valueDelta: state === "approved" ? -r.unit_cost : 0,
+        };
+        this.store.run(
+          "UPDATE inventory_serial_reviews SET state=?,decision=?,decision_reason=?,decided_by=?,decided_at=?,decision_result=? WHERE org_id=? AND id=?",
+          state,
+          input.decision,
+          reason,
+          actor.id,
+          now(),
+          canonical(result),
+          actor.orgId,
+          r.id,
+        );
+        this.platform.event(actor, "SerialMissingReviewed", r.id, result);
+        return result;
+      },
+    );
+  }
+  recoverSerialMissing(
+    actor: Actor,
+    key: string,
+    input: {
+      reviewId: string;
+      revision: number;
+      serial: string;
+      receiptRef: string;
+      bin: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "serial.missing.recover",
+      key,
+      input,
+      () => {
+        actor = this.custodyActor(actor, ["warehouse"]);
+        this.serialReview(actor, input.reviewId);
+      },
+      () => {
+        const r = this.serialReview(actor, input.reviewId),
+          normalized = {
+            reviewId: r.id,
+            revision: integer(input.revision, "Stock revision", 1),
+            serial: text(input.serial, "Scanned serial"),
+            receiptRef: text(input.receiptRef, "Recovery receipt reference"),
+            bin: text(input.bin, "Recovery bin"),
+            reason: text(input.reason, "Recovery evidence", 1000),
+          };
+        const hash = digest(canonical(normalized));
+        if (r.state === "recovered") {
+          check(
+            r.recovery_hash === hash,
+            "RECEIPT_CONFLICT",
+            "This loss already has different recovery evidence.",
+          );
+          return JSON.parse(r.recovery_result!) as {
+            id: string;
+            unitId: string;
+            revision: number;
+            valueDelta: number;
+          };
+        }
+        check(
+          r.state === "approved" && r.decision === "approve",
+          "STATE",
+          "Only an approved unrecovered serial loss can be recovered.",
+        );
+        check(
+          normalized.serial === r.serial,
+          "SERIAL",
+          "Scan the exact originally lost serial before recovery.",
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM inventory_serial_reviews WHERE org_id=? AND recovery_ref=?",
+            actor.orgId,
+            normalized.receiptRef,
+          ),
+          "RECEIPT_CONFLICT",
+          "Recovery receipt reference already belongs to another loss.",
+        );
+        const u = this.unit(actor, r.unit_id);
+        check(
+          u.revision === normalized.revision,
+          "REVISION",
+          "Stock changed; refresh before recovering the serial.",
+        );
+        check(
+          u.state === "stock" &&
+            u.quantity === 0 &&
+            u.condition === "quarantine" &&
+            u.serial === r.serial &&
+            u.cost === r.unit_cost &&
+            u.product_id === r.product_id &&
+            u.warehouse_id === r.warehouse_id,
+          "STATE",
+          "Original missing serial record no longer matches the approved loss.",
+        );
+        check(
+          this.reserved(u.id) === 0,
+          "ALLOCATION",
+          "Missing serial unexpectedly has a reservation; reconcile before recovery.",
+        );
+        this.store.run(
+          "UPDATE inventory_units SET quantity=1,condition='quarantine',bin=?,revision=revision+1 WHERE org_id=? AND id=?",
+          normalized.bin,
+          actor.orgId,
+          u.id,
+        );
+        this.movement(actor, u, "serial.recovery", 1, r.id, normalized.reason);
+        const result = {
+          id: r.id,
+          unitId: u.id,
+          revision: u.revision + 1,
+          valueDelta: r.unit_cost,
+        };
+        this.store.run(
+          "UPDATE inventory_serial_reviews SET state='recovered',recovery_ref=?,recovery_reason=?,recovery_bin=?,recovered_by=?,recovered_at=?,recovery_hash=?,recovery_result=? WHERE org_id=? AND id=?",
+          normalized.receiptRef,
+          normalized.reason,
+          normalized.bin,
+          actor.id,
+          now(),
+          hash,
+          canonical(result),
+          actor.orgId,
+          r.id,
+        );
+        this.platform.event(actor, "SerialMissingRecovered", r.id, result);
+        return result;
+      },
+    );
   }
   startCount(
     actor: Actor,
@@ -2199,10 +2626,11 @@ export class Inventory {
     site(actor, u.warehouse_id);
     check(
       u.state === "stock" &&
+        u.quantity > 0 &&
         u.condition === "quarantine" &&
         this.reserved(u.id) === 0,
       "STATE",
-      "Return requires unallocated quarantine custody.",
+      "Return requires present, unallocated quarantine custody.",
     );
     text(reason, "disposition reason", 1000);
     if (disposition === "scrap") {

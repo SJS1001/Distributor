@@ -13,6 +13,7 @@ import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
+import { SerialCustody } from "./serial-custody.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -102,6 +103,12 @@ function App() {
     if (["admin", "finance", "support", "buyer"].includes(actor?.role ?? "")) {
       e.refundNotices = await request("/api/billing/refund-notices");
       e.refundNoticeRefresh = crypto.randomUUID();
+    }
+    if (
+      ["admin", "warehouse", "finance", "support"].includes(actor?.role ?? "")
+    ) {
+      e.serialReviews = await request("/api/stock/serial-reviews");
+      e.serialReviewRefresh = crypto.randomUUID();
     }
     if (actor?.role === "admin") {
       e.users = await request("/api/users");
@@ -1127,7 +1134,7 @@ function App() {
                 "Product / serial",
                 "Warehouse / bin",
                 "Condition",
-                "Physical / reserved / available",
+                "Book quantity / reserved / available",
                 "Actions",
               ],
               data.stock,
@@ -1181,6 +1188,36 @@ function App() {
                     )}
                   {can("warehouse") &&
                     u.state === "stock" &&
+                    u.serial &&
+                    u.quantity === 1 &&
+                    u.condition === "quarantine" &&
+                    u.reserved === 0 &&
+                    button("Report missing serial", () =>
+                      open(
+                        "Record missing serial evidence",
+                        [
+                          {
+                            name: "serial",
+                            label: "Expected serial on stock record",
+                          },
+                          {
+                            name: "reviewRef",
+                            label: "Custody review reference (unique)",
+                          },
+                          reason,
+                        ],
+                        (v) =>
+                          command("serial.missing.report", {
+                            ...v,
+                            unitId: u.id,
+                            revision: u.revision,
+                          }),
+                        `Expected serial ${u.serial} at ${warehouseName(u.warehouse_id)} / ${u.bin}. Record the physical search evidence. Submission preserves the one expected unit and its original value; administrator approval is separate.`,
+                      ),
+                    )}
+                  {can("warehouse") &&
+                    u.state === "stock" &&
+                    u.quantity > 0 &&
                     button("Inspect", () =>
                       simple(
                         "Inspect stock",
@@ -1246,6 +1283,70 @@ function App() {
                   ],
                 )}
               </>
+            )}
+            {extra.serialReviews && (
+              <SerialCustody
+                key={extra.serialReviewRefresh}
+                initial={extra.serialReviews}
+                warehouseName={warehouseName}
+                currency={currency}
+                renderActions={(r: Item) => (
+                  <div className="actions">
+                    {admin &&
+                      r.state === "submitted" &&
+                      button("Approve serial loss", () =>
+                        open(
+                          "Approve missing serial writeoff",
+                          [reason],
+                          (v) =>
+                            command("serial.missing.decide", {
+                              ...v,
+                              reviewId: r.id,
+                              decision: "approve",
+                            }),
+                          `${r.review_ref}: ${r.serial} expected at ${warehouseName(r.warehouse_id)} / ${r.bin}. Approval removes one expected unit and ${money(r.unit_cost, currency)} of original stock value. It does not cancel the order, credit a customer or post an accounting entry.`,
+                        ),
+                      )}
+                    {admin &&
+                      r.state === "submitted" &&
+                      button("Reject serial loss", () =>
+                        simple(
+                          "Reject missing serial review",
+                          [reason],
+                          "serial.missing.decide",
+                          (v) => ({ ...v, reviewId: r.id, decision: "reject" }),
+                        ),
+                      )}
+                    {can("warehouse") &&
+                      r.state === "approved" &&
+                      button("Recover serial", () =>
+                        open(
+                          "Record found serial recovery",
+                          [
+                            {
+                              name: "serial",
+                              label: "Scan recovered serial",
+                              scan: "single",
+                            },
+                            {
+                              name: "receiptRef",
+                              label: "Recovery receipt reference (unique)",
+                            },
+                            { name: "bin", label: "Recovered stock bin" },
+                            reason,
+                          ],
+                          (v) =>
+                            command("serial.missing.recover", {
+                              ...v,
+                              reviewId: r.id,
+                              revision: r.currentRevision,
+                            }),
+                          `Scan the exact lost serial ${r.serial}. Recovery restores one unit at its original ${money(r.unit_cost, currency)} cost in ${warehouseName(r.warehouse_id)}. It remains quarantined until inspection and is not automatically reallocated.`,
+                        ),
+                      )}
+                  </div>
+                )}
+              />
             )}
             {extra.counts?.length > 0 && (
               <>

@@ -61,7 +61,12 @@ export class Application {
       security.providerEncryptionKey,
     );
     this.catalog = new Catalog(this.database, this.platform, this.identity);
-    this.inventory = new Inventory(this.database, this.platform, this.catalog);
+    this.inventory = new Inventory(
+      this.database,
+      this.platform,
+      this.catalog,
+      this.identity,
+    );
     this.labels = new StockLabels(
       this.database,
       this.platform,

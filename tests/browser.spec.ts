@@ -5603,6 +5603,215 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
   expect(errors).toEqual([]);
 });
 
+test("browser: serial loss review and recovery retain history, retry once and restore original held stock", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const session = await (await page.request.get("/api/session")).json();
+  let counter = 0;
+  const cmd = async (name: string, data: any) => {
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        origin: "http://127.0.0.1:3117",
+        "x-csrf-token": session.csrf,
+        "idempotency-key": `custody-ui-${counter++}`,
+      },
+      data,
+    });
+    expect(response.status()).toBe(200);
+    return response.json();
+  };
+  const snapshot = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const warehouseId = (await snapshot()).warehouses.find(
+    (w: any) => w.name === "Toronto",
+  ).id;
+  const productId = (
+    await cmd("product.create", {
+      sku: "CUSTODY-UI",
+      name: "Synthetic custody equipment",
+      serialized: true,
+      unitPrice: 10000,
+      taxBasisPoints: 1300,
+    })
+  ).id;
+  const supplierId = (
+    await cmd("supplier.create", { name: "Synthetic custody supplier" })
+  ).id;
+  const poId = (
+    await cmd("purchase.create", {
+      supplierId,
+      warehouseId,
+      lines: [{ productId, quantity: 1, unitCost: 6000 }],
+    })
+  ).id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const lineId = purchases.orders.find((p: any) => p.id === poId).lines[0].id;
+  const serial = "CUSTODY-UI-SERIAL-1";
+  await cmd("purchase.receive", {
+    poId,
+    lineId,
+    deliveryRef: "CUSTODY-UI-DEL",
+    quantity: 1,
+    serials: [serial],
+    bin: "CUSTODY-BIN",
+    quarantine: true,
+  });
+  const before = await snapshot();
+  const unit = before.stock.find((u: any) => u.serial === serial);
+  for (let i = 0; i < 24; i++) {
+    const r = await cmd("serial.missing.report", {
+      unitId: unit.id,
+      revision: unit.revision,
+      serial,
+      reviewRef: `CUSTODY-UI-REJECT-${i}`,
+      reason: `Synthetic earlier observation ${i}`,
+    });
+    await cmd("serial.missing.decide", {
+      reviewId: r.id,
+      decision: "reject",
+      reason: "Synthetic evidence insufficient",
+    });
+  }
+  await page.reload();
+  await nav(page, "Inventory");
+  const stockRow = page
+    .getByRole("row")
+    .filter({ hasText: serial })
+    .filter({
+      has: page.getByRole("button", {
+        name: "Report missing serial",
+        exact: true,
+      }),
+    });
+  await stockRow
+    .getByRole("button", { name: "Report missing serial", exact: true })
+    .click();
+  await page
+    .getByLabel("Expected serial on stock record", { exact: true })
+    .fill(serial);
+  await page
+    .getByLabel("Custody review reference (unique)", { exact: true })
+    .fill("CUSTODY-UI-MISSING");
+  await page
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic searched original shelf and neighboring bins");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const observed = await snapshot();
+  expect(observed.stock.find((u: any) => u.id === unit.id).quantity).toBe(1);
+  expect(observed.invoices).toEqual(before.invoices);
+  const panel = page.getByRole("region", {
+    name: "Serial custody reviews",
+    exact: true,
+  });
+  await expect(panel.getByRole("status")).toHaveText("20 reviews loaded");
+  let lostPage = false;
+  await page.route("**/api/stock/serial-reviews?after=*", async (route) => {
+    if (!lostPage) {
+      lostPage = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Load more custody reviews", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  await panel
+    .getByRole("button", { name: "Retry custody reviews", exact: true })
+    .click();
+  await expect(panel.locator("tbody tr")).toHaveCount(25);
+  const reviewRow = panel
+    .getByRole("row")
+    .filter({ hasText: "CUSTODY-UI-MISSING" });
+  await reviewRow
+    .getByRole("button", { name: "Approve serial loss", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("original stock value");
+  await page
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic administrator checked custody evidence");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const missing = (await snapshot()).stock.find((u: any) => u.id === unit.id);
+  expect([missing.quantity, missing.cost, missing.condition]).toEqual([
+    0,
+    6000,
+    "quarantine",
+  ]);
+  await panel
+    .getByRole("button", { name: "Load more custody reviews", exact: true })
+    .click();
+  await expect(reviewRow).toContainText("approved");
+  await reviewRow
+    .getByRole("button", { name: "Recover serial", exact: true })
+    .click();
+  await page.getByLabel("Scan recovered serial", { exact: true }).fill(serial);
+  await page
+    .getByLabel("Recovery receipt reference (unique)", { exact: true })
+    .fill("CUSTODY-UI-FOUND");
+  await page
+    .getByLabel("Recovered stock bin", { exact: true })
+    .fill("CUSTODY-FOUND-BIN");
+  await page
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic scanned matching serial found on another shelf");
+  const keys: string[] = [];
+  let lostRecovery = false;
+  await page.route("**/api/commands/serial.missing.recover", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!lostRecovery) {
+      lostRecovery = true;
+      expect((await route.fetch()).status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await next(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await panel
+    .getByRole("button", { name: "Load more custody reviews", exact: true })
+    .click();
+  await expect(reviewRow).toContainText("recovered");
+  await expect(reviewRow).toContainText("CUSTODY-UI-FOUND");
+  const after = await snapshot(),
+    recovered = after.stock.find((u: any) => u.id === unit.id);
+  expect([
+    recovered.serial,
+    recovered.quantity,
+    recovered.cost,
+    recovered.condition,
+    recovered.bin,
+    recovered.available,
+  ]).toEqual([serial, 1, 6000, "quarantine", "CUSTODY-FOUND-BIN", 0]);
+  expect(after.invoices).toEqual(before.invoices);
+  expect(after.orders).toEqual(before.orders);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await stockRow.getByRole("button", { name: "Inspect", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test("browser: short picks retry once, retain paged history after failure, and invoice only actual handover", async ({
   page,
 }) => {

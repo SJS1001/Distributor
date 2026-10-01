@@ -27,6 +27,8 @@ const signs: Record<
   count: "either",
   inspection: "zero",
   "shortpick.hold": "zero",
+  "serial.loss": "negative",
+  "serial.recovery": "positive",
   "transfer.dispatch": "transfer",
   "transfer.receive": "transfer",
   "transfer.loss": "negative",

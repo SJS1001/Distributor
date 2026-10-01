@@ -395,6 +395,35 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ unitId: str, revision: num, count: num, reason: str }),
       run: (a, k, p) => app.inventory.adjustCount(a, k, p),
     },
+    "serial.missing.report": {
+      schema: obj({
+        unitId: str,
+        revision: num,
+        serial: str,
+        reviewRef: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.reportSerialMissing(a, k, p),
+    },
+    "serial.missing.decide": {
+      schema: obj({
+        reviewId: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.decideSerialMissing(a, k, p),
+    },
+    "serial.missing.recover": {
+      schema: obj({
+        reviewId: str,
+        revision: num,
+        serial: str,
+        receiptRef: str,
+        bin: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.recoverSerialMissing(a, k, p),
+    },
     "count.start": {
       schema: obj({ unitId: str, revision: num, countRef: str }),
       run: (a, k, p) => app.inventory.startCount(a, k, p),
@@ -917,6 +946,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/transfers", async (request) =>
     app.inventory.transfers(actor(request)),
+  );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/stock/serial-reviews",
+    { schema: { querystring: obj({ after: str }, ["after"]) } },
+    async (request) =>
+      app.inventory.serialReviews(actor(request), request.query.after),
   );
   http.get("/api/counts", async (request) =>
     app.inventory.counts(actor(request)),
