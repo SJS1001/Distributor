@@ -6,6 +6,7 @@ import {
   setCsrf,
   downloadDocument,
   downloadStockLabel,
+  downloadInboxDocument,
 } from "./api.ts";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
@@ -105,6 +106,7 @@ function App() {
       e.credits = await request("/api/credits");
       e.aging = await request("/api/billing/aging");
       e.downloads = await request("/api/billing/downloads");
+      e.inbox = await request("/api/billing/inbox");
     }
     if (["admin", "finance"].includes(actor?.role ?? ""))
       e.billingProfiles = await request("/api/billing/profiles");
@@ -265,6 +267,50 @@ function App() {
     data?.warehouses.find((w: Item) => w.id === wid)?.name ?? "Warehouse";
   const accountName = (aid: string) =>
     data?.accounts.find((a: Item) => a.id === aid)?.name ?? "Account";
+  const publishDocument = (
+    kind: "invoice" | "credit",
+    documentId: string,
+    number: string,
+    accountId: string,
+  ) => {
+    void run(() => downloadDocument(kind, documentId))
+      .then((downloadId) => {
+        if (typeof downloadId !== "string" || !downloadId)
+          throw new Error(
+            "Reviewed download receipt is missing. Retry the PDF.",
+          );
+        open(
+          "Publish reviewed PDF",
+          [reason],
+          (v) =>
+            command("billing.portal.publish", { downloadId, reason: v.reason }),
+          `Review the downloaded ${number} PDF for ${accountName(accountId)} before publishing it to this customer's inbox. Publication makes it available; the buyer must separately confirm receipt.`,
+          "Publish to customer inbox",
+        );
+      })
+      .catch(() => {});
+  };
+  const receiveDocument = (publication: Item) => {
+    void run(() => downloadInboxDocument(publication.id))
+      .then((downloadId) => {
+        if (typeof downloadId !== "string" || !downloadId)
+          throw new Error("Download receipt is missing. Retry the PDF.");
+        open(
+          "Confirm document receipt",
+          [],
+          () =>
+            command("billing.portal.acknowledge", {
+              publicationId: publication.id,
+              downloadId,
+              contentHash: publication.content_hash,
+              confirmation: "received",
+            }),
+          `After checking the downloaded ${publication.number} PDF, confirm receipt for ${accountName(publication.account_id)}. This does not confirm payment or agreement with its contents.`,
+          "Confirm receipt",
+        );
+      })
+      .catch(() => {});
+  };
   const reviewCart = async (cart: Item) => {
     const quote = await command("cart.quote", {
       cartId: cart.id,
@@ -1764,6 +1810,16 @@ function App() {
                       )
                       .catch(() => {});
                   })}
+                  {can("finance") &&
+                    !extra.inbox?.some(
+                      (p: Item) =>
+                        p.kind === "invoice" &&
+                        p.document_id === i.id &&
+                        p.state === "available",
+                    ) &&
+                    button("Review and publish invoice", () =>
+                      publishDocument("invoice", i.id, i.number, i.account_id),
+                    )}
                 </div>,
               ],
             )}
@@ -1778,16 +1834,100 @@ function App() {
                     data.invoices.find((i: Item) => i.id === c.invoice_id)
                       ?.number ?? c.invoice_id,
                     money(c.total, currency),
-                    button("Download credit PDF", () => {
-                      void run(() => downloadDocument("credit", c.id))
-                        .then(() =>
-                          setNotice(
-                            "PDF download prepared. Receipt does not confirm delivery.",
+                    <div className="actions">
+                      {button("Download credit PDF", () => {
+                        void run(() => downloadDocument("credit", c.id))
+                          .then(() =>
+                            setNotice(
+                              "PDF download prepared. Receipt does not confirm delivery.",
+                            ),
+                          )
+                          .catch(() => {});
+                      })}
+                      {can("finance") &&
+                        !extra.inbox?.some(
+                          (p: Item) =>
+                            p.kind === "credit" &&
+                            p.document_id === c.id &&
+                            p.state === "available",
+                        ) &&
+                        button("Review and publish credit", () =>
+                          publishDocument(
+                            "credit",
+                            c.id,
+                            c.number,
+                            data.invoices.find(
+                              (i: Item) => i.id === c.invoice_id,
+                            )?.account_id,
                           ),
-                        )
-                        .catch(() => {});
-                    }),
+                        )}
+                    </div>,
                   ],
+                )}
+              </>
+            )}
+            {extra.inbox && (
+              <>
+                <h2>Customer document inbox</h2>
+                <p>
+                  Published PDFs are available to the customer account. Only a
+                  buyer's explicit confirmation records receipt. Withdrawing a
+                  publication preserves its history and the original invoice or
+                  credit.
+                </p>
+                {table(
+                  [
+                    "Document",
+                    "Customer",
+                    "Published",
+                    "Availability",
+                    "Receipt confirmations",
+                    "Actions",
+                  ],
+                  extra.inbox,
+                  (p: Item) => [
+                    p.number,
+                    accountName(p.account_id),
+                    p.published_at,
+                    p.state,
+                    p.acknowledgments.length
+                      ? p.acknowledgments.map((a: Item) => (
+                          <small key={a.id}>
+                            {a.actor_name} · {a.acknowledged_at} · receipt
+                            confirmed
+                          </small>
+                        ))
+                      : "Awaiting buyer confirmation",
+                    <div className="actions">
+                      {actor.role === "buyer" &&
+                        p.state === "available" &&
+                        button(
+                          p.acknowledgments.some(
+                            (a: Item) => a.actor_id === actor.id,
+                          )
+                            ? "Download received PDF"
+                            : "Download and review receipt",
+                          () => receiveDocument(p),
+                        )}
+                      {can("finance") &&
+                        p.state === "available" &&
+                        button("Withdraw publication", () =>
+                          open(
+                            "Withdraw portal publication",
+                            [reason],
+                            (v) =>
+                              command("billing.portal.withdraw", {
+                                publicationId: p.id,
+                                revision: p.revision,
+                                reason: v.reason,
+                              }),
+                            `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
+                            "Withdraw from inbox",
+                          ),
+                        )}
+                    </div>,
+                  ],
+                  "No documents have been published to the customer inbox.",
                 )}
               </>
             )}

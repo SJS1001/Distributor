@@ -522,6 +522,57 @@ export class BillingDocuments {
       500,
     );
   }
+  // Billing-owned operations for the account portal. They always recheck current
+  // document access and verify persisted facts/bytes; callers cannot supply PDFs.
+  publishedRendition(actor: Actor, kind: DocumentKind, documentId: string) {
+    this.authorize(actor, kind, documentId);
+    const row = this.row(actor, kind, documentId);
+    check(row, "NOT_FOUND", "Original document facts not found.", 404);
+    const rendition = this.store.get(
+      "SELECT * FROM billing_document_renditions WHERE org_id=? AND kind=? AND document_id=?",
+      actor.orgId,
+      kind,
+      documentId,
+    );
+    check(rendition, "NOT_FOUND", "Reviewed PDF not found.", 404);
+    this.verifyRendition(rendition, row.hash);
+    return {
+      facts: this.read(row),
+      factsHash: row.hash,
+      contentHash: String(rendition.content_hash),
+      rendererHash: String(rendition.renderer_hash),
+      bytes: Buffer.from(rendition.bytes as Uint8Array),
+    };
+  }
+  reviewedDownload(actor: Actor, downloadId: string) {
+    actor = this.current(actor);
+    const download = this.store.get(
+      "SELECT * FROM billing_downloads WHERE org_id=? AND id=? AND actor_id=?",
+      actor.orgId,
+      downloadId,
+      actor.id,
+    );
+    check(
+      download,
+      "NOT_FOUND",
+      "Your reviewed PDF request was not found.",
+      404,
+    );
+    const document = this.publishedRendition(
+      actor,
+      download.kind as DocumentKind,
+      String(download.document_id),
+    );
+    check(
+      download.account_id === document.facts.accountId &&
+        download.content_hash === document.contentHash &&
+        download.size === document.bytes.length,
+      "DOCUMENT_INTEGRITY",
+      "Reviewed download does not match the original PDF.",
+      500,
+    );
+    return { ...document, filename: String(download.filename) };
+  }
   downloads(actor: Actor) {
     actor = this.current(actor);
     return this.store.all(

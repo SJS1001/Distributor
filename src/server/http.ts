@@ -38,6 +38,23 @@ type Spec = {
 }; // Schemas validate this boundary before domain dispatch.
 export function commands(app: Application): Record<string, Spec> {
   return {
+    "billing.portal.publish": {
+      schema: obj({ downloadId: str, reason: str }),
+      run: (a, k, p) => app.billing.delivery.publish(a, k, p),
+    },
+    "billing.portal.withdraw": {
+      schema: obj({ publicationId: str, revision: num, reason: str }),
+      run: (a, k, p) => app.billing.delivery.withdraw(a, k, p),
+    },
+    "billing.portal.acknowledge": {
+      schema: obj({
+        publicationId: str,
+        downloadId: str,
+        contentHash: str,
+        confirmation: choice("received"),
+      }),
+      run: (a, k, p) => app.billing.delivery.acknowledge(a, k, p),
+    },
     "billing.profile": {
       schema: obj({
         accountId: { anyOf: [str, { type: "null" }] },
@@ -738,6 +755,41 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/credits", async (request) =>
     app.billing.credits(actor(request)),
+  );
+  http.get("/api/billing/inbox", async (request) =>
+    app.billing.delivery.list(actor(request)),
+  );
+  http.post<{ Params: { publicationId: string } }>(
+    "/api/billing/inbox/:publicationId/pdf",
+    {
+      schema: {
+        params: obj({ publicationId: str }),
+        body: obj({}),
+        headers: {
+          type: "object",
+          properties: {
+            "idempotency-key": { type: "string", minLength: 1, maxLength: 128 },
+          },
+          required: ["idempotency-key"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = app.billing.delivery.download(
+        actor(request),
+        String(request.headers["idempotency-key"]),
+        request.params.publicationId,
+      );
+      return reply
+        .type("application/pdf")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${result.receipt.filename}"`,
+        )
+        .header("x-document-sha256", result.receipt.contentHash)
+        .header("x-download-receipt", result.receipt.id)
+        .send(result.bytes);
+    },
   );
   http.get("/api/billing/profiles", async (request) =>
     app.billing.documents.profiles(actor(request)),

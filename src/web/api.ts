@@ -66,6 +66,14 @@ export async function downloadStockLabel(
   );
 }
 
+export async function downloadInboxDocument(publicationId: string) {
+  return downloadPdf(
+    `/api/billing/inbox/${encodeURIComponent(publicationId)}/pdf`,
+    {},
+    `distributor-inbox:${publicationId}`,
+  );
+}
+
 async function downloadPdf(path: string, payload: unknown, storageKey: string) {
   const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
   sessionStorage.setItem(storageKey, key);

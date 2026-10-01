@@ -13,6 +13,7 @@ import { Identity } from "./iam.ts";
 import { Platform } from "./platform.ts";
 import { BillingOpening } from "./billing-opening.ts";
 import { BillingDocuments } from "./billing-documents.ts";
+import { BillingDelivery } from "./billing-delivery.ts";
 import type { Catalog } from "./catalog.ts";
 export type CommercialLine = {
   productId: string;
@@ -52,6 +53,7 @@ export class Billing {
   private store: Store;
   readonly opening: BillingOpening;
   readonly documents: BillingDocuments;
+  readonly delivery: BillingDelivery;
   constructor(
     database: Database,
     private platform: Platform,
@@ -72,6 +74,12 @@ export class Billing {
   `);
     this.opening = new BillingOpening(this.store, identity, catalog, platform);
     this.documents = new BillingDocuments(database, platform, identity, this);
+    this.delivery = new BillingDelivery(
+      database,
+      platform,
+      identity,
+      this.documents,
+    );
   }
   private number(actor: Actor, prefix: string): string {
     while (true) {
