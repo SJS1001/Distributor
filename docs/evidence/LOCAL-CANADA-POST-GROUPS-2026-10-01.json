@@ -631,7 +631,7 @@
     "docs/IMPLEMENTATION.md": "64b19575e7f61e735a09c689255e0cb897d2402716c7e811841bdd7d6685018e",
     "docs/RECOVERY.md": "2b9177269e5b429feed9ddd1dac39eb68e63aac320a9d19355777ce46eb4a35e",
     "docs/SCHEMA-UPGRADES.md": "0fe4b7f0e754985d6cedfe374ba212cfc6f294adcb7211a15688154f72ff89cc",
-    "docs/HANDOFF.md": "e66a870bca94dc63d5210f8a4f38e122adc0829e2594579e68e9a085f8c181a5",
+    "docs/HANDOFF.md": "18c502f792dd28a7d2f89a400d83f2d0548ed60bbd23fa60c95d0d9869061d2b",
     "docs/evidence/LOCAL-CANADA-POST-GROUPS-2026-10-01.md": "a2352cf98075eae015030e931efb6e639010a7410e0f05535a72c9c43e568118"
   },
   "commands": {
@@ -918,7 +918,8 @@
     "/tmp/distributor-canada-post-groups-checkpoint/baseline.json": "c21bf1b71b5ed44b7c9f5f3abfe8cb23b4ac7bfec5f8b5207dc59461bb8f6cb6",
     "/tmp/distributor-canada-post-groups-checkpoint/candidate.json": "feae6f817e453b9bbf05864ad08edea096ebdcebbfd45c937817aba4d4f81f01",
     "/tmp/distributor-canada-post-groups-checkpoint/run.py": "eb81ea9b19182d62f0be2348fb9fd838bab8043e3ce5631c902009e3240132b1",
-    "/tmp/distributor-canada-post-groups-checkpoint/write-receipt.py": "308ac3ad7721e9e51165875d284a6ab31a85bafb5b4380d41a11c8a6689841b7"
+    "/tmp/distributor-canada-post-groups-checkpoint/write-receipt.py": "308ac3ad7721e9e51165875d284a6ab31a85bafb5b4380d41a11c8a6689841b7",
+    "/tmp/distributor-canada-post-groups-checkpoint/audit.py": "e6961007e3753ac2a3565fe657bae1d80216dd549c1544b2e7f6ff5c2f214492"
   },
   "privateCommandRecordSha256": {
     "/tmp/distributor-canada-post-groups-checkpoint/complete-focused.json": "f5d15a6088964b6690dde0fc96283d02afb64f2ed6f04316fa771359ce361d47",
@@ -1005,5 +1006,17 @@
   "receiptStageCommands": [
     "receipt-plan",
     "receipt-whitespace"
-  ]
+  ],
+  "postCommitAudit": {
+    "status": "PASS",
+    "capturedAt": "2026-10-01T21:51:37.556035+00:00",
+    "commit": "64ea493474300c984c93e66c02cf6099a83a50c8",
+    "repositoryFiles": 426,
+    "dependencyLicenseFiles": 170,
+    "commandRecords": 19,
+    "cleanCheckout": true,
+    "scope": "Captured local regression and receipts only; no acceptance gate verified",
+    "path": "/tmp/distributor-canada-post-groups-checkpoint/post-commit-audit.json",
+    "sha256": "af211dc901c3398278d9e1ec177c778d8d9005ce6a57eb752ac4b3dc72e0c74b"
+  }
 }
