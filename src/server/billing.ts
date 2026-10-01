@@ -309,6 +309,7 @@ export class Billing {
       )
       .map((i) => ({
         ...this.invoice(actor, i.id),
+        hasActivePublication: this.hasActivePublication(actor, "invoice", i.id),
         ...this.totals(actor, i.id),
         lines: this.lines(actor, i.id),
       }));
@@ -628,6 +629,18 @@ export class Billing {
       },
     );
   }
+  private hasActivePublication(
+    actor: Actor,
+    kind: "invoice" | "credit",
+    documentId: string,
+  ) {
+    return !!this.store.get(
+      "SELECT id FROM billing_publications WHERE org_id=? AND kind=? AND document_id=? AND state='available'",
+      actor.orgId,
+      kind,
+      documentId,
+    );
+  }
   credits(actor: Actor) {
     permit(actor, ["finance", "commercial", "buyer", "warranty", "support"]);
     return this.store
@@ -642,6 +655,14 @@ export class Billing {
           String(c.invoice_id),
         )!;
         return actor.role !== "buyer" || i.account_id === actor.accountId;
-      });
+      })
+      .map((c) => ({
+        ...c,
+        hasActivePublication: this.hasActivePublication(
+          actor,
+          "credit",
+          String(c.id),
+        ),
+      }));
   }
 }

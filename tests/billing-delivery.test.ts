@@ -877,6 +877,17 @@ test("inbox pages retain complete publication history beyond 200 records while n
   const f = fixture(t),
     p = await published(f),
     delivery = f.app.billing.delivery;
+  const olderInvoiceId = ship(f, accept(f, 1, "older-invoice").id).invoiceId;
+  const olderReview = await f.app.billing.documents.download(
+    f.actor,
+    "older-review",
+    "invoice",
+    olderInvoiceId,
+  );
+  const olderActive = delivery.publish(f.actor, "older-publish", {
+    downloadId: olderReview.receipt.id,
+    reason: "Synthetic older available invoice",
+  });
   const before = f.app.dashboard(f.actor);
   const ids = [String(p.publication.id)];
   let current = p.publication;
@@ -916,10 +927,16 @@ test("inbox pages retain complete publication history beyond 200 records while n
     found.push(...page.items.map((x) => x.id));
     next = page.next;
   }
-  assert.deepEqual(found, ids.slice().reverse());
-  assert.equal(new Set(found).size, 205);
+  assert.deepEqual(found, [...ids.slice(1).reverse(), olderActive.id, ids[0]]);
+  assert.equal(new Set(found).size, 206);
   assert.equal(delivery.page(p.buyer).items[0]!.id, later.id);
   assert.equal(delivery.list(p.buyer).length, 200);
+  assert.ok(!delivery.page(p.buyer).items.some((x) => x.id === olderActive.id));
+  assert.equal(
+    f.app.billing.invoices(f.actor).find((i) => i.id === olderInvoiceId)!
+      .hasActivePublication,
+    true,
+  );
   assert.deepEqual(f.app.dashboard(f.actor), before);
   for (const limit of [0, 101, 1.5, NaN])
     assert.throws(() => delivery.page(p.buyer, { limit }), {
@@ -1044,7 +1061,12 @@ test("paged personal PDF history survives withdrawal, bounds previews and rechec
     () => delivery.history(p.buyer, pubId, "downloads", { after: "invalid" }),
     { code: "INVALID_CURSOR" },
   );
-  assert.deepEqual(f.app.dashboard(f.actor), before);
+  assert.deepEqual(f.app.dashboard(f.actor), {
+    ...before,
+    invoices: before.invoices.map((i) =>
+      i.id === p.invoiceId ? { ...i, hasActivePublication: false } : i,
+    ),
+  });
   f.app.database
     .owned("iam")
     .run("UPDATE iam_users SET active=0 WHERE id=?", p.buyer.id);

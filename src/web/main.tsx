@@ -8,6 +8,7 @@ import {
   downloadStockLabel,
   downloadInboxDocument,
 } from "./api.ts";
+import { BillingInbox } from "./billing-inbox.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -106,7 +107,8 @@ function App() {
       e.credits = await request("/api/credits");
       e.aging = await request("/api/billing/aging");
       e.downloads = await request("/api/billing/downloads");
-      e.inbox = await request("/api/billing/inbox");
+      e.inbox = await request("/api/billing/inbox/page");
+      e.inboxRefresh = crypto.randomUUID();
     }
     if (["admin", "finance"].includes(actor?.role ?? ""))
       e.billingProfiles = await request("/api/billing/profiles");
@@ -1817,12 +1819,7 @@ function App() {
                       .catch(() => {});
                   })}
                   {can("finance") &&
-                    !extra.inbox?.some(
-                      (p: Item) =>
-                        p.kind === "invoice" &&
-                        p.document_id === i.id &&
-                        p.state === "available",
-                    ) &&
+                    !i.hasActivePublication &&
                     button("Review and publish invoice", () =>
                       publishDocument("invoice", i.id, i.number, i.account_id),
                     )}
@@ -1851,12 +1848,7 @@ function App() {
                           .catch(() => {});
                       })}
                       {can("finance") &&
-                        !extra.inbox?.some(
-                          (p: Item) =>
-                            p.kind === "credit" &&
-                            p.document_id === c.id &&
-                            p.state === "available",
-                        ) &&
+                        !c.hasActivePublication &&
                         button("Review and publish credit", () =>
                           publishDocument(
                             "credit",
@@ -1873,69 +1865,42 @@ function App() {
               </>
             )}
             {extra.inbox && (
-              <>
-                <h2>Customer document inbox</h2>
-                <p>
-                  Published PDFs are available to the customer account. Only a
-                  buyer's explicit confirmation records receipt. Withdrawing a
-                  publication preserves its history and the original invoice or
-                  credit.
-                </p>
-                {table(
-                  [
-                    "Document",
-                    "Customer",
-                    "Published",
-                    "Availability",
-                    "Receipt confirmations",
-                    "Actions",
-                  ],
-                  extra.inbox,
-                  (p: Item) => [
-                    p.number,
-                    accountName(p.account_id),
-                    p.published_at,
-                    p.state,
-                    p.acknowledgments.length
-                      ? p.acknowledgments.map((a: Item) => (
-                          <small key={a.id}>
-                            {a.actor_name} · {a.acknowledged_at} · receipt
-                            confirmed
-                          </small>
-                        ))
-                      : "Awaiting buyer confirmation",
-                    <div className="actions">
-                      {actor.role === "buyer" &&
-                        p.state === "available" &&
-                        button(
-                          p.acknowledgments.some(
-                            (a: Item) => a.actor_id === actor.id,
-                          )
-                            ? "Download received PDF"
-                            : "Download and review receipt",
-                          () => receiveDocument(p),
-                        )}
-                      {can("finance") &&
-                        p.state === "available" &&
-                        button("Withdraw publication", () =>
-                          open(
-                            "Withdraw portal publication",
-                            [reason],
-                            (v) =>
-                              command("billing.portal.withdraw", {
-                                publicationId: p.id,
-                                revision: p.revision,
-                                reason: v.reason,
-                              }),
-                            `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
-                            "Withdraw from inbox",
-                          ),
-                        )}
-                    </div>,
-                  ],
-                  "No documents have been published to the customer inbox.",
+              <BillingInbox
+                key={extra.inboxRefresh}
+                initial={extra.inbox}
+                personal={actor.role === "buyer"}
+                accountName={accountName}
+                renderActions={(p) => (
+                  <div className="actions">
+                    {actor.role === "buyer" &&
+                      p.state === "available" &&
+                      button(
+                        p.acknowledgments.some(
+                          (a: Item) => a.actor_id === actor.id,
+                        )
+                          ? "Download received PDF"
+                          : "Download and review receipt",
+                        () => receiveDocument(p),
+                      )}
+                    {can("finance") &&
+                      p.state === "available" &&
+                      button("Withdraw publication", () =>
+                        open(
+                          "Withdraw portal publication",
+                          [reason],
+                          (v) =>
+                            command("billing.portal.withdraw", {
+                              publicationId: p.id,
+                              revision: p.revision,
+                              reason: v.reason,
+                            }),
+                          `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
+                          "Withdraw from inbox",
+                        ),
+                      )}
+                  </div>
                 )}
-              </>
+              />
             )}
             {extra.aging && (
               <>

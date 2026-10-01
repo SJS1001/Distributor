@@ -2918,6 +2918,271 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     expect(final.stock).toEqual(before.stock);
     expect(final.orders).toEqual(before.orders);
     expect(final.shipments).toEqual(before.shipments);
+    // Exercise real continuation beyond the first 50 rows and request records.
+    const buyerSession = await (await buyer.request.get("/api/session")).json();
+    const buyerHeaders = { origin, "x-csrf-token": buyerSession.csrf };
+    const requestIds: string[] = [];
+    for (let i = 0; i < 55; i++) {
+      const response = await buyer.request.post(
+        `/api/billing/inbox/${replacement.id}/pdf`,
+        {
+          headers: { ...buyerHeaders, "idempotency-key": crypto.randomUUID() },
+          data: {},
+        },
+      );
+      expect(response.ok(), await response.text()).toBeTruthy();
+      requestIds.push(response.headers()["x-download-receipt"]!);
+    }
+    const reviewedCredit = await page.request.post(
+      `/api/billing/documents/credit/${credit.id}/pdf`,
+      {
+        headers: {
+          origin,
+          "x-csrf-token": (
+            await (await page.request.get("/api/session")).json()
+          ).csrf,
+          "idempotency-key": crypto.randomUUID(),
+        },
+        data: {},
+      },
+    );
+    expect(reviewedCredit.ok()).toBeTruthy();
+    const creditReviewId = reviewedCredit.headers()["x-download-receipt"]!;
+    let currentCredit = creditPub;
+    const republishCredit = async () => {
+      await cmd("billing.portal.withdraw", {
+        publicationId: currentCredit.id,
+        revision: 1,
+        reason: "Synthetic history pagination",
+      });
+      currentCredit = await cmd("billing.portal.publish", {
+        downloadId: creditReviewId,
+        reason: "Synthetic reviewed credit republication",
+      });
+    };
+    for (let i = 0; i < 55; i++) await republishCredit();
+    await page.reload();
+    await nav(page, "Billing");
+    await expect(
+      invoiceRow.getByRole("button", {
+        name: "Review and publish invoice",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const staffInbox = page.getByRole("region", {
+      name: "Customer document inbox",
+      exact: true,
+    });
+    await expect(
+      staffInbox.getByRole("row").filter({ hasText: invoice.number }),
+    ).toHaveCount(0);
+    await buyer.reload();
+    await nav(buyer, "Billing");
+    const buyerInbox = buyer.getByRole("region", {
+      name: "Customer document inbox",
+      exact: true,
+    });
+    await expect(buyerInbox.getByRole("status")).toHaveText(
+      "50 publications loaded",
+    );
+    const olderUrls: string[] = [];
+    await buyer.route("**/api/billing/inbox/page?after=*", async (route) => {
+      olderUrls.push(route.request().url());
+      if (olderUrls.length === 1) await route.abort("failed");
+      else await route.continue();
+    });
+    await republishCredit(); // Later insertion must not enter the existing continuation.
+    await buyerInbox
+      .getByRole("button", { name: "Load older documents", exact: true })
+      .click();
+    await expect(buyerInbox.getByRole("alert")).toBeVisible();
+    await expect(buyerInbox.getByRole("status")).toHaveText(
+      "50 publications loaded",
+    );
+    await buyerInbox
+      .getByRole("button", { name: "Retry older documents", exact: true })
+      .click();
+    await expect(buyerInbox.getByRole("status")).toHaveText(
+      "58 publications loaded",
+    );
+    expect(olderUrls).toHaveLength(2);
+    expect(olderUrls[0]).toBe(olderUrls[1]);
+    expect(await buyerInbox.getByRole("row").count()).toBe(59); // Header plus exactly 58 rows.
+    const replacementRow = buyerInbox
+      .getByRole("row")
+      .filter({
+        has: buyer.getByRole("button", {
+          name: "Download and review receipt",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: invoice.number });
+    await replacementRow
+      .getByRole("button", { name: "View document history", exact: true })
+      .click();
+    const historyPanel = buyer.getByRole("region", {
+      name: "Document history",
+      exact: true,
+    });
+    const requests = historyPanel.getByRole("region", {
+      name: "Prepared PDF requests",
+      exact: true,
+    });
+    await expect(requests.getByRole("status")).toHaveText("50 records loaded");
+    const historyUrls: string[] = [];
+    await buyer.route(
+      `**/api/billing/inbox/${replacement.id}/history/downloads?after=*`,
+      async (route) => {
+        historyUrls.push(route.request().url());
+        if (historyUrls.length === 1) await route.abort("failed");
+        else await route.continue();
+      },
+    );
+    await requests
+      .getByRole("button", {
+        name: "Load older PDF requests",
+        exact: true,
+      })
+      .click();
+    await expect(requests.getByRole("alert")).toBeVisible();
+    await expect(requests.getByRole("status")).toHaveText("50 records loaded");
+    await requests
+      .getByRole("button", { name: "Retry PDF requests", exact: true })
+      .click();
+    await expect(requests.getByRole("status")).toHaveText("55 records loaded");
+    expect(historyUrls).toHaveLength(2);
+    expect(historyUrls[0]).toBe(historyUrls[1]);
+    const requestText = await requests.getByRole("row").allTextContents();
+    for (const id of requestIds)
+      expect(requestText.filter((text) => text.includes(id))).toHaveLength(1);
+    await expect(requests).toContainText("prepared only");
+    await expect(
+      historyPanel
+        .getByRole("region", { name: "Receipt confirmations", exact: true })
+        .getByRole("status"),
+    ).toHaveText("0 records loaded");
+    await historyPanel
+      .getByRole("button", { name: "Close document history", exact: true })
+      .click();
+    await expect(
+      replacementRow.getByRole("button", {
+        name: "View document history",
+        exact: true,
+      }),
+    ).toBeFocused();
+    // Refresh discards continuation and history, then includes the newest insertion.
+    await buyer.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(buyerInbox.getByRole("status")).toHaveText(
+      "50 publications loaded",
+    );
+    await buyerInbox
+      .getByRole("button", { name: "Load older documents", exact: true })
+      .click();
+    await expect(buyerInbox.getByRole("status")).toHaveText(
+      "59 publications loaded",
+    );
+    const withdrawn = buyerInbox
+      .getByRole("row")
+      .filter({ hasText: invoice.number })
+      .filter({ hasText: "withdrawn" });
+    await withdrawn
+      .getByRole("button", { name: "View document history", exact: true })
+      .click();
+    await expect(
+      historyPanel.getByRole("region", {
+        name: "Receipt confirmations",
+        exact: true,
+      }),
+    ).toContainText("Inbox buyer");
+    await expect(
+      historyPanel.getByRole("region", {
+        name: "Receipt confirmations",
+        exact: true,
+      }),
+    ).toContainText("does not confirm payment or agreement");
+    // A colleague sees no personal requests for this same publication.
+    await colleague.reload();
+    await nav(colleague, "Billing");
+    const colleagueInbox = colleague.getByRole("region", {
+      name: "Customer document inbox",
+      exact: true,
+    });
+    await colleagueInbox
+      .getByRole("button", { name: "Load older documents", exact: true })
+      .click();
+    await colleagueInbox
+      .getByRole("row")
+      .filter({
+        has: colleague.getByRole("button", {
+          name: "Download and review receipt",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: invoice.number })
+      .getByRole("button", { name: "View document history", exact: true })
+      .click();
+    await expect(
+      colleague
+        .getByRole("region", { name: "Prepared PDF requests", exact: true })
+        .getByRole("status"),
+    ).toHaveText("0 records loaded");
+    await expect(
+      colleague
+        .getByRole("region", { name: "Receipt confirmations", exact: true })
+        .getByRole("status"),
+    ).toHaveText("0 records loaded");
+    await colleague
+      .getByRole("region", { name: "Document history", exact: true })
+      .getByRole("button", { name: "Close document history", exact: true })
+      .click();
+    const delayedUrl = `**/api/billing/inbox/${replacement.id}/history/downloads`;
+    let release!: () => void, started!: () => void, finished!: () => void;
+    const pendingResponse = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const responseStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const responseFinished = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    await colleague.route(delayedUrl, async (route) => {
+      const response = await route.fetch();
+      started();
+      await pendingResponse;
+      try {
+        await route.fulfill({ response });
+      } catch {
+        /* Closing the history cancels this read. */
+      }
+      finished();
+    });
+    await colleagueInbox
+      .getByRole("row")
+      .filter({
+        has: colleague.getByRole("button", {
+          name: "Download and review receipt",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: invoice.number })
+      .getByRole("button", { name: "View document history", exact: true })
+      .click();
+    await responseStarted;
+    await colleague
+      .getByRole("region", { name: "Document history", exact: true })
+      .getByRole("button", { name: "Close document history", exact: true })
+      .click();
+    release();
+    await responseFinished;
+    await expect(
+      colleague.getByRole("region", { name: "Document history", exact: true }),
+    ).toHaveCount(0);
+    await colleague.unroute(delayedUrl);
+    const paginationFinal = await (
+      await page.request.get("/api/dashboard")
+    ).json();
+    expect(paginationFinal).toEqual(final);
     expect(errors).toEqual([]);
   } finally {
     for (const context of contexts) await context.close();
