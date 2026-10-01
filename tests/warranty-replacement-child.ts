@@ -5,7 +5,12 @@ let input: {
   path: string;
   actor: Actor;
   key: string;
-  operation: "reserveReplacement" | "cancelReplacement" | "handoverReplacement";
+  operation:
+    | "reserveReplacement"
+    | "cancelReplacement"
+    | "handoverReplacement"
+    | "dispatchReplacement"
+    | "updateReplacementShipping";
   payload: any;
 };
 process.on("message", (message: any) => {

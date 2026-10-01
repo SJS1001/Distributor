@@ -43,6 +43,19 @@ type ManufacturerCase = {
   revision: number;
   created_at: string;
 };
+type ReplacementShipping = {
+  replacement_id: string;
+  org_id: string;
+  carrier: string;
+  tracking: string;
+  recipient: string;
+  address: string;
+  evidence: string;
+  dispatched_at: string;
+  state: "in_transit" | "delayed" | "lost" | "delivered";
+  revision: number;
+  observed_at: string;
+};
 type Replacement = {
   id: string;
   org_id: string;
@@ -75,6 +88,20 @@ export class Warranty {
     CREATE TABLE IF NOT EXISTS warranty_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,new_unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over')),revision INTEGER NOT NULL CHECK(revision>=1),old_disposition TEXT NOT NULL CHECK(old_disposition IN('restock','scrap')),coverage_end TEXT NOT NULL,reason TEXT NOT NULL,recipient TEXT,evidence TEXT,created_at TEXT NOT NULL,completed_at TEXT) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS warranty_replacement_active ON warranty_replacements(org_id,claim_id) WHERE state IN('reserved','handed_over');
     CREATE TABLE IF NOT EXISTS warranty_replacement_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(replacement_id,revision)) STRICT;
+    CREATE TABLE IF NOT EXISTS warranty_replacement_shipping(
+      replacement_id TEXT PRIMARY KEY REFERENCES warranty_replacements(id),org_id TEXT NOT NULL,
+      carrier TEXT NOT NULL,tracking TEXT NOT NULL,carrier_key TEXT NOT NULL,tracking_key TEXT NOT NULL,
+      recipient TEXT NOT NULL,address TEXT NOT NULL,evidence TEXT NOT NULL,dispatched_at TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','delivered')),
+      revision INTEGER NOT NULL CHECK(revision>=1),observed_at TEXT NOT NULL,
+      UNIQUE(org_id,carrier_key,tracking_key)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS warranty_replacement_shipping_history(
+      id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL REFERENCES warranty_replacements(id),
+      revision INTEGER NOT NULL CHECK(revision>=1),state TEXT NOT NULL,reference TEXT NOT NULL,reference_key TEXT NOT NULL,
+      evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,
+      UNIQUE(replacement_id,revision),UNIQUE(replacement_id,reference_key)
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS warranty_decisions(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,action TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS warranty_manufacturer_cases(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,manufacturer TEXT NOT NULL,reference TEXT NOT NULL,manufacturer_key TEXT NOT NULL,reference_key TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','accepted','denied','cancelled')),revision INTEGER NOT NULL CHECK(revision>=1),created_at TEXT NOT NULL,UNIQUE(org_id,manufacturer_key,reference_key)) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending';
@@ -131,31 +158,53 @@ export class Warranty {
         actor.orgId,
         claimId,
       )
-      .map((r) => ({
-        id: r.id,
-        claimId,
-        newUnitId: r.new_unit_id,
-        oldSerial: this.inventory.unit(actor, c.unit_id).serial,
-        newSerial: this.inventory.unit(actor, r.new_unit_id).serial,
-        state: r.state,
-        revision: r.revision,
-        coverageEnd: r.coverage_end,
-        oldDisposition: r.old_disposition,
-        createdAt: r.created_at,
-        completedAt: r.completed_at,
-        ...(actor.role === "buyer"
-          ? {}
-          : {
-              reason: r.reason,
-              recipient: r.recipient,
-              evidence: r.evidence,
-              history: this.store.all(
-                "SELECT revision,state,reason,actor_id,created_at FROM warranty_replacement_history WHERE org_id=? AND replacement_id=? ORDER BY revision",
-                actor.orgId,
-                r.id,
-              ),
-            }),
-      }));
+      .filter((r) => {
+        if (
+          !this.store.get(
+            "SELECT replacement_id FROM warranty_replacement_shipping WHERE replacement_id=? AND org_id=?",
+            r.id,
+            actor.orgId,
+          )
+        )
+          return true;
+        const viewer = this.identity.currentActor(actor);
+        if (!["warehouse", "warranty"].includes(viewer.role)) return true;
+        return [c.unit_id, r.new_unit_id].every((unitId) =>
+          viewer.sites.includes(
+            this.inventory.unit(viewer, unitId).warehouse_id,
+          ),
+        );
+      })
+      .map((r) => {
+        const shipping = this.replacementShipping(actor, r.id);
+        const viewer = shipping?.actor ?? actor;
+        return {
+          id: r.id,
+          claimId,
+          newUnitId: r.new_unit_id,
+          oldSerial: this.inventory.unit(actor, c.unit_id).serial,
+          newSerial: this.inventory.unit(actor, r.new_unit_id).serial,
+          state: r.state,
+          revision: r.revision,
+          coverageEnd: r.coverage_end,
+          oldDisposition: r.old_disposition,
+          createdAt: r.created_at,
+          completedAt: r.completed_at,
+          shipping: shipping?.projection ?? null,
+          ...(viewer.role === "buyer"
+            ? {}
+            : {
+                reason: r.reason,
+                recipient: r.recipient,
+                evidence: r.evidence,
+                history: this.store.all(
+                  "SELECT revision,state,reason,actor_id,created_at FROM warranty_replacement_history WHERE org_id=? AND replacement_id=? ORDER BY revision",
+                  actor.orgId,
+                  r.id,
+                ),
+              }),
+        };
+      });
   }
   private replacement(actor: Actor, replacementId: string) {
     const r = this.store.get<Replacement>(
@@ -331,53 +380,378 @@ export class Warranty {
       },
       () => {
         const { r, c } = this.replacement(actor, input.replacementId);
-        check(
-          integer(input.revision, "replacement revision", 1) === r.revision,
-          "STALE_REPLACEMENT",
-          "Replacement changed. Refresh and review its history.",
-        );
-        check(
-          r.state === "reserved" &&
-            ["inspected", "repair"].includes(c.state) &&
-            !c.credit_id,
-          "STATE",
-          "Replacement is not pending on an inspected claim.",
-        );
-        const recipient = text(input.recipient, "collection recipient", 160),
-          evidence = text(input.evidence, "handover evidence", 2000);
-        this.inventory.handoverReplacement(actor, r.id, input.serial, evidence);
-        this.inventory.returnDisposition(
+        return this.completeReplacement(
           actor,
-          c.unit_id,
-          r.old_disposition,
-          c.id,
-          r.reason,
-        );
-        this.store.run(
-          "UPDATE warranty_replacements SET state='handed_over',revision=revision+1,recipient=?,evidence=?,completed_at=? WHERE id=?",
-          recipient,
-          evidence,
-          now(),
-          r.id,
-        );
-        this.store.run(
-          "UPDATE warranty_claims SET state='disposed',disposition='replacement' WHERE id=?",
-          c.id,
-        );
-        this.replacementHistory(
-          actor,
-          { ...r, state: "handed_over", revision: r.revision + 1 },
+          r,
+          c,
+          input,
           "Replacement collected with recorded recipient and evidence.",
         );
-        return {
-          id: r.id,
+      },
+    );
+  }
+  private completeReplacement(
+    actor: Actor,
+    r: Replacement,
+    c: Claim,
+    input: {
+      revision: number;
+      serial: string;
+      recipient: string;
+      evidence: string;
+    },
+    historyReason: string,
+  ) {
+    check(
+      integer(input.revision, "replacement revision", 1) === r.revision,
+      "STALE_REPLACEMENT",
+      "Replacement changed. Refresh and review its history.",
+    );
+    check(
+      r.state === "reserved" &&
+        ["inspected", "repair"].includes(c.state) &&
+        !c.credit_id,
+      "STATE",
+      "Replacement is not pending on an inspected claim.",
+    );
+    const recipient = text(input.recipient, "recipient", 160),
+      evidence = text(input.evidence, "handover evidence", 2000);
+    this.inventory.handoverReplacement(actor, r.id, input.serial, evidence);
+    this.inventory.returnDisposition(
+      actor,
+      c.unit_id,
+      r.old_disposition,
+      c.id,
+      r.reason,
+    );
+    this.store.run(
+      "UPDATE warranty_replacements SET state='handed_over',revision=revision+1,recipient=?,evidence=?,completed_at=? WHERE id=?",
+      recipient,
+      evidence,
+      now(),
+      r.id,
+    );
+    this.store.run(
+      "UPDATE warranty_claims SET state='disposed',disposition='replacement' WHERE id=?",
+      c.id,
+    );
+    this.replacementHistory(
+      actor,
+      { ...r, state: "handed_over", revision: r.revision + 1 },
+      historyReason,
+    );
+    return {
+      id: r.id,
+      claimId: c.id,
+      state: "handed_over",
+      revision: r.revision + 1,
+      newUnitId: r.new_unit_id,
+    };
+  }
+  private shippingAuthority(
+    actor: Actor,
+    replacementId: string,
+    write = false,
+  ) {
+    actor = this.identity.currentActor(actor);
+    permit(
+      actor,
+      write
+        ? ["warehouse"]
+        : ["warranty", "warehouse", "finance", "commercial", "buyer"],
+    );
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing replacement shipping.",
+      403,
+    );
+    replacementId = text(replacementId, "Replacement ID");
+    const r = this.store.get<Replacement>(
+      "SELECT * FROM warranty_replacements WHERE org_id=? AND id=?",
+      actor.orgId,
+      replacementId,
+    );
+    check(r, "NOT_FOUND", "Replacement not found.", 404);
+    const c = this.claim(actor, r.claim_id);
+    if (write || ["warranty", "warehouse"].includes(actor.role)) {
+      site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
+      site(actor, this.inventory.unit(actor, r.new_unit_id).warehouse_id);
+    }
+    return { actor, r, c };
+  }
+  private shippingRow(actor: Actor, replacementId: string) {
+    const row = this.store.get<ReplacementShipping>(
+      "SELECT * FROM warranty_replacement_shipping WHERE org_id=? AND replacement_id=?",
+      actor.orgId,
+      replacementId,
+    );
+    check(row, "NOT_FOUND", "Replacement shipment not found.", 404);
+    return row;
+  }
+  private shippingProjection(actor: Actor, row: ReplacementShipping) {
+    return {
+      carrier: row.carrier,
+      tracking: row.tracking,
+      state: row.state,
+      revision: row.revision,
+      dispatchedAt: row.dispatched_at,
+      observedAt: row.observed_at,
+      ...(actor.role === "buyer"
+        ? {}
+        : {
+            recipient: row.recipient,
+            address: row.address,
+            evidence: row.evidence,
+          }),
+    };
+  }
+  private replacementShipping(actor: Actor, replacementId: string) {
+    const row = this.store.get<ReplacementShipping>(
+      "SELECT * FROM warranty_replacement_shipping WHERE org_id=? AND replacement_id=?",
+      actor.orgId,
+      replacementId,
+    );
+    if (!row) return null; // Existing collection records have no carrier shipment.
+    actor = this.shippingAuthority(actor, replacementId).actor;
+    return { actor, projection: this.shippingProjection(actor, row) };
+  }
+  dispatchReplacement(
+    actor: Actor,
+    key: string,
+    input: {
+      replacementId: string;
+      revision: number;
+      serial: string;
+      recipient: string;
+      address: string;
+      carrier: string;
+      tracking: string;
+      evidence: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.replacement.dispatch",
+      key,
+      input,
+      () => {
+        actor = this.shippingAuthority(actor, input.replacementId, true).actor;
+      },
+      () => {
+        const { r, c } = this.replacement(actor, input.replacementId);
+        const carrier = text(input.carrier, "carrier", 160),
+          tracking = text(input.tracking, "tracking reference", 160),
+          address = text(input.address, "delivery address", 2000),
+          recipient = text(input.recipient, "recipient", 160),
+          evidence = text(input.evidence, "handover evidence", 2000);
+        const carrierKey = carrier.normalize("NFKC").toLowerCase(),
+          trackingKey = tracking.normalize("NFKC").toLowerCase();
+        check(
+          !this.store.get(
+            "SELECT replacement_id FROM warranty_replacement_shipping WHERE org_id=? AND carrier_key=? AND tracking_key=?",
+            actor.orgId,
+            carrierKey,
+            trackingKey,
+          ),
+          "TRACKING_REUSED",
+          "Carrier tracking reference is already assigned to a replacement.",
+        );
+        const result = this.completeReplacement(
+          actor,
+          r,
+          c,
+          input,
+          "Replacement handed to carrier with recorded tracking and evidence.",
+        );
+        const at = now();
+        this.store.run(
+          "INSERT INTO warranty_replacement_shipping VALUES(?,?,?,?,?,?,?,?,?,?,'in_transit',1,?)",
+          r.id,
+          actor.orgId,
+          carrier,
+          tracking,
+          carrierKey,
+          trackingKey,
+          recipient,
+          address,
+          evidence,
+          at,
+          at,
+        );
+        this.shippingEvent(
+          actor,
+          r.id,
+          1,
+          "in_transit",
+          "dispatch",
+          evidence,
+          at,
+        );
+        this.platform.event(actor, "warranty.replacement.dispatched", r.id, {
           claimId: c.id,
-          state: "handed_over",
-          revision: r.revision + 1,
           newUnitId: r.new_unit_id,
+        });
+        return { ...result, shippingRevision: 1 };
+      },
+    );
+  }
+  private shippingEvent(
+    actor: Actor,
+    replacementId: string,
+    revision: number,
+    state: ReplacementShipping["state"],
+    reference: string,
+    evidence: string,
+    observedAt: string,
+  ) {
+    this.store.run(
+      "INSERT INTO warranty_replacement_shipping_history VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+      id(),
+      actor.orgId,
+      replacementId,
+      revision,
+      state,
+      reference,
+      reference.normalize("NFKC").toLowerCase(),
+      evidence,
+      observedAt,
+      actor.id,
+      now(),
+    );
+  }
+  updateReplacementShipping(
+    actor: Actor,
+    key: string,
+    input: {
+      replacementId: string;
+      revision: number;
+      state: ReplacementShipping["state"];
+      reference: string;
+      evidence: string;
+      observedAt: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.replacement.shipping.update",
+      key,
+      input,
+      () => {
+        actor = this.shippingAuthority(actor, input.replacementId, true).actor;
+      },
+      () => {
+        const row = this.shippingRow(actor, input.replacementId);
+        check(
+          integer(input.revision, "shipping revision", 1) === row.revision,
+          "STALE_SHIPPING",
+          "Replacement shipping changed. Refresh and review its history.",
+        );
+        check(
+          row.state !== "delivered",
+          "STATE",
+          "Delivered shipping history is final; record any return through a claim.",
+        );
+        check(
+          ["in_transit", "delayed", "lost", "delivered"].includes(input.state),
+          "VALIDATION",
+          "Select a supported shipping outcome.",
+          400,
+        );
+        const reference = text(
+            input.reference,
+            "shipping evidence reference",
+            160,
+          ),
+          evidence = text(input.evidence, "shipping evidence", 2000),
+          observedAt = text(input.observedAt, "observed time", 24);
+        const date = new Date(observedAt);
+        check(
+          Number.isFinite(date.getTime()) &&
+            date.toISOString() === observedAt &&
+            observedAt >= row.observed_at &&
+            observedAt <= now(),
+          "VALIDATION",
+          "Observed time must be an ISO UTC time after the previous observation and not in the future.",
+          400,
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM warranty_replacement_shipping_history WHERE replacement_id=? AND reference_key=?",
+            row.replacement_id,
+            reference.normalize("NFKC").toLowerCase(),
+          ),
+          "SHIPPING_REFERENCE",
+          "Shipping reference is already recorded; review the original observation.",
+        );
+        this.store.run(
+          "UPDATE warranty_replacement_shipping SET state=?,revision=revision+1,observed_at=? WHERE replacement_id=?",
+          input.state,
+          observedAt,
+          row.replacement_id,
+        );
+        this.shippingEvent(
+          actor,
+          row.replacement_id,
+          row.revision + 1,
+          input.state,
+          reference,
+          evidence,
+          observedAt,
+        );
+        this.platform.event(
+          actor,
+          "warranty.replacement.shipping.updated",
+          row.replacement_id,
+          { state: input.state, revision: row.revision + 1 },
+        );
+        return {
+          id: row.replacement_id,
+          state: input.state,
+          revision: row.revision + 1,
         };
       },
     );
+  }
+  replacementShippingHistory(
+    actor: Actor,
+    replacementId: string,
+    after?: number,
+  ) {
+    actor = this.shippingAuthority(actor, replacementId).actor;
+    const row = this.shippingRow(actor, replacementId);
+    const cursor =
+      after === undefined
+        ? 0
+        : integer(after, "shipping history cursor", 1, row.revision);
+    const rows = this.store.all<{
+      revision: number;
+      state: string;
+      reference: string;
+      evidence: string;
+      observed_at: string;
+      actor_id: string;
+      created_at: string;
+    }>(
+      "SELECT revision,state,reference,evidence,observed_at,actor_id,created_at FROM warranty_replacement_shipping_history WHERE org_id=? AND replacement_id=? AND revision>? ORDER BY revision LIMIT 21",
+      actor.orgId,
+      replacementId,
+      cursor,
+    );
+    const items = rows.slice(0, 20).map((h) => ({
+      revision: h.revision,
+      state: h.state,
+      observedAt: h.observed_at,
+      createdAt: h.created_at,
+      ...(actor.role === "buyer"
+        ? {}
+        : {
+            reference: h.reference,
+            evidence: h.evidence,
+            actorId: h.actor_id,
+          }),
+    }));
+    return { items, next: rows.length > 20 ? items.at(-1)!.revision : null };
   }
   private entitlement(actor: Actor, unitId: string, accountId: string) {
     this.identity.customer(actor, accountId);

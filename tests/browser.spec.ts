@@ -6377,3 +6377,420 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
   expect(denied.status()).toBe(404);
   expect(errors).toEqual([]);
 });
+
+test("browser: replacement shipping retries, exceptions, paged history and buyer privacy preserve original money", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Shipping browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "RSH-BROWSER",
+    name: "Shipping browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await dashboard();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 3, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "RSH-DELIVERY",
+    quantity: 3,
+    serials: ["RSH-OLD", "RSH-NEW", "RSH-SPARE"],
+    bin: "REP",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await dashboard();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic manufacturer fixture handover",
+  });
+  const sold = await dashboard();
+  const claim = await cmd("warranty.submit", {
+    accountId: account.id,
+    unitId: sold.stock.find((u: any) => u.serial === "RSH-OLD").id,
+    type: "warranty",
+    issue: "Synthetic failure",
+    evidence: "mfg-issue",
+  });
+  await cmd("warranty.review", {
+    claimId: claim.id,
+    approved: true,
+    reason: "Synthetic authorization",
+  });
+  await cmd("warranty.receive", {
+    claimId: claim.id,
+    warehouseId,
+    bin: "RSH-Q",
+    serial: "RSH-OLD",
+  });
+  await cmd("warranty.inspect", {
+    claimId: claim.id,
+    findings: "Synthetic replacement inspection",
+  });
+  const before = await dashboard();
+  const r = await cmd("warranty.replacement.reserve", {
+    claimId: claim.id,
+    newUnitId: before.stock.find((u: any) => u.serial === "RSH-NEW").id,
+    oldDisposition: "scrap",
+    coveragePolicy: "inherit_original",
+    reason: "Synthetic shipping authorization",
+  });
+  const invariant = (d: any) => ({
+    orders: d.orders,
+    invoices: d.invoices,
+    shipments: d.shipments,
+  });
+  await page.reload();
+  await nav(page, "Returns");
+  const section = page.getByRole("region", {
+    name: "Replacement history",
+    exact: true,
+  });
+  const row = section.getByRole("row").filter({ hasText: "RSH-NEW" });
+  const opener = row.getByRole("button", {
+    name: "Dispatch replacement",
+    exact: true,
+  });
+  await opener.click();
+  await page
+    .getByLabel("Scan replacement serial", { exact: true })
+    .fill("RSH-SPARE");
+  await page
+    .getByLabel("Delivery recipient", { exact: true })
+    .fill("Private shipping recipient");
+  await page
+    .getByLabel("Delivery address", { exact: true })
+    .fill("Private shipping address");
+  await page
+    .getByLabel("Carrier name", { exact: true })
+    .fill("Synthetic carrier");
+  await page
+    .getByLabel("Carrier tracking reference", { exact: true })
+    .fill("RSH-TRACK-1");
+  await page
+    .getByLabel("Carrier handover evidence", { exact: true })
+    .fill("Private carrier receipt");
+  await page
+    .getByLabel("Delivery address", { exact: true })
+    .fill("Private shipping address");
+  await page
+    .getByLabel("Carrier name", { exact: true })
+    .fill("Synthetic shipping carrier");
+  await page
+    .getByLabel("Carrier tracking reference", { exact: true })
+    .fill("RSH-TRACK-1");
+  await page
+    .getByLabel("Carrier handover evidence", { exact: true })
+    .fill("Private carrier handover receipt");
+  await page
+    .getByRole("button", { name: "Record dispatch", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Scanned replacement serial does not match",
+  );
+  const dispatchKeys: string[] = [];
+  let lostDispatch = false;
+  await page.route(
+    "**/api/commands/warranty.replacement.dispatch",
+    async (route) => {
+      dispatchKeys.push(route.request().headers()["idempotency-key"]!);
+      if (!lostDispatch) {
+        lostDispatch = true;
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await page
+    .getByLabel("Scan replacement serial", { exact: true })
+    .fill("RSH-NEW");
+  await page
+    .getByRole("button", { name: "Record dispatch", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Record dispatch", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(dispatchKeys).toHaveLength(2);
+  expect(dispatchKeys[0]).toBe(dispatchKeys[1]);
+  await expect(row).toContainText("Shipping: in_transit · v1");
+  await expect(row).toContainText("Private shipping address");
+  const observedAt = new Date().toISOString();
+  await row
+    .getByRole("button", { name: "Record shipping outcome", exact: true })
+    .click();
+  await page
+    .getByLabel("Shipping outcome", { exact: true })
+    .selectOption("delayed");
+  await page
+    .getByLabel("Observed time (UTC ISO)", { exact: true })
+    .fill(observedAt);
+  await page
+    .getByLabel("Shipping evidence reference", { exact: true })
+    .fill("RSH-DELAY");
+  await page
+    .getByLabel("Shipping observation", { exact: true })
+    .fill("Private delay evidence");
+  const updateKeys: string[] = [];
+  let lostUpdate = false;
+  await page.route(
+    "**/api/commands/warranty.replacement.shipping.update",
+    async (route) => {
+      updateKeys.push(route.request().headers()["idempotency-key"]!);
+      if (!lostUpdate) {
+        lostUpdate = true;
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(updateKeys).toHaveLength(2);
+  expect(updateKeys[0]).toBe(updateKeys[1]);
+  await page.unroute("**/api/commands/warranty.replacement.shipping.update");
+  await expect(row).toContainText("Shipping: delayed · v2");
+  // An open review cannot overwrite a newer independent observation.
+  await row
+    .getByRole("button", { name: "Record shipping outcome", exact: true })
+    .click();
+  await page
+    .getByLabel("Shipping outcome", { exact: true })
+    .selectOption("delivered");
+  await page
+    .getByLabel("Shipping evidence reference", { exact: true })
+    .fill("RSH-STALE");
+  await page
+    .getByLabel("Shipping observation", { exact: true })
+    .fill("Stale review");
+  await cmd("warranty.replacement.shipping.update", {
+    replacementId: r.id,
+    revision: 2,
+    state: "lost",
+    reference: "RSH-LOSS",
+    evidence: "Private lost evidence",
+    observedAt: new Date().toISOString(),
+  });
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Replacement shipping changed",
+  );
+  await page.keyboard.press("Escape");
+  for (let revision = 3; revision < 23; revision++) {
+    await cmd("warranty.replacement.shipping.update", {
+      replacementId: r.id,
+      revision,
+      state: "in_transit",
+      reference: `RSH-HISTORY-${revision}`,
+      evidence: "Private carrier observation",
+      observedAt: new Date().toISOString(),
+    });
+  }
+  await page.reload();
+  await nav(page, "Returns");
+  await expect(row).toContainText("Shipping: in_transit · v23");
+  const historyOpener = row.getByRole("button", {
+    name: "View shipping history",
+    exact: true,
+  });
+  await historyOpener.click();
+  const dialog = page.getByRole("dialog", {
+    name: "Replacement shipping history",
+    exact: true,
+  });
+  await expect(dialog).toContainText("v1 · in_transit");
+  await expect(dialog).toContainText("v20 · in_transit");
+  await expect(dialog).not.toContainText("v21 · in_transit");
+  let lostPage = false;
+  await page.route(
+    `**/api/warranty/replacements/${r.id}/shipping/history?after=*`,
+    async (route) => {
+      if (!lostPage) {
+        lostPage = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await dialog
+    .getByRole("button", {
+      name: "Load more shipping observations",
+      exact: true,
+    })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog).toContainText("v1 · in_transit");
+  await dialog
+    .getByRole("button", {
+      name: "Load more shipping observations",
+      exact: true,
+    })
+    .click();
+  await expect(dialog).toContainText("v23 · in_transit");
+  await expect(dialog).toContainText("Private lost evidence");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await dialog.getByRole("button", { name: "Close", exact: true }).focus();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(historyOpener).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await row
+    .getByRole("button", { name: "Record shipping outcome", exact: true })
+    .click();
+  await page
+    .getByLabel("Shipping outcome", { exact: true })
+    .selectOption("delivered");
+  await page
+    .getByLabel("Shipping evidence reference", { exact: true })
+    .fill("RSH-DELIVERED");
+  await page
+    .getByLabel("Shipping observation", { exact: true })
+    .fill("Private delivery evidence");
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row).toContainText("Shipping: delivered · v24");
+  await expect(
+    row.getByRole("button", { name: "Record shipping outcome", exact: true }),
+  ).toHaveCount(0);
+  const after = await dashboard();
+  expect(invariant(after)).toEqual(invariant(before));
+  expect(after.stock.find((u: any) => u.serial === "RSH-NEW").state).toBe(
+    "sold",
+  );
+  expect(after.stock.find((u: any) => u.serial === "RSH-OLD").state).toBe(
+    "scrapped",
+  );
+  await cmd("user.create", {
+    name: "Shipping buyer",
+    email: "shipping-buyer@example.test",
+    password: "long-shipping-password",
+    role: "buyer",
+    accountId: account.id,
+    sites: [],
+    requirePasswordChange: false,
+    currentPassword: "long-test-only-password",
+  });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("shipping-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-shipping-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await nav(page, "Returns");
+  await expect(row).toContainText("RSH-TRACK-1");
+  await expect(row).not.toContainText("Private");
+  await expect(
+    row.getByRole("button", { name: "Dispatch replacement", exact: true }),
+  ).toHaveCount(0);
+  await historyOpener.click();
+  await expect(dialog).toContainText("v3 · lost");
+  await expect(dialog).not.toContainText("Private");
+  await expect(dialog).not.toContainText("RSH-LOSS");
+  const buyerData = await dashboard();
+  expect(buyerData.claims.every((c: any) => c.account_id === account.id)).toBe(
+    true,
+  );
+  const publicHistory = await (
+    await page.request.get(
+      `/api/warranty/replacements/${r.id}/shipping/history`,
+    )
+  ).json();
+  expect(JSON.stringify(publicHistory)).not.toContain("Private");
+  expect(
+    publicHistory.items.every(
+      (h: any) =>
+        !Object.hasOwn(h, "actorId") &&
+        !Object.hasOwn(h, "reference") &&
+        !Object.hasOwn(h, "evidence"),
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});

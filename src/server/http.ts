@@ -660,6 +660,30 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.warranty.handoverReplacement(a, k, p),
     },
+    "warranty.replacement.dispatch": {
+      schema: obj({
+        replacementId: str,
+        revision: num,
+        serial: str,
+        recipient: str,
+        address: str,
+        carrier: str,
+        tracking: str,
+        evidence: str,
+      }),
+      run: (a, k, p) => app.warranty.dispatchReplacement(a, k, p),
+    },
+    "warranty.replacement.shipping.update": {
+      schema: obj({
+        replacementId: str,
+        revision: num,
+        state: choice("in_transit", "delayed", "lost", "delivered"),
+        reference: str,
+        evidence: str,
+        observedAt: str,
+      }),
+      run: (a, k, p) => app.warranty.updateReplacementShipping(a, k, p),
+    },
     "warranty.manufacturer.refer": {
       schema: obj({
         claimId: str,
@@ -1190,6 +1214,29 @@ export async function createHttp(app: Application, options: HttpOptions) {
     after: query.after === undefined ? undefined : Number(query.after),
     limit: query.limit === undefined ? undefined : Number(query.limit),
   });
+  http.get<{
+    Params: { replacementId: string };
+    Querystring: { after?: string };
+  }>(
+    "/api/warranty/replacements/:replacementId/shipping/history",
+    {
+      schema: {
+        params: obj({ replacementId: str }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,8}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.warranty.replacementShippingHistory(
+        actor(request),
+        request.params.replacementId,
+        request.query.after === undefined
+          ? undefined
+          : Number(request.query.after),
+      ),
+  );
   http.get<{ Querystring: { after?: string; limit?: string } }>(
     "/api/billing/refund-notices",
     { schema: { querystring: noticeQuery } },

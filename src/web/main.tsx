@@ -225,6 +225,32 @@ function App() {
     name: string,
     transform: (v: Item) => unknown = (v) => v,
   ) => open(title, fields, (v) => command(name, transform(v)));
+  const showReplacementShipping = async (
+    replacementId: string,
+    loaded: Item[] = [],
+    after?: number,
+  ) => {
+    const result = await request(
+      `/api/warranty/replacements/${replacementId}/shipping/history${after ? `?after=${after}` : ""}`,
+    );
+    const rows = [...loaded, ...result.items];
+    open(
+      "Replacement shipping history",
+      [],
+      async () => {
+        if (!result.next) return;
+        await showReplacementShipping(replacementId, rows, result.next);
+        return { keepDialog: true };
+      },
+      rows
+        .map(
+          (h: Item) =>
+            `v${h.revision} · ${h.state} · ${h.observedAt}${h.reference ? ` · ${h.reference}: ${h.evidence}` : ""}`,
+        )
+        .join("\n\n"),
+      result.next ? "Load more shipping observations" : "Close",
+    );
+  };
   const showShortPicks = async (
     orderId: string,
     loaded: Item[] = [],
@@ -3063,7 +3089,7 @@ function App() {
                             ...v,
                             claimId: c.id,
                           }),
-                        `Reserve one serial for customer collection. The returned unit stays in quarantine until handover. Coverage ends ${c.coverage_end}. Coverage and remedy policies require business qualification.`,
+                        `Reserve one serial for customer collection or carrier dispatch. The returned unit stays in quarantine until handover. Coverage ends ${c.coverage_end}. Coverage and remedy policies require business qualification.`,
                         "Reserve replacement",
                       ),
                     )}
@@ -3098,10 +3124,10 @@ function App() {
             <section aria-label="Replacement history">
               <h2>Replacement history</h2>
               <p>
-                Approved serials are held for customer collection. Handover
-                records the scanned serial and recipient, retains original
-                invoice and coverage, and applies the approved returned-unit
-                disposition.
+                Approved serials are held for customer collection or carrier
+                dispatch. Handover records the scanned serial and recipient,
+                retains original invoice and coverage, and applies the approved
+                returned-unit disposition.
               </p>
               {table(
                 ["Claim", "Serials / coverage", "State", "Evidence", "Actions"],
@@ -3119,6 +3145,21 @@ function App() {
                   </>,
                   `${r.state} · v${r.revision}`,
                   <>
+                    {r.shipping && (
+                      <>
+                        <p>
+                          Carrier: {r.shipping.carrier} · Tracking:{" "}
+                          {r.shipping.tracking}
+                        </p>
+                        <p>
+                          Shipping: {r.shipping.state} · v{r.shipping.revision}
+                        </p>
+                        <p>Observed: {r.shipping.observedAt}</p>
+                        {r.shipping.address && (
+                          <p>Delivery address: {r.shipping.address}</p>
+                        )}
+                      </>
+                    )}
                     {r.recipient && <p>Recipient: {r.recipient}</p>}
                     {r.evidence && <p>{r.evidence}</p>}
                     {(r.history ?? []).map((h: Item) => (
@@ -3140,6 +3181,92 @@ function App() {
                             replacementId: r.id,
                             revision: r.revision,
                           }),
+                        ),
+                      )}
+                    {r.shipping &&
+                      button("View shipping history", () => {
+                        void showReplacementShipping(r.id).catch((e) =>
+                          setError(e.message),
+                        );
+                      })}
+                    {r.shipping &&
+                      r.shipping.state !== "delivered" &&
+                      can("warehouse") &&
+                      button("Record shipping outcome", () =>
+                        open(
+                          "Record replacement shipping outcome",
+                          [
+                            {
+                              name: "state",
+                              label: "Shipping outcome",
+                              options: [
+                                { value: "in_transit", label: "In transit" },
+                                { value: "delayed", label: "Delayed" },
+                                { value: "lost", label: "Reported lost" },
+                                { value: "delivered", label: "Delivered" },
+                              ],
+                            },
+                            {
+                              name: "observedAt",
+                              label: "Observed time (UTC ISO)",
+                              value: new Date().toISOString(),
+                            },
+                            {
+                              name: "reference",
+                              label: "Shipping evidence reference",
+                            },
+                            {
+                              name: "evidence",
+                              label: "Shipping observation",
+                              type: "textarea",
+                            },
+                          ],
+                          (v) =>
+                            command("warranty.replacement.shipping.update", {
+                              ...v,
+                              replacementId: r.id,
+                              revision: r.shipping.revision,
+                            }),
+                          `Review the external evidence for ${r.shipping.carrier} / ${r.shipping.tracking}. A delay or reported loss leaves sold custody and the original invoice unchanged.`,
+                          "Record outcome",
+                        ),
+                      )}
+                    {r.state === "reserved" &&
+                      can("warehouse") &&
+                      button("Dispatch replacement", () =>
+                        open(
+                          "Record replacement carrier handover",
+                          [
+                            {
+                              name: "serial",
+                              label: "Scan replacement serial",
+                              scan: "single",
+                            },
+                            { name: "recipient", label: "Delivery recipient" },
+                            {
+                              name: "address",
+                              label: "Delivery address",
+                              type: "textarea",
+                            },
+                            { name: "carrier", label: "Carrier name" },
+                            {
+                              name: "tracking",
+                              label: "Carrier tracking reference",
+                            },
+                            {
+                              name: "evidence",
+                              label: "Carrier handover evidence",
+                              type: "textarea",
+                            },
+                          ],
+                          (v) =>
+                            command("warranty.replacement.dispatch", {
+                              ...v,
+                              replacementId: r.id,
+                              revision: r.revision,
+                            }),
+                          `${r.newSerial} replaces ${r.oldSerial} for ${accountName(r.claim.account_id)}. Confirm physical handover to the carrier; returned unit disposition: ${r.oldDisposition}.`,
+                          "Record dispatch",
                         ),
                       )}
                     {r.state === "reserved" &&
