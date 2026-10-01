@@ -3,8 +3,9 @@ import type { DatabaseSync } from "node:sqlite";
 import { canonical, digest, check } from "./core.ts";
 import type { Region } from "./iam.ts";
 import baseline from "./schema-baseline.json" with { type: "json" };
+import { CANADA_POST_SCHEMA } from "./canada-post-schema.ts";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const SCHEMA_TABLE = "platform_schema_version";
 // This DDL is part of the frozen v1 schema identity. Changing it requires a new version.
 export const SCHEMA_DDL =
@@ -17,7 +18,7 @@ type SchemaObject = {
   sql: string | null;
 };
 export type SchemaInspection = {
-  kind: "empty" | "legacy" | "current";
+  kind: "empty" | "legacy" | "previous" | "current";
   version: number | null;
   schemaHash: string;
   eventReports: boolean;
@@ -44,7 +45,7 @@ const profiles = baseline.schemas.map((profile) => {
     "SCHEMA_BASELINE",
     "Frozen schema manifest is inconsistent.",
   );
-  const current = [
+  const previous = [
     ...profile.schema,
     {
       type: "table",
@@ -66,7 +67,20 @@ const profiles = baseline.schemas.map((profile) => {
   return {
     eventReports: profile.eventReports,
     legacyHash: fingerprint(profile.schema),
-    currentHash: fingerprint(current),
+    previousHash: fingerprint(previous),
+    currentHash: fingerprint(
+      [...previous, ...CANADA_POST_SCHEMA].sort((a, b) =>
+        a.type < b.type
+          ? -1
+          : a.type > b.type
+            ? 1
+            : a.name < b.name
+              ? -1
+              : a.name > b.name
+                ? 1
+                : 0,
+      ),
+    ),
   };
 });
 export function supportedSchemaHash(eventReports: boolean) {
@@ -88,9 +102,10 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
       initializedAt: null,
     };
   const current = profiles.find((p) => p.currentHash === schemaHash);
+  const previous = profiles.find((p) => p.previousHash === schemaHash);
   const legacy = profiles.find((p) => p.legacyHash === schemaHash);
   check(
-    current || legacy,
+    current || previous || legacy,
     "SCHEMA_DRIFT",
     "Store schema is not an exact supported application schema.",
   );
@@ -125,13 +140,13 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
   );
   const row = rows[0]!;
   check(
-    row.version === SCHEMA_VERSION,
+    row.version === (current ? SCHEMA_VERSION : 1),
     "SCHEMA_VERSION",
     "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
   );
   check(
     row.schema_hash === schemaHash &&
-      row.event_reports === Number(current!.eventReports),
+      row.event_reports === Number((current ?? previous)!.eventReports),
     "SCHEMA_DRIFT",
     "Schema receipt does not match the exact stored profile.",
   );
@@ -152,10 +167,10 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
     "Schema receipt timestamp is invalid.",
   );
   return {
-    kind: "current",
-    version: SCHEMA_VERSION,
+    kind: current ? "current" : "previous",
+    version: current ? SCHEMA_VERSION : 1,
     schemaHash,
-    eventReports: current!.eventReports,
+    eventReports: (current ?? previous)!.eventReports,
     region: row.region,
     initializedAt: row.initialized_at,
   };

@@ -4,6 +4,7 @@ import { chmod, link, lstat, mkdir, mkdtemp, open, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { check } from "./core.ts";
 import type { Region } from "./iam.ts";
+import { CANADA_POST_DDL } from "./canada-post-schema.ts";
 import {
   checkIntegrity,
   checkRegion,
@@ -179,9 +180,10 @@ export async function upgradeSchema(
         "Copied snapshot and requested regions differ.",
       );
       if (before.kind === "legacy") {
-        // Exact previous baseline only: all business tables already have the
-        // supported shape. Do not run constructors, backfills or recovery hooks.
+        // Exact frozen legacy shape only: retain every existing business row,
+        // add empty group storage and a receipt. No constructors or backfills.
         copied.exec(SCHEMA_DDL);
+        copied.exec(CANADA_POST_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -191,6 +193,13 @@ export async function upgradeSchema(
             region,
             new Date().toISOString(),
           );
+      } else if (before.kind === "previous") {
+        copied.exec(CANADA_POST_DDL);
+        copied
+          .prepare(
+            "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",
+          )
+          .run(SCHEMA_VERSION, supportedSchemaHash(before.eventReports));
       }
       after = inspectConnection(copied);
       checkIntegrity(copied);

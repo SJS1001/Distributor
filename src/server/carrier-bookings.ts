@@ -14,6 +14,7 @@ import { Database, type Store } from "./database.ts";
 import type { Platform } from "./platform.ts";
 import type { Identity } from "./iam.ts";
 import type { Fulfillment, Shipment } from "./fulfillment.ts";
+import { CANADA_POST_INITIALIZE_DDL } from "./canada-post-schema.ts";
 import {
   carrierNames,
   type CarrierAddress,
@@ -66,6 +67,50 @@ type Booking = {
   created_at: string;
 };
 
+type CanadaPostGroup = {
+  id: string;
+  org_id: string;
+  warehouse_id: string;
+  configuration_hash: string;
+  provider_group_id: string;
+  review_hash: string;
+  state: string;
+  token: string | null;
+  started_at: number | null;
+  observation: string | null;
+  manifest_bytes: Uint8Array | null;
+  manifest_hash: string | null;
+  created_at: string;
+};
+type CanadaPostMember = {
+  group_id: string;
+  booking_id: string;
+  org_id: string;
+  review_hash: string;
+  active: number;
+  state: string;
+  token: string | null;
+  started_at: number | null;
+  provider_shipment_id: string | null;
+  tracking: string | null;
+  label_bytes: Uint8Array | null;
+  label_hash: string | null;
+};
+export type CanadaPostGroupPrepare = {
+  configurationHash: string;
+  entries: readonly { bookingId: string; reviewHash: string }[];
+};
+export type CanadaPostGroupView = {
+  id: string;
+  warehouseId: string;
+  configurationHash: string;
+  providerGroupId: string;
+  reviewHash: string;
+  state: string;
+  entries: { bookingId: string; reviewHash: string; state: string }[];
+  createdAt: string;
+};
+
 export class CarrierBookings {
   private store: Store;
   constructor(
@@ -85,6 +130,7 @@ export class CarrierBookings {
       CREATE UNIQUE INDEX IF NOT EXISTS integration_carrier_active ON integration_carrier_bookings(org_id,shipment_id) WHERE state!='canceled';
       CREATE INDEX IF NOT EXISTS integration_carrier_history ON integration_carrier_bookings(org_id,shipment_id,sequence);
     `);
+    this.store.migrate(CANADA_POST_INITIALIZE_DDL);
     fulfillment.configureCarrierGuard((actor, shipment, action, binding) => {
       const booking = this.latest(actor.orgId, shipment.id);
       if (!booking || booking.state === "canceled") return;
@@ -191,6 +237,295 @@ export class CarrierBookings {
   providerForBooking(actor: Actor, bookingId: string): CarrierName {
     actor = this.principal(actor);
     return this.intent(this.booking(actor, bookingId)).provider;
+  }
+  // A group owns a fixed native booking allowlist from preparation onward.
+  // Membership cannot be appended, reused or released after provider I/O.
+  // This is local ownership only; an external account writer is not fenced.
+  prepareCanadaPostGroup(
+    actor: Actor,
+    key: string,
+    input: CanadaPostGroupPrepare,
+  ): { id: string; reviewHash: string } {
+    return this.platform.command(
+      actor,
+      "carrier.canada-post.group.prepare",
+      key,
+      input,
+      () => {
+        actor = this.principal(actor);
+        check(
+          input &&
+            typeof input.configurationHash === "string" &&
+            /^[a-f0-9]{64}$/.test(input.configurationHash) &&
+            Array.isArray(input.entries) &&
+            input.entries.length >= 1 &&
+            input.entries.length <= 100,
+          "VALIDATION",
+          "Supply an exact configuration hash and 1–100 reviewed bookings.",
+          400,
+        );
+        for (const entry of input.entries) {
+          check(
+            entry && typeof entry === "object",
+            "VALIDATION",
+            "Supply a reviewed booking.",
+            400,
+          );
+          this.booking(actor, entry.bookingId);
+        }
+      },
+      () => {
+        const entries = input.entries
+          .map((entry) => {
+            const booking = this.booking(actor, entry.bookingId);
+            const intent = this.intent(booking);
+            check(
+              booking.review_hash === entry.reviewHash &&
+                intent.provider === "canada-post" &&
+                booking.state === "pending" &&
+                booking.token === null &&
+                booking.started_at === null &&
+                booking.reference === null &&
+                booking.tracking === null &&
+                booking.label_bytes === null &&
+                booking.label_type === null &&
+                booking.label_hash === null &&
+                booking.error === null,
+              "CARRIER_MISMATCH",
+              "Each group member must be the exact unclaimed Canada Post booking.",
+            );
+            this.assertNative(actor, booking);
+            this.assertNoCanadaPostGroup(booking.id);
+            return {
+              bookingId: booking.id,
+              reviewHash: booking.review_hash,
+              intent,
+            };
+          })
+          .sort((a, b) =>
+            a.bookingId < b.bookingId ? -1 : a.bookingId > b.bookingId ? 1 : 0,
+          );
+        check(
+          new Set(entries.map((entry) => entry.bookingId)).size ===
+            entries.length,
+          "VALIDATION",
+          "Group members must be unique.",
+          400,
+        );
+        const first = entries[0]!.intent;
+        check(
+          entries.every(
+            (entry) =>
+              entry.intent.nativeSnapshot.warehouse_id ===
+                first.nativeSnapshot.warehouse_id &&
+              canonical(entry.intent.origin) === canonical(first.origin) &&
+              entry.intent.origin.country === "CA" &&
+              entry.intent.destination.country === "CA",
+          ),
+          "CARRIER_MISMATCH",
+          "Canada Post group members require one exact Canadian origin and warehouse.",
+        );
+        const groupId = id(),
+          providerGroupId = groupId.replaceAll("-", "");
+        const reviewHash = digest(
+          canonical({
+            configurationHash: input.configurationHash,
+            providerGroupId,
+            warehouseId: first.nativeSnapshot.warehouse_id,
+            entries: entries.map(({ bookingId, reviewHash }) => ({
+              bookingId,
+              reviewHash,
+            })),
+          }),
+        );
+        this.store.run(
+          "INSERT INTO integration_canada_post_groups(id,org_id,warehouse_id,configuration_hash,provider_group_id,review_hash,state,created_at) VALUES(?,?,?,?,?,?,'prepared',?)",
+          groupId,
+          actor.orgId,
+          first.nativeSnapshot.warehouse_id,
+          input.configurationHash,
+          providerGroupId,
+          reviewHash,
+          now(),
+        );
+        for (const entry of entries)
+          this.store.run(
+            "INSERT INTO integration_canada_post_members(group_id,booking_id,org_id,review_hash,active,state) VALUES(?,?,?,?,1,'pending')",
+            groupId,
+            entry.bookingId,
+            actor.orgId,
+            entry.reviewHash,
+          );
+        this.platform.event(
+          actor,
+          "carrier.canada-post.group.prepared",
+          groupId,
+          {
+            reviewHash,
+            warehouseId: first.nativeSnapshot.warehouse_id,
+            count: entries.length,
+          },
+        );
+        return { id: groupId, reviewHash };
+      },
+    );
+  }
+  private canadaPostGroup(actor: Actor, groupId: string) {
+    const group = this.store.get<CanadaPostGroup>(
+      "SELECT * FROM integration_canada_post_groups WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(groupId, "Canada Post group", 128),
+    );
+    check(group, "NOT_FOUND", "Canada Post group not found.", 404);
+    site(actor, group.warehouse_id);
+    const members = this.store.all<CanadaPostMember>(
+      "SELECT * FROM integration_canada_post_members WHERE group_id=? ORDER BY booking_id",
+      group.id,
+    );
+    check(
+      members.length >= 1 &&
+        members.length <= 100 &&
+        members.every(
+          (member) =>
+            member.org_id === actor.orgId &&
+            member.active === Number(group.state !== "canceled"),
+        ),
+      "CARRIER_MISMATCH",
+      "Canada Post group membership integrity failed.",
+    );
+    for (const member of members) {
+      const booking = this.booking(actor, member.booking_id),
+        intent = this.intent(booking);
+      check(
+        intent.provider === "canada-post" &&
+          booking.review_hash === member.review_hash &&
+          intent.nativeSnapshot.warehouse_id === group.warehouse_id,
+        "CARRIER_MISMATCH",
+        "Canada Post group booking integrity failed.",
+      );
+    }
+    check(
+      group.review_hash ===
+        digest(
+          canonical({
+            configurationHash: group.configuration_hash,
+            providerGroupId: group.provider_group_id,
+            warehouseId: group.warehouse_id,
+            entries: members.map((member) => ({
+              bookingId: member.booking_id,
+              reviewHash: member.review_hash,
+            })),
+          }),
+        ),
+      "CARRIER_MISMATCH",
+      "Canada Post group review integrity failed.",
+    );
+    return { group, members };
+  }
+  reviewCanadaPostGroup(actor: Actor, groupId: string): CanadaPostGroupView {
+    actor = this.principal(actor);
+    const { group, members } = this.canadaPostGroup(actor, groupId);
+    return {
+      id: group.id,
+      warehouseId: group.warehouse_id,
+      configurationHash: group.configuration_hash,
+      providerGroupId: group.provider_group_id,
+      reviewHash: group.review_hash,
+      state: group.state,
+      entries: members.map((member) => ({
+        bookingId: member.booking_id,
+        reviewHash: member.review_hash,
+        state: member.state,
+      })),
+      createdAt: group.created_at,
+    };
+  }
+  cancelCanadaPostGroup(
+    actor: Actor,
+    key: string,
+    input: { groupId: string; reviewHash: string; reason: string },
+  ): { id: string } {
+    return this.platform.command(
+      actor,
+      "carrier.canada-post.group.cancel",
+      key,
+      input,
+      () => {
+        actor = this.principal(actor);
+        this.canadaPostGroup(actor, input.groupId);
+      },
+      () => {
+        const { group, members } = this.canadaPostGroup(actor, input.groupId);
+        check(
+          group.review_hash === input.reviewHash,
+          "CARRIER_MISMATCH",
+          "Review the exact group before cancellation.",
+        );
+        check(
+          group.state === "prepared" &&
+            !group.token &&
+            group.started_at === null &&
+            !group.observation &&
+            !group.manifest_bytes &&
+            !group.manifest_hash &&
+            members.every((member) => {
+              const booking = this.booking(actor, member.booking_id);
+              return (
+                member.state === "pending" &&
+                !member.token &&
+                member.started_at === null &&
+                !member.provider_shipment_id &&
+                !member.tracking &&
+                !member.label_bytes &&
+                !member.label_hash &&
+                booking.state === "pending" &&
+                booking.token === null &&
+                booking.started_at === null &&
+                booking.reference === null &&
+                booking.tracking === null &&
+                booking.label_bytes === null &&
+                booking.label_type === null &&
+                booking.label_hash === null &&
+                booking.error === null
+              );
+            }),
+          "STATE",
+          "Only a wholly unsent, unclaimed group may be canceled.",
+        );
+        const reason = clean(input.reason, "Group cancellation reason", 1000);
+        this.store.run(
+          "UPDATE integration_canada_post_groups SET state='canceled' WHERE id=?",
+          group.id,
+        );
+        this.store.run(
+          "UPDATE integration_canada_post_members SET active=0 WHERE group_id=?",
+          group.id,
+        );
+        this.platform.audit(
+          actor,
+          "carrier.canada-post.group.canceled",
+          group.id,
+          { reviewHash: group.review_hash, reason },
+        );
+        this.platform.event(
+          actor,
+          "carrier.canada-post.group.canceled",
+          group.id,
+          { reviewHash: group.review_hash },
+        );
+        return { id: group.id };
+      },
+    );
+  }
+  private assertNoCanadaPostGroup(bookingId: string) {
+    check(
+      !this.store.get(
+        "SELECT 1 FROM integration_canada_post_members WHERE booking_id=? AND active=1",
+        bookingId,
+      ),
+      "CARRIER_GROUP_ACTIVE",
+      "The Canada Post group owns this booking; resolve the group first.",
+    );
   }
   history(
     actor: Actor,
@@ -325,6 +660,7 @@ export class CarrierBookings {
       },
       () => {
         const booking = this.booking(actor, input.bookingId);
+        this.assertNoCanadaPostGroup(booking.id);
         check(
           booking.review_hash === input.reviewHash,
           "CARRIER_MISMATCH",
@@ -369,6 +705,7 @@ export class CarrierBookings {
       actor = this.principal(actor);
       const booking = this.booking(actor, bookingId),
         intent = this.intent(booking);
+      this.assertNoCanadaPostGroup(booking.id);
       check(
         adapter &&
           adapter.provider === intent.provider &&

@@ -40,15 +40,15 @@ export class Database {
     this.#db = new DatabaseSync(path, { timeout: 5000 });
     try {
       this.#db.exec(
-        "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;",
+        "PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;",
       );
     } catch (error) {
       this.#db.close();
       throw error;
     }
     this.#db.setAuthorizer((action, first, second) => {
-      // Only fixed synchronous inspection routines enter this scope. It grants
-      // reads/integrity PRAGMAs, never writes, DDL or transaction authority.
+      // Only fixed synchronous inspection and approved journal setup enter this
+      // scope. It grants reads/PRAGMAs, never DDL or transaction authority.
       if (
         this.#inspecting &&
         (action === constants.SQLITE_READ || action === constants.SQLITE_PRAGMA)
@@ -150,14 +150,29 @@ export class Database {
       "SCHEMA_INITIALIZATION",
       "Schema initialization is only allowed once per connection.",
     );
+    // Journal mode changes persistent header bytes, even when a later business
+    // transaction rolls back. Reject incompatible stores before changing it.
+    const preflight = this.#inspect(inspectConnection);
+    check(
+      preflight.kind === "empty" || preflight.kind === "current",
+      "SCHEMA_UPGRADE_REQUIRED",
+      "Previous or unversioned stores require an operator-reviewed upgrade to a fresh file.",
+    );
+    check(
+      preflight.region === null || preflight.region === region,
+      "SCHEMA_REGION",
+      "Store and runtime regions must match.",
+    );
+    if (preflight.kind === "current") this.#inspect(checkIntegrity);
+    this.#inspect((db) => db.exec("PRAGMA journal_mode=WAL"));
     this.#db.exec("BEGIN IMMEDIATE");
     this.#initializing = true;
     try {
       const before = this.#inspect(inspectConnection);
       check(
-        before.kind !== "legacy",
+        before.kind === "empty" || before.kind === "current",
         "SCHEMA_UPGRADE_REQUIRED",
-        "Unversioned stores require an operator-reviewed upgrade to a fresh file.",
+        "Previous or unversioned stores require an operator-reviewed upgrade to a fresh file.",
       );
       check(
         before.region === null || before.region === region,
