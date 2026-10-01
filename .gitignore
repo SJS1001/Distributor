@@ -1,0 +1,20 @@
+# Local files must not become planning evidence or public source by accident.
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+*.distributor-backup
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+private-data/
+local-evidence/
+dist/
+test-results/
+playwright-report/
+coverage/
+*.tsbuildinfo

@@ -1,0 +1,40 @@
+# Local backup and isolated restore
+
+2026-09-30. D-036/D-039 engineering work; G8 and every other product gate remain NOT VERIFIED. This procedure uses synthetic local data. It does not authorize production cutover, regional migration, external activation or changes to provider accounts.
+
+## Operator interface
+
+Requires Node 24.16.x, the current application schema and filesystem authority over the entire regional store. This is an operator CLI, not an account administrator export: a backup contains every organization, password hash, grant, customer record and business receipt in that store. Restrict the executable, source database and backup directories to authorized operators. Keep CA/US stores, keys, staging and copies within their separately qualified regions. A region check cannot locate a disk or prove a provider contract.
+
+Create a private destination directory (mode 0700); the CLI rejects an existing group/world-accessible parent directory. Supply a random 32-byte encryption key as one 64-character hexadecimal line through protected stdin. Keep it in a separately managed, approved secret store. Do not put it in arguments, shell history, source files, logs or the backup directory. The CLI reports receipt metadata, never the key or database contents. No secret service, schedule, retention policy or offsite storage is configured.
+
+```sh
+npm run recovery -- backup /absolute/private/source.db /absolute/private/backups/cutoff.distributor-backup CA < /absolute/separate/secrets/recovery-key.hex
+npm run recovery -- restore /absolute/private/backups/cutoff.distributor-backup /absolute/private/rehearsal/recovered.db CA < /absolute/separate/secrets/recovery-key.hex
+```
+
+These example paths require operator setup. Use a fresh restore destination; no overwrite option exists. A source/archive symlink, a destination directory symlink, an existing destination or existing SQLite WAL/SHM/journal sidecar rejects the operation. Concurrent publishers cannot replace the winning destination. Ancestor directories and filesystem permissions remain the operator's trust boundary; do not allow concurrent application startup against an unpublished recovery path. Backup archives are ignored by Git, but that is not authorization to publish other data files.
+
+## Snapshot and verification
+
+The backup uses [Node's native SQLite backup API](https://nodejs.org/download/release/v24.11.0/docs/api/sqlite.html#sqlitebackupsourceDb-path-options) on a separate read-only source connection, including committed WAL data. It does not copy only the main file or copy uncommitted writes. Other writers may cause SQLite to restart the snapshot; the receipt's start/completion interval bounds the operation, not an exact application cutoff timestamp. Write freeze and source authority must be established separately for a cutover.
+
+A private staging directory contains a consistent plaintext SQLite snapshot. Validate its schema against a disposable empty instance of this exact application, SQLite integrity/foreign keys and the stored organization region. The CLI currently accepts one distinct region with at least one organization. Schema mismatches require a separately tested upgrade procedure; restoring old/future schema is not silently migrated.
+
+Encrypt the snapshot with AES-256-GCM and a fresh 96-bit nonce. The authenticated manifest includes format version, region, completion timestamp, schema hash, plaintext byte count and SHA-256. Encryption streams the database; the current bound is a 2 GiB snapshot plus a bounded archive header/tag. Larger stores need qualification. The manifest is plaintext metadata; business records remain encrypted. The key is the authenticity trust root; key loss prevents restore and a compromised key requires replacement and independent receipt review.
+
+Restore authenticates/decrypts into private staging, checks the snapshot hash, actual schema, region, integrity and foreign keys, then invokes owning platform/identity operations to persist the recovery hold and remove copied sessions in one transaction. Recheck integrity, close SQLite, synchronize and atomically publish a mode-0600 file without replacement. Archive files also use mode 0600. Errors and normal completion remove staging. SIGKILL/power loss may leave private plaintext staging; an authorized responder must inspect/remove it after proving no operation is active. Qualified encrypted storage, crash cleanup, capacity/timeout/cancellation and fault injection remain required. A sync failure after publication can report failure with the destination present; preserve it for inspection rather than deleting evidence or retrying over it.
+
+## Recovered runtime isolation
+
+Opening the recovered database preserves a durable hold independent of environment configuration. Provider intent creation, direct send, reconciliation lookup, settlement retrieval, callback claim and foreground worker all reject with `RECOVERY_HOLD` before provider IO. Historical effect/callback states and receipt identities remain unchanged. The UI displays the hold; provider results/payment links are suppressed. Customer exceptions do not override this hold. Copied sessions reject; a new sign-in is required. Users/grants and customer choices still describe the snapshot date and need review against the source cutoff.
+
+There is deliberately no activation/release command yet. Restored native operations are available for isolated rehearsal, not evidence that an old snapshot is safe to become authoritative. Do not serve the rehearsal to customers or attach it to live routing. Activation must first implement and qualify a controlled reconciliation/release process: compare source cutoff, inventory quantity/cost/serial custody, orders/reservations, invoice/credit/payment/refund balances, external transactions and current access/residency choices; establish one writer and routing authority; audit approvals and rollback boundaries. A snapshot cannot undo cash, refunds, labels or shipments that occurred after it. Absence of a provider match is not proof that an irreversible operation can be resent.
+
+For a failed rehearsal, keep the original source authoritative, leave the recovered database isolated, record the failed receipt and escalate to the owning inventory/finance/security operator. Correct the cause in a fresh candidate and repeat the scenario. Do not modify quantities or money merely to make totals match. Completed manual/provider identities from the snapshot remain durable, but after-cutoff records require explicit import/reconciliation; they are not recovered automatically.
+
+## Local evidence and remaining acceptance
+
+[Local recovery receipt](evidence/LOCAL-RECOVERY-2026-09-30.md) records actual synthetic tests, the tested candidate and failures. A live WAL source restored two held units valued at 12,000 cents, one issued invoice of 11,300 cents, 4,000 paid and 7,300 outstanding; later source shipments/cash did not leak into the snapshot. Restored command replay applied no second payment. A provider operation completed after backup remained pending in the recovered store and could not be resent. No actual provider request occurred.
+
+This is not a measured production RPO/RTO, approved retention plan, backup availability guarantee, production upgrade rehearsal, actual offsite restoration, human operator acceptance or G8 verification. DEC-10 targets, source cutoff/imports, key custody/rotation, alternate-site infrastructure residency, disk/power/crash faults, stale-grant review, release/activation, alerting and production-sized restore/load remain unresolved. See [implementation status](IMPLEMENTATION.md), [delivery controls](DELIVERY.md) and [checkpoint criteria](CHECKPOINTS.md).

@@ -1,0 +1,47 @@
+{
+  "name": "distributor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.16.0 <25"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server/main.ts",
+    "dev:web": "vite",
+    "start": "tsx src/server/main.ts",
+    "worker": "tsx src/server/worker.ts",
+    "recovery": "tsx src/server/recovery-cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "build": "vite build",
+    "bootstrap": "tsx src/server/cli.ts bootstrap",
+    "demo": "tsx src/server/cli.ts demo",
+    "verify:plan": "python3 scripts/verify_plan.py",
+    "format:check": "prettier --check src tests vite.config.ts playwright.config.ts tsconfig.json package.json index.html",
+    "test:e2e": "npm run build && playwright test"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/static": "10.1.5",
+    "@pdf-lib/fontkit": "1.1.1",
+    "fastify": "5.12.5",
+    "pdf-lib": "1.17.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "stripe": "22.6.2"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.0.9",
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "pdfjs-dist": "6.3.289",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  }
+}

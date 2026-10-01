@@ -1,0 +1,40 @@
+{
+  "decisions": 14,
+  "effort_developer_days": {
+    "baseline": [
+      248,
+      396
+    ],
+    "optional_ub": [
+      8,
+      14
+    ]
+  },
+  "errors": [],
+  "gates": 10,
+  "local_links": 57,
+  "markdown_files": 15,
+  "requirements": 22,
+  "scenarios": 11,
+  "scope": "planning structure only; no business decisions, product gates or remote URLs verified",
+  "sha256": {
+    ".gitignore": "d7113a27e6b8c31f059a0f9a7fd7cc9b85beb8249780a5c5748c3fb367f9012e",
+    "AGENTS.md": "a4320f3447bf48055dd1f9f62ecb230ada6c1cda2a619d090763501e88f15b36",
+    "README.md": "430852a92b6f9ae22d465b67956bad64ebb2e034b9227e20952b817d186b6b15",
+    "docs/ARCHITECTURE.md": "82233c52b0bb0f74882f100ace1b258cd7649df3ad1391364fcad1d6fc3c7610",
+    "docs/CHECKPOINTS.md": "8ffd69f608c0f5b8e90dd8b1a732ad06562aa7cf180982f74e8ad6da9657abbc",
+    "docs/CONTRACTS.md": "4571d7f817ef86d355e9d53082ac6a5b9bb6d7afc0c8e111536b58517ef8be72",
+    "docs/DECISIONS.md": "544c4570952b97c51e6269c96e578550b04022afdf4729e8a12fb2ddfed96215",
+    "docs/DELIVERY.md": "d744afbc31dd7733ac43b1bc9789543db51c042f34a2d41d89de158a4212187e",
+    "docs/DISCOVERY.md": "c8bdcf9ec933b65f8a722bb298a03ce56fda12b77ec57272bedd9e58a71cfe12",
+    "docs/HANDOFF.md": "231a26f1d2cab020fc56fddaf4d7898d471faed2743488b26f86bb663b7774df",
+    "docs/PLAN.md": "528b5d0b519dfcbb92866d901b58d30b8e37ad90e8f1382684590fdf17f39ebe",
+    "docs/REQUIREMENTS.md": "28488bd3f47b3b9bf6632004a6c3bc7f730bee5517430956a9f461120a0c09e6",
+    "docs/REUSE.md": "a989792a5ffccc8de10aa9b7f382ccdbf4ec34135085cc98eaa758770bddfc1f",
+    "docs/TASKS.md": "ab7f8f21d62df22e097aa8ea82741d35f94abdae0c71a15ff7d56609ecb7815d",
+    "docs/evidence/README.md": "0340958f788a16c06e2e1de5955e0f65a0ed63c5aeb139226471a3e85de37e20",
+    "scripts/verify_plan.py": "bf34820c96c16bf633e3b3b539f99fb3b4b01d5f5934960397db7be8ce1fa6af"
+  },
+  "status": "PASS",
+  "tasks": 44
+}

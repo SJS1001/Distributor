@@ -1,0 +1,93 @@
+{
+  "reviewed_at_utc": "2026-10-01T01:38:35.414229+00:00",
+  "scope": "planning structure/content review and authenticated read-only GitHub access; no product gate verified",
+  "version": "local uncommitted files; no Git HEAD",
+  "environment": {
+    "workspace": "/Users/stevensmith/Documents/Distributor",
+    "reviewer": "Codex; no human approval"
+  },
+  "structural_check": {
+    "decisions": 14,
+    "effort_developer_days": {
+      "baseline": [
+        248,
+        396
+      ],
+      "optional_ub": [
+        8,
+        14
+      ]
+    },
+    "errors": [],
+    "gates": 10,
+    "local_links": 141,
+    "markdown_files": 29,
+    "requirements": 22,
+    "scenarios": 11,
+    "scope": "planning structure only; no business decisions, product gates or remote URLs verified",
+    "sha256": {
+      ".gitignore": "ed760e4dc3ac8eb3aa19062d13594f87570b9da57be06983b8579f36bd60adcc",
+      "AGENTS.md": "e69f9775a973dd7738329aff4ec37a8dcfe2d24951691e280979bb58bd2d13ab",
+      "README.md": "b6096c35ac625c75944471fc91b56e3dcc4a2c829b5dce43f355d1d296ccf171",
+      "docs/ARCHITECTURE.md": "fec16dc73d8ed81d655e195bf7503520d8c631e5f396984b4a610f361ac63de5",
+      "docs/CHECKPOINTS.md": "a22d351638da7d69cd9cbfd67827949c7df81bdfc109cd86576d15cbd3a8d8c7",
+      "docs/CONTRACTS.md": "ba87bd673e2004f9622c5666b51f3a12e11b4a4d10469bfe80e182d4e87db278",
+      "docs/DECISIONS.md": "e2723e2bdf7e53e3907f5bfe9de8596eefd322e200c3a5d3a0f03529ffa49c53",
+      "docs/DELIVERY.md": "274a8d0ef814a9121d94900aba2ae134e40b136960a2ee73e55f2b5797c0beb6",
+      "docs/DISCOVERY.md": "0a27d75e3213cb557853c184f06920ed0d7f22ded47bd5330d95918ab8fbf23b",
+      "docs/HANDOFF.md": "11da4ae7532241fae266f1447029565f4e11287b850246119d28293219839901",
+      "docs/PLAN.md": "8e409fcac6b6b2577a7713fca329a9fc2ed5176af5c5c7172dc19006a3239bee",
+      "docs/PROVIDERS.md": "eb104183e5b6b195c1f92c4c0230d3e95c178c0f2df728f7a1d16fc9dbc8b842",
+      "docs/REQUIREMENTS.md": "c231a2fe821eff75fb92d63d7f2c64c07f6e62019b95c9b1258052a9dd7b09d6",
+      "docs/REUSE.md": "a989792a5ffccc8de10aa9b7f382ccdbf4ec34135085cc98eaa758770bddfc1f",
+      "docs/TASKS.md": "857a76689c62a5fa4fbbe9d3cfb7c0dbdf94cdcb27300476f77d1c0d730e351d",
+      "docs/evidence/README.md": "4b8131eee6166d209318c9b558cf50b2edfeda28c22cc9a559e7f79c581bcc73",
+      "scripts/verify_plan.py": "34071d7d4f1488f6549bfd48e4480509f681bbcb66f61ad503bfa74cc5e844cc"
+    },
+    "status": "PASS",
+    "tasks": 44
+  },
+  "access": {
+    "identity": "SJS1001",
+    "repository": "SJS1001/Distributor",
+    "public": true,
+    "archived": false,
+    "default_branch": "main",
+    "permissions": [
+      "pull",
+      "push",
+      "admin",
+      "maintain",
+      "triage"
+    ],
+    "actions": {
+      "enabled": true,
+      "allowed_actions": "all",
+      "sha_pinning_required": false,
+      "workflow_count": 0
+    },
+    "git_ls_remote": {
+      "exit_code": 0,
+      "refs": 0
+    },
+    "remote_mutations": false,
+    "future_sjsmithbot_identity": "unverified",
+    "hosted_runner_execution": "unverified",
+    "web_reader": "cache miss; not used as access evidence"
+  },
+  "failures_preserved": [
+    "Initial validator run failed because the new companion receipt JSON did not yet exist; file created and final structural run passed."
+  ],
+  "historical_evidence_preserved": {
+    "baseline": "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.json",
+    "compared_files": 20,
+    "all_unchanged": true
+  },
+  "receipt_markdown_sha256": "10c4c853c5818dcbeb66ab55de890a05b3aced8553d822f484e23a6fb0e080c6",
+  "limitations": [
+    "No application tests or product qualification in this document-only review",
+    "Physical infrastructure/provider residency and actual consent evidence pending",
+    "Carrier/device/QuickBooks edition and tax qualification pending",
+    "No workflow, push, PR, deployment, provider call or remote mutation"
+  ]
+}

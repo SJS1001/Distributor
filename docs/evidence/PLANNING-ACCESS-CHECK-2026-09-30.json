@@ -1,0 +1,116 @@
+{
+  "reviewed_at_utc": "2026-10-01T02:05:28.226347+00:00",
+  "scope": "Planning content/structure and authenticated read-only repository access; no product gate verified",
+  "version": "Local uncommitted files; no Git HEAD",
+  "workspace": "/Users/stevensmith/Documents/Distributor",
+  "structural_check": {
+    "decisions": 14,
+    "effort_developer_days": {
+      "baseline": [
+        248,
+        396
+      ],
+      "optional_ub": [
+        8,
+        14
+      ]
+    },
+    "errors": [],
+    "gates": 10,
+    "local_links": 157,
+    "markdown_files": 31,
+    "requirements": 22,
+    "scenarios": 11,
+    "scope": "planning structure only; no business decisions, product gates or remote URLs verified",
+    "sha256": {
+      ".gitignore": "ed760e4dc3ac8eb3aa19062d13594f87570b9da57be06983b8579f36bd60adcc",
+      "AGENTS.md": "e69f9775a973dd7738329aff4ec37a8dcfe2d24951691e280979bb58bd2d13ab",
+      "README.md": "b6096c35ac625c75944471fc91b56e3dcc4a2c829b5dce43f355d1d296ccf171",
+      "docs/ARCHITECTURE.md": "fec16dc73d8ed81d655e195bf7503520d8c631e5f396984b4a610f361ac63de5",
+      "docs/CHECKPOINTS.md": "a22d351638da7d69cd9cbfd67827949c7df81bdfc109cd86576d15cbd3a8d8c7",
+      "docs/CONTRACTS.md": "4532329861dc3d88e762f63a0ed88ee4cc310ef00e589fe4c8dcf7ba40759c17",
+      "docs/DECISIONS.md": "e2723e2bdf7e53e3907f5bfe9de8596eefd322e200c3a5d3a0f03529ffa49c53",
+      "docs/DELIVERY.md": "274a8d0ef814a9121d94900aba2ae134e40b136960a2ee73e55f2b5797c0beb6",
+      "docs/DISCOVERY.md": "0a27d75e3213cb557853c184f06920ed0d7f22ded47bd5330d95918ab8fbf23b",
+      "docs/HANDOFF.md": "ce7564112c9bd20670304e04bc311c0779df134336485e2d9d4d9e817ca3c121",
+      "docs/PLAN.md": "8e409fcac6b6b2577a7713fca329a9fc2ed5176af5c5c7172dc19006a3239bee",
+      "docs/PROVIDERS.md": "eb104183e5b6b195c1f92c4c0230d3e95c178c0f2df728f7a1d16fc9dbc8b842",
+      "docs/REQUIREMENTS.md": "c231a2fe821eff75fb92d63d7f2c64c07f6e62019b95c9b1258052a9dd7b09d6",
+      "docs/REUSE.md": "a989792a5ffccc8de10aa9b7f382ccdbf4ec34135085cc98eaa758770bddfc1f",
+      "docs/TASKS.md": "857a76689c62a5fa4fbbe9d3cfb7c0dbdf94cdcb27300476f77d1c0d730e351d",
+      "docs/evidence/README.md": "4b8131eee6166d209318c9b558cf50b2edfeda28c22cc9a559e7f79c581bcc73",
+      "scripts/verify_plan.py": "34071d7d4f1488f6549bfd48e4480509f681bbcb66f61ad503bfa74cc5e844cc"
+    },
+    "status": "PASS",
+    "tasks": 44
+  },
+  "access": {
+    "identity": "SJS1001",
+    "repository": {
+      "archived": false,
+      "default_branch": "main",
+      "disabled": false,
+      "full_name": "SJS1001/Distributor",
+      "permissions": {
+        "admin": true,
+        "maintain": true,
+        "pull": true,
+        "push": true,
+        "triage": true
+      },
+      "visibility": "public"
+    },
+    "actions": {
+      "enabled": true,
+      "allowed_actions": "all",
+      "sha_pinning_required": false
+    },
+    "workflow_count": 0,
+    "origin": "https://github.com/SJS1001/Distributor.git",
+    "git_ls_remote": {
+      "exit_code": 0,
+      "refs": 0
+    },
+    "remote_mutations": false,
+    "future_sjsmithbot_identity": "unverified",
+    "hosted_runner_execution": "unverified"
+  },
+  "historical_evidence_preserved": {
+    "baseline": "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.json",
+    "compared_files": 24,
+    "all_unchanged": true
+  },
+  "evidence_sha256": {
+    "docs/evidence/LOCAL-CYCLE-COUNTS-2026-09-30.json": "8bb38d16cb74bb945156ce3bd5f2aa5486048436201136a890edebe21f9c20ec",
+    "docs/evidence/LOCAL-CYCLE-COUNTS-2026-09-30.md": "98cb96d3e01bc7892178b6826744ae7df6592bcdef3fae7461bac2927135b8ce",
+    "docs/evidence/LOCAL-ENGINEERING-2026-09-30.json": "d494ed17745890c177f9a38a346dae24bb7b9d4df3046720fdb4518cba4d79d1",
+    "docs/evidence/LOCAL-ENGINEERING-2026-09-30.md": "fbe529f592a1956bae8e76b27495d7cc6aace8e29ea8338e328b077647f23dda",
+    "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.json": "20d1b02ac877503932421b923b2435c18f7000df27c0123820206c2dece59f16",
+    "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.md": "e73778975598451db24ee8f4b923260a97437e06c031f17d555813d8031ebc20",
+    "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.json": "f6835b7fd492d8ed19f85d8e5660294e02b87587e500d4e447fb2dfd19ae0a4c",
+    "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.md": "44cc881dc598e0baf4f89f0abd8c002eda1ba29c8f14e26c3026b43ab1b1beaf",
+    "docs/evidence/LOCAL-PARTIAL-FULFILLMENT-2026-09-30.json": "2f25f7aac4d844eeafcaa8383859c436ef4e279ff6ffff46a3670299d29cd279",
+    "docs/evidence/LOCAL-PARTIAL-FULFILLMENT-2026-09-30.md": "6a9f73244c0053ebcdea19405bf51fb2af39d80ece2e54f8a872dc7609b3a36b",
+    "docs/evidence/LOCAL-PARTIAL-TRANSFERS-2026-09-30.json": "7753fbdd2a511b4a19a201a933cbd3b70aa405146268b6d3c2c4e35825919a7f",
+    "docs/evidence/LOCAL-PARTIAL-TRANSFERS-2026-09-30.md": "fcb3bf18b4cd0f9aafffe6bfd0b20f2227e157ad8614fccb4356ec73d8104d11",
+    "docs/evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.json": "e7851a5e038c4cace0004e734974c5e6b276de55b0b776736bcedccdcdcb9b38",
+    "docs/evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.md": "daf8f60eb899bf3a2052aaeeb785a2547cca47b6b23243ab0cc669aaf8fad662",
+    "docs/evidence/LOCAL-RECOVERY-2026-09-30.json": "88226439797861c4358150f9af867038519e7986e23f2e64b2c32d6d21aedbcd",
+    "docs/evidence/LOCAL-RECOVERY-2026-09-30.md": "f418c8871ba765c4757b7930f77f157bfad7f3342e9eac39ed690bd9fa81ee69",
+    "docs/evidence/LOCAL-SUPPLIER-RETURNS-2026-09-30.json": "cc604aa5419cb9697f8e88827a9fd06d63a777b6464fc024c7e0f234936884c8",
+    "docs/evidence/LOCAL-SUPPLIER-RETURNS-2026-09-30.md": "e7cf0d499a9c767972790a3fef0db357d924a013a8c70dad6692778dbe8e4ab6",
+    "docs/evidence/LOCAL-TRANSFER-RECONCILIATION-2026-09-30.json": "d34bc8796dad84f253ccbfa00813e12630c4c142de184a23682b2cf1a0d122f1",
+    "docs/evidence/LOCAL-TRANSFER-RECONCILIATION-2026-09-30.md": "6786998376ac53d7d6cc86745ba5c955f2bb526ea5c86298750e77c337f9f872",
+    "docs/evidence/PLANNING-ACCESS-CHECK-2026-09-30.md": "0b41fb03824c0d0be5680364cc4c8095dbb40ff950e56df72bd8e008aeb52b98",
+    "docs/evidence/PLANNING-CHOICES-2026-09-30.json": "0e092764bbb1fcd2c8a81014e4cc8d05c4d5e029aafc9de663cc8ef297e68eae",
+    "docs/evidence/PLANNING-CHOICES-2026-09-30.md": "10c4c853c5818dcbeb66ab55de890a05b3aced8553d822f484e23a6fb0e080c6",
+    "docs/evidence/PLANNING-REVIEW-2026-09-30.json": "db3e051ab00f5639adbde54432444e2b8a1927b1ecb959118b1b5ab1bb8b2d3e",
+    "docs/evidence/PLANNING-REVIEW-2026-09-30.md": "9976a4c89ebb286a98713c8aa15b7615d0cbc23acb0832d252f47e959a1eab93",
+    "docs/evidence/README.md": "4b8131eee6166d209318c9b558cf50b2edfeda28c22cc9a559e7f79c581bcc73"
+  },
+  "limitations": [
+    "Planning draft completion is not human acceptance or product verification",
+    "Actual residency, provider/device/tax/business qualification remains pending",
+    "No application changes/tests, workflows, publication or deployment in this review"
+  ]
+}

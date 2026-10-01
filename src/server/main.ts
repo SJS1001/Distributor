@@ -1,0 +1,42 @@
+import { Application } from "./application.ts";
+import { createHttp } from "./http.ts";
+import { check } from "./core.ts";
+import { type Region } from "./iam.ts";
+import { configuredProviders } from "./provider-runtime.ts";
+const host = process.env.HOST ?? "127.0.0.1",
+  port = Number(process.env.PORT ?? 3000),
+  origin = process.env.PUBLIC_ORIGIN ?? `http://127.0.0.1:${port}`,
+  secureCookies = process.env.SECURE_COOKIES === "true";
+check(
+  Number.isInteger(port) && port > 0 && port <= 65535,
+  "CONFIG",
+  "Invalid port.",
+  500,
+);
+check(
+  ["127.0.0.1", "localhost", "::1"].includes(host) ||
+    (secureCookies && new URL(origin).protocol === "https:"),
+  "CONFIG",
+  "Non-loopback deployment requires HTTPS origin and secure cookies.",
+  500,
+);
+const app = new Application(
+  process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
+  (process.env.DATA_REGION ?? "CA") as Region,
+);
+const http = await createHttp(app, {
+  origin,
+  secureCookies,
+  providers: configuredProviders(app),
+});
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => {
+    void http.close().finally(() => {
+      app.close();
+      process.exitCode = 0;
+    });
+  });
+await http.listen({ host, port });
+process.stdout.write(
+  `Distributor listening at ${origin}; storage region ${app.identity.region}\n`,
+);

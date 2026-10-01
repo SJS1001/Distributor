@@ -1,0 +1,869 @@
+import Fastify from "fastify";
+import { type FastifyError } from "fastify";
+import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
+import staticFiles from "@fastify/static";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { check, DomainError, type Actor } from "./core.ts";
+import { Application } from "./application.ts";
+import { type ProviderRuntime } from "./provider-runtime.ts";
+
+type Schema = Record<string, unknown>;
+const str: Schema = { type: "string", minLength: 1, maxLength: 2000 },
+  num: Schema = { type: "integer", minimum: 0, maximum: 1e12 },
+  bool: Schema = { type: "boolean" };
+const arr = (items: Schema): Schema => ({
+  type: "array",
+  items,
+  maxItems: 100000,
+});
+const obj = (
+  properties: Record<string, Schema>,
+  optional: string[] = [],
+): Schema => ({
+  type: "object",
+  properties,
+  required: Object.keys(properties).filter((k) => !optional.includes(k)),
+  additionalProperties: false,
+});
+const choice = (...values: string[]): Schema => ({
+  type: "string",
+  enum: values,
+});
+const line = obj({ productId: str, quantity: num });
+type Spec = {
+  schema: Schema;
+  run: (actor: Actor, key: string, payload: any) => unknown;
+}; // Schemas validate this boundary before domain dispatch.
+export function commands(app: Application): Record<string, Spec> {
+  return {
+    "billing.profile": {
+      schema: obj({
+        accountId: { anyOf: [str, { type: "null" }] },
+        name: str,
+        address: { type: "string", maxLength: 1000 },
+        taxRegistration: { type: "string", maxLength: 200 },
+        termDays: {
+          anyOf: [
+            { type: "integer", minimum: 0, maximum: 365 },
+            { type: "null" },
+          ],
+        },
+        version: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.billing.documents.configure(a, k, p),
+    },
+    "import.documents.preview": {
+      schema: obj({
+        version: { const: 1, type: "integer" },
+        batchRef: str,
+        sourceRef: str,
+        sourceHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        cutoffAt: str,
+        region: choice("CA", "US"),
+        currency: choice("CAD", "USD"),
+        expectedQuantity: num,
+        expectedValue: num,
+        expectedNet: num,
+        expectedTax: num,
+        expectedCredited: num,
+        expectedPaid: num,
+        expectedRefunded: num,
+        acknowledgment: str,
+        rows: { type: "array", minItems: 1, maxItems: 500, items: {} },
+      }),
+      run: (a, k, p) => app.migration.documents.preview(a, k, p),
+    },
+    "import.documents.decide": {
+      schema: obj({
+        batchId: str,
+        reviewHash: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.migration.documents.decide(a, k, p),
+    },
+    "import.masters.preview": {
+      schema: obj({
+        kind: choice("customer", "catalog"),
+        version: { const: 1, type: "integer" },
+        batchRef: str,
+        sourceRef: str,
+        sourceHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        cutoffAt: str,
+        region: choice("CA", "US"),
+        currency: choice("CAD", "USD"),
+        expectedQuantity: num,
+        expectedValue: num,
+        acknowledgment: str,
+        rows: { type: "array", minItems: 1, maxItems: 500, items: {} },
+      }),
+      run: (a, k, p) => app.migration.masters.preview(a, k, p),
+    },
+    "import.masters.decide": {
+      schema: obj({
+        batchId: str,
+        reviewHash: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.migration.masters.decide(a, k, p),
+    },
+    "import.opening.preview": {
+      schema: obj({
+        version: { const: 1, type: "integer" },
+        batchRef: str,
+        sourceRef: str,
+        sourceHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        cutoffAt: str,
+        region: choice("CA", "US"),
+        currency: choice("CAD", "USD"),
+        expectedQuantity: num,
+        expectedValue: num,
+        acknowledgment: str,
+        rows: { type: "array", minItems: 1, maxItems: 500, items: {} },
+      }),
+      run: (a, k, p) => app.migration.preview(a, k, p),
+    },
+    "import.opening.decide": {
+      schema: obj({
+        batchId: str,
+        reviewHash: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.migration.decide(a, k, p),
+    },
+    "account.create": {
+      schema: obj({ name: str, tier: str, creditLimit: num }),
+      run: (a, k, p) => app.identity.createCustomer(a, k, p),
+    },
+    "account.hold": {
+      schema: obj({ accountId: str, held: bool, reason: str }),
+      run: (a, k, p) => app.identity.setHold(a, k, p),
+    },
+    "account.residency": {
+      schema: obj({
+        accountId: str,
+        region: choice("CA", "US"),
+        mode: choice("strict", "provider-exceptions"),
+        providers: arr(choice("stripe", "quickbooks", "carrier")),
+        version: num,
+        acknowledgment: str,
+      }),
+      run: (a, k, p) => app.identity.residencyChoice(a, k, p),
+    },
+    "user.create": {
+      schema: obj(
+        {
+          email: str,
+          name: str,
+          password: { type: "string", minLength: 14, maxLength: 256 },
+          role: choice(
+            "admin",
+            "warehouse",
+            "commercial",
+            "finance",
+            "warranty",
+            "buyer",
+            "support",
+          ),
+          accountId: str,
+          sites: arr(str),
+          currentPassword: { type: "string", maxLength: 256 },
+          requirePasswordChange: bool,
+        },
+        ["accountId", "requirePasswordChange"],
+      ),
+      run: (a, k, p) =>
+        app.identity.createUser(a, k, {
+          ...p,
+          requirePasswordChange: p.requirePasswordChange ?? true,
+        }),
+    },
+    "user.update": {
+      schema: obj(
+        {
+          userId: str,
+          revision: num,
+          email: str,
+          name: str,
+          role: choice(
+            "admin",
+            "warehouse",
+            "commercial",
+            "finance",
+            "warranty",
+            "buyer",
+            "support",
+          ),
+          accountId: str,
+          sites: arr(str),
+          active: bool,
+          currentPassword: { type: "string", maxLength: 256 },
+          reason: str,
+        },
+        ["accountId"],
+      ),
+      run: (a, k, p) => app.identity.updateUser(a, k, p),
+    },
+    "user.password.reset": {
+      schema: obj({
+        userId: str,
+        revision: num,
+        password: { type: "string", minLength: 14, maxLength: 256 },
+        currentPassword: { type: "string", maxLength: 256 },
+        reason: str,
+      }),
+      run: (a, k, p) => app.identity.resetPassword(a, k, p),
+    },
+    "user.password.change": {
+      schema: obj({
+        currentPassword: { type: "string", maxLength: 256 },
+        password: { type: "string", minLength: 14, maxLength: 256 },
+      }),
+      run: (a, k, p) => app.identity.changePassword(a, k, p),
+    },
+    "user.sessions.revoke": {
+      schema: obj({
+        userId: str,
+        revision: num,
+        currentPassword: { type: "string", maxLength: 256 },
+        reason: str,
+      }),
+      run: (a, k, p) => app.identity.revokeSessions(a, k, p),
+    },
+    "user.sessions.end-own": {
+      schema: obj({}),
+      run: (a, k) => app.identity.revokeOwnSessions(a, k),
+    },
+    "warehouse.create": {
+      schema: obj({ name: str }),
+      run: (a, k, p) => app.inventory.createWarehouse(a, k, p),
+    },
+    "product.create": {
+      schema: obj({
+        sku: str,
+        name: str,
+        serialized: bool,
+        unitPrice: num,
+        taxBasisPoints: num,
+      }),
+      run: (a, k, p) => app.catalog.create(a, k, p),
+    },
+    "product.price": {
+      schema: obj({ productId: str, tier: str, unitPrice: num }),
+      run: (a, k, p) => app.catalog.setPrice(a, k, p),
+    },
+    "supplier.create": {
+      schema: obj({ name: str }),
+      run: (a, k, p) => app.procurement.supplier(a, k, p),
+    },
+    "purchase.create": {
+      schema: obj({
+        supplierId: str,
+        warehouseId: str,
+        lines: arr(obj({ productId: str, quantity: num, unitCost: num })),
+      }),
+      run: (a, k, p) => app.procurement.create(a, k, p),
+    },
+    "purchase.receive": {
+      schema: obj({
+        poId: str,
+        lineId: str,
+        deliveryRef: str,
+        quantity: num,
+        serials: arr(str),
+        bin: str,
+        quarantine: bool,
+      }),
+      run: (a, k, p) => app.procurement.receive(a, k, p),
+    },
+    "purchase.return": {
+      schema: obj({
+        receiptId: str,
+        unitId: str,
+        revision: num,
+        quantity: num,
+        serial: { anyOf: [str, { type: "null" }] },
+        returnRef: str,
+        reason: str,
+        handoverEvidence: str,
+      }),
+      run: (a, k, p) => app.procurement.returnStock(a, k, p),
+    },
+    "stock.inspect": {
+      schema: obj({
+        unitId: str,
+        revision: num,
+        condition: choice("usable", "quarantine", "damaged"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.inspect(a, k, p),
+    },
+    "stock.count": {
+      schema: obj({ unitId: str, revision: num, count: num, reason: str }),
+      run: (a, k, p) => app.inventory.adjustCount(a, k, p),
+    },
+    "count.start": {
+      schema: obj({ unitId: str, revision: num, countRef: str }),
+      run: (a, k, p) => app.inventory.startCount(a, k, p),
+    },
+    "count.submit": {
+      schema: obj({ countId: str, quantity: num, reason: str }),
+      run: (a, k, p) => app.inventory.submitCount(a, k, p),
+    },
+    "count.decide": {
+      schema: obj({
+        countId: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.decideCount(a, k, p),
+    },
+    "transfer.dispatch": {
+      schema: obj({
+        destinationId: str,
+        unitId: str,
+        quantity: num,
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.dispatchTransfer(a, k, p),
+    },
+    "transfer.receive": {
+      schema: obj({
+        transferId: str,
+        lineId: str,
+        quantity: num,
+        serial: { anyOf: [str, { type: "null" }] },
+        receiptRef: str,
+        bin: str,
+        condition: choice("usable", "quarantine", "damaged"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.receiveTransfer(a, k, p),
+    },
+    "transfer.loss": {
+      schema: obj({
+        transferId: str,
+        lineId: str,
+        revision: num,
+        quantity: num,
+        serial: { anyOf: [str, { type: "null" }] },
+        lossRef: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.approveTransferLoss(a, k, p),
+    },
+    "transfer.recover": {
+      schema: obj({
+        lossId: str,
+        quantity: num,
+        serial: { anyOf: [str, { type: "null" }] },
+        receiptRef: str,
+        bin: str,
+        condition: choice("usable", "quarantine", "damaged"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.recoverTransferLoss(a, k, p),
+    },
+    "cart.save": {
+      schema: obj({
+        accountId: str,
+        warehouseId: str,
+        revision: num,
+        lines: arr(line),
+      }),
+      run: (a, k, p) => app.orders.saveCart(a, k, p),
+    },
+    "cart.quote": {
+      schema: obj({ cartId: str, revision: num }),
+      run: (a, k, p) => app.orders.quote(a, k, p),
+    },
+    "order.accept": {
+      schema: obj({ quoteId: str, allowBackorder: bool }),
+      run: (a, k, p) => app.orders.accept(a, k, p),
+    },
+    "order.allocate": {
+      schema: obj({ orderId: str, revision: num }),
+      run: (a, k, p) => app.orders.allocate(a, k, p),
+    },
+    "order.cancel": {
+      schema: obj({
+        orderId: str,
+        lineId: str,
+        quantity: num,
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.cancel(a, k, p),
+    },
+    "fulfillment.pick": {
+      schema: obj(
+        {
+          orderId: str,
+          allocationId: str,
+          serial: { type: ["string", "null"], maxLength: 160 },
+          unpick: bool,
+        },
+        ["unpick"],
+      ),
+      run: (a, k, p) => app.fulfillment.pick(a, k, p),
+    },
+    "fulfillment.pack": {
+      schema: obj({
+        orderId: str,
+        revision: num,
+        mode: choice("carrier", "collection"),
+        address: str,
+        lines: arr(obj({ allocationId: str, quantity: num })),
+      }),
+      run: (a, k, p) => app.fulfillment.pack(a, k, p),
+    },
+    "fulfillment.ship": {
+      schema: obj(
+        { shipmentId: str, carrier: str, tracking: str, handoverEvidence: str },
+        ["carrier", "tracking"],
+      ),
+      run: (a, k, p) => app.fulfillment.commit(a, k, p),
+    },
+    "fulfillment.void": {
+      schema: obj({ shipmentId: str, reason: str }),
+      run: (a, k, p) => app.fulfillment.void(a, k, p),
+    },
+    "fulfillment.delivery": {
+      schema: obj({ shipmentId: str, reference: str, deliveredAt: str }),
+      run: (a, k, p) => app.fulfillment.confirmDelivery(a, k, p),
+    },
+    "billing.credit": {
+      schema: obj({
+        invoiceId: str,
+        reference: str,
+        reason: str,
+        lines: arr(obj({ lineId: str, quantity: num })),
+      }),
+      run: (a, k, p) => app.billing.issueCredit(a, k, p),
+    },
+    "billing.payment.manual": {
+      schema: obj({ invoiceId: str, amount: num, reference: str, reason: str }),
+      run: (a, k, p) => app.billing.manualPayment(a, k, p),
+    },
+    "billing.refund.request": {
+      schema: obj({
+        invoiceId: str,
+        paymentId: str,
+        amount: num,
+        reference: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.billing.refundRequest(a, k, p),
+    },
+    "billing.refund.manual": {
+      schema: obj({ refundId: str, reference: str, reason: str }),
+      run: (a, k, p) => app.billing.manualRefund(a, k, p),
+    },
+    "warranty.submit": {
+      schema: obj({
+        accountId: str,
+        unitId: str,
+        type: choice("warranty", "return"),
+        issue: str,
+        evidence: str,
+      }),
+      run: (a, k, p) => app.warranty.submit(a, k, p),
+    },
+    "warranty.review": {
+      schema: obj({ claimId: str, approved: bool, reason: str }),
+      run: (a, k, p) => app.warranty.review(a, k, p),
+    },
+    "warranty.receive": {
+      schema: obj({ claimId: str, warehouseId: str, bin: str, serial: str }),
+      run: (a, k, p) => app.warranty.receive(a, k, p),
+    },
+    "warranty.inspect": {
+      schema: obj({ claimId: str, findings: str }),
+      run: (a, k, p) => app.warranty.inspect(a, k, p),
+    },
+    "warranty.disposition": {
+      schema: obj({
+        claimId: str,
+        disposition: choice("restock", "scrap", "repair"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.dispose(a, k, p),
+    },
+    "warranty.credit": {
+      schema: obj({ claimId: str, reason: str }),
+      run: (a, k, p) => app.warranty.credit(a, k, p),
+    },
+    "stripe.checkout": {
+      schema: obj({ invoiceId: str }),
+      run: (a, k, p) => app.integration.checkout(a, k, p),
+    },
+    "quickbooks.invoice": {
+      schema: obj({
+        invoiceId: str,
+        customerRef: str,
+        itemRefs: { type: "object", additionalProperties: str },
+        taxCodeRef: str,
+        taxRateRef: str,
+      }),
+      run: (a, k, p) => app.integration.accounting(a, k, p),
+    },
+  };
+}
+export type HttpOptions = {
+  origin: string;
+  secureCookies?: boolean;
+  staticRoot?: string;
+  logger?: boolean;
+  providers?: ProviderRuntime;
+};
+export async function createHttp(app: Application, options: HttpOptions) {
+  const origin = new URL(options.origin).origin;
+  const http = Fastify({
+    logger: options.logger ?? false,
+    bodyLimit: 256 * 1024,
+    ajv: {
+      customOptions: {
+        removeAdditional: false,
+        coerceTypes: false,
+        useDefaults: false,
+      },
+    },
+  });
+  await http.register(cookie);
+  await http.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+  });
+  const sessions = new WeakMap<
+    object,
+    { actor: Actor; csrf: string; passwordChangeRequired: boolean }
+  >();
+  const actor = (request: object) => sessions.get(request)!.actor;
+  const cookieOptions = {
+    httpOnly: true,
+    secure: options.secureCookies ?? false,
+    sameSite: "strict" as const,
+    path: "/",
+    maxAge: 8 * 3600,
+  };
+  http.addHook("onRequest", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    if (!request.url.startsWith("/api/") || request.url === "/api/health")
+      return;
+    if (["POST", "PUT", "DELETE", "PATCH"].includes(request.method))
+      check(
+        request.headers.origin === origin,
+        "ORIGIN",
+        "Request origin is not permitted.",
+        403,
+      );
+    if (request.url === "/api/login") return;
+    const session = app.identity.session(request.cookies.distributor_session);
+    sessions.set(request, session);
+    if (request.method !== "GET")
+      check(
+        request.headers["x-csrf-token"] === session.csrf,
+        "CSRF",
+        "Session request token is missing or invalid.",
+        403,
+      );
+    check(
+      !session.passwordChangeRequired ||
+        [
+          "/api/session",
+          "/api/logout",
+          "/api/security",
+          "/api/commands/user.password.change",
+          "/api/commands/user.sessions.end-own",
+        ].includes(request.url.split("?")[0]!),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before entering the workspace.",
+      403,
+    );
+  });
+  http.setErrorHandler((error, request, reply) => {
+    if (error instanceof DomainError) {
+      const session = sessions.get(request);
+      if (session && error.status === 403)
+        app.platform.audit(
+          session.actor,
+          "authorization.denied",
+          request.routeOptions.url ?? "",
+          { code: error.code },
+        );
+      return reply.code(error.status).send({
+        code: error.code,
+        message: error.message,
+        requestId: request.id,
+      });
+    }
+    const validation = (error as FastifyError).validation;
+    if (validation)
+      return reply.code(400).send({
+        code: "VALIDATION",
+        message: "Request fields are invalid.",
+        fields: validation.map((v) => ({
+          path: v.instancePath,
+          message: v.message,
+        })),
+        requestId: request.id,
+      });
+    const status = (error as FastifyError).statusCode;
+    if (status && [400, 413, 415].includes(status))
+      return reply.code(status).send({
+        code: "REQUEST_BODY",
+        message: "Request body is invalid, unsupported or too large.",
+        requestId: request.id,
+      });
+    // Do not send SQL, secrets or provider response bodies to clients.
+    return reply.code(500).send({
+      code: "INTERNAL",
+      message:
+        "Operation failed. Retry with the same request key after reviewing current state.",
+      requestId: request.id,
+    });
+  });
+  http.get("/api/health", async () => ({
+    status: "ok",
+    region: app.identity.region,
+  }));
+  http.post(
+    "/api/login",
+    {
+      schema: {
+        body: obj({ email: str, password: { type: "string", maxLength: 256 } }),
+      },
+    },
+    async (request, reply) => {
+      const p = request.body as { email: string; password: string },
+        session = app.identity.login(p.email, p.password);
+      reply.setCookie("distributor_session", session.token, cookieOptions);
+      return {
+        actor: session.actor,
+        csrf: session.csrf,
+        passwordChangeRequired: session.passwordChangeRequired,
+      };
+    },
+  );
+  http.post("/api/logout", async (request, reply) => {
+    app.identity.logout(request.cookies.distributor_session!);
+    reply.clearCookie("distributor_session", { path: "/" });
+    return { loggedOut: true };
+  });
+  http.get("/api/session", async (request) => sessions.get(request));
+  http.get("/api/security", async (request) =>
+    app.identity.security(actor(request)),
+  );
+  http.get("/api/users", async (request) => app.identity.users(actor(request)));
+  http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
+  http.get("/api/carts", async (request) => app.orders.carts(actor(request)));
+  http.get("/api/purchases", async (request) => ({
+    suppliers: app.procurement.suppliers(actor(request)),
+    orders: app.procurement.orders(actor(request)),
+    receipts: app.procurement.receipts(actor(request)),
+    returns: app.procurement.returns(actor(request)),
+  }));
+  http.get("/api/transfers", async (request) =>
+    app.inventory.transfers(actor(request)),
+  );
+  http.get("/api/counts", async (request) =>
+    app.inventory.counts(actor(request)),
+  );
+  http.get("/api/imports/opening", async (request) =>
+    app.migration.list(actor(request)),
+  );
+  http.get("/api/imports/documents", async (request) =>
+    app.migration.documents.list(actor(request)),
+  );
+  http.get("/api/imports/masters", async (request) =>
+    app.migration.masters.list(actor(request)),
+  );
+  http.get("/api/transfer-destinations", async (request) =>
+    app.inventory.transferDestinations(actor(request)),
+  );
+  http.get<{ Params: { orderId: string } }>(
+    "/api/orders/:orderId/picks",
+    async (request) =>
+      app.fulfillment.picks(actor(request), request.params.orderId),
+  );
+  http.get<{ Params: { serial: string } }>(
+    "/api/serials/:serial",
+    async (request) =>
+      app.inventory.trace(actor(request), request.params.serial),
+  );
+  http.get("/api/credits", async (request) =>
+    app.billing.credits(actor(request)),
+  );
+  http.get("/api/billing/profiles", async (request) =>
+    app.billing.documents.profiles(actor(request)),
+  );
+  http.get("/api/billing/aging", async (request) =>
+    app.billing.documents.aging(actor(request)),
+  );
+  http.get("/api/billing/downloads", async (request) =>
+    app.billing.documents.downloads(actor(request)),
+  );
+  http.get("/api/billing/aging.csv", async (request, reply) =>
+    reply
+      .type("text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="distributor-aging.csv"',
+      )
+      .send(app.billing.documents.agingCsv(actor(request))),
+  );
+  http.post<{ Params: { kind: "invoice" | "credit"; documentId: string } }>(
+    "/api/billing/documents/:kind/:documentId/pdf",
+    {
+      schema: {
+        params: obj({ kind: choice("invoice", "credit"), documentId: str }),
+        body: obj({}),
+        headers: {
+          type: "object",
+          properties: {
+            "idempotency-key": { type: "string", minLength: 1, maxLength: 128 },
+          },
+          required: ["idempotency-key"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await app.billing.documents.download(
+        actor(request),
+        String(request.headers["idempotency-key"]),
+        request.params.kind,
+        request.params.documentId,
+        () => app.identity.session(request.cookies.distributor_session).actor,
+      );
+      return reply
+        .type("application/pdf")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${result.receipt.filename}"`,
+        )
+        .header("x-document-sha256", result.receipt.contentHash)
+        .header("x-download-receipt", result.receipt.id)
+        .send(result.bytes);
+    },
+  );
+  http.get("/api/effects", async (request) =>
+    app.integration.list(actor(request)),
+  );
+  const providers = () => {
+    check(
+      options.providers,
+      "PROVIDER_DISABLED",
+      "Provider access is disabled or not configured.",
+      503,
+    );
+    return options.providers;
+  };
+  for (const operation of ["execute", "reconcile"] as const)
+    http.post<{ Params: { effectId: string } }>(
+      `/api/effects/:effectId/${operation}`,
+      { schema: { params: obj({ effectId: str }) } },
+      async (request) =>
+        providers()[operation](actor(request), request.params.effectId),
+    );
+  http.get("/api/provider-callbacks", async (request) =>
+    app.integration.callbacks(actor(request)),
+  );
+  http.post<{ Params: { callbackId: string } }>(
+    "/api/provider-callbacks/:callbackId/retry",
+    { schema: { params: obj({ callbackId: str }) } },
+    async (request) =>
+      app.integration.retryCallback(actor(request), request.params.callbackId),
+  );
+  // Encapsulation keeps the byte-preserving parser away from authenticated JSON commands.
+  await http.register(async (webhooks) => {
+    webhooks.removeContentTypeParser("application/json");
+    webhooks.addContentTypeParser(
+      "application/json",
+      { parseAs: "buffer" },
+      (_request, body, done) => done(null, body),
+    );
+    webhooks.post<{ Params: { bindingId: string }; Body: Buffer }>(
+      "/webhooks/stripe/:bindingId",
+      { schema: { params: obj({ bindingId: str }) } },
+      async (request) =>
+        providers().receiveStripe(
+          request.params.bindingId,
+          request.body,
+          request.headers["stripe-signature"],
+        ),
+    );
+  });
+  http.get("/api/audit", async (request) =>
+    app.platform.audits(actor(request)),
+  );
+  http.get("/api/accounting.csv", async (request, reply) =>
+    reply
+      .type("text/csv")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="distributor-accounting.csv"',
+      )
+      .send(app.integration.accountingCsv(actor(request))),
+  );
+  for (const [name, spec] of Object.entries(commands(app)))
+    http.post(
+      `/api/commands/${name}`,
+      {
+        schema: {
+          body: spec.schema,
+          headers: {
+            type: "object",
+            properties: {
+              "idempotency-key": {
+                type: "string",
+                minLength: 1,
+                maxLength: 128,
+              },
+            },
+            required: ["idempotency-key"],
+          },
+        },
+      },
+      async (request, reply) => {
+        const result = await spec.run(
+          actor(request),
+          String(request.headers["idempotency-key"]),
+          request.body,
+        );
+        if (
+          result &&
+          typeof result === "object" &&
+          "sessionEnded" in result &&
+          result.sessionEnded === true
+        )
+          reply.clearCookie("distributor_session", { path: "/" });
+        return result;
+      },
+    );
+  const root = options.staticRoot ?? resolve("dist");
+  if (existsSync(root)) {
+    await http.register(staticFiles, { root, index: "index.html" });
+    http.setNotFoundHandler(async (request, reply) =>
+      request.url.startsWith("/api/") || request.url.startsWith("/webhooks/")
+        ? reply
+            .code(404)
+            .send({ code: "NOT_FOUND", message: "Route not found." })
+        : reply.sendFile("index.html"),
+    );
+  }
+  return http;
+}

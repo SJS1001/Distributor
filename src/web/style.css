@@ -1,0 +1,402 @@
+:root {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #17363c;
+  background: #f4f7f6;
+  font-synthesis: none;
+  font-size: 15px;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button,
+.button {
+  background: #126c5e;
+  color: white;
+  border: 1px solid #126c5e;
+  border-radius: 7px;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+button:hover,
+.button:hover {
+  filter: brightness(0.93);
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+button.secondary,
+.button.secondary {
+  background: white;
+  color: #244d53;
+  border-color: #cbd9d7;
+}
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 0.7rem;
+  border: 1px solid #bacdca;
+  border-radius: 6px;
+  background: white;
+  color: #17363c;
+}
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #67b6a4;
+  outline-offset: 2px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+textarea {
+  min-height: 85px;
+  resize: vertical;
+}
+.brand {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+.brand:first-letter {
+  color: #68d2b4;
+}
+.brand span {
+  font-size: 1.15rem;
+}
+.login {
+  max-width: 460px;
+  margin: 8vh auto;
+  padding: 2rem;
+}
+.login h1 {
+  font-size: 2rem;
+  line-height: 1.2;
+  margin-top: 2.2rem;
+}
+.login p {
+  color: #607a7c;
+}
+.login form {
+  margin-top: 2rem;
+}
+.login button {
+  width: 100%;
+}
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+aside {
+  background: #102c32;
+  color: #ecf4f3;
+  width: 238px;
+  flex-shrink: 0;
+  padding: 1.6rem;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  height: 100vh;
+}
+.workspace {
+  font-size: 0.85rem;
+  color: #a9c2c2;
+  margin: 1rem 0 2rem;
+}
+nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+nav button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: #bbd0d0;
+  padding: 0.8rem;
+}
+nav button[aria-current] {
+  background: #234c4e;
+  color: #fff;
+}
+.sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.sidebar-bottom span {
+  color: #a9c2c2;
+}
+.sidebar-bottom button {
+  margin-top: 0.8rem;
+  background: transparent;
+  border-color: #3d6265;
+}
+main:not(.login) {
+  margin-left: 238px;
+  width: calc(100% - 238px);
+  padding: 2.3rem 2.8rem;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.3rem;
+}
+h1 {
+  font-size: 2rem;
+  margin: 0.2rem 0;
+}
+h2 {
+  font-size: 1.2rem;
+  margin: 1.2rem 0;
+}
+.eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: #557b7a;
+  font-weight: 700;
+  margin: 0;
+}
+.qualification {
+  border: 1px solid #e0cf9b;
+  background: #fff9e9;
+  color: #705d25;
+  padding: 0.7rem 1rem;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  margin-bottom: 1.4rem;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+.metrics section,
+.panel {
+  background: white;
+  border: 1px solid #dae5e2;
+  border-radius: 9px;
+  padding: 1.4rem;
+}
+.metrics span {
+  display: block;
+  font-size: 0.85rem;
+  color: #607a7c;
+}
+.metrics strong {
+  display: block;
+  font-size: 1.8rem;
+  margin-top: 0.4rem;
+}
+.panel {
+  margin-top: 1.5rem;
+}
+.panel h2 {
+  margin-top: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0.5rem 0 1rem;
+}
+.actions button {
+  font-size: 0.82rem;
+  padding: 0.5rem 0.7rem;
+}
+.table-wrap {
+  border: 1px solid #d9e5e1;
+  border-radius: 8px;
+  overflow: auto;
+  background: white;
+  margin: 1rem 0;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.88rem;
+}
+th {
+  background: #eaf1ee;
+  color: #55706d;
+  text-align: left;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1rem;
+}
+td {
+  padding: 1rem;
+  border-top: 1px solid #e5eeeb;
+  vertical-align: top;
+}
+td .actions {
+  margin: 0;
+  min-width: 170px;
+}
+small {
+  display: block;
+  color: #68827e;
+  font-size: 0.76rem;
+  margin-top: 0.3rem;
+  font-weight: 400;
+  white-space: pre-wrap;
+}
+.badge {
+  display: inline-block;
+  background: #e7f2ed;
+  color: #1f6d55;
+  border-radius: 20px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+}
+.empty {
+  padding: 2rem;
+  color: #6d8880;
+  background: white;
+  border: 1px dashed #cbd9d7;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+.error {
+  background: #fbe9e4;
+  border: 1px solid #dca491;
+  color: #8b3024;
+  padding: 1rem;
+  border-radius: 7px;
+}
+.notice {
+  color: #236644;
+  background: #e4f3e9;
+  padding: 0.75rem 1rem;
+  border-radius: 7px;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #102c32aa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 10;
+}
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.6rem;
+  width: 570px;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 20px 60px #102c3244;
+}
+.modal h2 {
+  margin-top: 0;
+}
+.description {
+  white-space: pre-wrap;
+  color: #50716e;
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+.check {
+  flex-direction: row;
+  align-items: center;
+}
+.check input {
+  width: auto;
+}
+.modal .actions {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+a {
+  color: #126c5e;
+}
+@media (max-width: 900px) {
+  aside {
+    width: 185px;
+    padding: 1rem;
+  }
+  main:not(.login) {
+    margin-left: 185px;
+    width: calc(100% - 185px);
+    padding: 1.4rem;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 620px) {
+  .shell {
+    display: block;
+  }
+  aside {
+    position: static;
+    width: 100%;
+    height: auto;
+    padding: 1rem;
+  }
+  .workspace,
+  .sidebar-bottom {
+    display: none;
+  }
+  nav {
+    flex-direction: row;
+    overflow: auto;
+    margin-top: 1rem;
+  }
+  nav button {
+    white-space: nowrap;
+  }
+  .brand {
+    font-size: 1rem;
+  }
+  main:not(.login) {
+    margin: 0;
+    width: 100%;
+    padding: 1rem;
+  }
+  .metrics strong {
+    font-size: 1.35rem;
+  }
+  .metrics section {
+    padding: 1rem;
+  }
+  td,
+  th {
+    padding: 0.75rem;
+  }
+  .login {
+    margin: 3vh auto;
+  }
+}
