@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { CarrierClaim } from "./carrier-claim.tsx";
 import { command, downloadCanadaPostManifest, request } from "./api.ts";
 import type {
   CanadaPostGroupView,
@@ -15,10 +16,12 @@ const address = (a: CarrierBookingView["origin"]) =>
 export function CanadaPostWarehouse({
   warehouses,
   initialWarehouse,
+  recoveryOwner,
   onClose,
 }: {
   warehouses: { id: string; name: string }[];
   initialWarehouse?: string;
+  recoveryOwner?: string;
   onClose: () => void;
 }) {
   const [warehouse, setWarehouse] = useState(
@@ -57,12 +60,24 @@ export function CanadaPostWarehouse({
           ))}
         </select>
       </label>
-      {warehouse && <WarehouseGroups key={warehouse} warehouseId={warehouse} />}
+      {warehouse && (
+        <WarehouseGroups
+          key={warehouse}
+          warehouseId={warehouse}
+          recoveryOwner={recoveryOwner}
+        />
+      )}
     </section>
   );
 }
 
-function WarehouseGroups({ warehouseId }: { warehouseId: string }) {
+function WarehouseGroups({
+  warehouseId,
+  recoveryOwner,
+}: {
+  warehouseId: string;
+  recoveryOwner?: string;
+}) {
   const lifetime = useRef<AbortController | null>(null);
   const candidateRead = useRef<AbortController | null>(null);
   const groupRead = useRef<AbortController | null>(null);
@@ -408,6 +423,7 @@ function WarehouseGroups({ warehouseId }: { warehouseId: string }) {
           key={`${groupId}:${revision}`}
           groupId={groupId}
           warehouseId={warehouseId}
+          recoveryOwner={recoveryOwner}
           onBusy={setBusy}
           onChanged={changed}
         />
@@ -419,11 +435,13 @@ function WarehouseGroups({ warehouseId }: { warehouseId: string }) {
 function GroupReview({
   groupId,
   warehouseId,
+  recoveryOwner,
   onBusy,
   onChanged,
 }: {
   groupId: string;
   warehouseId: string;
+  recoveryOwner?: string;
   onBusy: (busy: boolean) => void;
   onChanged: () => void;
 }) {
@@ -631,6 +649,30 @@ function GroupReview({
                       Recover Canada Post member {entry.bookingId}
                     </button>
                   )}
+                  {recoveryOwner &&
+                    ["creating", "unknown"].includes(entry.state) && (
+                      <CarrierClaim
+                        key={entry.bookingId}
+                        target={{
+                          kind: "member",
+                          groupId,
+                          bookingId: entry.bookingId,
+                        }}
+                        ownerKey={recoveryOwner}
+                        disabled={busy || loading}
+                        onBusy={(value) => {
+                          setBusy(value);
+                          onBusy(value);
+                        }}
+                        onReleased={async () => {
+                          await read();
+                          onChanged();
+                          setNotice(
+                            "Member claim released to unknown. Recover the existing shipment separately.",
+                          );
+                        }}
+                      />
+                    )}
                   {entry.state === "creating" && (
                     <p>
                       A creation is in progress. Refresh to observe its durable
@@ -708,6 +750,27 @@ function GroupReview({
                   Review Canada Post manifest
                 </button>
               </>
+            )}
+          {recoveryOwner &&
+            ["transmitting", "unknown"].includes(group.state) &&
+            group.entries.every((e) => e.state === "created") && (
+              <CarrierClaim
+                key={groupId}
+                target={{ kind: "manifest", groupId }}
+                ownerKey={recoveryOwner}
+                disabled={busy || loading}
+                onBusy={(value) => {
+                  setBusy(value);
+                  onBusy(value);
+                }}
+                onReleased={async () => {
+                  await read();
+                  onChanged();
+                  setNotice(
+                    "Manifest claim released to unknown. Recover its existing outcome separately.",
+                  );
+                }}
+              />
             )}
           {identity && (
             <section aria-label="Canada Post manifest review">

@@ -2,6 +2,7 @@ import {
   setup as canadaPostSetup,
   configurationHash as canadaPostHash,
 } from "./canada-post-fixture.ts";
+import { claimBrowser } from "./carrier-claim-browser-fixture.ts";
 import { client as canadaPostCreation } from "./canada-post-creation-fixture.ts";
 import { manifestClient as canadaPostManifest } from "./canada-post-manifest-fixture.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
@@ -875,6 +876,7 @@ const cpHttp = await createHttp(cp.app, {
   ),
 });
 await cpHttp.listen({ host: "127.0.0.1", port: 3120 });
+const claimHttp = await claimBrowser((fn) => cleanup.push(fn));
 
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
@@ -897,6 +899,7 @@ const stop = async () => {
   await paymentHttp.close();
   await authorizationHttp.close();
   await cpHttp.close();
+  await claimHttp.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);
 };

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { CarrierClaim } from "./carrier-claim.tsx";
 import { command, request } from "./api.ts";
 import {
   carrierNames,
@@ -89,12 +90,14 @@ export function CarrierBooking({
   packed,
   onClose,
   onCanadaPost,
+  recoveryOwner,
 }: {
   shipmentId: string;
   packedDestination: string;
   packed: boolean;
   onClose: () => void;
   onCanadaPost?: () => void;
+  recoveryOwner?: string;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const lifetime = useRef<AbortController | null>(null);
@@ -393,6 +396,23 @@ export function CarrierBooking({
               existing booking when a qualified adapter is enabled.
             </p>
           )}
+          {recoveryOwner &&
+            booking.provider !== "canada-post" &&
+            ["running", "unknown"].includes(booking.state) && (
+              <CarrierClaim
+                key={booking.id}
+                target={{ kind: "booking", bookingId: booking.id }}
+                ownerKey={recoveryOwner}
+                disabled={busy || loading}
+                onBusy={setBusy}
+                onReleased={async () => {
+                  await loadReview();
+                  setNotice(
+                    "Claim released to unknown. Reconcile its existing outcome separately.",
+                  );
+                }}
+              />
+            )}
           {booking.state === "canceled" && (
             <p>
               This unsent booking was canceled. A packed shipment may be

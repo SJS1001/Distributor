@@ -1553,6 +1553,11 @@ function App() {
                   key={`${canadaPostWarehouse}:${eventViewEpoch}`}
                   warehouses={data.warehouses}
                   initialWarehouse={canadaPostWarehouse}
+                  recoveryOwner={
+                    actor.role === "admin"
+                      ? `${actor.orgId}:${actor.id}`
+                      : undefined
+                  }
                   onClose={() => {
                     setCanadaPostWarehouse(null);
                     canadaPostOpener.current?.focus();
@@ -1689,6 +1694,11 @@ function App() {
                 ) && (
                   <CarrierBooking
                     key={`${carrierShipmentId}:${eventViewEpoch}`}
+                    recoveryOwner={
+                      actor.role === "admin"
+                        ? `${actor.orgId}:${actor.id}`
+                        : undefined
+                    }
                     shipmentId={carrierShipmentId}
                     packedDestination={
                       data.shipments.find(
