@@ -35,6 +35,70 @@ f.app.database
     "UPDATE iam_accounts SET residency_mode='provider-exceptions',provider_exceptions='[\"carrier\"]',residency_version=2 WHERE id=?",
     residencyBuyer,
   );
+// Isolated synthetic acceptance history. Strict choices intentionally leave gaps;
+// every provider acceptance is made through the actual IAM command.
+const historyBuyer = f.app.identity.createCustomer(f.actor, "history-buyer", {
+  name: "Synthetic acceptance history buyer",
+  tier: "standard",
+  creditLimit: 0,
+}).id;
+const historyUser = f.app.identity.createUser(f.actor, "history-user", {
+  email: "history-buyer@example.test",
+  name: "Synthetic history representative",
+  password: "long-test-only-password",
+  role: "buyer",
+  accountId: historyBuyer,
+  sites: [],
+}).id;
+const historyActor = f.app.identity.currentActor({
+  ...f.actor,
+  id: historyUser,
+});
+for (let version = 1; version <= 27; version++)
+  chooseProviders(
+    f,
+    version === 26 ? historyActor : f.actor,
+    `history-${version}`,
+    {
+      accountId: historyBuyer,
+      region: "CA",
+      mode: version === 12 || version === 27 ? "strict" : "provider-exceptions",
+      providers:
+        version === 12 || version === 27
+          ? []
+          : version === 26
+            ? [
+                "stripe",
+                "quickbooks",
+                "ups",
+                "fedex",
+                "usps",
+                "canada-post",
+                "purolator",
+                "dhl-express",
+              ]
+            : ["stripe", "quickbooks"],
+      version,
+      acknowledgment: "Synthetic test-only review of customer terms",
+    },
+  );
+const emptyHistoryBuyer = f.app.identity.createCustomer(
+  f.actor,
+  "empty-history-buyer",
+  {
+    name: "Synthetic account without acceptances",
+    tier: "standard",
+    creditLimit: 0,
+  },
+).id;
+f.app.identity.createUser(f.actor, "empty-history-user", {
+  email: "empty-history@example.test",
+  name: "Synthetic other history buyer",
+  password: "long-test-only-password",
+  role: "buyer",
+  accountId: emptyHistoryBuyer,
+  sites: [],
+});
 for (const [sku, serialized] of [
   ["OPEN-S", true],
   ["OPEN-B", false],

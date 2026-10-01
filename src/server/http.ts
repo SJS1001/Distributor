@@ -1057,6 +1057,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.params.disclosureId,
       ),
   );
+  http.get<{ Params: { accountId: string }; Querystring: { after?: string } }>(
+    "/api/accounts/:accountId/provider-acceptance-versions",
+    {
+      schema: {
+        params: obj({ accountId: str }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,15}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.identity.residency.acceptanceVersions(
+        actor(request),
+        request.params.accountId,
+        request.query.after === undefined
+          ? undefined
+          : Number(request.query.after),
+      ),
+  );
   http.get<{ Params: { accountId: string }; Querystring: { version: string } }>(
     "/api/accounts/:accountId/provider-acceptances",
     {

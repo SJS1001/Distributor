@@ -15,6 +15,7 @@ import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
 import { DisclosureReview } from "./provider-disclosures.tsx";
+import { ProviderHistory } from "./provider-history.tsx";
 import { AuditHistory } from "./audit-history.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
@@ -71,6 +72,10 @@ function App() {
     [extra, setExtra] = useState<Item>({});
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
+  const [providerHistoryAccount, setProviderHistoryAccount] = useState<
+    string | null
+  >(null);
+  const providerHistoryOpener = useRef<HTMLElement | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
@@ -211,6 +216,8 @@ function App() {
     shipmentRequest.current = null;
     setShipmentsLoading(false);
     setEvidenceClaim(null);
+    setProviderHistoryAccount(null);
+    providerHistoryOpener.current = null;
     evidenceOpener.current = null;
     setActor(null);
     setData(null);
@@ -779,6 +786,7 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 setPage(p);
+                setProviderHistoryAccount(null);
                 setError("");
               }}
             >
@@ -3745,6 +3753,12 @@ function App() {
                         held: !a.held,
                       })),
                     )}
+                  {can("commercial", "finance", "support", "buyer") &&
+                    button("Acceptance history", () => {
+                      providerHistoryOpener.current =
+                        document.activeElement as HTMLElement;
+                      setProviderHistoryAccount(a.id);
+                    })}
                   {can("commercial", "buyer") &&
                     button("Residency choice", () =>
                       open(
@@ -3860,6 +3874,22 @@ function App() {
                 </div>,
               ],
             )}
+            {providerHistoryAccount &&
+              can("commercial", "finance", "support", "buyer") &&
+              data.accounts.some(
+                (a: Item) => a.id === providerHistoryAccount,
+              ) && (
+                <ProviderHistory
+                  key={`${providerHistoryAccount}:${eventViewEpoch}`}
+                  account={data.accounts.find(
+                    (a: Item) => a.id === providerHistoryAccount,
+                  )}
+                  close={() => {
+                    setProviderHistoryAccount(null);
+                    providerHistoryOpener.current?.focus();
+                  }}
+                />
+              )}
           </>
         )}
         {page === "Imports" && admin && (

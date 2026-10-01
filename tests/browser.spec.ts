@@ -8095,3 +8095,352 @@ test("browser: customers review immutable provider terms, stale consent stops, a
     await context.close();
   }
 });
+
+test("browser: provider acceptance history retains pages and exact terms, isolates accounts and cancels stale reads", async ({
+  page,
+  browser,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const login = async (p: Page, email: string) => {
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    await nav(p, "Customers");
+  };
+  await login(page, "history-buyer@example.test");
+  const before = await (await page.request.get("/api/dashboard")).json();
+  const account = before.accounts[0];
+  const versionsUrl = `/api/accounts/${account.id}/provider-acceptance-versions`;
+  const acceptanceUrl = `/api/accounts/${account.id}/provider-acceptances?version=2`;
+  const original = await (await page.request.get(acceptanceUrl)).json();
+  const history = page.getByRole("region", {
+    name: "Provider acceptance history",
+    exact: true,
+  });
+  const open = async () => {
+    await page
+      .getByRole("button", { name: "Acceptance history", exact: true })
+      .click();
+    await expect(
+      history.getByRole("heading", {
+        name: `Provider acceptance history — ${account.name}`,
+        exact: true,
+      }),
+    ).toBeFocused();
+    await expect(history.getByRole("status")).toHaveText(
+      "20 accepted choices loaded",
+    );
+  };
+  await open();
+  await expect(history).toContainText(
+    "Current customer choice: 28 · Strict regional residency",
+  );
+  await expect(
+    history.getByText(/Initial, strict and legacy unreviewed choices/),
+  ).toBeVisible();
+  const pageRoute = "**/api/accounts/*/provider-acceptance-versions?after=*";
+  let failed = false;
+  await page.route(pageRoute, async (route) => {
+    if (!failed) {
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Synthetic history read failure" }),
+      });
+    } else await route.continue();
+  });
+  await history
+    .getByRole("button", { name: "Load older accepted choices" })
+    .click();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic history read failure",
+  );
+  await expect(history.getByRole("status")).toHaveText(
+    "20 accepted choices loaded",
+  );
+  await history
+    .getByRole("button", { name: "Retry acceptance history" })
+    .click();
+  await expect(history.getByRole("status")).toHaveText(
+    "25 accepted choices loaded",
+  );
+  await expect(
+    history.getByRole("button", { name: "Load older accepted choices" }),
+  ).toHaveCount(0);
+  await page.unroute(pageRoute);
+
+  // Private vendor review evidence stays absent, while the exact accepted public
+  // terms and staff-recorded external customer evidence remain accessible.
+  const termsRoute = `**/api/provider-disclosures/${original[0].disclosure_id}`;
+  let badTerms = 0;
+  await page.route(termsRoute, async (route) => {
+    badTerms++;
+    if (badTerms === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          message: "Synthetic retained terms read failure",
+        }),
+      });
+    } else if (badTerms === 2) {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        json: { ...(await response.json()), hash: "0".repeat(64) },
+      });
+    } else await route.continue();
+  });
+  await history
+    .getByRole("button", {
+      name: "View accepted terms for choice 2",
+      exact: true,
+    })
+    .click();
+  const terms = history.getByRole("region", {
+    name: "Accepted terms for choice 2",
+    exact: true,
+  });
+  await expect(terms.getByRole("alert")).toContainText(
+    "Synthetic retained terms read failure",
+  );
+  await expect(terms.getByText(/No reviewed provider acceptance/)).toHaveCount(
+    0,
+  );
+  await terms.getByRole("button", { name: "Retry accepted terms" }).click();
+  await expect(terms.getByRole("alert")).toContainText(
+    "Accepted terms do not match",
+  );
+  await terms.getByRole("button", { name: "Retry accepted terms" }).click();
+  await expect(
+    terms.getByRole("heading", {
+      name: "Accepted terms · choice 2",
+      exact: true,
+    }),
+  ).toBeFocused();
+  const stripe = terms.getByRole("region", {
+    name: "Stripe acceptance",
+    exact: true,
+  });
+  await expect(stripe).toContainText(
+    "Staff recording external customer acceptance",
+  );
+  await expect(stripe).toContainText("synthetic:explicit-customer-acceptance");
+  await expect(
+    stripe.getByText(
+      original.find((a: any) => a.provider === "stripe").disclosure_hash,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await stripe.locator("summary").click();
+  await expect(stripe).toContainText(
+    "Synthetic test processing only; no vendor qualification",
+  );
+  await expect(stripe).toContainText("Synthetic transaction total");
+  await expect(stripe).toContainText("US, CA");
+  await expect(stripe).toContainText("synthetic:test-only-terms");
+  await expect(
+    history.getByText(
+      "Synthetic fixture qualification; not actual vendor evidence",
+    ),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.unroute(termsRoute);
+
+  // Withdrawal changes current permission, never the customer's retained terms.
+  const adminContext = await browser.newContext();
+  try {
+    const staff = await adminContext.newPage();
+    await login(staff, "admin@example.test");
+    const csrf = (await (await staff.request.get("/api/session")).json()).csrf;
+    const disclosure = (
+      await (await staff.request.get("/api/provider-disclosures")).json()
+    ).find((d: any) => d.provider === "dhl-express");
+    expect(
+      (
+        await staff.request.post("/api/commands/provider.disclosure.withdraw", {
+          headers: {
+            "x-csrf-token": csrf,
+            "idempotency-key": "history-test-withdraw-dhl",
+            origin: "http://127.0.0.1:3117",
+          },
+          data: {
+            provider: "dhl-express",
+            disclosureId: disclosure.id,
+            reason: "Synthetic history-only withdrawal evidence",
+          },
+        })
+      ).status(),
+    ).toBe(200);
+    await history
+      .getByRole("button", {
+        name: "View accepted terms for choice 27",
+        exact: true,
+      })
+      .click();
+    const buyerTerms = history.getByRole("region", {
+      name: "Accepted terms for choice 27",
+      exact: true,
+    });
+    await expect(
+      buyerTerms.getByRole("heading", {
+        name: "Accepted terms · choice 27",
+        exact: true,
+      }),
+    ).toBeFocused();
+    const dhl = buyerTerms.getByRole("region", {
+      name: "DHL Express acceptance",
+      exact: true,
+    });
+    await expect(dhl).toContainText("Authenticated buyer");
+    await expect(dhl).toContainText("Synthetic history representative");
+    await dhl.locator("summary").click();
+    await expect(dhl).toContainText("synthetic:test-only-terms");
+    await expect(
+      buyerTerms.getByText("Customer acceptance evidence", { exact: true }),
+    ).toHaveCount(0);
+    expect(await (await page.request.get(acceptanceUrl)).json()).toEqual(
+      original,
+    );
+
+    const otherContext = await browser.newContext();
+    try {
+      const other = await otherContext.newPage();
+      await login(other, "empty-history@example.test");
+      expect((await other.request.get(versionsUrl)).status()).toBe(403);
+      expect((await other.request.get(acceptanceUrl)).status()).toBe(403);
+      await other
+        .getByRole("button", { name: "Acceptance history", exact: true })
+        .click();
+      await expect(
+        other.getByText(
+          "No reviewed provider acceptances are recorded for this account.",
+        ),
+      ).toBeVisible();
+      await expect(
+        other.getByText("Synthetic history representative", { exact: true }),
+      ).toHaveCount(0);
+    } finally {
+      await otherContext.close();
+    }
+  } finally {
+    await adminContext.close();
+  }
+  const after = await (await page.request.get("/api/dashboard")).json();
+  for (const field of ["stock", "orders", "invoices"])
+    expect(after[field]).toEqual(before[field]);
+  expect(after.accounts[0]).toEqual(account);
+  await history
+    .getByRole("button", { name: "Close acceptance history", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Acceptance history", exact: true }),
+  ).toBeFocused();
+  await expect(history).toHaveCount(0);
+
+  // Hold an actual terms response across navigation, refresh and sign-out.
+  // Every old mounted view must discard it when the response is released.
+  for (const action of ["Navigation", "Refresh", "Sign out"] as const) {
+    await open();
+    let announce!: () => void, release!: () => void, finish!: () => void;
+    const started = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let cancelled = false;
+    const routePattern = "**/api/accounts/*/provider-acceptances?version=2";
+    await page.route(
+      routePattern,
+      async (route) => {
+        const response = await route.fetch();
+        announce();
+        await held;
+        try {
+          await route.fulfill({ response });
+        } catch (error) {
+          // Chromium has already handled a fetch aborted by unmount. Only
+          // tolerate that result after observing this request's cancellation.
+          if (!cancelled || !String(error).includes("Route is already handled"))
+            throw error;
+        } finally {
+          finish();
+        }
+      },
+      { times: 1 },
+    );
+    try {
+      if (
+        !(await history
+          .getByRole("button", {
+            name: "View accepted terms for choice 2",
+            exact: true,
+          })
+          .count())
+      ) {
+        await history
+          .getByRole("button", { name: "Load older accepted choices" })
+          .click();
+        await expect(history.getByRole("status")).toHaveText(
+          "25 accepted choices loaded",
+        );
+      }
+      await history
+        .getByRole("button", {
+          name: "View accepted terms for choice 2",
+          exact: true,
+        })
+        .click();
+      await started;
+      const failed = page.waitForEvent("requestfailed", {
+        predicate: (request) => request.url().endsWith(acceptanceUrl),
+      });
+      if (action === "Navigation") await nav(page, "Orders");
+      else
+        await page.getByRole("button", { name: action, exact: true }).click();
+      expect((await failed).failure()?.errorText).toContain("ERR_ABORTED");
+      cancelled = true;
+      if (action === "Refresh")
+        await expect(history.getByRole("status")).toHaveText(
+          "20 accepted choices loaded",
+        );
+      else await expect(history).toHaveCount(0);
+    } finally {
+      release();
+      await finished;
+      await page.unroute(routePattern);
+    }
+    await expect(
+      page.getByRole("region", {
+        name: "Accepted terms for choice 2",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    if (action === "Navigation") await nav(page, "Customers");
+    if (action === "Refresh")
+      await history
+        .getByRole("button", { name: "Close acceptance history", exact: true })
+        .click();
+  }
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});

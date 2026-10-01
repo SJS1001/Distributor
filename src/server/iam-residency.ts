@@ -411,6 +411,45 @@ export class ProviderResidency {
       version,
     );
   }
+  acceptanceVersions(actor: Actor, accountId: string, after?: number) {
+    actor = this.authority(actor);
+    permit(actor, ["commercial", "buyer", "finance", "support"]);
+    this.customer(actor, accountId);
+    if (after !== undefined) {
+      check(
+        Number.isSafeInteger(after) && after > 0,
+        "VALIDATION",
+        "Choose a positive acceptance history cursor.",
+        400,
+      );
+      check(
+        this.store.get(
+          "SELECT 1 FROM iam_provider_acceptances WHERE org_id=? AND account_id=? AND choice_version=? LIMIT 1",
+          actor.orgId,
+          accountId,
+          after,
+        ),
+        "CURSOR",
+        "Acceptance history cursor is unavailable.",
+        400,
+      );
+    }
+    const rows = this.store.all(
+      `SELECT choice_version AS version,MIN(accepted_at) AS acceptedAt,COUNT(*) AS providerCount FROM iam_provider_acceptances WHERE org_id=? AND account_id=?${after === undefined ? "" : " AND choice_version<?"} GROUP BY choice_version ORDER BY choice_version DESC LIMIT 21`,
+      actor.orgId,
+      accountId,
+      ...(after === undefined ? [] : [after]),
+    );
+    const items = rows.slice(0, 20).map((row) => ({
+      version: Number(row.version),
+      acceptedAt: String(row.acceptedAt),
+      providerCount: Number(row.providerCount),
+    }));
+    return {
+      items,
+      next: rows.length > 20 ? String(items[19]!.version) : null,
+    };
+  }
   status(actor: Actor, customer: Customer) {
     actor = this.authority(actor);
     customer = this.customer(actor, customer.id);

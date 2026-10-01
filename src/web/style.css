@@ -225,6 +225,10 @@ h2 {
 .panel h2 {
   margin-top: 0;
 }
+.provider-history dd {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;

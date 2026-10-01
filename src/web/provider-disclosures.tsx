@@ -4,16 +4,21 @@ import type { Disclosure } from "../server/iam-residency.ts";
 
 export function DisclosureReview({
   disclosures,
+  historical = false,
 }: {
   disclosures: Disclosure[];
+  historical?: boolean;
 }) {
   return (
     <div>
       <p>
-        Review each selected provider's terms. Changed or withdrawn disclosures
-        stop further processing until a new customer choice is recorded.
-        Previously transmitted data and in-flight requests cannot be recalled.
-        Recorded terms require separate vendor qualification.
+        {historical
+          ? "These are the exact retained terms for this past acceptance. "
+          : "Review each selected provider's terms. "}
+        Changed or withdrawn disclosures stop further processing until a new
+        customer choice is recorded. Previously transmitted data and in-flight
+        requests cannot be recalled. Recorded terms require separate vendor
+        qualification.
       </p>
       {disclosures.map((d) => (
         <details key={d.id}>
