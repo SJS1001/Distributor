@@ -204,9 +204,13 @@ export class Inventory {
       );
   }
   warehouse(actor: Actor, warehouseId: string) {
+    return this.configurationWarehouse(actor.orgId, warehouseId);
+  }
+  // Trusted startup validation; no invented user principal or provider I/O.
+  configurationWarehouse(orgId: string, warehouseId: string) {
     const row = this.store.get(
       "SELECT * FROM inventory_warehouses WHERE org_id=? AND id=?",
-      actor.orgId,
+      orgId,
       warehouseId,
     );
     check(row, "NOT_FOUND", "Warehouse not found.", 404);

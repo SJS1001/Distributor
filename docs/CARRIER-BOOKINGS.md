@@ -131,3 +131,29 @@ Authenticated strict durable commands are `carrier.prepare` and `carrier.cancel`
 Stop old writers before upgrading; mixed versions remain unqualified. New integration-owned tables preserve existing shipment facts and command receipts. Current local tests do not establish actual carrier idempotency or lookup identity: a real adapter must prove exact correlation without assuming a vendor transaction reference prevents duplicate shipping purchases. Multiple parcels, rating/service selection, customs, insurance, tracking retrieval, carrier void/refund, warranty replacement booking, provider terms/customer authority, credentials, actual regional infrastructure, printers, load/locking/clock/retention/migration/security/recovery and human acceptance remain open.
 
 See the [local carrier receipt](evidence/LOCAL-CARRIER-BOOKINGS-2026-10-01.md). Direct workstation checks and local commits only; no cloud checkout, CI runner/job, push/PR, deployment, live data, actual provider request or publication is authorized by this checkpoint.
+
+## Canada Post warehouse runtime and HTTP operations
+
+The grouped coordinator now has an explicit test-only registration in `CarrierRuntime` and opt-in server configuration. The warehouse interface remains to be connected. Normal startup stays disabled. No provider request, worker, schedule or stale-claim recovery starts during configuration.
+
+Set `CARRIERS_ENABLED=true`, `CANADA_POST_TEST_ENABLED=true`, the existing `CARRIER_ORG_ID`, and the exact `CANADA_POST_*` fields listed in [.env.example](../.env.example) only during an authorized qualification. `CANADA_POST_TEST_CREDENTIALS_ACK=test-application-only` is required. The configuration validates a warehouse belonging to this regional organization's inventory, one pickup or deposit shipping point, account/contract/company, credentials and 1–20 exact domestic mappings. Pickup postal codes contain no spaces; supported service codes are `DOM.RP`, `DOM.EP`, `DOM.XP`, `DOM.PC`. Unknown fields and invalid values stop startup with sanitized errors. The test declaration and acknowledgment cannot prove the credential class: Canada Post uses a shared gateway, and actual vendor/account/service qualification remains required. No credentials are persisted in bookings or returned through these APIs.
+
+The runtime captures organization/warehouse identity, non-secret configuration hash and bound protocol method handles. Group preparation accepts a warehouse and 1–100 exact booking/review pairs; the configuration hash comes from the trusted registration, never the browser. Every selected booking must belong to that warehouse. Dispatch/recovery selects the group's exact warehouse registration and rejects configuration changes rather than falling back. Registration does not bypass current principal/site/password, packed facts, credit, customer disclosure acceptance or restore clearance. Canada Post's individual send and lookup routes are blocked, including when a generic adapter was supplied by trusted construction.
+
+| Operation | HTTP route and input |
+| --- | --- |
+| Group history | `GET /api/warehouses/:warehouseId/canada-post/groups?after=groupId`, 20 groups plus `next`; ID order, not creation order |
+| Active group for booking | `GET /api/carrier/:bookingId/canada-post/group`; null when ungrouped or canceled |
+| Current group | `GET /api/canada-post/groups/:groupId` |
+| Prepare immutable group | `POST /api/commands/canada-post.group.prepare`, idempotency key plus `{warehouseId,entries:[{bookingId,reviewHash}]}` |
+| Cancel entirely unsent group | `POST /api/commands/canada-post.group.cancel`, idempotency key plus `{groupId,reviewHash,reason}` |
+| Create one member | `POST /api/canada-post/groups/:groupId/members/:bookingId/create`, empty object |
+| Recover uncertain member | Same member path ending `/reconcile`, empty object; reads existing effects only |
+| Review closed/uncertain manifest | `GET /api/canada-post/groups/:groupId/manifest/review` |
+| Transmit reviewed manifest | `POST /api/canada-post/groups/:groupId/manifest/transmit`, `{reviewHash}` from the current manifest review |
+| Recover uncertain manifest | Same manifest path ending `/reconcile`, `{reviewHash}`; reads existing effects only |
+| Private confirmed manifest | `GET /api/canada-post/groups/:groupId/manifest/document`, authenticated attachment with no-store and document hash/media-type headers |
+
+All writes require the existing same-origin session and CSRF checks; command operations additionally require an idempotency key. Exact schemas reject configuration/dispatch overrides. A failed transport response may return a sanitized 500 while retaining an unknown outcome; refresh the group and use read-only recovery, never retry a purchase. Unsent cancellation, group review/history and retained confirmed document retrieval remain available with processing disabled. Stale running claims still require the explicit internal recovery operation; no automatic timeout worker or public lease-expiry command is added. Labels remain private through the existing booking-label route after manifest confirmation, and actual stock/invoice handover remains a separate fulfillment command.
+
+This is locally tested original synthetic runtime/API work, not carrier acceptance, production activation, operator acceptance, or a passed gate. See the [runtime receipt](evidence/LOCAL-CANADA-POST-RUNTIME-2026-10-01.md). Remaining work includes warehouse batch-selection/group controls, browser recovery and private-document UX, explicit scoped stale-claim operating procedures and actual vendor qualification.

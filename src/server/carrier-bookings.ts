@@ -496,6 +496,52 @@ export class CarrierBookings {
       createdAt: group.created_at,
     };
   }
+  canadaPostBookingWarehouse(actor: Actor, bookingId: string) {
+    actor = this.principal(actor);
+    const booking = this.booking(actor, bookingId),
+      intent = this.intent(booking);
+    check(
+      intent.provider === "canada-post",
+      "CARRIER_MISMATCH",
+      "Select a reviewed Canada Post booking.",
+    );
+    return intent.nativeSnapshot.warehouse_id;
+  }
+  canadaPostGroupForBooking(actor: Actor, bookingId: string) {
+    actor = this.principal(actor);
+    this.canadaPostBookingWarehouse(actor, bookingId);
+    const member = this.store.get<{ group_id: string }>(
+      "SELECT group_id FROM integration_canada_post_members WHERE org_id=? AND booking_id=? AND active=1",
+      actor.orgId,
+      bookingId,
+    );
+    return member ? this.reviewCanadaPostGroup(actor, member.group_id) : null;
+  }
+  canadaPostGroups(actor: Actor, warehouseId: string, after?: string) {
+    actor = this.principal(actor);
+    warehouseId = text(warehouseId, "Warehouse", 128);
+    site(actor, warehouseId);
+    if (after !== undefined) {
+      const cursor = this.canadaPostGroup(actor, after).group;
+      check(
+        cursor.warehouse_id === warehouseId,
+        "CARRIER_MISMATCH",
+        "The group cursor belongs to a different warehouse.",
+      );
+    }
+    const rows = this.store.all<{ id: string }>(
+      "SELECT id FROM integration_canada_post_groups WHERE org_id=? AND warehouse_id=? AND id>? ORDER BY id LIMIT 21",
+      actor.orgId,
+      warehouseId,
+      after ?? "",
+    );
+    return {
+      items: rows
+        .slice(0, 20)
+        .map((row) => this.reviewCanadaPostGroup(actor, row.id)),
+      next: rows.length > 20 ? rows[19]!.id : null,
+    };
+  }
   cancelCanadaPostGroup(
     actor: Actor,
     key: string,

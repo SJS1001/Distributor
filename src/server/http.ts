@@ -45,7 +45,10 @@ type Spec = {
   schema: Schema;
   run: (actor: Actor, key: string, payload: any) => unknown;
 }; // Schemas validate this boundary before domain dispatch.
-export function commands(app: Application): Record<string, Spec> {
+export function commands(
+  app: Application,
+  carriers?: CarrierRuntime,
+): Record<string, Spec> {
   const costNumber: Schema = {
     type: "integer",
     minimum: 0,
@@ -62,6 +65,37 @@ export function commands(app: Application): Record<string, Spec> {
     phone: str,
   });
   return {
+    "canada-post.group.prepare": {
+      schema: obj({
+        warehouseId: str,
+        entries: {
+          type: "array",
+          minItems: 1,
+          maxItems: 100,
+          items: obj({
+            bookingId: str,
+            reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          }),
+        },
+      }),
+      run: (a, k, p) => {
+        check(
+          carriers,
+          "CARRIER_DISABLED",
+          "Canada Post test processing is disabled.",
+          503,
+        );
+        return carriers.prepareCanadaPostGroup(a, k, p);
+      },
+    },
+    "canada-post.group.cancel": {
+      schema: obj({
+        groupId: str,
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: str,
+      }),
+      run: (a, k, p) => app.carriers.cancelCanadaPostGroup(a, k, p),
+    },
     "carrier.prepare": {
       schema: obj({
         shipmentId: str,
@@ -1783,6 +1817,153 @@ export async function createHttp(app: Application, options: HttpOptions) {
             );
       },
     );
+  http.get<{
+    Params: { warehouseId: string };
+    Querystring: { after?: string };
+  }>(
+    "/api/warehouses/:warehouseId/canada-post/groups",
+    {
+      schema: {
+        params: obj({ warehouseId: str }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) => {
+      const current = actor(request);
+      const page = app.carriers.canadaPostGroups(
+        current,
+        request.params.warehouseId,
+        request.query.after,
+      );
+      return {
+        ...page,
+        enabled:
+          options.carriers?.canadaPostEnabled(
+            current,
+            request.params.warehouseId,
+          ) ?? false,
+      };
+    },
+  );
+  http.get<{ Params: { bookingId: string } }>(
+    "/api/carrier/:bookingId/canada-post/group",
+    { schema: { params: obj({ bookingId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.carriers.canadaPostGroupForBooking(
+        actor(request),
+        request.params.bookingId,
+      ),
+  );
+  http.get<{ Params: { groupId: string } }>(
+    "/api/canada-post/groups/:groupId",
+    { schema: { params: obj({ groupId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.carriers.reviewCanadaPostGroup(
+        actor(request),
+        request.params.groupId,
+      ),
+  );
+  http.get<{ Params: { groupId: string } }>(
+    "/api/canada-post/groups/:groupId/manifest/review",
+    { schema: { params: obj({ groupId: str }), querystring: obj({}) } },
+    async (request) => {
+      check(
+        options.carriers,
+        "CARRIER_DISABLED",
+        "Canada Post test processing is disabled.",
+        503,
+      );
+      return options.carriers.reviewCanadaPostManifest(
+        actor(request),
+        request.params.groupId,
+      );
+    },
+  );
+  for (const action of ["create", "reconcile"] as const)
+    http.post<{ Params: { groupId: string; bookingId: string } }>(
+      `/api/canada-post/groups/:groupId/members/:bookingId/${action}`,
+      {
+        schema: {
+          params: obj({ groupId: str, bookingId: str }),
+          body: obj({}),
+          querystring: obj({}),
+        },
+      },
+      async (request) => {
+        check(
+          options.carriers,
+          "CARRIER_DISABLED",
+          "Canada Post test processing is disabled.",
+          503,
+        );
+        return action === "create"
+          ? options.carriers.createCanadaPostMember(
+              actor(request),
+              request.params.groupId,
+              request.params.bookingId,
+            )
+          : options.carriers.reconcileCanadaPostMember(
+              actor(request),
+              request.params.groupId,
+              request.params.bookingId,
+            );
+      },
+    );
+  for (const action of ["transmit", "reconcile"] as const)
+    http.post<{ Params: { groupId: string }; Body: { reviewHash: string } }>(
+      `/api/canada-post/groups/:groupId/manifest/${action}`,
+      {
+        schema: {
+          params: obj({ groupId: str }),
+          body: obj({
+            reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          }),
+          querystring: obj({}),
+        },
+      },
+      async (request) => {
+        check(
+          options.carriers,
+          "CARRIER_DISABLED",
+          "Canada Post test processing is disabled.",
+          503,
+        );
+        return action === "transmit"
+          ? options.carriers.transmitCanadaPostManifest(
+              actor(request),
+              request.params.groupId,
+              request.body.reviewHash,
+            )
+          : options.carriers.reconcileCanadaPostManifest(
+              actor(request),
+              request.params.groupId,
+              request.body.reviewHash,
+            );
+      },
+    );
+  http.get<{ Params: { groupId: string } }>(
+    "/api/canada-post/groups/:groupId/manifest/document",
+    { schema: { params: obj({ groupId: str }), querystring: obj({}) } },
+    async (request, reply) => {
+      const document = app.carriers.canadaPostManifestDocument(
+        actor(request),
+        request.params.groupId,
+      );
+      return reply
+        .header("Content-Type", "application/octet-stream")
+        .header(
+          "Content-Disposition",
+          'attachment; filename="canada-post-manifest.pdf"',
+        )
+        .header("Cache-Control", "no-store")
+        .header("X-Document-Sha256", document.hash)
+        .header("X-Document-Media-Type", document.mediaType)
+        .send(document.bytes);
+    },
+  );
   http.get<{ Params: { bookingId: string } }>(
     "/api/carrier/:bookingId/label",
     { schema: { params: obj({ bookingId: str }), querystring: obj({}) } },
@@ -2245,7 +2426,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .send(result.bytes);
     },
   );
-  for (const [name, spec] of Object.entries(commands(app)))
+  for (const [name, spec] of Object.entries(commands(app, options.carriers)))
     http.post(
       `/api/commands/${name}`,
       {

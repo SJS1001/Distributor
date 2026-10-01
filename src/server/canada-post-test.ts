@@ -68,7 +68,7 @@ const maximumLabel = 1_048_576;
 // Original JSON/OAuth contract-shipping protocol foundation. Intentionally NOT
 // a CarrierAdapter: grouped labels still require a separately claimed manifest
 // transmission and qualified recovery before native handover can be enabled.
-// There is no default transport, startup registration or production switch.
+// The explicit runtime registration supplies its transport. There is no production switch.
 export class CanadaPostTestClient {
   private readonly config: CanadaPostTestConfig;
   readonly testApplication = true as const;

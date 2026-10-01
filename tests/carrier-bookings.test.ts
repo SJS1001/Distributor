@@ -1192,6 +1192,18 @@ for (const provider of carrierNames)
         }))
         .reverse(),
     );
+    if (provider === "canada-post") {
+      assert.equal(runtime.enabled(f.actor, provider), false);
+      assert.throws(() => runtime.execute(f.actor, receipt.id), {
+        code: "CARRIER_DISABLED",
+      });
+      assert.throws(() => runtime.reconcile(f.actor, receipt.id), {
+        code: "CARRIER_DISABLED",
+      });
+      assert.deepEqual(calls, []);
+      assert.deepEqual(native(f), before);
+      return;
+    }
     assert.equal(runtime.enabled(f.actor, provider), true);
     const result = await runtime.execute(f.actor, receipt.id);
     assert.equal(result.provider, provider);

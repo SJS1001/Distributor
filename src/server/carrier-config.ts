@@ -1,5 +1,13 @@
 import type { Application } from "./application.ts";
-import { CarrierRuntime, type CarrierBinding } from "./carrier-runtime.ts";
+import {
+  CarrierRuntime,
+  type CarrierBinding,
+  type CanadaPostBinding,
+} from "./carrier-runtime.ts";
+import {
+  CanadaPostTestClient,
+  type CanadaPostTestConfig,
+} from "./canada-post-test.ts";
 import { check, DomainError } from "./core.ts";
 import { UpsSandbox, type UpsSandboxConfig } from "./ups-sandbox.ts";
 import { FedexSandbox, type FedexSandboxConfig } from "./fedex-sandbox.ts";
@@ -22,9 +30,10 @@ export function configuredCarriers(
   };
   if (!flag("CARRIERS_ENABLED")) return undefined;
   const ups = flag("UPS_SANDBOX_ENABLED"),
-    fedex = flag("FEDEX_SANDBOX_ENABLED");
+    fedex = flag("FEDEX_SANDBOX_ENABLED"),
+    canadaPost = flag("CANADA_POST_TEST_ENABLED");
   check(
-    ups || fedex,
+    ups || fedex || canadaPost,
     "CARRIER_CONFIG",
     "Select at least one supported sandbox carrier.",
     500,
@@ -86,7 +95,49 @@ export function configuredCarriers(
     );
   }
   const bindings: CarrierBinding[] = [];
+  const groups: CanadaPostBinding[] = [];
   try {
+    if (canadaPost) {
+      check(
+        env.CANADA_POST_TEST_CREDENTIALS_ACK === "test-application-only",
+        "CARRIER_CONFIG",
+        "Explicitly acknowledge Canada Post test-application credentials.",
+        500,
+      );
+      const warehouseId = required("CANADA_POST_WAREHOUSE_ID", 128);
+      app.inventory.configurationWarehouse(orgId, warehouseId);
+      const shippingPoint = json("CANADA_POST_SHIPPING_POINT_JSON");
+      object(
+        shippingPoint,
+        (shippingPoint as { kind?: unknown })?.kind === "pickup"
+          ? ["kind", "postalCode"]
+          : ["kind", "siteId"],
+        "CANADA_POST_SHIPPING_POINT_JSON",
+      );
+      groups.push({
+        orgId,
+        warehouseId,
+        client: new CanadaPostTestClient(
+          {
+            orgId,
+            warehouseId,
+            testApplication: true,
+            clientId: required("CANADA_POST_CLIENT_ID", 512),
+            clientSecret: required("CANADA_POST_CLIENT_SECRET"),
+            customerNumber: required("CANADA_POST_CUSTOMER_NUMBER", 10),
+            contractId: required("CANADA_POST_CONTRACT_ID", 10),
+            company: required("CANADA_POST_COMPANY", 44),
+            shippingPoint:
+              shippingPoint as CanadaPostTestConfig["shippingPoint"],
+            services: services("CANADA_POST_SERVICES_JSON", [
+              "service",
+              "code",
+            ]) as CanadaPostTestConfig["services"],
+          },
+          transport,
+        ),
+      });
+    }
     if (ups) {
       const shipper = json("UPS_SHIPPER_JSON");
       object(
@@ -159,5 +210,5 @@ export function configuredCarriers(
       );
     throw error;
   }
-  return new CarrierRuntime(app, bindings);
+  return new CarrierRuntime(app, bindings, groups);
 }
