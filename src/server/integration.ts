@@ -70,6 +70,14 @@ export type AccountingCreditIntent = {
   taxRateRef: string;
   lines: (RecordedCredit["lines"][number] & { itemRef: string })[];
 };
+export type AccountingCreditApplicationIntent = {
+  credit: AccountingCreditIntent;
+  creditEffectId: string;
+  externalCreditRef: string;
+  amount: number;
+  applicationRef: string;
+  applicationDate: string;
+};
 export type Callback = {
   id: string;
   org_id: string;
@@ -105,6 +113,9 @@ export class Integration {
     CREATE UNIQUE INDEX IF NOT EXISTS integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL;
     CREATE TABLE IF NOT EXISTS integration_payment_allocations(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,applied_amount INTEGER NOT NULL CHECK(applied_amount>=0),UNIQUE(org_id,payment_id)) STRICT;
     CREATE INDEX IF NOT EXISTS integration_payment_invoice ON integration_payment_allocations(org_id,invoice_id);
+    CREATE TABLE IF NOT EXISTS integration_credit_applications(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0)) STRICT;
+    CREATE INDEX IF NOT EXISTS integration_credit_application_invoice ON integration_credit_applications(org_id,invoice_id);
+    CREATE INDEX IF NOT EXISTS integration_credit_application_credit ON integration_credit_applications(org_id,credit_id);
   `);
     this.operations = new IntegrationOperations(
       database,
@@ -157,7 +168,9 @@ export class Integration {
       .filter(
         (e) =>
           (actor.role !== "buyer" || e.account_id === actor.accountId) &&
-          (!["refund", "payment", "credit"].includes(e.kind) ||
+          (!["refund", "payment", "credit", "credit-application"].includes(
+            e.kind,
+          ) ||
             ["admin", "finance", "support"].includes(actor.role)),
       )
       .map((e) => ({
@@ -173,6 +186,12 @@ export class Integration {
           e.kind === "invoice" &&
           e.state === "completed"
             ? this.balances.latest(actor, e.id)
+            : undefined,
+        creditApplication:
+          e.provider === "quickbooks" &&
+          e.kind === "credit" &&
+          ["admin", "finance", "support"].includes(actor.role)
+            ? this.creditApplicationCapacity(actor, e.reference)
             : undefined,
         recoveryHold: !!this.platform.recoveryHold(),
       }));
@@ -685,15 +704,11 @@ export class Integration {
             payment.id,
             payload,
           );
-        const allocated = this.store.get<{ amount: number }>(
-          "SELECT COALESCE(SUM(applied_amount),0) AS amount FROM integration_payment_allocations WHERE org_id=? AND invoice_id=?",
-          actor.orgId,
-          invoice.id,
-        )!.amount;
+        const allocated = this.accountingAllocated(actor, invoice.id);
         check(
           allocated + payload.appliedAmount <= invoice.total,
           "ACCOUNTING_ALLOCATION",
-          "Queued and delivered applications exceed the original invoice. Leave excess cash unapplied and reconcile credits/refunds separately.",
+          "Queued and delivered cash/credit applications exceed the original invoice. Leave excess unapplied and reconcile refunds separately.",
         );
         const effect = this.queue(
           actor,
@@ -710,6 +725,133 @@ export class Integration {
           invoice.id,
           payment.id,
           payload.appliedAmount,
+        );
+        return effect;
+      },
+    );
+  }
+  private accountingAllocated(actor: Actor, invoiceId: string) {
+    return this.store.get<{ amount: number }>(
+      "SELECT (SELECT COALESCE(SUM(applied_amount),0) FROM integration_payment_allocations WHERE org_id=? AND invoice_id=?) + (SELECT COALESCE(SUM(amount),0) FROM integration_credit_applications WHERE org_id=? AND invoice_id=?) AS amount",
+      actor.orgId,
+      invoiceId,
+      actor.orgId,
+      invoiceId,
+    )!.amount;
+  }
+  private creditApplicationCapacity(actor: Actor, creditId: string) {
+    const credit = this.billing.recordedCredit(actor, creditId),
+      invoice = this.billing.invoice(actor, credit.invoice_id),
+      reservedAmount = this.store.get<{ amount: number }>(
+        "SELECT COALESCE(SUM(amount),0) AS amount FROM integration_credit_applications WHERE org_id=? AND credit_id=?",
+        actor.orgId,
+        creditId,
+      )!.amount;
+    return {
+      reservedAmount,
+      availableCredit: Math.max(0, credit.total - reservedAmount),
+      availableInvoice: Math.max(
+        0,
+        invoice.total - this.accountingAllocated(actor, invoice.id),
+      ),
+    };
+  }
+  accountingCreditApplication(
+    actor: Actor,
+    key: string,
+    input: { creditId: string; amount: number },
+  ) {
+    return this.platform.command(
+      actor,
+      "quickbooks.credit.apply",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        const credit = this.billing.recordedCredit(actor, input.creditId),
+          invoice = this.billing.invoice(actor, credit.invoice_id);
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "quickbooks");
+      },
+      () => {
+        const native = this.billing.recordedCredit(actor, input.creditId),
+          invoice = this.billing.invoice(actor, native.invoice_id),
+          credit = this.store.get<Effect>(
+            "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='credit' AND reference=? AND state='completed'",
+            actor.orgId,
+            input.creditId,
+          );
+        check(
+          credit &&
+            credit.external_ref &&
+            credit.external_ref.startsWith("credit:"),
+          "ACCOUNTING_CREDIT_REQUIRED",
+          "Reconcile the QuickBooks credit before applying it.",
+        );
+        const original = JSON.parse(credit.payload) as AccountingCreditIntent,
+          parent = this.effect(actor, original.invoiceEffectId),
+          { lines: nativeLines, ...nativeCredit } = native;
+        check(
+          parent.provider === "quickbooks" &&
+            parent.kind === "invoice" &&
+            parent.state === "completed" &&
+            parent.reference === invoice.id &&
+            parent.account_id === invoice.account_id &&
+            parent.external_ref === original.externalInvoiceRef &&
+            credit.account_id === invoice.account_id &&
+            original.invoice.id === invoice.id &&
+            original.invoice.number === invoice.number &&
+            original.invoice.total === invoice.total &&
+            original.invoice.currency === invoice.currency &&
+            canonical(original.credit) === canonical(nativeCredit) &&
+            canonical(
+              original.lines.map(({ itemRef: _mapping, ...line }) => line),
+            ) === canonical(nativeLines) &&
+            original.customerRef === JSON.parse(parent.payload).customerRef,
+          "ACCOUNTING_CREDIT_MISMATCH",
+          "Credit or original invoice accounting identity changed; reconcile before application.",
+        );
+        const capacity = this.creditApplicationCapacity(actor, native.id),
+          amount = integer(
+            input.amount,
+            "Credit application amount",
+            1,
+            native.total,
+          );
+        check(
+          amount <= capacity.availableCredit &&
+            amount <= capacity.availableInvoice,
+          "ACCOUNTING_ALLOCATION",
+          "Queued and delivered applications exhaust this credit or original invoice. Reconcile pending and unknown outcomes before requesting more.",
+        );
+        const applicationId = id(),
+          payload: AccountingCreditApplicationIntent = {
+            credit: original,
+            creditEffectId: credit.id,
+            externalCreditRef: text(
+              credit.external_ref.slice(7),
+              "QuickBooks credit identity",
+            ),
+            amount,
+            applicationRef: `DC-${digest(applicationId).slice(0, 18)}`,
+            applicationDate: now().slice(0, 10),
+          },
+          effect = this.queue(
+            actor,
+            invoice.account_id,
+            "quickbooks",
+            "credit-application",
+            applicationId,
+            payload,
+          );
+        this.store.run(
+          "INSERT INTO integration_credit_applications VALUES(?,?,?,?,?)",
+          effect.id,
+          actor.orgId,
+          invoice.id,
+          native.id,
+          amount,
         );
         return effect;
       },

@@ -4,6 +4,7 @@ import { check, integer } from "./core.ts";
 import {
   type AccountingPaymentIntent,
   type AccountingCreditIntent,
+  type AccountingCreditApplicationIntent,
   type Adapter,
   type Effect,
   type EffectResult,
@@ -481,7 +482,11 @@ export class QuickBooksAdapter implements Adapter {
       },
     };
   }
-  private creditResult(effect: Effect, credit: QboCredit): EffectResult {
+  private creditResult(
+    effect: Effect,
+    credit: QboCredit,
+    allowApplied = false,
+  ): EffectResult {
     const p = JSON.parse(effect.payload) as AccountingCreditIntent;
     const expected = p.lines.map((l) => ({
       item: l.itemRef,
@@ -517,10 +522,17 @@ export class QuickBooksAdapter implements Adapter {
         credit.DocNumber === p.credit.number &&
         credit.TxnDate === p.credit.created_at.slice(0, 10) &&
         credit.TotalAmt === amount(p.credit.total) &&
-        credit.RemainingCredit === amount(p.credit.total) &&
+        (allowApplied
+          ? typeof credit.RemainingCredit === "number" &&
+            Number.isFinite(credit.RemainingCredit) &&
+            credit.RemainingCredit >= 0 &&
+            credit.RemainingCredit <= amount(p.credit.total) &&
+            credit.RemainingCredit ===
+              amount(Math.round(credit.RemainingCredit * 100))
+          : credit.RemainingCredit === amount(p.credit.total)) &&
         credit.CustomerRef?.value === p.customerRef &&
         credit.CurrencyRef?.value === p.invoice.currency &&
-        (credit.LinkedTxn ?? []).length === 0 &&
+        (allowApplied || (credit.LinkedTxn ?? []).length === 0) &&
         encoded(actual) === encoded(expected) &&
         other.length <= 1 &&
         other.every(
@@ -545,10 +557,144 @@ export class QuickBooksAdapter implements Adapter {
         invoiceId: p.invoice.id,
         number: p.credit.number,
         total: p.credit.total,
-        unappliedAmount: p.credit.total,
+        unappliedAmount: Math.round(credit.RemainingCredit * 100),
         currency: p.invoice.currency,
       },
     };
+  }
+  private creditApplicationResult(
+    effect: Effect,
+    payment: QboPayment,
+  ): EffectResult {
+    const p = JSON.parse(effect.payload) as AccountingCreditApplicationIntent,
+      lines = payment.Line ?? [],
+      links = lines.map((line) => ({
+        amount: line.Amount,
+        links: line.LinkedTxn,
+      }));
+    check(
+      typeof payment.Id === "string" &&
+        payment.Id.trim().length > 0 &&
+        payment.PrivateNote === `Distributor effect ${effect.id}` &&
+        payment.PaymentRefNum === p.applicationRef &&
+        payment.TotalAmt === 0 &&
+        payment.UnappliedAmt === 0 &&
+        payment.CustomerRef?.value === p.credit.customerRef &&
+        payment.CurrencyRef?.value === p.credit.invoice.currency &&
+        payment.TxnDate === p.applicationDate &&
+        (payment.ProcessPayment === undefined ||
+          payment.ProcessPayment === false) &&
+        links.length === 2 &&
+        links.every(
+          (l) => l.amount === amount(p.amount) && l.links?.length === 1,
+        ) &&
+        links.filter(
+          (l) =>
+            l.links?.[0]?.TxnType === "Invoice" &&
+            l.links[0].TxnId === p.credit.externalInvoiceRef,
+        ).length === 1 &&
+        links.filter(
+          (l) =>
+            l.links?.[0]?.TxnType === "CreditMemo" &&
+            l.links[0].TxnId === p.externalCreditRef,
+        ).length === 1,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks credit application identity, money or links differ; reconcile before marking delivered.",
+    );
+    return {
+      reference: `payment:${payment.Id}`,
+      result: {
+        providerId: payment.Id,
+        creditId: p.credit.credit.id,
+        invoiceId: p.credit.invoice.id,
+        amount: p.amount,
+        currency: p.credit.invoice.currency,
+        applicationRef: p.applicationRef,
+        applicationDate: p.applicationDate,
+      },
+    };
+  }
+  private async sendCreditApplication(effect: Effect) {
+    const p = JSON.parse(effect.payload) as AccountingCreditApplicationIntent;
+    const preferences = await this.request(effect, "/preferences");
+    check(
+      preferences.Preferences?.SalesFormsPrefs?.AutoApplyCredit === false,
+      "ACCOUNTING_CREDIT_AUTOMATION",
+      "Confirm automatic credit application is off before applying a credit.",
+    );
+    const parent = await this.request(
+        effect,
+        `/invoice/${encodeURIComponent(p.credit.externalInvoiceRef)}`,
+      ),
+      invoice = parent.Invoice;
+    check(
+      invoice &&
+        invoice.Id === p.credit.externalInvoiceRef &&
+        invoice.PrivateNote ===
+          `Distributor effect ${p.credit.invoiceEffectId}` &&
+        invoice.DocNumber === p.credit.invoice.number &&
+        invoice.TotalAmt === amount(p.credit.invoice.total) &&
+        invoice.CustomerRef?.value === p.credit.customerRef &&
+        invoice.CurrencyRef?.value === p.credit.invoice.currency &&
+        typeof invoice.Balance === "number" &&
+        Number.isFinite(invoice.Balance) &&
+        invoice.Balance >= amount(p.amount) &&
+        invoice.Balance <= invoice.TotalAmt &&
+        invoice.Balance === amount(Math.round(invoice.Balance * 100)),
+      "ACCOUNTING_INVOICE_MISMATCH",
+      "QuickBooks original invoice identity or available balance differs; reconcile before applying credit.",
+    );
+    const response = await this.request(
+        effect,
+        `/creditmemo/${encodeURIComponent(p.externalCreditRef)}`,
+      ),
+      credit = response.CreditMemo;
+    check(
+      credit && credit.Id === p.externalCreditRef,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks omitted the exact original credit.",
+    );
+    this.creditResult(
+      { ...effect, id: p.creditEffectId, payload: JSON.stringify(p.credit) },
+      credit,
+      true,
+    );
+    check(
+      credit.RemainingCredit >= amount(p.amount),
+      "ACCOUNTING_ALLOCATION",
+      "QuickBooks remaining credit cannot cover the application; reconcile external edits.",
+    );
+    const posted = await this.request(
+      effect,
+      `/payment?requestid=${encodeURIComponent(effect.id)}`,
+      {
+        TotalAmt: 0,
+        CustomerRef: { value: p.credit.customerRef },
+        CurrencyRef: { value: p.credit.invoice.currency },
+        PaymentRefNum: p.applicationRef,
+        PrivateNote: `Distributor effect ${effect.id}`,
+        TxnDate: p.applicationDate,
+        ProcessPayment: false,
+        Line: [
+          {
+            Amount: amount(p.amount),
+            LinkedTxn: [
+              { TxnId: p.credit.externalInvoiceRef, TxnType: "Invoice" },
+            ],
+          },
+          {
+            Amount: amount(p.amount),
+            LinkedTxn: [{ TxnId: p.externalCreditRef, TxnType: "CreditMemo" }],
+          },
+        ],
+      },
+    );
+    check(
+      posted.Payment,
+      "PROVIDER_RESPONSE",
+      "QuickBooks omitted the credit application.",
+    );
+    return this.creditApplicationResult(effect, posted.Payment);
   }
   private async sendCredit(effect: Effect) {
     const p = JSON.parse(effect.payload) as AccountingCreditIntent;
@@ -677,6 +823,8 @@ export class QuickBooksAdapter implements Adapter {
     return this.paymentResult(effect, posted.Payment);
   }
   async execute(effect: Effect) {
+    if (effect.kind === "credit-application")
+      return this.sendCreditApplication(effect);
     if (effect.kind === "credit") return this.sendCredit(effect);
     if (effect.kind === "payment") return this.sendPayment(effect);
     check(
@@ -728,6 +876,25 @@ export class QuickBooksAdapter implements Adapter {
     return this.result(response.Invoice, p, effect.id);
   }
   async lookup(effect: Effect) {
+    if (effect.kind === "credit-application") {
+      const p = JSON.parse(effect.payload) as AccountingCreditApplicationIntent;
+      check(
+        /^DC-[a-f0-9]{18}$/.test(p.applicationRef),
+        "PROVIDER_QUERY",
+        "Invalid credit application reference.",
+      );
+      const response = await this.request(
+        effect,
+        `/query?query=${encodeURIComponent(`select * from Payment where PaymentRefNum = '${p.applicationRef}' maxresults 2`)}`,
+      );
+      const rows = response.QueryResponse?.Payment ?? [];
+      check(
+        rows.length <= 1,
+        "ACCOUNTING_DUPLICATE",
+        "Multiple QuickBooks credit applications require finance review.",
+      );
+      return rows[0] ? this.creditApplicationResult(effect, rows[0]) : null;
+    }
     if (effect.kind === "credit") {
       const p = JSON.parse(effect.payload) as AccountingCreditIntent;
       check(

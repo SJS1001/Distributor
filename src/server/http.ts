@@ -609,6 +609,10 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ creditId: str }),
       run: (a, k, p) => app.integration.accountingCredit(a, k, p),
     },
+    "quickbooks.credit.apply": {
+      schema: obj({ creditId: str, amount: { ...num, minimum: 1 } }),
+      run: (a, k, p) => app.integration.accountingCreditApplication(a, k, p),
+    },
     "quickbooks.payment": {
       schema: obj({
         paymentId: str,

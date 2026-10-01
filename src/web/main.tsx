@@ -1974,22 +1974,78 @@ function App() {
                       money(c.total, currency),
                       ...(can("finance") || can("support")
                         ? [
-                            posted
-                              ? posted.state
-                              : can("finance") && parent
-                                ? button("Queue QuickBooks credit", () =>
+                            posted ? (
+                              <div className="actions">
+                                <span>{posted.state}</span>
+                                {posted.creditApplication && (
+                                  <small>
+                                    Reserved{" "}
+                                    {money(
+                                      posted.creditApplication.reservedAmount,
+                                      currency,
+                                    )}
+                                    ; remaining credit{" "}
+                                    {money(
+                                      posted.creditApplication.availableCredit,
+                                      currency,
+                                    )}
+                                    ; invoice capacity{" "}
+                                    {money(
+                                      posted.creditApplication.availableInvoice,
+                                      currency,
+                                    )}
+                                  </small>
+                                )}
+                                {can("finance") &&
+                                  posted.state === "completed" &&
+                                  posted.creditApplication?.availableCredit >
+                                    0 &&
+                                  posted.creditApplication?.availableInvoice >
+                                    0 &&
+                                  button("Apply QuickBooks credit", () =>
                                     open(
-                                      "Queue QuickBooks credit",
-                                      [],
-                                      () =>
-                                        command("quickbooks.credit", {
+                                      "Apply QuickBooks credit",
+                                      [
+                                        {
+                                          name: "amount",
+                                          label: "Credit application (cents)",
+                                          type: "number",
+                                          value: 0,
+                                          min: 1,
+                                          max: Math.min(
+                                            posted.creditApplication
+                                              .availableCredit,
+                                            posted.creditApplication
+                                              .availableInvoice,
+                                          ),
+                                        },
+                                      ],
+                                      (v) =>
+                                        command("quickbooks.credit.apply", {
                                           creditId: c.id,
+                                          amount: v.amount,
                                         }),
-                                      `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
-                                      "Queue credit",
+                                      `Apply part or all of ${c.number} to its original invoice. Review the amount; pending and unknown applications reserve capacity. This applies existing credit without repaying or charging cash.`,
+                                      "Queue application",
                                     ),
-                                  )
-                                : "Reconcile QuickBooks invoice first",
+                                  )}
+                              </div>
+                            ) : can("finance") && parent ? (
+                              button("Queue QuickBooks credit", () =>
+                                open(
+                                  "Queue QuickBooks credit",
+                                  [],
+                                  () =>
+                                    command("quickbooks.credit", {
+                                      creditId: c.id,
+                                    }),
+                                  `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
+                                  "Queue credit",
+                                ),
+                              )
+                            ) : (
+                              "Reconcile QuickBooks invoice first"
+                            ),
                           ]
                         : []),
                       <div className="actions">

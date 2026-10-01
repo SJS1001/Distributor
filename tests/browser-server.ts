@@ -169,7 +169,7 @@ const syntheticAccounting: Adapter = {
     const p = JSON.parse(effect.payload);
     accountingResults.set(effect.id, {
       reference:
-        effect.kind === "payment"
+        effect.kind === "payment" || effect.kind === "credit-application"
           ? `payment:${effect.id}`
           : effect.kind === "credit"
             ? `credit:${effect.id}`
@@ -182,11 +182,18 @@ const syntheticAccounting: Adapter = {
               appliedAmount: p.appliedAmount,
               currency: p.invoice.currency,
             }
-          : {
-              number: p.invoice.number,
-              total: p.invoice.total,
-              currency: p.invoice.currency,
-            },
+          : effect.kind === "credit-application"
+            ? {
+                creditId: p.credit.credit.id,
+                invoiceId: p.credit.invoice.id,
+                amount: p.amount,
+                currency: p.credit.invoice.currency,
+              }
+            : {
+                number: p.invoice.number,
+                total: p.invoice.total,
+                currency: p.invoice.currency,
+              },
     });
     throw Error("Synthetic lost accounting send response");
   },
@@ -195,10 +202,16 @@ const syntheticAccounting: Adapter = {
     const p = JSON.parse(effect.payload),
       paid = f.app.integration
         .list(f.actor)
-        .filter((e) => e.kind === "payment" && e.state === "completed")
+        .filter(
+          (e) =>
+            ["payment", "credit-application"].includes(e.kind) &&
+            e.state === "completed",
+        )
         .map((e) => JSON.parse(f.app.integration.effect(f.actor, e.id).payload))
-        .filter((p) => p.invoiceEffectId === effect.id)
-        .reduce((sum, p) => sum + p.appliedAmount, 0);
+        .filter(
+          (p) => (p.credit?.invoiceEffectId ?? p.invoiceEffectId) === effect.id,
+        )
+        .reduce((sum, p) => sum + (p.amount ?? p.appliedAmount), 0);
     return {
       reference: effect.external_ref!,
       total: p.invoice.total,
