@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Application } from "../src/server/application.ts";
 export function fixture(
   t: { after: (fn: () => void) => void },
-  security: { mfaEncryptionKey?: string } = {},
+  security: { mfaEncryptionKey?: string; providerEncryptionKey?: string } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), "distributor-"));
   const path = join(directory, "app.db");

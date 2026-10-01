@@ -11,6 +11,7 @@ import { Orders } from "./orders.ts";
 import { Fulfillment } from "./fulfillment.ts";
 import { Warranty } from "./warranty.ts";
 import { Integration } from "./integration.ts";
+import { ProviderCredentials } from "./provider-credentials.ts";
 import { Migration } from "./migration.ts";
 
 export class Application {
@@ -27,10 +28,14 @@ export class Application {
   warranty: Warranty;
   integration: Integration;
   migration: Migration;
+  providerCredentials: ProviderCredentials;
   constructor(
     path: string,
     region: Region = "CA",
-    security: { mfaEncryptionKey?: string } = {},
+    security: {
+      mfaEncryptionKey?: string;
+      providerEncryptionKey?: string;
+    } = {},
   ) {
     check(
       ["CA", "US"].includes(region),
@@ -48,6 +53,12 @@ export class Application {
         for (const siteId of sites) this.inventory.warehouse(actor, siteId);
       },
       security.mfaEncryptionKey,
+    );
+    this.providerCredentials = new ProviderCredentials(
+      this.database,
+      this.platform,
+      this.identity,
+      security.providerEncryptionKey,
     );
     this.catalog = new Catalog(this.database, this.platform, this.identity);
     this.inventory = new Inventory(this.database, this.platform, this.catalog);
@@ -147,6 +158,7 @@ export class Application {
     };
   }
   close() {
+    this.providerCredentials.close();
     this.database.close();
   }
 }

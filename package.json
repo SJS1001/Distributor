@@ -19,7 +19,8 @@
     "demo": "tsx src/server/cli.ts demo",
     "verify:plan": "python3 scripts/verify_plan.py",
     "format:check": "prettier --check src tests vite.config.ts playwright.config.ts tsconfig.json package.json index.html",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "provider:credentials": "tsx src/server/provider-credentials-cli.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",

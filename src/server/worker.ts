@@ -7,6 +7,7 @@ import { type Region } from "./iam.ts";
 const app = new Application(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
+  { providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY },
 );
 try {
   check(

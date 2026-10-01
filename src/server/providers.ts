@@ -326,7 +326,7 @@ export class QuickBooksAdapter implements Adapter {
   private base: string;
   constructor(
     private realm: string,
-    private token: () => Promise<string>,
+    private token: (effect: Effect) => Promise<string>,
     private enabled = false,
   ) {
     check(
@@ -337,7 +337,7 @@ export class QuickBooksAdapter implements Adapter {
     );
     this.base = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realm}`;
   }
-  private async request(path: string, body?: unknown) {
+  private async request(effect: Effect, path: string, body?: unknown) {
     check(
       this.enabled,
       "PROVIDER_DISABLED",
@@ -346,7 +346,7 @@ export class QuickBooksAdapter implements Adapter {
     const response = await fetch(this.base + path, {
       method: body ? "POST" : "GET",
       headers: {
-        Authorization: `Bearer ${await this.token()}`,
+        Authorization: `Bearer ${await this.token(effect)}`,
         Accept: "application/json",
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
@@ -515,13 +515,14 @@ export class QuickBooksAdapter implements Adapter {
       "PROVIDER_QUERY",
       "Invalid credit document number.",
     );
-    const preferences = await this.request("/preferences");
+    const preferences = await this.request(effect, "/preferences");
     check(
       preferences.Preferences?.SalesFormsPrefs?.AutoApplyCredit === false,
       "ACCOUNTING_CREDIT_AUTOMATION",
       "Confirm automatic credit application is off before posting an unapplied credit.",
     );
     const parent = await this.request(
+        effect,
         `/invoice/${encodeURIComponent(p.externalInvoiceRef)}`,
       ),
       invoice = parent.Invoice;
@@ -537,6 +538,7 @@ export class QuickBooksAdapter implements Adapter {
       "QuickBooks parent invoice differs; reconcile before posting its credit.",
     );
     const posted = await this.request(
+      effect,
       `/creditmemo?requestid=${encodeURIComponent(effect.id)}`,
       {
         DocNumber: p.credit.number,
@@ -580,6 +582,7 @@ export class QuickBooksAdapter implements Adapter {
   private async sendPayment(effect: Effect) {
     const p = JSON.parse(effect.payload) as AccountingPaymentIntent;
     const response = await this.request(
+      effect,
       `/invoice/${encodeURIComponent(p.externalInvoiceRef)}`,
     );
     const invoice = response.Invoice;
@@ -600,6 +603,7 @@ export class QuickBooksAdapter implements Adapter {
       "QuickBooks invoice identity or available balance differs. Reconcile external edits before posting cash.",
     );
     const posted = await this.request(
+      effect,
       `/payment?requestid=${encodeURIComponent(effect.id)}`,
       {
         TotalAmt: amount(p.payment.amount),
@@ -670,6 +674,7 @@ export class QuickBooksAdapter implements Adapter {
       },
     };
     const response = await this.request(
+      effect,
       `/invoice?requestid=${encodeURIComponent(effect.id)}`,
       body,
     );
@@ -689,6 +694,7 @@ export class QuickBooksAdapter implements Adapter {
         "Invalid credit document number.",
       );
       const response = await this.request(
+        effect,
         `/query?query=${encodeURIComponent(`select * from CreditMemo where DocNumber = '${p.credit.number}' maxresults 2`)}`,
       );
       const rows = response.QueryResponse?.CreditMemo ?? [];
@@ -707,6 +713,7 @@ export class QuickBooksAdapter implements Adapter {
         "Invalid payment reference.",
       );
       const response = await this.request(
+        effect,
         `/query?query=${encodeURIComponent(`select * from Payment where PaymentRefNum = '${p.paymentRef}' maxresults 2`)}`,
       );
       const rows = response.QueryResponse?.Payment ?? [];
@@ -729,6 +736,7 @@ export class QuickBooksAdapter implements Adapter {
       "Invalid document number.",
     );
     const response = await this.request(
+      effect,
       `/query?query=${encodeURIComponent(`select * from Invoice where DocNumber = '${p.invoice.number}'`)}`,
     );
     const rows = response.QueryResponse?.Invoice ?? [];

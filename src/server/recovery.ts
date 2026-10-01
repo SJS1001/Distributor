@@ -318,6 +318,7 @@ export async function restoreBackup(
           manifest.snapshotHash,
           manifest.completedAt,
         );
+        app.providerCredentials.invalidateRestoredCredentials();
         return app.identity.invalidateRestoredSessions();
       });
     } finally {

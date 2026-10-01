@@ -396,13 +396,55 @@ export function configuredProviders(
     return env[name]!;
   };
   const hasStripe = !!env.STRIPE_TEST_KEY || !!env.STRIPE_WEBHOOK_SECRET;
-  const hasQbo = !!env.QUICKBOOKS_REALM_ID || !!env.QUICKBOOKS_ACCESS_TOKEN;
+  check(
+    !env.QUICKBOOKS_CREDENTIAL_MODE ||
+      ["environment", "managed"].includes(env.QUICKBOOKS_CREDENTIAL_MODE),
+    "PROVIDER_CONFIG",
+    "Unknown QuickBooks credential mode.",
+    500,
+  );
+  const managedQbo = env.QUICKBOOKS_CREDENTIAL_MODE === "managed";
+  check(
+    !managedQbo || !env.QUICKBOOKS_ACCESS_TOKEN,
+    "PROVIDER_CONFIG",
+    "Managed credentials cannot use an environment access token.",
+    500,
+  );
+  const hasQbo =
+    managedQbo || !!env.QUICKBOOKS_REALM_ID || !!env.QUICKBOOKS_ACCESS_TOKEN;
   check(
     hasStripe || hasQbo,
     "PROVIDER_CONFIG",
     "Provider access enabled without credentials.",
     500,
   );
+  const managedBinding = managedQbo
+    ? {
+        id: required("PROVIDER_BINDING_ID"),
+        orgId: required("PROVIDER_ORG_ID"),
+        workerUserId: required("PROVIDER_WORKER_USER_ID"),
+        realm: required("QUICKBOOKS_REALM_ID"),
+        clientId: required("QUICKBOOKS_CLIENT_ID"),
+      }
+    : undefined;
+  const clientSecret = managedQbo
+    ? required("QUICKBOOKS_CLIENT_SECRET")
+    : undefined;
+  if (managedBinding) {
+    check(
+      app.providerCredentials.available,
+      "CREDENTIAL_KEY",
+      "Managed provider encryption key is unavailable.",
+      500,
+    );
+    check(
+      /^[\x21-\x7e]{1,8192}$/.test(clientSecret!),
+      "PROVIDER_CONFIG",
+      "Invalid QuickBooks client secret.",
+      500,
+    );
+    app.providerCredentials.status(managedBinding);
+  }
   return new ProviderRuntime(app, [
     {
       id: required("PROVIDER_BINDING_ID"),
@@ -421,7 +463,14 @@ export function configuredProviders(
       quickbooks: hasQbo
         ? new QuickBooksAdapter(
             required("QUICKBOOKS_REALM_ID"),
-            async () => required("QUICKBOOKS_ACCESS_TOKEN"),
+            managedBinding
+              ? (effect) =>
+                  app.providerCredentials.access(
+                    managedBinding,
+                    clientSecret!,
+                    effect,
+                  )
+              : async () => required("QUICKBOOKS_ACCESS_TOKEN"),
             true,
           )
         : undefined,
