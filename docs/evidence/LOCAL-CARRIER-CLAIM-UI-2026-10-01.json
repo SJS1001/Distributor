@@ -651,7 +651,7 @@
   "scopeDocumentSha256": {
     "docs/CARRIER-BOOKINGS.md": "b299c5d8b434563a85a4d7f34c36941c77c7911570db6f16a19f649da51096b6",
     "docs/IMPLEMENTATION.md": "0c50efa74a2619e90fdec2f95fcd9c38d68b1116544dfe20f02f54867d20df2e",
-    "docs/HANDOFF.md": "36a1bf23d5aef71b22e1d9f0b3b13bdd32199195f789b67ae89ce744b728704a",
+    "docs/HANDOFF.md": "92d4c4c80dbdfaa6dc4283c51e23e8e73a0c93482dfaef5f40c86bffb3522ce3",
     "docs/evidence/LOCAL-CARRIER-CLAIM-UI-2026-10-01.md": "0f38dbb1a16e2bb58710446883cf45ee9182f08fe5a7f9f97475a87f5bbc4de8"
   },
   "commands": {
@@ -795,5 +795,19 @@
     "Session storage is same-tab only; sign-out clears payloads/keys",
     "Private temporary artifacts not guaranteed archived",
     "Direct workstation/local commits only; no CI/cloud/provider/publication"
-  ]
+  ],
+  "sourceCommit": "159a8373f008f145ba7b6c7cf0d6848cd0fae30f",
+  "committedByteAudit": {
+    "sourceCommit": "159a8373f008f145ba7b6c7cf0d6848cd0fae30f",
+    "auditedAt": "2026-10-01T23:09:09.298735+00:00",
+    "status": "PASS",
+    "trackedFiles": 530,
+    "testedInputs": 263,
+    "historicalEvidence": 183,
+    "licenseNotices": 170,
+    "commandRecords": 11,
+    "checkoutClean": true,
+    "path": "/tmp/distributor-carrier-claim-ui-checkpoint/post-commit-audit.json",
+    "sha256": "4f8868999b3a2dee7e8fe5dbfabd0c5d8ad723276cc6151fba790b8a57f767cc"
+  }
 }
