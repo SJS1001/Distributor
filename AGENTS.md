@@ -14,6 +14,8 @@ Proposed architecture: one modular application initially; each module owns its d
 
 ## Later CI and PR work
 
+Current owner instruction: commit locally only. Do not push, create PRs or start local/self-hosted or cloud CI runner jobs for this work. Direct workstation verification commands are permitted. The future runner choice below does not authorize starting CI now.
+
 Use GitHub-hosted runners for Distributor, per the owner's explicit instruction on 2026-09-30. This repository-specific decision supersedes the general self-hosted runner policy for Distributor only. Do not use local/self-hosted runners, Depot or inherited OPUS labels. Before the first workflow, verify Distributor's current Actions permissions, selected hosted runner OS/capabilities, usage/cost limits and workflow security. No workflow or runner registration is created by this plan.
 
 Use `codex/` branch names for future work unless the owner specifies otherwise. Open or merge PRs only under verified `sjsmithbot` identity; preserve branch protection and check the target repository's own current policies. No push or PR is needed for this local planning deliverable.

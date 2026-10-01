@@ -28,3 +28,45 @@ An earlier Google Fonts variable candidate (commit `8b0a1d0f5983c89bc2b93f1b5fb5
 pdfjs-dist 6.3.289 independently parses/rasterizes generated PDFs; it is a development dependency. Its installed [Apache-2.0 license](licenses/billing/pdfjs-Apache-2.0.txt) and separate notices for CMaps, Foxit/Liberation fonts, ICC data, OpenJPEG, QCMS and JBIG2 are retained under `docs/licenses/billing/`. These assets are not copied into the production renderer; packaging them requires their respective terms. Exact license files, rather than default-branch labels, remain the source.
 
 @napi-rs/canvas 1.0.9 provides test-only raster output. Its installed [MIT wrapper notice](licenses/billing/napi-canvas-MIT.txt), Copyright 2020 lynweklm@gmail.com, is retained. Native platform/Skia dependency distribution remains a separate packaging review; no binary runtime deployment has been authorized. This inventory covers this checkpoint's additions, not a certified license audit of all application dependencies.
+
+## Stock QR label checkpoint — 2026-10-01
+
+Runtime QR encoding uses [node-qrcode](https://github.com/soldair/node-qrcode); independent development-only pixel decoding uses [jsQR](https://github.com/cozmo/jsQR). Added locked packages and their actual installed license texts were inspected and copied unchanged below. QR PDFs reuse the static Noto Sans font and PDF components already inventoried above. No project publication or complete distribution license audit is implied.
+
+The installed dijkstrajs notice includes Wyatt Baldwin's copyright, an MIT reference/link and the disclaimer, but omits the full standalone permission grant. Its exact notice is retained. Complete license provenance and distribution qualification remain pending; a package manifest label alone does not settle that review.
+
+The installed dijkstrajs notice identifies Wyatt Baldwin's copyright and MIT licensing and includes the disclaimer, but refers to an external MIT text instead of containing the full permission grant. Its actual notice is preserved unchanged; complete source/provenance and distribution qualification remains open.
+
+| Added exact package | Declared license | Retained actual text |
+| --- | --- | --- |
+| @types/qrcode 1.5.6 | MIT | [Actual installed text](licenses/labels/@types-qrcode-LICENSE.txt) |
+| ansi-regex 5.0.1 | MIT | [Actual installed text](licenses/labels/ansi-regex-license.txt) |
+| ansi-styles 4.3.0 | MIT | [Actual installed text](licenses/labels/ansi-styles-license.txt) |
+| camelcase 5.3.1 | MIT | [Actual installed text](licenses/labels/camelcase-license.txt) |
+| cliui 6.0.0 | ISC | [Actual installed text](licenses/labels/cliui-LICENSE.txt.txt) |
+| color-convert 2.0.1 | MIT | [Actual installed text](licenses/labels/color-convert-LICENSE.txt) |
+| color-name 1.1.4 | MIT | [Actual installed text](licenses/labels/color-name-LICENSE.txt) |
+| decamelize 1.2.0 | MIT | [Actual installed text](licenses/labels/decamelize-license.txt) |
+| dijkstrajs 1.0.3 | MIT | [Actual installed text](licenses/labels/dijkstrajs-LICENSE.md.txt) |
+| emoji-regex 8.0.0 | MIT | [Actual installed text](licenses/labels/emoji-regex-LICENSE-MIT.txt.txt) |
+| find-up 4.1.0 | MIT | [Actual installed text](licenses/labels/find-up-license.txt) |
+| get-caller-file 2.0.5 | ISC | [Actual installed text](licenses/labels/get-caller-file-LICENSE.md.txt) |
+| is-fullwidth-code-point 3.0.0 | MIT | [Actual installed text](licenses/labels/is-fullwidth-code-point-license.txt) |
+| jsqr 1.4.0 | Apache-2.0 | [Actual installed text](licenses/labels/jsqr-LICENSE.txt) |
+| locate-path 5.0.0 | MIT | [Actual installed text](licenses/labels/locate-path-license.txt) |
+| p-limit 2.3.0 | MIT | [Actual installed text](licenses/labels/p-limit-license.txt) |
+| p-locate 4.1.0 | MIT | [Actual installed text](licenses/labels/p-locate-license.txt) |
+| p-try 2.2.0 | MIT | [Actual installed text](licenses/labels/p-try-license.txt) |
+| path-exists 4.0.0 | MIT | [Actual installed text](licenses/labels/path-exists-license.txt) |
+| pngjs 5.0.0 | MIT | [Actual installed text](licenses/labels/pngjs-LICENSE.txt) |
+| qrcode 1.5.4 | MIT | [Actual installed text](licenses/labels/qrcode-license.txt) |
+| require-directory 2.1.1 | MIT | [Actual installed text](licenses/labels/require-directory-LICENSE.txt) |
+| require-main-filename 2.0.0 | ISC | [Actual installed text](licenses/labels/require-main-filename-LICENSE.txt.txt) |
+| set-blocking 2.0.0 | ISC | [Actual installed text](licenses/labels/set-blocking-LICENSE.txt.txt) |
+| string-width 4.2.3 | MIT | [Actual installed text](licenses/labels/string-width-license.txt) |
+| strip-ansi 6.0.1 | MIT | [Actual installed text](licenses/labels/strip-ansi-license.txt) |
+| which-module 2.0.1 | ISC | [Actual installed text](licenses/labels/which-module-LICENSE.txt) |
+| wrap-ansi 6.2.0 | MIT | [Actual installed text](licenses/labels/wrap-ansi-license.txt) |
+| y18n 4.0.3 | ISC | [Actual installed text](licenses/labels/y18n-LICENSE.txt) |
+| yargs 15.4.1 | MIT | [Actual installed text](licenses/labels/yargs-LICENSE.txt) |
+| yargs-parser 18.1.3 | ISC | [Actual installed text](licenses/labels/yargs-parser-LICENSE.txt.txt) |

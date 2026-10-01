@@ -17,6 +17,8 @@ Date: 2026-09-30. A proposal is not an approved business rule. Owner columns ide
 
 ## CI runner decision
 
+Current execution restriction: local commits and direct workstation checks only, per the owner's subsequent instruction. Do not start local/self-hosted or cloud CI jobs or push this work. The future hosted-runner decision below remains the intended policy once CI is separately authorized.
+
 - Date/reviewer: 2026-09-30; repository owner, by explicit instruction in chat.
 - Decision/rationale: Distributor will use GitHub-hosted runners. The owner selected GitHub's hosted infrastructure instead of the local fleet; no additional technical rationale was supplied.
 - Superseded alternative: the initial self-hosted fleet requirement in AGENTS.md and D-037. This exception applies only to Distributor.

@@ -1,6 +1,12 @@
 import React, { useEffect, useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { command, request, setCsrf, downloadDocument } from "./api.ts";
+import {
+  command,
+  request,
+  setCsrf,
+  downloadDocument,
+  downloadStockLabel,
+} from "./api.ts";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -69,6 +75,8 @@ function App() {
       e.transfers = await request("/api/transfers");
       e.transferDestinations = await request("/api/transfer-destinations");
       e.counts = await request("/api/counts");
+      if (["admin", "warehouse"].includes(actor?.role ?? ""))
+        e.labels = await request("/api/stock/labels");
     }
     if (
       ["admin", "finance", "commercial", "buyer", "support"].includes(
@@ -946,6 +954,27 @@ function App() {
                     )}
                   {can("warehouse") &&
                     u.state === "stock" &&
+                    u.quantity > 0 &&
+                    button("Prepare QR label", () =>
+                      open(
+                        "Prepare stock QR label",
+                        [
+                          {
+                            name: "copies",
+                            label: "Copies (including deliberate duplicates)",
+                            type: "number",
+                            value: 1,
+                            min: 1,
+                            max: 20,
+                          },
+                        ],
+                        (v) => downloadStockLabel(u.id, u.revision, v.copies),
+                        `100 × 50 mm identity label. SKU ${data.products.find((p: Item) => p.id === u.product_id)?.sku ?? "unavailable"}; ${u.serial ? `serial ${u.serial}` : "bulk product: QR contains the SKU"}. Review the identity and copy count. Download preparation does not confirm printing. Open the PDF and print at actual size; verify a sample before attaching labels.`,
+                        "Prepare and download",
+                      ),
+                    )}
+                  {can("warehouse") &&
+                    u.state === "stock" &&
                     button("Inspect", () =>
                       simple(
                         "Inspect stock",
@@ -992,6 +1021,25 @@ function App() {
                     )}
                 </div>,
               ],
+            )}
+            {extra.labels?.length > 0 && (
+              <>
+                <h2>Prepared stock labels</h2>
+                <p>
+                  These receipts record PDF preparation only. Printing and
+                  attachment require physical verification.
+                </p>
+                {table(
+                  ["SKU / serial", "Copies", "Prepared", "Receipt"],
+                  extra.labels,
+                  (r: Item) => [
+                    `${r.facts.sku} / ${r.facts.serial ?? "bulk SKU"}`,
+                    r.copies,
+                    r.requested_at,
+                    r.id,
+                  ],
+                )}
+              </>
             )}
             {extra.counts?.length > 0 && (
               <>

@@ -791,6 +791,49 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .send(result.bytes);
     },
   );
+  http.get("/api/stock/labels", async (request) =>
+    app.labels.downloads(actor(request)),
+  );
+  http.post<{
+    Params: { unitId: string };
+    Body: { revision: number; copies: number };
+  }>(
+    "/api/stock/:unitId/label",
+    {
+      schema: {
+        params: obj({ unitId: str }),
+        body: obj({
+          revision: { type: "integer", minimum: 1, maximum: 1000000000 },
+          copies: { type: "integer", minimum: 1, maximum: 20 },
+        }),
+        headers: {
+          type: "object",
+          properties: {
+            "idempotency-key": { type: "string", minLength: 1, maxLength: 128 },
+          },
+          required: ["idempotency-key"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await app.labels.download(
+        actor(request),
+        String(request.headers["idempotency-key"]),
+        request.params.unitId,
+        request.body,
+        () => app.identity.session(request.cookies.distributor_session).actor,
+      );
+      return reply
+        .type("application/pdf")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${result.receipt.filename}"`,
+        )
+        .header("x-document-sha256", result.receipt.contentHash)
+        .header("x-download-receipt", result.receipt.id)
+        .send(result.bytes);
+    },
+  );
   http.get("/api/effects", async (request) =>
     app.integration.list(actor(request)),
   );

@@ -31,6 +31,8 @@ All product checkpoints are **NOT VERIFIED**. Documentation is not evidence that
 
 Future GitHub Actions workflows will use **GitHub-hosted runners**, as instructed by the owner on 2026-09-30. The repository has no workflows yet; see [the CI decision](docs/DECISIONS.md#ci-runner-decision).
 
+Current work uses direct workstation checks and local commits only, per the owner's instruction. No pushes, PRs or local/cloud CI runner jobs are authorized for this checkpoint.
+
 No product license has been selected. A public repository is not by itself permission to republish OPUS, UB, customer information or third-party code.
 
 The planning package is complete as a reviewable draft. Owner/operator answers and G0 approval remain pending. Validate its links, task/gate dependencies, effort and traceability locally with `python3 scripts/verify_plan.py`; the [historical planning review receipt](docs/evidence/PLANNING-REVIEW-2026-09-30.md) records the content checked before implementation and its limits.

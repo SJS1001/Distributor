@@ -1,0 +1,485 @@
+{
+  "branch": "codex/local-distributor-checkpoint",
+  "candidate_sha256": {
+    ".env.example": "2952ddc07dba248bcfbe0f81b56e715d0d44b341099362db09cb13b065c27983",
+    ".gitignore": "ed760e4dc3ac8eb3aa19062d13594f87570b9da57be06983b8579f36bd60adcc",
+    "AGENTS.md": "e80dce7b1f740de29758fef2b305079e59c7d87e06a98d860758d4fbba06ce6c",
+    "README.md": "47ec6292a485ad32d5ec3228ba5bfa45d5f84cdeee5b10d367d507bff8d4e07d",
+    "docs/ARCHITECTURE.md": "fec16dc73d8ed81d655e195bf7503520d8c631e5f396984b4a610f361ac63de5",
+    "docs/BILLING-DOCUMENTS.md": "97fb667e8f9f2e5a5c468a63f30914a4316bcb305dff6b286247ee7cfceddfc8",
+    "docs/CHECKPOINTS.md": "a22d351638da7d69cd9cbfd67827949c7df81bdfc109cd86576d15cbd3a8d8c7",
+    "docs/CONTRACTS.md": "6783b2df50eec6b7f76c6e87601ee24978a2dd8154d5246a6b3ac35711dd7c1a",
+    "docs/DECISIONS.md": "eac577c2af3115e0542ec819a765b75c2d5c510b1fbed3a58e28a92d9b8201ab",
+    "docs/DELIVERY.md": "274a8d0ef814a9121d94900aba2ae134e40b136960a2ee73e55f2b5797c0beb6",
+    "docs/DISCOVERY.md": "0a27d75e3213cb557853c184f06920ed0d7f22ded47bd5330d95918ab8fbf23b",
+    "docs/HANDOFF.md": "f97ee8ff44a7d1176840b8e2d72d735b5ccc4ea34449e0b211d202cb6d960958",
+    "docs/IMPLEMENTATION.md": "2dd410789d915b733140e71fc4877d02804f790449bb3853fcad29c5bba18e85",
+    "docs/IMPORTS.md": "a41efbdefa7b0e5ec95b8fdd9551fcc3dba535846634136500330e3e5ebbd848",
+    "docs/PLAN.md": "8e409fcac6b6b2577a7713fca329a9fc2ed5176af5c5c7172dc19006a3239bee",
+    "docs/PROVIDERS.md": "5cb918d6e269842bbf523b0dd61274c2dbba34562c014ecd59f8cc10973b70c1",
+    "docs/RECOVERY.md": "119d8fdceea07196d63a269a0b09cf6bff8fdf14ec135b263d9566bfef8ca9b4",
+    "docs/REQUIREMENTS.md": "c231a2fe821eff75fb92d63d7f2c64c07f6e62019b95c9b1258052a9dd7b09d6",
+    "docs/REUSE.md": "a989792a5ffccc8de10aa9b7f382ccdbf4ec34135085cc98eaa758770bddfc1f",
+    "docs/SCANNING.md": "718763cbad43d5b8fab4335b5cf6d2e2707bbd840140d4bf82c9114031d2444a",
+    "docs/TASKS.md": "857a76689c62a5fa4fbbe9d3cfb7c0dbdf94cdcb27300476f77d1c0d730e351d",
+    "docs/THIRD-PARTY-NOTICES.md": "adeb41f5460023e53cea6cde760f8f452b621c09d876fc3c4c9028a97b20a51b",
+    "docs/USER-ACCESS.md": "a6cf82257ace999f813a529dc1f880842e25bcf8bc4a9845a803e1cc616a9776",
+    "docs/evidence/BILLING-FAILED-VARIABLE-FONT-2026-09-30.pdf": "985d3e7975bbb4bdc48c0f141f2515b48a611f9c7128a3df1b9f9e863987705e",
+    "docs/evidence/BILLING-FAILED-VARIABLE-FONT-2026-09-30.png": "d4da3e313bd3b6c8973f83cb6a2496c78b4940116efba0ae816c6448c47396c9",
+    "docs/evidence/BILLING-SYNTHETIC-SAMPLE-2026-09-30-1.png": "74207310b7a3e86ef6aef8f5ff8ad3a136b6146bbeb2a48153979c1f6483289c",
+    "docs/evidence/BILLING-SYNTHETIC-SAMPLE-2026-09-30.pdf": "a4099ec1ce6b7b6c26eef661c751bd510ddf658462354ea77ec9a6c3f6564bad",
+    "docs/evidence/LABEL-FAILED-VECTOR-CELLS-2026-10-01-203.png": "f6b663fe48a01adb06c3a5b782440c8afeacb4a8002eed9dcf1b7c7c1fb66110",
+    "docs/evidence/LABEL-FAILED-VECTOR-CELLS-2026-10-01-300.png": "fe03349b8a97119a22af096305acfb83ba244dc7724c228234c94564e12ce04b",
+    "docs/evidence/LABEL-FAILED-VECTOR-CELLS-2026-10-01.pdf": "f10dd6756b3c1be58c18170f1683fd621042948924138b586443a9755eb7ae91",
+    "docs/evidence/LOCAL-BILLING-DOCUMENTS-2026-09-30.json": "2c8cc8b294231d6e735633514de0d63e2c404508b30f6a393a90075f1f66b05b",
+    "docs/evidence/LOCAL-BILLING-DOCUMENTS-2026-09-30.md": "d5f44c2f1b8c9f44f721488e94fabd642ebc78ec3b0b4113d733fa9b9b336732",
+    "docs/evidence/LOCAL-CYCLE-COUNTS-2026-09-30.json": "8bb38d16cb74bb945156ce3bd5f2aa5486048436201136a890edebe21f9c20ec",
+    "docs/evidence/LOCAL-CYCLE-COUNTS-2026-09-30.md": "98cb96d3e01bc7892178b6826744ae7df6592bcdef3fae7461bac2927135b8ce",
+    "docs/evidence/LOCAL-DOCUMENT-IMPORTS-2026-09-30.json": "5d4f7a8af570c2af5be3eca2854063d03c5770880a40ed9607dd3a9b96dfcff3",
+    "docs/evidence/LOCAL-DOCUMENT-IMPORTS-2026-09-30.md": "bb7a2bd5298eea1936f451e8ffa9afbe979682ab7f7092559844eedbb5998ddb",
+    "docs/evidence/LOCAL-ENGINEERING-2026-09-30.json": "d494ed17745890c177f9a38a346dae24bb7b9d4df3046720fdb4518cba4d79d1",
+    "docs/evidence/LOCAL-ENGINEERING-2026-09-30.md": "fbe529f592a1956bae8e76b27495d7cc6aace8e29ea8338e328b077647f23dda",
+    "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.json": "20d1b02ac877503932421b923b2435c18f7000df27c0123820206c2dece59f16",
+    "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.md": "e73778975598451db24ee8f4b923260a97437e06c031f17d555813d8031ebc20",
+    "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.json": "f6835b7fd492d8ed19f85d8e5660294e02b87587e500d4e447fb2dfd19ae0a4c",
+    "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.md": "44cc881dc598e0baf4f89f0abd8c002eda1ba29c8f14e26c3026b43ab1b1beaf",
+    "docs/evidence/LOCAL-PARTIAL-FULFILLMENT-2026-09-30.json": "2f25f7aac4d844eeafcaa8383859c436ef4e279ff6ffff46a3670299d29cd279",
+    "docs/evidence/LOCAL-PARTIAL-FULFILLMENT-2026-09-30.md": "6a9f73244c0053ebcdea19405bf51fb2af39d80ece2e54f8a872dc7609b3a36b",
+    "docs/evidence/LOCAL-PARTIAL-TRANSFERS-2026-09-30.json": "7753fbdd2a511b4a19a201a933cbd3b70aa405146268b6d3c2c4e35825919a7f",
+    "docs/evidence/LOCAL-PARTIAL-TRANSFERS-2026-09-30.md": "fcb3bf18b4cd0f9aafffe6bfd0b20f2227e157ad8614fccb4356ec73d8104d11",
+    "docs/evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.json": "e7851a5e038c4cace0004e734974c5e6b276de55b0b776736bcedccdcdcb9b38",
+    "docs/evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.md": "daf8f60eb899bf3a2052aaeeb785a2547cca47b6b23243ab0cc669aaf8fad662",
+    "docs/evidence/LOCAL-RECOVERY-2026-09-30.json": "88226439797861c4358150f9af867038519e7986e23f2e64b2c32d6d21aedbcd",
+    "docs/evidence/LOCAL-RECOVERY-2026-09-30.md": "f418c8871ba765c4757b7930f77f157bfad7f3342e9eac39ed690bd9fa81ee69",
+    "docs/evidence/LOCAL-SCAN-DRAFTS-2026-09-30.json": "573ffa44eef7bb28e53c26490472ef399956e32eab0278ebadf6df4e12527161",
+    "docs/evidence/LOCAL-SCAN-DRAFTS-2026-09-30.md": "bb8bad49b9e0889e48ac89933292ea31b8ac657451b6e6de28a8ed22d2ac8adc",
+    "docs/evidence/LOCAL-STOCK-LABELS-2026-10-01.md": "d14b107902b25ce250c6bde22c799d2d8ee168105187937b51abf12cde483c16",
+    "docs/evidence/LOCAL-SUPPLIER-RETURNS-2026-09-30.json": "cc604aa5419cb9697f8e88827a9fd06d63a777b6464fc024c7e0f234936884c8",
+    "docs/evidence/LOCAL-SUPPLIER-RETURNS-2026-09-30.md": "e7cf0d499a9c767972790a3fef0db357d924a013a8c70dad6692778dbe8e4ab6",
+    "docs/evidence/LOCAL-TRANSFER-RECONCILIATION-2026-09-30.json": "d34bc8796dad84f253ccbfa00813e12630c4c142de184a23682b2cf1a0d122f1",
+    "docs/evidence/LOCAL-TRANSFER-RECONCILIATION-2026-09-30.md": "6786998376ac53d7d6cc86745ba5c955f2bb526ea5c86298750e77c337f9f872",
+    "docs/evidence/LOCAL-USER-LIFECYCLE-2026-09-30.json": "099e7157a56ff2bfbe22adc876c1ea45aa1fd12a95b88d1f47b1d5cd12d01da9",
+    "docs/evidence/LOCAL-USER-LIFECYCLE-2026-09-30.md": "3f171da1987247a99f3e2995019071aa106e234a57e7bc245b2c762eb0db2258",
+    "docs/evidence/PLANNING-ACCESS-CHECK-2026-09-30.json": "d0ebb25934a69ba78a6741a29186372839755cf6150944e45312315db1f67b70",
+    "docs/evidence/PLANNING-ACCESS-CHECK-2026-09-30.md": "0b41fb03824c0d0be5680364cc4c8095dbb40ff950e56df72bd8e008aeb52b98",
+    "docs/evidence/PLANNING-CHOICES-2026-09-30.json": "0e092764bbb1fcd2c8a81014e4cc8d05c4d5e029aafc9de663cc8ef297e68eae",
+    "docs/evidence/PLANNING-CHOICES-2026-09-30.md": "10c4c853c5818dcbeb66ab55de890a05b3aced8553d822f484e23a6fb0e080c6",
+    "docs/evidence/PLANNING-REVIEW-2026-09-30.json": "db3e051ab00f5639adbde54432444e2b8a1927b1ecb959118b1b5ab1bb8b2d3e",
+    "docs/evidence/PLANNING-REVIEW-2026-09-30.md": "9976a4c89ebb286a98713c8aa15b7615d0cbc23acb0832d252f47e959a1eab93",
+    "docs/evidence/README.md": "4b8131eee6166d209318c9b558cf50b2edfeda28c22cc9a559e7f79c581bcc73",
+    "docs/licenses/billing/fontkit-README.txt": "7315fcc54511f5ffc906969c39333f93cd47f5217ab014fe45acff14bd5ec4c0",
+    "docs/licenses/billing/fontkit-embedded-notices.txt": "674d3e7a3abed9eb33a23b3052c6c93952def05a9235d739297182b62895f8a0",
+    "docs/licenses/billing/fontkit-package.json": "42b7a756ea4c11abfa664ffe9f9b67c1e30e564b5e2fb6db5b1775dac3eabb35",
+    "docs/licenses/billing/napi-canvas-MIT.txt": "8802fecf9da4367bc23bcf20b21cc143785fc6c92b152f3fa7fbe6ce08d344d6",
+    "docs/licenses/billing/pako-MIT.txt": "a04665b3b2de56c66730c1f720f528175739e4104f79073614aa611da1e85539",
+    "docs/licenses/billing/pako-zlib-README.txt": "d8b499598e43d755ea8918448128259ff01820c50d94d5a48c8883d0a594ddb1",
+    "docs/licenses/billing/pako-zlib-notices.txt": "170d7d544d380b38d5f76ab5eda29475b44ef537f4564163d6d9bece85c51c13",
+    "docs/licenses/billing/pdf-lib-MIT.txt": "f2c9fc00fdb66eb99ac156ba52d734af66d8d309f65753ae809ad34ee2883bcb",
+    "docs/licenses/billing/pdfjs-Apache-2.0.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "docs/licenses/billing/pdfjs-cmaps-LICENSE.txt": "aa92ab5a472974865a96fd4a4e9c13bb41bf6fe1b309cb6b8da48bc9e19839a2",
+    "docs/licenses/billing/pdfjs-iccs-LICENSE.txt": "286e4fd7b447330b2c88e23890e3cd0a9d38cb398d4a59cb247f578ccbda3213",
+    "docs/licenses/billing/pdfjs-standard_fonts-LICENSE_FOXIT.txt": "b578cdd2345840ada550bd12519533812320d5f1d21cf4c1c7e1b1b0a31c98b7",
+    "docs/licenses/billing/pdfjs-standard_fonts-LICENSE_LIBERATION.txt": "d2c4d5b3e115a519cb58eb691aa64538397e2611f9ebe801392cf9667997e7dc",
+    "docs/licenses/billing/pdfjs-wasm-LICENSE_JBIG2.txt": "9e66b7f1b934a28b37f3bc4dac97915de1674271e79a0a88182a18ed9731b4d1",
+    "docs/licenses/billing/pdfjs-wasm-LICENSE_OPENJPEG.txt": "a6af136f3e15038a666b61f376612a07d9a4e48cb7c01adbf3e33b3f14ab49b6",
+    "docs/licenses/billing/pdfjs-wasm-LICENSE_PDFJS_JBIG2.txt": "aad3cce09842e00e9e11ad5e8fef8cc02fbc3a3768fe2f007443b9cee37aaee5",
+    "docs/licenses/billing/pdfjs-wasm-LICENSE_PDFJS_OPENJPEG.txt": "717fc62da03292dbb4dd0c8280bd4ce7bb8550dcf31d772bc93455fb50313425",
+    "docs/licenses/billing/pdfjs-wasm-LICENSE_PDFJS_QCMS.txt": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+    "docs/licenses/billing/pdfjs-wasm-LICENSE_QCMS.txt": "36d847ae882f6574ebc72f56a4f354e4f104fde4a584373496482e97d52d31bc",
+    "docs/licenses/billing/standard-fonts-MIT.txt": "45cc2bb9957ed43f5c7f5eb1912f9f670730394d614079510477cae626194649",
+    "docs/licenses/billing/tslib.txt": "210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751",
+    "docs/licenses/billing/upng-MIT.txt": "c1fb8861eca211bf5aea574358aba7039396c0c1824c2a1477cc126d398efd89",
+    "docs/licenses/labels/@types-qrcode-LICENSE.txt": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+    "docs/licenses/labels/ansi-regex-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/ansi-styles-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/camelcase-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/cliui-LICENSE.txt.txt": "2dc0465729366c3a7890dfa9e972a1ba7048a26c02116fb8b419a6a1ac110149",
+    "docs/licenses/labels/color-convert-LICENSE.txt": "693866fc419c6f61c8570438ec00659d156ec2b4d4a4d04091711f5f11a365d4",
+    "docs/licenses/labels/color-name-LICENSE.txt": "c064f7a3e353bc1bc977f3c897941c75ef763f44f41677e0a15370ca0853d6e2",
+    "docs/licenses/labels/decamelize-license.txt": "6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c",
+    "docs/licenses/labels/dijkstrajs-LICENSE.md.txt": "c46324e45a005413535a6fb7a97e9eacd3cc6bf30335b7d5c10b8ee3af9e60c2",
+    "docs/licenses/labels/emoji-regex-LICENSE-MIT.txt.txt": "483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a",
+    "docs/licenses/labels/find-up-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/get-caller-file-LICENSE.md.txt": "902dbb4154679fb2b8d7c33878183f45b268d01eae5e5033dddaa8852d45f213",
+    "docs/licenses/labels/is-fullwidth-code-point-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/jsqr-LICENSE.txt": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+    "docs/licenses/labels/locate-path-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/p-limit-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/p-locate-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/p-try-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/path-exists-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/pngjs-LICENSE.txt": "176b07a18c0bb3836aaeb61088fd0bf11a38f66e6f15e3fbda85faa225250d6e",
+    "docs/licenses/labels/qrcode-license.txt": "8df47c6ad9ac2c41eb9b2a72def9908959da0ede8dadd56c7b249c1bdb0c5ce6",
+    "docs/licenses/labels/require-directory-LICENSE.txt": "a92e52eb1fa7cd746e3827bf01d3a3589bbc8e1e51348b1da042aad165525ad1",
+    "docs/licenses/labels/require-main-filename-LICENSE.txt.txt": "365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d",
+    "docs/licenses/labels/set-blocking-LICENSE.txt.txt": "365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d",
+    "docs/licenses/labels/string-width-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/strip-ansi-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/which-module-LICENSE.txt": "852bf81203aa93aa89afc9f881ebb035322dc7334aaceff435c557634c94a815",
+    "docs/licenses/labels/wrap-ansi-license.txt": "48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0",
+    "docs/licenses/labels/y18n-LICENSE.txt": "2034cce3b6fafcddd642c4175e01d3ddfc332a53b9f20fdc46b1466dc89ac469",
+    "docs/licenses/labels/yargs-LICENSE.txt": "2f1a503bfab84b3ba7393627308b3274501e459e3b5185bbb56bbf16cb1602d4",
+    "docs/licenses/labels/yargs-parser-LICENSE.txt.txt": "365496ca1f56da40b23c9815fc40fa9005847b2f8f8fd1c1a4929ef25ec8cd1d",
+    "index.html": "4aa360ced41a0bc527629037dce9d22398fb149c6bbac6c6e49aaccd6381db26",
+    "package-lock.json": "c145862ab111fbc82dbb5a1b2c2729703068e1406e344c4ce75eabc2c17e81ca",
+    "package.json": "5bba0fc4a2d4eb96b1955c01856686946e6ff76ba53c883749428265bdc6e9b1",
+    "playwright.config.ts": "231f5d6153e3232aa8fe01f4786535a66f9ac6ce14490cb2f956b4995b76eaaa",
+    "scripts/verify_plan.py": "34071d7d4f1488f6549bfd48e4480509f681bbcb66f61ad503bfa74cc5e844cc",
+    "src/server/application.ts": "34c73e9a33b70970143f15c0dbdaffdc8e9b01cc236468a150ad88d1c58a4994",
+    "src/server/assets/notosans/NotoSans.ttf": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5",
+    "src/server/assets/notosans/OFL.txt": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+    "src/server/billing-documents.ts": "44ec4c5054788e8552eaf4e70f54f63c0c9b564d66c3143e1c83be10c33e166d",
+    "src/server/billing-opening.ts": "2b22c958fa86710551bcc77c926e44161159d96976f4409d04d1a79609bbc09c",
+    "src/server/billing.ts": "ffb6b69e08d8771c46b1b8fc225aed1db83fe34647d7949b0709610f64ee83f0",
+    "src/server/catalog.ts": "eab82dd8ebf625f2f6bedcfd1b7b6aeef55822da96e9d5eb2a131f447cda0fa6",
+    "src/server/cli.ts": "1fa0acd1b1e9d0e54b25d2b01a01938ddf934a07287249d8670c6d2dab1def44",
+    "src/server/core.ts": "7055c52235193ce3a3c75ffe6048abe2226a8a5835e098417cb40adecef6e25d",
+    "src/server/database.ts": "6e4f324aa69dc8c277c95b212866fe1850441e5c98501e4e1f846e6bd454eeec",
+    "src/server/document-imports.ts": "85d711d1b56359d9a915413340efcf47b07390478e1604cd3471b09b7bf7713a",
+    "src/server/document-pdf.ts": "4f32bc1ca99ccd607d0b1c876c956ff43901b89dc2fb923f9626a70e70870d46",
+    "src/server/fulfillment.ts": "713254cdbe3d1127ba9bae60de910b3b77cca13ed9e246c70269a1da87472195",
+    "src/server/http.ts": "39a64261c518778138737f38f1f859d9fb31b231976604a176cda9788f0e7863",
+    "src/server/iam.ts": "74ecc1f2f9b1b469757db51d68665b043d4e159ddb9ee0dd8b012895705f06a4",
+    "src/server/import-manifest.ts": "950710d6ed886b9cb7b1d22c74a6db0a491881c1f288a390c8d8ac10ad83fbe0",
+    "src/server/integration.ts": "41e65a80950825fec0bc8b98b53b0c53dae880188d2c7b76c8c7188371dc82bd",
+    "src/server/inventory.ts": "921ffc4114fc238de2805be12892edbc7bfc7fd87b8c7e7767f7fc3747f9c14d",
+    "src/server/label-pdf.ts": "c4c150895c53f494285068ccd7f6f73b8ca7c9329d00ba07c755c420eccf71fc",
+    "src/server/main.ts": "d84c94292e91c02c9372e6353f75a735cd5222f7f3d60d0bcaab70c787b2ba6c",
+    "src/server/master-imports.ts": "0dda44294249f531f0dfa8da203b3cd807188c3bff341ea267e42847c66cf8dc",
+    "src/server/migration.ts": "07736d8ca7fd21ed8f25848ca7c33b73b731501b5950b4221fa087046a7120fc",
+    "src/server/orders.ts": "9c2943b100093c474d7ad3e487c076166945882f89d4aa6725236e0b5cafe83b",
+    "src/server/platform.ts": "dbf84d9afbf544da48bb71cf93e8d24a2e3c638efefe22ebb1481d9ae8e2261b",
+    "src/server/procurement.ts": "1a8a3f291334823566100515e6f860b11384f60703e68d569f337b3c1e743edc",
+    "src/server/provider-runtime.ts": "ba47accbbd765b3ec54f5080131a2bf9afcf0c1d68eabb46e856923195404d3e",
+    "src/server/providers.ts": "05d3120b0fe625ef53312f1c84255a89fe9e94bb84ef09b3bed177ce38535c94",
+    "src/server/receipt-drafts.ts": "34e5a013e764d26a959b03901b254df6bddc4ebed666d5876b027c23a0787280",
+    "src/server/recovery-cli.ts": "9d470037744fee021db52a21e3b0789bf17bd2d0443f3aeeea37a6209588b9bf",
+    "src/server/recovery.ts": "a7a8c17472379bdf0d501ac2ecdbcc4a8cc7360e714c2be445f46682739fcf29",
+    "src/server/stock-labels.ts": "f5414339c46bfe9bd32d456faf97a5b6c9ae8c25de46f8f02ddf71545a622466",
+    "src/server/warranty.ts": "ebd800bbae13537931f93a6b7c9bc29413d54656fb206f59097ec02de50ce480",
+    "src/server/worker.ts": "b1c8f0528ec4339ad9c54bc875937dfaded837acfb82f0bfd0baa97e4b907b59",
+    "src/web/api.ts": "cb82511167cd42f4cb3de0b7f613fdba2c56aa21735c4eb61e0efb826f4f34d4",
+    "src/web/main.tsx": "b2a1169cad1974e78b709ae0b9c2c1d78fff741cd8d23a15809c062719c07c26",
+    "src/web/scan-input.tsx": "97018ce77a8b941b794706af20e810dae5c068005647ae5430a09564bbaedfdb",
+    "src/web/style.css": "6e7814f30ccbe8992fa7d2f5033b6354cf365e4106cb52df9fb49071a5753c71",
+    "tests/billing-documents.test.ts": "75d6ec64ac346c06f34047ca066af1894d11c6c33b2cd9868b893a5ce0ea2aae",
+    "tests/browser-server.ts": "a3b0716264b40d2831b92d5d20951fc29a175c421d7f7ac7bfdfa4f332f3bc5c",
+    "tests/browser.spec.ts": "17ac0bfd13e50c497ffac7af71d09e0ef88b2caddf2b59d58dae243298e9e783",
+    "tests/concurrency.test.ts": "fbce27dd925a55177d84ad808555a2eb63658a38cb0cc908a607fe1a5e3c758a",
+    "tests/count-child.ts": "c20da4a4c9477e1c21751b79d59ae4da0ce12735ea5524ffd35c925c75fc3c19",
+    "tests/counts.test.ts": "93b7348a7e72ca0f2399d272041cd4f5c4f9192047ee883c2582e51b24916b21",
+    "tests/document-imports.test.ts": "69f8f34749540b42109babe8860800b87799a4d75be36c2986147045bbc1e9e4",
+    "tests/domain.test.ts": "305a57c72ca9317029ed194302a1f1582a81f48d3b5f8166cb8986e4ce530bf8",
+    "tests/fixtures.ts": "64ed13a667e1728138b033c4a150591e17c8577fcef1c915970a89c95362d683",
+    "tests/fulfillment.test.ts": "3f6dc6e347d9989be98c9fee998af946ab2aca581d8a137e89b51eb0fed1f9a6",
+    "tests/http.test.ts": "3e4d9ef4dec54c36f5b71236409a775608954aaf2ace298599266e3babbe88ee",
+    "tests/identity-child.ts": "f26055c7071e24116714509cc845056b6ff3f8a529406e8b896a054a695bf866",
+    "tests/identity.test.ts": "82726fb3a32a6da87c7ea096c836a54d804c314c1fedb5767cb0c5cfde904f73",
+    "tests/integration.test.ts": "d346e3ed6266ca911bc2535f1642aeeb935fbd7ab4d7c274ed6ff2653a705a34",
+    "tests/master-imports.test.ts": "633d38afdb43c634abd715dea8945d3fb8b124492d4722ca182949c499fecc89",
+    "tests/migration-child.ts": "4e22b21fdebad6be6c255f06ba3c4365ad026e15082fcbe8d22c37170dc807c1",
+    "tests/migration.test.ts": "5bafdda0db245352f086032801de96ba26820d782942da3c52ab235e2f7c03a5",
+    "tests/packing-child.ts": "1ce805a64118129556ae8168b9a68585c3a8775c149c762093f66ff1ef7fd62d",
+    "tests/provider-runtime.test.ts": "dcf7df33a1b516548b1a78199a7e0b22eeefd3f5b5235dd545c70febd56c63f9",
+    "tests/providers.test.ts": "7e764196f287433b8d33514850ab68219b1efadb0efe23fbafa4fa6b460754b8",
+    "tests/receipt-draft-child.ts": "b3aa29bfd29005ae44749a1b08ce9a9eb5f32ab8f1b3b953b165d327a70d319b",
+    "tests/receipt-drafts.test.ts": "0a2e197eaaed13b2e1dd4c89088bd9fef1a5344a5226e4a5ec3bf02ba267dd94",
+    "tests/recovery.test.ts": "8400f8ce4d8c3d9ff1917e42e8430a9b76cbb716db571be7c571815ed042f5c5",
+    "tests/reservation-child.ts": "f5fcb461375042de0b0dda747fd5851a50529481ecf6848bb0c610da6fe6e4f6",
+    "tests/stock-labels.test.ts": "c2a6d446e1e18f82ebc49a2ab21280c95f38699152d9fec7f2f19919769ab432",
+    "tests/supplier-return-child.ts": "c5227175b35ff1ea75ef1e6f197c689b816c4fc88d5323a9c8582624d7b2c5fc",
+    "tests/supplier-returns.test.ts": "f4dc3b94b3a803bfd1b13db5201854b49b356ac58e3099a7aa05b74ad506d6ce",
+    "tests/transfer-child.ts": "40ddb5bb00f70c7ac7a94c65d466272da297e827636c937f4838dd3674f5df10",
+    "tests/transfer-loss.test.ts": "759517a46395160ab1c4aa9ed9cac2949bc42b9b1a93d9cb0aa007fc2bbf3e9b",
+    "tests/transfers.test.ts": "7afe886266b3c9ec54edd8c296d587d320dc1981d5df04461695d9539e75ab81",
+    "tsconfig.json": "bd5c007563df3080d76b2fd2066b3c1da1e95f7c312eafdb5bab802667c36c95",
+    "vite.config.ts": "5bcb65b5d5f186b1e63968fa9192015d61e19edab8a04382b7bc824bd734ec7e"
+  },
+  "checks": [
+    {
+      "command": "npm run typecheck",
+      "exit_code": 0
+    },
+    {
+      "command": "npm run format:check",
+      "exit_code": 0
+    },
+    {
+      "cancelled": 0,
+      "command": "npm test",
+      "duration_ms": 7636.975333,
+      "exit_code": 0,
+      "fail": 0,
+      "pass": 109,
+      "skipped": 0,
+      "tests": 109
+    },
+    {
+      "browser_fail": 0,
+      "browser_pass": 15,
+      "build_duration": "82ms",
+      "command": "npm run test:e2e",
+      "duration_seconds": 22.6,
+      "exit_code": 0
+    },
+    {
+      "command": "python3 scripts/verify_plan.py --json",
+      "exit_code": 0,
+      "summary": {
+        "decisions": 14,
+        "effort_developer_days": {
+          "baseline": [
+            248,
+            396
+          ],
+          "optional_ub": [
+            8,
+            14
+          ]
+        },
+        "errors": [],
+        "gates": 10,
+        "local_links": 267,
+        "markdown_files": 40,
+        "requirements": 22,
+        "scenarios": 11,
+        "scope": "planning structure only; no business decisions, product gates or remote URLs verified",
+        "status": "PASS",
+        "tasks": 44
+      }
+    }
+  ],
+  "environment": {
+    "browser": "Locally installed Chromium",
+    "database": "Disposable synthetic SQLite/WAL",
+    "node": "24.16.0",
+    "npm": "11.13.0",
+    "os": "macOS arm64"
+  },
+  "hash_scope": "Final staged nonignored content excluding this self-referential receipt; final code tested before staging; historical receipts preserved byte for byte",
+  "historical_evidence": [
+    {
+      "path": "docs/evidence/BILLING-FAILED-VARIABLE-FONT-2026-09-30.pdf",
+      "sha256": "985d3e7975bbb4bdc48c0f141f2515b48a611f9c7128a3df1b9f9e863987705e",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/BILLING-FAILED-VARIABLE-FONT-2026-09-30.png",
+      "sha256": "d4da3e313bd3b6c8973f83cb6a2496c78b4940116efba0ae816c6448c47396c9",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/BILLING-SYNTHETIC-SAMPLE-2026-09-30-1.png",
+      "sha256": "74207310b7a3e86ef6aef8f5ff8ad3a136b6146bbeb2a48153979c1f6483289c",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/BILLING-SYNTHETIC-SAMPLE-2026-09-30.pdf",
+      "sha256": "a4099ec1ce6b7b6c26eef661c751bd510ddf658462354ea77ec9a6c3f6564bad",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-BILLING-DOCUMENTS-2026-09-30.json",
+      "sha256": "2c8cc8b294231d6e735633514de0d63e2c404508b30f6a393a90075f1f66b05b",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-BILLING-DOCUMENTS-2026-09-30.md",
+      "sha256": "d5f44c2f1b8c9f44f721488e94fabd642ebc78ec3b0b4113d733fa9b9b336732",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-CYCLE-COUNTS-2026-09-30.json",
+      "sha256": "8bb38d16cb74bb945156ce3bd5f2aa5486048436201136a890edebe21f9c20ec",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-CYCLE-COUNTS-2026-09-30.md",
+      "sha256": "98cb96d3e01bc7892178b6826744ae7df6592bcdef3fae7461bac2927135b8ce",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-DOCUMENT-IMPORTS-2026-09-30.json",
+      "sha256": "5d4f7a8af570c2af5be3eca2854063d03c5770880a40ed9607dd3a9b96dfcff3",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-DOCUMENT-IMPORTS-2026-09-30.md",
+      "sha256": "bb7a2bd5298eea1936f451e8ffa9afbe979682ab7f7092559844eedbb5998ddb",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-ENGINEERING-2026-09-30.json",
+      "sha256": "d494ed17745890c177f9a38a346dae24bb7b9d4df3046720fdb4518cba4d79d1",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-ENGINEERING-2026-09-30.md",
+      "sha256": "fbe529f592a1956bae8e76b27495d7cc6aace8e29ea8338e328b077647f23dda",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.json",
+      "sha256": "20d1b02ac877503932421b923b2435c18f7000df27c0123820206c2dece59f16",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-MASTER-IMPORTS-2026-09-30.md",
+      "sha256": "e73778975598451db24ee8f4b923260a97437e06c031f17d555813d8031ebc20",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.json",
+      "sha256": "f6835b7fd492d8ed19f85d8e5660294e02b87587e500d4e447fb2dfd19ae0a4c",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-OPENING-IMPORTS-2026-09-30.md",
+      "sha256": "44cc881dc598e0baf4f89f0abd8c002eda1ba29c8f14e26c3026b43ab1b1beaf",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-PARTIAL-FULFILLMENT-2026-09-30.json",
+      "sha256": "2f25f7aac4d844eeafcaa8383859c436ef4e279ff6ffff46a3670299d29cd279",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-PARTIAL-FULFILLMENT-2026-09-30.md",
+      "sha256": "6a9f73244c0053ebcdea19405bf51fb2af39d80ece2e54f8a872dc7609b3a36b",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-PARTIAL-TRANSFERS-2026-09-30.json",
+      "sha256": "7753fbdd2a511b4a19a201a933cbd3b70aa405146268b6d3c2c4e35825919a7f",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-PARTIAL-TRANSFERS-2026-09-30.md",
+      "sha256": "fcb3bf18b4cd0f9aafffe6bfd0b20f2227e157ad8614fccb4356ec73d8104d11",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.json",
+      "sha256": "e7851a5e038c4cace0004e734974c5e6b276de55b0b776736bcedccdcdcb9b38",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.md",
+      "sha256": "daf8f60eb899bf3a2052aaeeb785a2547cca47b6b23243ab0cc669aaf8fad662",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-RECOVERY-2026-09-30.json",
+      "sha256": "88226439797861c4358150f9af867038519e7986e23f2e64b2c32d6d21aedbcd",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-RECOVERY-2026-09-30.md",
+      "sha256": "f418c8871ba765c4757b7930f77f157bfad7f3342e9eac39ed690bd9fa81ee69",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-SCAN-DRAFTS-2026-09-30.json",
+      "sha256": "573ffa44eef7bb28e53c26490472ef399956e32eab0278ebadf6df4e12527161",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-SCAN-DRAFTS-2026-09-30.md",
+      "sha256": "bb8bad49b9e0889e48ac89933292ea31b8ac657451b6e6de28a8ed22d2ac8adc",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-SUPPLIER-RETURNS-2026-09-30.json",
+      "sha256": "cc604aa5419cb9697f8e88827a9fd06d63a777b6464fc024c7e0f234936884c8",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-SUPPLIER-RETURNS-2026-09-30.md",
+      "sha256": "e7cf0d499a9c767972790a3fef0db357d924a013a8c70dad6692778dbe8e4ab6",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-TRANSFER-RECONCILIATION-2026-09-30.json",
+      "sha256": "d34bc8796dad84f253ccbfa00813e12630c4c142de184a23682b2cf1a0d122f1",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-TRANSFER-RECONCILIATION-2026-09-30.md",
+      "sha256": "6786998376ac53d7d6cc86745ba5c955f2bb526ea5c86298750e77c337f9f872",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-USER-LIFECYCLE-2026-09-30.json",
+      "sha256": "099e7157a56ff2bfbe22adc876c1ea45aa1fd12a95b88d1f47b1d5cd12d01da9",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/LOCAL-USER-LIFECYCLE-2026-09-30.md",
+      "sha256": "3f171da1987247a99f3e2995019071aa106e234a57e7bc245b2c762eb0db2258",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/PLANNING-ACCESS-CHECK-2026-09-30.json",
+      "sha256": "d0ebb25934a69ba78a6741a29186372839755cf6150944e45312315db1f67b70",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/PLANNING-ACCESS-CHECK-2026-09-30.md",
+      "sha256": "0b41fb03824c0d0be5680364cc4c8095dbb40ff950e56df72bd8e008aeb52b98",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/PLANNING-CHOICES-2026-09-30.json",
+      "sha256": "0e092764bbb1fcd2c8a81014e4cc8d05c4d5e029aafc9de663cc8ef297e68eae",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/PLANNING-CHOICES-2026-09-30.md",
+      "sha256": "10c4c853c5818dcbeb66ab55de890a05b3aced8553d822f484e23a6fb0e080c6",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/PLANNING-REVIEW-2026-09-30.json",
+      "sha256": "db3e051ab00f5639adbde54432444e2b8a1927b1ecb959118b1b5ab1bb8b2d3e",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/PLANNING-REVIEW-2026-09-30.md",
+      "sha256": "9976a4c89ebb286a98713c8aa15b7615d0cbc23acb0832d252f47e959a1eab93",
+      "unchanged_from_parent": true
+    },
+    {
+      "path": "docs/evidence/README.md",
+      "sha256": "4b8131eee6166d209318c9b558cf50b2edfeda28c22cc9a559e7f79c581bcc73",
+      "unchanged_from_parent": true
+    }
+  ],
+  "limitations": [
+    "Prepared receipt does not establish printing, attachment, unique copies or physical warehouse acceptance",
+    "No physical printer/scanner/camera, firmware/browser, media/damage/operator/GS1/offline qualification",
+    "Label concurrency coverage is asynchronous requests in one process; independent process, production upgrade/scale/quota/crash/recovery qualification pending",
+    "Full-system provider/security/operational implementation and business/source/vendor/residency qualification remain incomplete",
+    "Package notices preserved; full license provenance/distribution qualification remains pending"
+  ],
+  "parent_commit": "edfda929df3ee306c9162aa3b7acde1420fb33f0",
+  "preserved_failures": [
+    "Initial QR Buffer/CommonJS decoder typing errors and unsuccessful intermediate corrections, corrected before passing final typecheck",
+    "Initial vector-cell focused run: five PASS/one FAIL, 1859.594542 ms; QR decoding failed at 300 dpi despite passing 203 dpi",
+    "Intermediate vector-cell overlap still failed at 300 dpi; synthetic PDF and both raster images retained as failed artifacts",
+    "First full browser run: 14 PASS/one 60000 ms timeout, 1.4 minutes; test used Stock instead of Inventory navigation",
+    "Intermediate 15-journey browser pass at 23.4 seconds preceded final copy minimum correction; superseded by final build/15-journey pass at 22.6 seconds"
+  ],
+  "publication": {
+    "deployment": false,
+    "external_provider_request": false,
+    "local_commit_authorized": true,
+    "pr": false,
+    "push": false,
+    "runner_job": false,
+    "workflow": false
+  },
+  "reviewed_at_utc": "2026-10-01T04:10:06.246853+00:00",
+  "runner_policy": "Direct workstation commands and local commits only. No local/self-hosted or cloud CI runner jobs/workflows/registrations. Future Distributor CI uses GitHub-hosted runners once separately authorized.",
+  "scope": "Bounded local stock QR label engineering; all 44 tasks/10 gates NOT VERIFIED; full system incomplete",
+  "workspace": "/Users/stevensmith/Documents/Distributor"
+}

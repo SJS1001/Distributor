@@ -47,21 +47,38 @@ export async function downloadDocument(
   documentId: string,
 ) {
   const storageKey = `distributor-document:${kind}:${documentId}`;
+  return downloadPdf(
+    `/api/billing/documents/${kind}/${encodeURIComponent(documentId)}/pdf`,
+    {},
+    storageKey,
+  );
+}
+
+export async function downloadStockLabel(
+  unitId: string,
+  revision: number,
+  copies: number,
+) {
+  return downloadPdf(
+    `/api/stock/${encodeURIComponent(unitId)}/label`,
+    { revision, copies },
+    `distributor-label:${unitId}:${revision}:${copies}`,
+  );
+}
+
+async function downloadPdf(path: string, payload: unknown, storageKey: string) {
   const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
   sessionStorage.setItem(storageKey, key);
-  const response = await fetch(
-    `/api/billing/documents/${kind}/${encodeURIComponent(documentId)}/pdf`,
-    {
-      credentials: "same-origin",
-      method: "POST",
-      body: "{}",
-      headers: {
-        "Content-Type": "application/json",
-        "x-csrf-token": csrf,
-        "idempotency-key": key,
-      },
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+      "x-csrf-token": csrf,
+      "idempotency-key": key,
     },
-  );
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(
@@ -81,7 +98,7 @@ export async function downloadDocument(
   const filename =
     response.headers
       .get("content-disposition")
-      ?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1] ?? `${kind}.pdf`;
+      ?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1] ?? "document.pdf";
   const url = URL.createObjectURL(
     new Blob([bytes], { type: "application/pdf" }),
   );

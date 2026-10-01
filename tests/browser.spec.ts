@@ -2,6 +2,84 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+test("browser: reviewed stock QR downloads retain one receipt after a lost response and leave stock unchanged", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const before = await (await page.request.get("/api/dashboard")).json();
+  const u = before.stock.find(
+    (s: any) => s.state === "stock" && s.quantity > 0 && s.serial,
+  );
+  expect(u).toBeTruthy();
+  const history = await (await page.request.get("/api/stock/labels")).json();
+  let lost = false;
+  const keys: string[] = [];
+  await page.route(`**/api/stock/${u.id}/label`, async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!lost) {
+      lost = true;
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await nav(page, "Inventory");
+  const row = page
+    .getByRole("row")
+    .filter({ has: page.locator("small", { hasText: `${u.serial} · stock` }) });
+  await row
+    .getByRole("button", { name: "Prepare QR label", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Prepare stock QR label",
+    exact: true,
+  });
+  await expect(dialog).toContainText(u.serial);
+  await dialog
+    .getByLabel("Copies (including deliberate duplicates)", { exact: true })
+    .fill("2");
+  await dialog
+    .getByRole("button", { name: "Prepare and download", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  const downloadEvent = page.waitForEvent("download");
+  await dialog
+    .getByRole("button", { name: "Prepare and download", exact: true })
+    .click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe(`Stock_${u.id}.pdf`);
+  const bytes = await readFile((await download.path())!);
+  const task = getDocument({
+    data: new Uint8Array(bytes),
+    useSystemFonts: false,
+  });
+  const pdf = await task.promise;
+  expect(pdf.numPages).toBe(2);
+  await task.destroy();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  const receipts = await (await page.request.get("/api/stock/labels")).json();
+  expect(receipts.length).toBe(history.length + 1);
+  expect(receipts[0].unit_id).toBe(u.id);
+  expect(receipts[0].copies).toBe(2);
+  expect(receipts[0].state).toBe("prepared");
+  expect(receipts[0].content_hash).toBe(
+    createHash("sha256").update(bytes).digest("hex"),
+  );
+  const after = await (await page.request.get("/api/dashboard")).json();
+  expect(after.stock).toEqual(before.stock);
+  expect(errors).toEqual([]);
+});
 async function installScanHarness(page: Page) {
   // Real local MediaStream lifetime, synthetic decoding/permission outcomes; no physical camera claim.
   await page.addInitScript(() => {
