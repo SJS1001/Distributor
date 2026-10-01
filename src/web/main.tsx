@@ -9,6 +9,7 @@ import {
   downloadStockLabel,
   downloadInboxDocument,
 } from "./api.ts";
+import { CarrierBooking } from "./carrier-booking.tsx";
 import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
@@ -84,6 +85,10 @@ function App() {
   );
   const reservationOpener = useRef<HTMLElement | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
+  const [carrierShipmentId, setCarrierShipmentId] = useState<string | null>(
+    null,
+  );
+  const carrierOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
   const shipmentRequest = useRef<number | null>(null);
@@ -94,6 +99,8 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setCarrierShipmentId(null);
+    carrierOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
     setAmendmentOrderId(null);
@@ -223,6 +230,8 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired]);
   const clearSession = (message = "") => {
+    setCarrierShipmentId(null);
+    carrierOpener.current = null;
     shipmentEpoch.current++;
     shipmentRequest.current = null;
     setShipmentsLoading(false);
@@ -251,6 +260,8 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    setCarrierShipmentId(null);
+    carrierOpener.current = null;
     void request("/api/logout", { method: "POST" })
       .catch(() => {})
       .finally(() => clearSession());
@@ -825,6 +836,8 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 setPage(p);
+                setCarrierShipmentId(null);
+                carrierOpener.current = null;
                 setProviderHistoryAccount(null);
                 setSupplierHistoryId(null);
                 setReservationOrderId(null);
@@ -1460,6 +1473,20 @@ function App() {
                   ),
                   `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
                   <div className="actions">
+                    {s.mode === "carrier" &&
+                      ["packed", "shipped"].includes(s.state) &&
+                      can("warehouse") && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={(event) => {
+                            carrierOpener.current = event.currentTarget;
+                            setCarrierShipmentId(s.id);
+                          }}
+                        >
+                          Review carrier booking
+                        </button>
+                      )}
                     {s.state === "shipped" &&
                       button("View delivery history", () =>
                         showShipmentDelivery(s.id).catch((e) =>
@@ -1556,6 +1583,30 @@ function App() {
                   </div>,
                 ],
               )}
+              {carrierShipmentId &&
+                data.shipments.some(
+                  (s: Item) => s.id === carrierShipmentId,
+                ) && (
+                  <CarrierBooking
+                    key={`${carrierShipmentId}:${eventViewEpoch}`}
+                    shipmentId={carrierShipmentId}
+                    packedDestination={
+                      data.shipments.find(
+                        (s: Item) => s.id === carrierShipmentId,
+                      )!.address
+                    }
+                    packed={
+                      data.shipments.find(
+                        (s: Item) => s.id === carrierShipmentId,
+                      )!.state === "packed"
+                    }
+                    onClose={() => {
+                      setCarrierShipmentId(null);
+                      carrierOpener.current?.focus();
+                      carrierOpener.current = null;
+                    }}
+                  />
+                )}
               {data.shipmentNext && (
                 <button
                   type="button"

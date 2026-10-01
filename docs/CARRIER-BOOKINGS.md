@@ -1,0 +1,29 @@
+# Reviewed carrier booking coordination
+
+Local implementation, 2026-10-01. All 44 tasks and 10 product gates remain NOT VERIFIED; the full system is incomplete. No actual carrier adapter, account, service, request, label printing or physical handover is qualified by this checkpoint.
+
+Warehouse staff with the current shipment site, or administrators under the existing administrator policy, can open **Review carrier booking** for a packed ordinary carrier shipment. Review the immutable packed destination and enter actual structured US/Canadian origin and destination, service, contact details and positive whole parcel dimensions in millimetres and weight in grams. No carrier is preselected. Confirm that the destination matches the packed address and the origin belongs to this warehouse. Named current customer acceptance and recorded disclosures are required separately. Preparation creates no external request, stock movement, cash or invoice.
+
+Only one uncanceled booking may exist for a shipment. An unsent pending booking may be canceled with the exact review hash and a reason; its record remains in history. A successor preparation must identify the exact latest canceled booking. Pending, running and unknown bookings block manual handover and packing void. Cancel an unsent pending booking before using manual fallback. Unknown outcomes must be looked up; never resend or create another booking. A confirmed booking requires its exact carrier identifier and tracking for separate physical handover. Booked packing cannot be voided until carrier voiding is qualified. Booking itself does not ship stock or issue an invoice.
+
+## Default-disabled provider boundary
+
+`CarrierRuntime` accepts one explicitly selected named sandbox adapter per organization. The normal server and worker create no carrier binding, no environment switch enables one, and no credentials or network adapter are supplied here. HTTP send/reconciliation remains disabled without an injected binding. A customer choice grants eligibility only; it does not configure or certify an adapter. Synthetic test adapters are used only in disposable local fixtures.
+
+A trusted adapter implements `book(intent, beforeWrite)` and read-only `lookup(intent)`. It must call the synchronous guard immediately before its sole write, after preliminary reads, and must not retry writes. The guard repeats current active warehouse/password/site authority, customer acceptance, restore clearance, account credit clearance, exclusive durable claim and unchanged native packed facts. The adapter receives a deeply frozen intent. Returns must identify the exact booking and review hash with canonical reference/tracking and bounded PDF/PNG bytes; external label URLs and unsupported result fields are rejected. File signature and SHA-256 checks establish byte integrity only, not valid rendering, malware safety, carrier acceptance or physical print readability.
+
+Shared SQLite transactions claim execution and fence abandoned responses. A failed or uncertain operation becomes unknown, including a blocked pre-write operation: operator recovery requires read-only lookup, never a resend. `recoverStale(ageMs, orgId?)` fences stale claims; the default age is two minutes. This is an internal operation, with no automatic carrier worker or public recovery endpoint in this checkpoint. Production timing, process termination, monitoring and recovery procedures require qualification. After an authorized operation, a matching result can be retained if consent or credit changed during I/O; later processing remains subject to current policy. Revoked principal/site/password authority prevents completion and leaves a recoverable unknown outcome.
+
+## HTTP and history
+
+Authenticated strict durable commands are `carrier.prepare` and `carrier.cancel`. The current principal is reread before cached retries. Origin/CSRF and password restrictions apply. Preparation/cancellation, audit, events and command receipts commit together. Integration owns booking records; native fulfillment owns handover and stock/money effects through task-shaped operations.
+
+`GET /api/shipments/:shipmentId/carrier` returns current review and runtime eligibility. `GET /api/shipments/:shipmentId/carrier/history?after=…` returns 20 generations with an opaque shipment-scoped cursor. Unknown or inaccessible cursors reject. Loaded browser pages survive continuation failures; current-review refresh disables stale controls. Refresh/navigation/sign-out cancel stale reads and the dialog restores focus.
+
+`POST /api/carrier/:bookingId/send` and `/reconcile` accept an empty object only. Reconciliation requires unknown state and does not authorize another write. `GET /api/carrier/:bookingId/label` downloads private confirmed bytes with no-store, attachment and hash/type metadata after fresh access and integrity checks. No provider URL is followed by the browser.
+
+## Upgrade and remaining qualification
+
+Stop old writers before upgrading; mixed versions remain unqualified. New integration-owned tables preserve existing shipment facts and command receipts. Current local tests do not establish actual carrier idempotency or lookup identity: a real adapter must prove exact correlation without assuming a vendor transaction reference prevents duplicate shipping purchases. Multiple parcels, rating/service selection, customs, insurance, tracking retrieval, carrier void/refund, warranty replacement booking, provider terms/customer authority, credentials, actual regional infrastructure, printers, load/locking/clock/retention/migration/security/recovery and human acceptance remain open.
+
+See the [local carrier receipt](evidence/LOCAL-CARRIER-BOOKINGS-2026-10-01.md). Direct workstation checks and local commits only; no cloud checkout, CI runner/job, push/PR, deployment, live data, actual provider request or publication is authorized by this checkpoint.

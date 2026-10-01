@@ -591,6 +591,83 @@ class BrowserProviders extends ProviderRuntime {
     return super.execute(actor, effectId);
   }
 }
+// Independent packed carrier fixture: no stock used by existing browser journeys.
+const carrierBuyer = f.app.identity.createCustomer(
+  f.actor,
+  "carrier-browser-buyer",
+  {
+    name: "Synthetic carrier journey buyer",
+    tier: "standard",
+    creditLimit: 1000000,
+  },
+).id;
+chooseProviders(f, f.actor, "carrier-browser-choice", {
+  accountId: carrierBuyer,
+  region: "CA",
+  mode: "provider-exceptions",
+  providers: ["ups"],
+  version: 1,
+  acknowledgment: "Synthetic named UPS acceptance",
+});
+const carrierProduct = f.app.catalog.create(
+  f.actor,
+  "carrier-browser-product",
+  {
+    sku: "CARRIER-BROWSER-1",
+    name: "Synthetic carrier journey parcel",
+    serialized: false,
+    unitPrice: 2500,
+    taxBasisPoints: 1300,
+  },
+).id;
+const carrierPo = f.app.procurement.create(f.actor, "carrier-browser-po", {
+  supplierId: f.supplier,
+  warehouseId: f.w1,
+  lines: [{ productId: carrierProduct, quantity: 2, unitCost: 1000 }],
+}).id;
+f.app.procurement.receive(f.actor, "carrier-browser-stock", {
+  poId: carrierPo,
+  lineId: String(
+    f.app.procurement.orders(f.actor).find((p) => p.id === carrierPo)!.lines[0]!
+      .id,
+  ),
+  deliveryRef: "SYNTHETIC-CARRIER-STOCK",
+  quantity: 2,
+  serials: [],
+  bin: "CARRIER-1",
+  quarantine: false,
+});
+const carrierOrder = accept(
+  { ...f, buyer: carrierBuyer, product: carrierProduct },
+  1,
+  "carrier-browser-order",
+);
+const carrierPicks = f.app.fulfillment.picks(f.actor, carrierOrder.id);
+for (const pick of carrierPicks)
+  f.app.fulfillment.pick(f.actor, `carrier-browser-pick-${pick.id}`, {
+    orderId: carrierOrder.id,
+    allocationId: pick.id,
+    serial: pick.serial,
+  });
+f.app.fulfillment.pack(f.actor, "carrier-browser-pack", {
+  orderId: carrierOrder.id,
+  revision: f.app.orders.order(f.actor, carrierOrder.id).revision,
+  mode: "carrier",
+  address:
+    "Synthetic carrier destination, 2 Test Street, Ottawa ON K1A 0B1, CA",
+  lines: carrierPicks.map((p) => ({
+    allocationId: p.id,
+    quantity: p.quantity,
+  })),
+});
+f.app.identity.createUser(f.actor, "carrier-browser-reader", {
+  email: "carrier-reader@example.test",
+  name: "Synthetic carrier scoped reader",
+  password: "long-test-only-password",
+  role: "warehouse",
+  sites: [f.w2],
+});
+
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [

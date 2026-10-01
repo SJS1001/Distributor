@@ -258,3 +258,7 @@ The [local balance comparison receipt](evidence/LOCAL-ACCOUNTING-BALANCES-2026-1
 ## Regional stock cost files
 
 Billing now exposes native stock-cost review, immutable regional journal files and separately recorded receiver acceptance. See [the cost runbook](ACCOUNTING-COSTS.md). This performs no QuickBooks/provider transport and does not establish actual import or ledger posting. Confirm the receiving ledger's automatic inventory/cost entries before applying a file; duplicate postings, period/valuation policy and actual vendor/region acceptance still require qualification. Future provider transport must honor current named customer choices and verified accounting identities.
+
+## Ordinary carrier booking coordinator
+
+The [carrier runbook](CARRIER-BOOKINGS.md) records the integration-owned coordinator and explicit sandbox adapter contract. There is no actual carrier network adapter or normal-runtime binding. Named customer consent, reviewed disclosures and eligibility do not configure a provider. Pending/running/unknown bookings restrict native fallback, and unknown outcomes permit read-only lookup rather than resend. Actual services, vendor proof correlation, credentials, customer authority and infrastructure residency remain unqualified.

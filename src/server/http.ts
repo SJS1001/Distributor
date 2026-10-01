@@ -14,6 +14,8 @@ import {
   type EvidenceUpload,
 } from "../shared/warranty-evidence.ts";
 import { type ProviderRuntime } from "./provider-runtime.ts";
+import { type CarrierRuntime } from "./carrier-runtime.ts";
+import { carrierNames } from "../shared/carrier-booking.ts";
 
 type Schema = Record<string, unknown>;
 const str: Schema = { type: "string", minLength: 1, maxLength: 2000 },
@@ -48,7 +50,40 @@ export function commands(app: Application): Record<string, Spec> {
     minimum: 0,
     maximum: Number.MAX_SAFE_INTEGER,
   };
+  const carrierAddress = obj({
+    name: str,
+    line1: str,
+    line2: { type: "string", maxLength: 160 },
+    city: str,
+    province: str,
+    postalCode: str,
+    country: choice("US", "CA"),
+    phone: str,
+  });
   return {
+    "carrier.prepare": {
+      schema: obj({
+        shipmentId: str,
+        previousId: { anyOf: [str, { type: "null" }] },
+        provider: choice(...carrierNames),
+        service: str,
+        origin: carrierAddress,
+        destination: carrierAddress,
+        parcel: obj({
+          weightGrams: { type: "integer", minimum: 1, maximum: 2000000 },
+          lengthMm: { type: "integer", minimum: 1, maximum: 10000 },
+          widthMm: { type: "integer", minimum: 1, maximum: 10000 },
+          heightMm: { type: "integer", minimum: 1, maximum: 10000 },
+        }),
+        reviewedDestination: str,
+        acknowledgment: str,
+      }),
+      run: (a, k, p) => app.carriers.prepare(a, k, p),
+    },
+    "carrier.cancel": {
+      schema: obj({ bookingId: str, reviewHash: str, reason: str }),
+      run: (a, k, p) => app.carriers.cancel(a, k, p),
+    },
     "events.retry": {
       schema: obj({
         consumerId: str,
@@ -929,6 +964,7 @@ export type HttpOptions = {
   staticRoot?: string;
   logger?: boolean;
   providers?: ProviderRuntime;
+  carriers?: CarrierRuntime;
 };
 export async function createHttp(app: Application, options: HttpOptions) {
   const origin = new URL(options.origin).origin;
@@ -1497,6 +1533,88 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     async (request) =>
       app.fulfillment.shipmentPage(actor(request), request.query.after),
+  );
+  http.get<{ Params: { shipmentId: string } }>(
+    "/api/shipments/:shipmentId/carrier",
+    { schema: { params: obj({ shipmentId: str }), querystring: obj({}) } },
+    async (request) => {
+      const current = app.carriers.review(
+        actor(request),
+        request.params.shipmentId,
+      );
+      return {
+        ...current,
+        enabled: current.booking
+          ? (options.carriers?.enabled(
+              actor(request),
+              current.booking.provider,
+            ) ?? false)
+          : false,
+      };
+    },
+  );
+  http.get<{ Params: { shipmentId: string }; Querystring: { after?: string } }>(
+    "/api/shipments/:shipmentId/carrier/history",
+    {
+      schema: {
+        params: obj({ shipmentId: str }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.carriers.history(
+        actor(request),
+        request.params.shipmentId,
+        request.query.after,
+      ),
+  );
+  for (const action of ["send", "reconcile"] as const)
+    http.post<{ Params: { bookingId: string } }>(
+      `/api/carrier/:bookingId/${action}`,
+      {
+        schema: {
+          params: obj({ bookingId: str }),
+          body: obj({}),
+          querystring: obj({}),
+        },
+      },
+      async (request) => {
+        check(
+          options.carriers,
+          "CARRIER_DISABLED",
+          "No qualified carrier adapter is configured for this organization.",
+          503,
+        );
+        return action === "send"
+          ? options.carriers.execute(actor(request), request.params.bookingId)
+          : options.carriers.reconcile(
+              actor(request),
+              request.params.bookingId,
+            );
+      },
+    );
+  http.get<{ Params: { bookingId: string } }>(
+    "/api/carrier/:bookingId/label",
+    { schema: { params: obj({ bookingId: str }), querystring: obj({}) } },
+    async (request, reply) => {
+      const label = app.carriers.label(
+        actor(request),
+        request.params.bookingId,
+      );
+      return reply
+        .header("Content-Type", "application/octet-stream")
+        .header(
+          "Content-Disposition",
+          'attachment; filename="carrier-label.bin"',
+        )
+        .header("Cache-Control", "no-store")
+        .header("X-Document-Sha256", label.hash)
+        .header("X-Label-Media-Type", label.mediaType)
+        .send(label.bytes);
+    },
   );
   http.get<{ Params: { shipmentId: string }; Querystring: { after?: string } }>(
     "/api/shipments/:shipmentId/delivery/history",

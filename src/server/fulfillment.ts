@@ -68,6 +68,15 @@ type ShortPick = {
 };
 export class Fulfillment {
   private store: Store;
+  private carrierGuard?: (
+    actor: Actor,
+    shipment: Shipment,
+    action: "commit" | "void",
+    binding?: { carrier?: string; tracking?: string },
+  ) => void;
+  configureCarrierGuard(guard: NonNullable<Fulfillment["carrierGuard"]>) {
+    this.carrierGuard = guard;
+  }
   constructor(
     database: Database,
     private platform: Platform,
@@ -545,6 +554,7 @@ export class Fulfillment {
           text(input.carrier, "carrier");
           text(input.tracking, "tracking/reference");
         }
+        this.carrierGuard?.(actor, shipment, "commit", input);
         const packed = this.packedQuantities(actor, shipment.order_id);
         for (const a of this.inventory.allocations(actor, shipment.order_id))
           check(
@@ -608,6 +618,13 @@ export class Fulfillment {
       key,
       input,
       () => {
+        actor = this.identity.currentActor(actor);
+        check(
+          !this.identity.security(actor).passwordChangeRequired,
+          "PASSWORD_CHANGE_REQUIRED",
+          "Change your password before voiding packing.",
+          403,
+        );
         permit(actor, ["warehouse"]);
         site(actor, this.shipment(actor, input.shipmentId).warehouse_id);
       },
@@ -618,6 +635,7 @@ export class Fulfillment {
           "STATE",
           "Committed shipments cannot be voided.",
         );
+        this.carrierGuard?.(actor, s, "void");
         text(input.reason, "void reason", 1000);
         this.store.run(
           "UPDATE fulfillment_shipments SET state='void' WHERE id=?",

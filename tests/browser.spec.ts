@@ -1759,8 +1759,11 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   );
   expect(newOrders).toHaveLength(1);
   const orderId = newOrders[0].id;
+  const orderRow = page
+    .getByRole("row")
+    .filter({ hasText: orderId.slice(0, 8) });
   for (const label of ["EQ-1", "SUP-1"]) {
-    await page
+    await orderRow
       .getByRole("button", { name: "Pick / pack", exact: true })
       .click();
     const allocation = page.getByLabel("Allocation", { exact: true });
@@ -1782,7 +1785,7 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
     await next(page);
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
-  await page
+  await orderRow
     .getByRole("button", { name: "Pack shipment", exact: true })
     .click();
   await page
@@ -1985,6 +1988,7 @@ test("browser: split packing retries once, void releases holds, and each handove
   const snapshot = async () =>
     (await page.request.get("/api/dashboard")).json();
   const before = await snapshot();
+  const priorOrderIds = new Set(before.orders.map((o: any) => o.id));
   const bulk = before.products.find((p: any) => p.sku === "SUP-1");
   const initialStock = before.stock.find(
     (u: any) => u.product_id === bulk.id,
@@ -2010,11 +2014,19 @@ test("browser: split packing retries once, void releases holds, and each handove
   await expect(page.getByRole("dialog")).toContainText("$84.75");
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  const order = (await snapshot()).orders.find((o: any) => o.state === "open");
-  await page.getByRole("button", { name: "Pick / pack", exact: true }).click();
+  const order = (await snapshot()).orders.find(
+    (o: any) => !priorOrderIds.has(o.id),
+  );
+  expect(order).toBeDefined();
+  const orderRow = page
+    .getByRole("row")
+    .filter({ hasText: order.id.slice(0, 8) });
+  await orderRow
+    .getByRole("button", { name: "Pick / pack", exact: true })
+    .click();
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page
+  await orderRow
     .getByRole("button", { name: "Pack shipment", exact: true })
     .click();
   const units = page.getByLabel(/SUP-1.*units to pack/);
@@ -2046,7 +2058,7 @@ test("browser: split packing retries once, void releases holds, and each handove
     initialStock,
   );
 
-  await page
+  await orderRow
     .getByRole("button", { name: "Pack shipment", exact: true })
     .click();
   await expect(units).toHaveValue("2");
@@ -2062,7 +2074,7 @@ test("browser: split packing retries once, void releases holds, and each handove
   await units.fill("2");
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page
+  await orderRow
     .getByRole("button", { name: "Pack shipment", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText(
@@ -2081,7 +2093,7 @@ test("browser: split packing retries once, void releases holds, and each handove
     .fill("Synthetic changed packing");
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page
+  await orderRow
     .getByRole("button", { name: "Pack shipment", exact: true })
     .click();
   await expect(units).toHaveValue("2");
@@ -9804,6 +9816,314 @@ test("browser: phone checkout replacement reviews partial balance and retries a 
     ).toContainText(attempts[0]!.payload.reason);
   } finally {
     await buyerContext.close();
+  }
+  expect(errors).toEqual([]);
+});
+
+test("browser: phone carrier review retries a lost committed prepare, cancels and replaces without stock or invoice changes", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const login = async (p: Page, email: string) => {
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    const response = p.waitForResponse(
+      (r) => r.url().endsWith("/api/login") && r.request().method() === "POST",
+    );
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    const csrf = (await (await response).json()).csrf;
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    return csrf;
+  };
+  const csrf = await login(page, "admin@example.test");
+  const allShipments = async () => {
+    const items: any[] = [];
+    let after: string | null = null;
+    do {
+      const response = await page.request.get(
+        `/api/shipments/page${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+      );
+      expect(response.status()).toBe(200);
+      const result: { items: any[]; next: string | null } =
+        await response.json();
+      items.push(...result.items);
+      after = result.next;
+    } while (after);
+    return items;
+  };
+  const before = await (await page.request.get("/api/dashboard")).json();
+  before.shipments = await allShipments();
+  const shipment = before.shipments.find((s: any) =>
+    s.address.startsWith("Synthetic carrier destination,"),
+  );
+  expect(shipment.state).toBe("packed");
+  const snapshot = (d: any) => ({
+    stock: d.stock,
+    order: d.orders.find((o: any) => o.id === shipment.order_id),
+    invoices: d.invoices,
+    shipment: d.shipments.find((s: any) => s.id === shipment.id),
+  });
+  const original = snapshot(before);
+  const showCarrierRow = async (p: Page) => {
+    await nav(p, "Orders");
+    const panel = p.getByRole("region", {
+      name: "Shipment history",
+      exact: true,
+    });
+    const row = panel.getByRole("row").filter({ hasText: shipment.address });
+    while (!(await row.count())) {
+      const count = await panel.locator("tbody tr").count();
+      const response = p.waitForResponse(
+        (r) =>
+          r.url().includes("/api/shipments/page?after=") &&
+          r.request().method() === "GET",
+      );
+      await panel
+        .getByRole("button", { name: "Load more shipments", exact: true })
+        .click();
+      const result = await (await response).json();
+      await expect(panel.locator("tbody tr")).toHaveCount(
+        count + result.items.length,
+      );
+    }
+    return row;
+  };
+  const row = await showCarrierRow(page);
+  await row
+    .getByRole("button", { name: "Review carrier booking", exact: true })
+    .click();
+  const review = page.getByRole("region", {
+    name: "Carrier booking review",
+    exact: true,
+  });
+  await expect(
+    review.getByRole("heading", {
+      name: "Carrier booking review",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    review.getByText("Carrier send and reconciliation are disabled.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const fill = async (service: string) => {
+    await review
+      .getByRole("combobox", { name: "Carrier provider", exact: true })
+      .selectOption("ups");
+    await review.getByLabel("Service", { exact: true }).fill(service);
+    const fields = [
+      ["Name", "Synthetic test contact"],
+      ["Address line 1", "2 Test Street"],
+      ["City", "Ottawa"],
+      ["Province / state", "ON"],
+      ["Postal / ZIP code", "K1A 0B1"],
+      ["Phone", "4165550100"],
+    ] as const;
+    for (const legend of [
+      "Reviewed warehouse origin",
+      "Reviewed destination",
+    ]) {
+      const group = review.getByRole("group", { name: legend, exact: true });
+      for (const [field, value] of fields)
+        await group.getByLabel(field, { exact: true }).fill(value);
+      await group
+        .getByRole("combobox", { name: "Country", exact: true })
+        .selectOption("CA");
+    }
+    for (const field of [
+      "Weight (grams)",
+      "Length (mm)",
+      "Width (mm)",
+      "Height (mm)",
+    ])
+      await review.getByLabel(field, { exact: true }).fill("100");
+    await review.getByRole("checkbox").check();
+    await review
+      .getByLabel("Address review acknowledgment / evidence", { exact: true })
+      .fill("Synthetic explicit origin, parcel and destination review");
+  };
+  await fill("Synthetic phone ground");
+  const attempts: { key: string; payload: any }[] = [];
+  let saved: any;
+  await page.route("**/api/commands/carrier.prepare", async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    saved = await response.json();
+    if (attempts.length === 1) await route.abort("failed");
+    else await route.fulfill({ response });
+  });
+  await review
+    .getByRole("button", { name: "Prepare reviewed booking", exact: true })
+    .click();
+  await expect(review.getByRole("alert")).toContainText("Failed to fetch");
+  await review
+    .getByRole("button", { name: "Prepare reviewed booking", exact: true })
+    .click();
+  await expect(
+    review.getByRole("heading", { name: "Current booking", exact: true }),
+  ).toBeVisible();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  await page.unroute("**/api/commands/carrier.prepare");
+  expect(saved.id).toBeTruthy();
+  const first = (
+    await (
+      await page.request.get(`/api/shipments/${shipment.id}/carrier`)
+    ).json()
+  ).booking;
+  expect(first.id).toBe(saved.id);
+  expect(first.state).toBe("pending");
+  await expect(
+    review.getByRole("button", {
+      name: "Send reviewed carrier booking",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  expect(
+    (
+      await page.request.post(`/api/carrier/${first.id}/send`, {
+        headers: { "x-csrf-token": csrf, origin: "http://127.0.0.1:3117" },
+        data: {},
+      })
+    ).status(),
+  ).toBe(503);
+  await review
+    .getByLabel("Cancellation reason", { exact: true })
+    .fill("Synthetic phone cancellation before provider send");
+  await review
+    .getByRole("button", {
+      name: "Cancel reviewed pending booking",
+      exact: true,
+    })
+    .click();
+  await expect(
+    review.getByText("This unsent booking was canceled.", { exact: false }),
+  ).toBeVisible();
+  await fill("Synthetic successor service");
+  await review
+    .getByRole("button", { name: "Prepare reviewed booking", exact: true })
+    .click();
+  await expect(
+    review.getByRole("heading", { name: "Current booking", exact: true }),
+  ).toBeVisible();
+  await expect(
+    review.getByText("UPS · Synthetic successor service · pending", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const second = (
+    await (
+      await page.request.get(`/api/shipments/${shipment.id}/carrier`)
+    ).json()
+  ).booking;
+  expect(second.id).not.toBe(first.id);
+  expect(second.reviewHash).not.toBe(first.reviewHash);
+  await review
+    .getByRole("button", { name: "Load carrier booking history", exact: true })
+    .click();
+  await expect(review.getByText("Loaded: 2.", { exact: false })).toBeVisible();
+  const history = (
+    await (
+      await page.request.get(`/api/shipments/${shipment.id}/carrier/history`)
+    ).json()
+  ).items;
+  expect(history.map((b: any) => b.state)).toEqual(["canceled", "pending"]);
+  await page.reload();
+  await (
+    await showCarrierRow(page)
+  )
+    .getByRole("button", { name: "Review carrier booking", exact: true })
+    .click();
+  await expect(
+    review.getByText(`Booking ID: ${second.id}`, { exact: true }),
+  ).toBeVisible();
+  const after = await (await page.request.get("/api/dashboard")).json();
+  after.shipments = await allShipments();
+  expect(snapshot(after)).toEqual(original);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  const readerContext = await context
+    .browser()!
+    .newContext({ baseURL: "http://127.0.0.1:3117" });
+  try {
+    const reader = await readerContext.newPage();
+    reader.on("pageerror", (e) => errors.push(e.message));
+    await login(reader, "carrier-reader@example.test");
+    expect(
+      (
+        await reader.request.get(`/api/shipments/${shipment.id}/carrier`)
+      ).status(),
+    ).toBe(403);
+    expect(
+      (
+        await reader.request.get(
+          `/api/shipments/${shipment.id}/carrier/history`,
+        )
+      ).status(),
+    ).toBe(403);
+    const users = await (await page.request.get("/api/users")).json(),
+      user = users.find((u: any) => u.email === "carrier-reader@example.test");
+    const grant = await page.request.post("/api/commands/user.update", {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": "carrier-phone-grant",
+        origin: "http://127.0.0.1:3117",
+      },
+      data: {
+        userId: user.id,
+        revision: user.revision,
+        email: user.email,
+        name: user.name,
+        role: "warehouse",
+        sites: [shipment.warehouse_id],
+        active: true,
+        currentPassword: "long-test-only-password",
+        reason: "Synthetic reviewed grant for carrier warehouse",
+      },
+    });
+    expect(grant.status()).toBe(200);
+    await login(reader, "carrier-reader@example.test");
+    const permitted = await reader.request.get(
+      `/api/shipments/${shipment.id}/carrier`,
+    );
+    expect(permitted.status()).toBe(200);
+    expect((await permitted.json()).booking.id).toBe(second.id);
+    const permittedHistory = await reader.request.get(
+      `/api/shipments/${shipment.id}/carrier/history`,
+    );
+    expect(permittedHistory.status()).toBe(200);
+    expect((await permittedHistory.json()).items.map((b: any) => b.id)).toEqual(
+      [first.id, second.id],
+    );
+    await (
+      await showCarrierRow(reader)
+    )
+      .getByRole("button", { name: "Review carrier booking", exact: true })
+      .click();
+    await expect(
+      reader
+        .getByRole("region", { name: "Carrier booking review", exact: true })
+        .getByText(`Booking ID: ${second.id}`, { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await readerContext.close();
   }
   expect(errors).toEqual([]);
 });

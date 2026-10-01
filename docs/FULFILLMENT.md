@@ -63,3 +63,7 @@ Authenticated `serial.missing.report`, `serial.missing.decide` and `serial.missi
 See [the local short-pick receipt](evidence/LOCAL-SHORT-PICKS-2026-10-01.md) for the tested candidate, failures, final checks and limitations. Workstation tests cover split/original serial identities, packed commitments, another order's reservation, restarts/retries, real grants/password requirements, tied-timestamp pagination, rollback and separate-process packing/report contention. Browser evidence uses synthetic stock and simulated lost responses; it does not establish physical shortage, operator acceptance or production capacity.
 
 Actual bin/lot procedures, physical serial custody/writeoff/recovery, approval duties, evidence attachments, corrections/disputes, actual carrier exception/remedy qualification, clock/retention/archive/load/security/upgrade/recovery and production residency remain unqualified. No CI, external provider request or remote publication is authorized for this checkpoint.
+
+## Reviewed ordinary carrier bookings
+
+The [carrier booking runbook](CARRIER-BOOKINGS.md) describes reviewed structured origin/destination/parcel intents, pending cancellation, fenced unknown-outcome recovery and exact confirmed binding before native handover. Send/reconciliation is disabled without an explicitly injected sandbox adapter; none is supplied by the normal runtime. Preparation and provider observations change no stock, invoice or cash. Actual carriers/devices and all product gates remain unqualified.

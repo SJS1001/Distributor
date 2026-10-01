@@ -9,6 +9,7 @@ import { Procurement } from "./procurement.ts";
 import { Billing } from "./billing.ts";
 import { Orders } from "./orders.ts";
 import { Fulfillment } from "./fulfillment.ts";
+import { CarrierBookings } from "./carrier-bookings.ts";
 import { Warranty } from "./warranty.ts";
 import { Integration } from "./integration.ts";
 import { ProviderCredentials } from "./provider-credentials.ts";
@@ -27,6 +28,7 @@ export class Application {
   billing: Billing;
   orders: Orders;
   fulfillment: Fulfillment;
+  carriers: CarrierBookings;
   warranty: Warranty;
   integration: Integration;
   migration: Migration;
@@ -116,6 +118,12 @@ export class Application {
       this.inventory,
       this.orders,
       this.billing,
+    );
+    this.carriers = new CarrierBookings(
+      this.database,
+      this.platform,
+      this.identity,
+      this.fulfillment,
     );
     this.warranty = new Warranty(
       this.database,
