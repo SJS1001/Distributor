@@ -1,5 +1,6 @@
 import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { createHttp } from "../src/server/http.ts";
+import { QuickBooksBrowser } from "../src/server/quickbooks-browser.ts";
 import {
   ProviderRuntime,
   type StripeGateway,
@@ -759,6 +760,70 @@ const paymentHttp = await createHttp(paymentPages.app, {
 });
 await paymentHttp.listen({ host: "127.0.0.1", port: 3118 });
 
+// Separate authorization fixture and synthetic fixed-endpoint transport. Browser
+// navigation is intercepted in the journey; no Intuit account/network is used.
+const authorizationFixture = fixture(
+  { after: (fn) => cleanup.push(fn) },
+  {
+    providerEncryptionKey: "ac".repeat(32),
+  },
+);
+chooseProviders(
+  authorizationFixture,
+  authorizationFixture.actor,
+  "browser-oauth-choice",
+  {
+    accountId: authorizationFixture.buyer,
+    region: "CA",
+    mode: "provider-exceptions",
+    providers: ["quickbooks"],
+    version: 1,
+    acknowledgment: "Synthetic browser processing choice",
+  },
+);
+globalThis.fetch = async (url, init) => {
+  if (
+    String(url) ===
+      "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer" &&
+    init?.method === "POST"
+  )
+    return Response.json({
+      access_token: "synthetic-browser-access",
+      refresh_token: "synthetic-browser-refresh",
+      token_type: "bearer",
+      expires_in: 3600,
+      x_refresh_token_expires_in: 86400,
+      x_refresh_token_hard_expires_in: 172800,
+    });
+  if (
+    String(url) ===
+    "https://sandbox-quickbooks.api.intuit.com/v3/company/1234/companyinfo/1234"
+  )
+    return Response.json({ CompanyInfo: { Id: "1234" } });
+  throw Error(
+    "Browser fixture permits only synthetic authorization endpoints.",
+  );
+};
+const authorizationOrigin = "http://127.0.0.1:3119";
+const authorizationHttp = await createHttp(authorizationFixture.app, {
+  origin: authorizationOrigin,
+  quickbooksBrowser: new QuickBooksBrowser(
+    authorizationFixture.app,
+    {
+      id: "synthetic-browser-authorization",
+      orgId: authorizationFixture.actor.orgId,
+      workerUserId: authorizationFixture.actor.id,
+      accountId: authorizationFixture.buyer,
+      realm: "1234",
+      clientId: "synthetic-client",
+      redirectUri: `${authorizationOrigin}/quickbooks/callback`,
+    },
+    "synthetic-browser-client-secret",
+    authorizationOrigin,
+  ),
+});
+await authorizationHttp.listen({ host: "127.0.0.1", port: 3119 });
+
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -778,6 +843,7 @@ await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
   await http.close();
   await paymentHttp.close();
+  await authorizationHttp.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);
 };

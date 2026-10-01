@@ -32,6 +32,10 @@ import { WarrantyEvidence } from "./warranty-evidence.tsx";
 import { WarrantyDecisions } from "./warranty-decisions.tsx";
 import { SoldCoverage } from "./warranty-coverage.tsx";
 import { SoldSerialSelect } from "./sold-serial-select.tsx";
+import {
+  QuickBooksCallback,
+  QuickBooksConnection,
+} from "./quickbooks-authorization.tsx";
 import type { SoldSerial } from "../shared/sold-serials.ts";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
@@ -2716,6 +2720,7 @@ function App() {
         )}
         {page === "Billing" && (
           <>
+            {can("finance") && <QuickBooksConnection key={eventViewEpoch} />}
             {can("finance") && <AccountingCosts />}
             <div className="actions">
               {can("finance") && (
@@ -5687,6 +5692,10 @@ function Modal({
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {location.pathname === "/quickbooks/callback" ? (
+      <QuickBooksCallback />
+    ) : (
+      <App />
+    )}
   </React.StrictMode>,
 );

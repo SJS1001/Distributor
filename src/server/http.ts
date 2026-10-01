@@ -2,11 +2,12 @@ import Fastify from "fastify";
 import { providerNames } from "../shared/provider-choices.ts";
 import { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
+import type { QuickBooksBrowser } from "./quickbooks-browser.ts";
 import helmet from "@fastify/helmet";
 import staticFiles from "@fastify/static";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { check, DomainError, type Actor } from "./core.ts";
+import { check, DomainError, permit, type Actor } from "./core.ts";
 import { Application } from "./application.ts";
 import {
   evidenceMaxBytes,
@@ -965,11 +966,22 @@ export type HttpOptions = {
   logger?: boolean;
   providers?: ProviderRuntime;
   carriers?: CarrierRuntime;
+  quickbooksBrowser?: QuickBooksBrowser;
 };
 export async function createHttp(app: Application, options: HttpOptions) {
   const origin = new URL(options.origin).origin;
   const http = Fastify({
-    logger: options.logger ?? false,
+    logger: options.logger
+      ? {
+          serializers: {
+            // Callback queries and session cookies must never enter request logs.
+            req: (request: { method: string; url: string }) => ({
+              method: request.method,
+              url: request.url.split("?")[0],
+            }),
+          },
+        }
+      : false,
     bodyLimit: 256 * 1024,
     ajv: {
       customOptions: {
@@ -2269,6 +2281,79 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     );
   const root = options.staticRoot ?? resolve("dist");
+  const authorization = () => {
+    check(
+      options.quickbooksBrowser,
+      "PROVIDER_DISABLED",
+      "QuickBooks browser authorization is disabled.",
+      503,
+    );
+    return options.quickbooksBrowser;
+  };
+  http.get("/api/quickbooks/authorization", async (request) => {
+    permit(app.identity.currentActor(actor(request)), ["finance"]);
+    return options.quickbooksBrowser
+      ? authorization().status(request.cookies.distributor_session!)
+      : { enabled: false };
+  });
+  http.post<{ Body: { revision: number } }>(
+    "/api/quickbooks/authorization/begin",
+    {
+      schema: {
+        body: obj({
+          revision: { type: "integer", minimum: 0, maximum: 1000000000 },
+        }),
+      },
+    },
+    async (request) =>
+      authorization().begin(
+        request.cookies.distributor_session!,
+        request.body.revision,
+      ),
+  );
+  http.post<{ Body: { attemptId: string } }>(
+    "/api/quickbooks/authorization/cancel",
+    {
+      schema: {
+        body: obj({
+          attemptId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request) =>
+      authorization().cancel(
+        request.cookies.distributor_session!,
+        request.body.attemptId,
+      ),
+  );
+  http.post<{ Body: { attemptId: string; callbackUrl: string } }>(
+    "/api/quickbooks/authorization/complete",
+    {
+      schema: {
+        body: obj({
+          attemptId: { type: "string", minLength: 1, maxLength: 128 },
+          callbackUrl: { type: "string", minLength: 1, maxLength: 16384 },
+        }),
+      },
+    },
+    async (request) =>
+      authorization().complete(
+        request.cookies.distributor_session!,
+        request.body.attemptId,
+        request.body.callbackUrl,
+      ),
+  );
+  // The cross-site GET performs no exchange. The page removes the query before
+  // an explicit authenticated same-origin POST; Strict cookies remain Strict.
+  http.get("/quickbooks/callback", async (_request, reply) => {
+    reply.header("Referrer-Policy", "no-referrer");
+    if (!existsSync(root))
+      return reply.code(503).send({
+        code: "UNAVAILABLE",
+        message: "Build the browser application before connecting QuickBooks.",
+      });
+    return reply.sendFile("index.html");
+  });
   if (existsSync(root)) {
     await http.register(staticFiles, { root, index: "index.html" });
     http.setNotFoundHandler(async (request, reply) =>
