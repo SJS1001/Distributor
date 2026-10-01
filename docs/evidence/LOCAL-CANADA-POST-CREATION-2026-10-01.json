@@ -633,7 +633,7 @@
   "scopeDocumentSha256": {
     "docs/CARRIER-BOOKINGS.md": "8c6d598dc7544e13980695a5de9e845589d703ec7fe59f5f52056eae28419af2",
     "docs/IMPLEMENTATION.md": "2551f816ceb2cd1a7fecebee2f1c6395b59079b8a1b026666db15dec169bfcc4",
-    "docs/HANDOFF.md": "0968db4bbc57e4b6016d1bc97ab039ef5a7a161601eeefab8ab81108f58a26d9",
+    "docs/HANDOFF.md": "ad8b43a53388f0bc7c0bf1b9fafb06db2d9abb2a585b0932ff946c429a57b2f3",
     "docs/evidence/LOCAL-CANADA-POST-CREATION-2026-10-01.md": "e54b5bbdfc649733bfa1050648b2c562812e1d6940d809f069f978d3c4c26eca"
   },
   "commands": {
@@ -946,7 +946,8 @@
     "/tmp/distributor-canada-post-creation-checkpoint/run.py": "c8c008f5cfe653d508105907365035a8f5989bdb6aee595ae6f798caa2366a7a",
     "/tmp/distributor-canada-post-creation-checkpoint/implement.py": "51e63f57d8385e953fc33c9d4f5836f5005d5e86b01b4bd70371a001522bc425",
     "/tmp/distributor-canada-post-creation-checkpoint/write-receipt.py": "ce404aa4db53a6d87a1bde362e63c84f0c5d1a4c77c95fbb1def7b7bf3e499c9",
-    "/tmp/distributor-canada-post-creation-checkpoint/audit.py": "441db7cf7cd8f9859047b5ea01b82479770f58b5ea26064cee3183d2d009dc30"
+    "/tmp/distributor-canada-post-creation-checkpoint/audit.py": "441db7cf7cd8f9859047b5ea01b82479770f58b5ea26064cee3183d2d009dc30",
+    "/tmp/distributor-canada-post-creation-checkpoint/post-commit-audit.json": "c5a77287fbf13ac3eb2308b3cb309be310f40144d8acd425d914d4112fe3e7fd"
   },
   "privateCommandRecordSha256": {
     "/tmp/distributor-canada-post-creation-checkpoint/browser-fixes-type.json": "ce0e6e9969b9ad2fe70edf9af55acdeebfb7c9c50a0275bfbecf094721accfa5",
@@ -1024,5 +1025,16 @@
     "/tmp/distributor-canada-post-creation-checkpoint/final-browser-failures/browser-browser-audit-hist-1c6bf-ies-and-cancels-stale-reads/error-context.md": "fd81d3540e0d03284c0659550ab7bb6ea285241d60ad962dbfa01323df62b3bb",
     "/tmp/distributor-canada-post-creation-checkpoint/final-browser-failures/browser-browser-administra-e9168-ing-lost-response-approvals/trace.zip": "82ab20ee87a1517acec29473c66b57df6562deee97563a29f8a18375895f2149",
     "/tmp/distributor-canada-post-creation-checkpoint/final-browser-failures/browser-browser-administra-e9168-ing-lost-response-approvals/error-context.md": "f1aa3bfba0b5225cc2d9673b5da71f75f53bcc1edb8f28da8d9d5157f8c4a33d"
+  },
+  "sourceCommit": "97b4cec0a5b44c905149097c39a1540d49f2753e",
+  "postCommitAudit": {
+    "status": "PASS",
+    "capturedAt": "2026-10-01T22:10:19.230548+00:00",
+    "commit": "97b4cec0a5b44c905149097c39a1540d49f2753e",
+    "repositoryFiles": 430,
+    "dependencyLicenseFiles": 170,
+    "commandRecords": 22,
+    "cleanCheckout": true,
+    "scope": "Source/evidence commit audited before this documentation-only hash/handoff follow-up"
   }
 }
