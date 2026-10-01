@@ -515,6 +515,46 @@ export class Orders {
     this.refresh(actor, orderId);
     return result;
   }
+  shortPick(
+    actor: Actor,
+    input: {
+      orderId: string;
+      revision: number;
+      allocationId: string;
+      unitRevision: number;
+      quantity: number;
+      reason: string;
+    },
+    reference: string,
+  ) {
+    permit(actor, ["warehouse"]);
+    const o = this.order(actor, input.orderId);
+    check(
+      o.state === "open" && o.revision === input.revision,
+      "REVISION",
+      "Order changed; refresh before reporting a shortage.",
+    );
+    const a = this.inventory
+      .allocations(actor, o.id)
+      .find((a) => a.id === input.allocationId);
+    check(a, "NOT_FOUND", "Allocation not found on this order.", 404);
+    const l = this.lines(actor, o.id).find(
+      (l) => l.product_id === a.product_id,
+    );
+    check(
+      l && l.allocated >= input.quantity,
+      "QUANTITY",
+      "Short quantity exceeds allocated order stock.",
+    );
+    const held = this.inventory.holdShortPick(actor, input, reference);
+    this.store.run(
+      "UPDATE orders_lines SET allocated=allocated-? WHERE id=?",
+      held.quantity,
+      l.id,
+    );
+    this.refresh(actor, o.id);
+    return { ...held, revision: o.revision + 1 };
+  }
   private refresh(actor: Actor, orderId: string) {
     const complete = this.lines(actor, orderId).every(
       (l) => l.shipped + l.canceled === l.quantity,

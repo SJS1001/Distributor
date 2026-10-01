@@ -5602,3 +5602,239 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("browser: short picks retry once, retain paged history after failure, and invoice only actual handover", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const session = await (await page.request.get("/api/session")).json();
+  let counter = 0;
+  const cmd = async (name: string, data: any) => {
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        origin: "http://127.0.0.1:3117",
+        "x-csrf-token": session.csrf,
+        "idempotency-key": `short-ui-${counter++}`,
+      },
+      data,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const snapshot = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const before = await snapshot(),
+    warehouseId = before.warehouses.find((w: any) => w.name === "Toronto").id;
+  const productId = (
+    await cmd("product.create", {
+      sku: "SHORT-UI",
+      name: "Synthetic short-pick supplies",
+      serialized: false,
+      unitPrice: 2500,
+      taxBasisPoints: 1300,
+    })
+  ).id;
+  const accountId = (
+    await cmd("account.create", {
+      name: "Synthetic short-pick buyer",
+      tier: "standard",
+      creditLimit: 1000000,
+    })
+  ).id;
+  const supplierId = (
+    await cmd("supplier.create", { name: "Synthetic short-pick supplier" })
+  ).id;
+  const poId = (
+    await cmd("purchase.create", {
+      supplierId,
+      warehouseId,
+      lines: [{ productId, quantity: 25, unitCost: 1000 }],
+    })
+  ).id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const lineId = purchases.orders.find((p: any) => p.id === poId).lines[0].id;
+  await cmd("purchase.receive", {
+    poId,
+    lineId,
+    deliveryRef: "SHORT-UI-DEL",
+    quantity: 25,
+    serials: [],
+    bin: "SHORT-BIN",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId, quantity: 25 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const orderId = (
+    await cmd("order.accept", { quoteId: quote.id, allowBackorder: false })
+  ).id;
+  const picks = async () =>
+    (await page.request.get(`/api/orders/${orderId}/picks`)).json();
+  const allocation = (await picks())[0];
+  await cmd("fulfillment.pick", {
+    orderId,
+    allocationId: allocation.id,
+    serial: null,
+  });
+  await cmd("fulfillment.pack", {
+    orderId,
+    revision: 1,
+    mode: "collection",
+    address: "Short-pick actual collection",
+    lines: [{ allocationId: allocation.id, quantity: 1 }],
+  });
+  await page.reload();
+  await nav(page, "Orders");
+  const orderRow = page
+    .getByRole("row")
+    .filter({ hasText: "Synthetic short-pick buyer" })
+    .filter({ hasText: orderId.slice(0, 8) });
+  await orderRow
+    .getByRole("button", { name: "Report short pick", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("become backordered");
+  await page.getByLabel("Unavailable units", { exact: true }).fill("2");
+  await page
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic shelf shortage reviewed separately");
+  const keys: string[] = [];
+  let lost = false;
+  await page.route("**/api/commands/fulfillment.short-pick", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!lost) {
+      lost = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await next(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  const initialReports = await (
+    await page.request.get(`/api/orders/${orderId}/short-picks`)
+  ).json();
+  expect(initialReports.items).toHaveLength(1);
+  await expect(orderRow).toContainText(
+    "25 ordered / 23 reserved / 0 shipped / 0 canceled",
+  );
+  const after = await snapshot(),
+    stock = after.stock.filter((u: any) => u.product_id === productId);
+  expect(
+    stock.reduce((sum: number, u: any) => sum + u.quantity * u.cost, 0),
+  ).toBe(25000);
+  expect(stock.find((u: any) => u.condition === "quarantine").quantity).toBe(2);
+  expect(
+    after.invoices.filter((i: any) => i.order_id === orderId),
+  ).toHaveLength(0);
+  for (let i = 0; i < 22; i++) {
+    const current = (await snapshot()).orders.find(
+        (o: any) => o.id === orderId,
+      ),
+      a = (await picks())[0];
+    await cmd("fulfillment.short-pick", {
+      orderId,
+      revision: current.revision,
+      allocationId: a.id,
+      unitRevision: a.unitRevision,
+      quantity: 1,
+      reason: `Synthetic remaining shortage ${i}`,
+    });
+  }
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await orderRow
+    .getByRole("button", { name: "View short picks", exact: true })
+    .click();
+  const history = page.getByRole("dialog");
+  await expect(history).toContainText("20 reports loaded.");
+  let lostPage = false;
+  await page.route(
+    `**/api/orders/${orderId}/short-picks?after=*`,
+    async (route) => {
+      if (!lostPage) {
+        lostPage = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await history
+    .getByRole("button", { name: "Load more reports", exact: true })
+    .click();
+  await expect(history.getByRole("alert")).toBeVisible();
+  await expect(history).toContainText("20 reports loaded.");
+  await history
+    .getByRole("button", { name: "Load more reports", exact: true })
+    .click();
+  await expect(history).toContainText("23 reports loaded.");
+  const description = await history.locator(".description").innerText();
+  expect(
+    description.split("\n").filter((l) => l.includes("held stock")),
+  ).toHaveLength(23);
+  await history.getByRole("button", { name: "Close", exact: true }).click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: "Short-pick actual collection" })
+    .getByRole("button", { name: "Confirm collection", exact: true })
+    .click();
+  await page
+    .getByLabel("Handover evidence", { exact: true })
+    .fill("Synthetic single verified unit collected");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await orderRow
+    .getByRole("button", { name: "Cancel units", exact: true })
+    .click();
+  await page.getByLabel("Units", { exact: true }).fill("24");
+  await page
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic customer cancels backorder");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(orderRow).toContainText(
+    "25 ordered / 0 reserved / 1 shipped / 24 canceled",
+  );
+  const final = await snapshot();
+  expect(
+    final.invoices
+      .filter((i: any) => i.order_id === orderId)
+      .map((i: any) => i.total),
+  ).toEqual([2825]);
+  expect(
+    final.stock
+      .filter((u: any) => u.product_id === productId)
+      .reduce((sum: number, u: any) => sum + u.quantity * u.cost, 0),
+  ).toBe(24000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await orderRow
+    .getByRole("button", { name: "View short picks", exact: true })
+    .click();
+  await expect(history).toContainText("20 reports loaded.");
+  await page.keyboard.press("Escape");
+  await expect(history).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});

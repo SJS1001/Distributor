@@ -213,6 +213,29 @@ function App() {
     name: string,
     transform: (v: Item) => unknown = (v) => v,
   ) => open(title, fields, (v) => command(name, transform(v)));
+  const showShortPicks = async (
+    orderId: string,
+    loaded: Item[] = [],
+    after?: string,
+  ) => {
+    const result = await request(
+        `/api/orders/${orderId}/short-picks${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+      ),
+      reports = [...loaded, ...result.items];
+    open(
+      "Short-pick reports",
+      [],
+      async () => {
+        if (!result.nextCursor) return;
+        await showShortPicks(orderId, reports, result.nextCursor);
+        return { keepDialog: true };
+      },
+      reports.length
+        ? `${reports.length} reports loaded.\n${reports.map((r: Item) => `${r.created_at} · ${r.quantity} units · held stock ${r.held_unit_id} · ${r.reason}`).join("\n")}`
+        : "No short picks have been reported for this order.",
+      result.nextCursor ? "Load more reports" : "Close",
+    );
+  };
   const queueAccountingInvoice = (invoice: Item) =>
     open(
       "Queue QuickBooks invoice",
@@ -853,6 +876,62 @@ function App() {
                           ),
                         )
                         .catch((e) => setError(e.message));
+                    })}
+                  {o.state === "open" &&
+                    can("warehouse") &&
+                    button("Report short pick", () => {
+                      void request(`/api/orders/${o.id}/picks`)
+                        .then((picks) => {
+                          const available = picks.filter(
+                            (a: Item) =>
+                              a.quantity - a.consumed - a.released - a.packed >
+                              0,
+                          );
+                          if (!available.length) {
+                            setError(
+                              "No unpacked allocated units remain. Void conflicting packing first.",
+                            );
+                            return;
+                          }
+                          open(
+                            "Report unavailable allocated stock",
+                            [
+                              select(
+                                "allocationId",
+                                "Short allocation",
+                                available,
+                                (a) =>
+                                  `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                              ),
+                              {
+                                name: "quantity",
+                                label: "Unavailable units",
+                                type: "number",
+                                value: 1,
+                              },
+                              reason,
+                            ],
+                            (v) => {
+                              const a = available.find(
+                                (a: Item) => a.id === v.allocationId,
+                              )!;
+                              return command("fulfillment.short-pick", {
+                                ...v,
+                                orderId: o.id,
+                                revision: o.revision,
+                                unitRevision: a.unitRevision,
+                              });
+                            },
+                            "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
+                          );
+                        })
+                        .catch((e) => setError(e.message));
+                    })}
+                  {can("warehouse", "commercial", "support") &&
+                    button("View short picks", () => {
+                      void showShortPicks(o.id).catch((e) =>
+                        setError(e.message),
+                      );
                     })}
                   {o.state === "open" &&
                     can("warehouse") &&

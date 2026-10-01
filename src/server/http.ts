@@ -511,6 +511,17 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.fulfillment.pack(a, k, p),
     },
+    "fulfillment.short-pick": {
+      schema: obj({
+        orderId: str,
+        revision: num,
+        allocationId: str,
+        unitRevision: num,
+        quantity: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.fulfillment.shortPick(a, k, p),
+    },
     "fulfillment.ship": {
       schema: obj(
         { shipmentId: str, carrier: str, tracking: str, handoverEvidence: str },
@@ -926,6 +937,16 @@ export async function createHttp(app: Application, options: HttpOptions) {
     "/api/orders/:orderId/picks",
     async (request) =>
       app.fulfillment.picks(actor(request), request.params.orderId),
+  );
+  http.get<{ Params: { orderId: string }; Querystring: { after?: string } }>(
+    "/api/orders/:orderId/short-picks",
+    { schema: { querystring: obj({ after: str }, ["after"]) } },
+    async (request) =>
+      app.fulfillment.shortPicks(
+        actor(request),
+        request.params.orderId,
+        request.query.after,
+      ),
   );
   http.get<{ Params: { serial: string } }>(
     "/api/serials/:serial",

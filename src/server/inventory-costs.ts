@@ -26,6 +26,7 @@ const signs: Record<
   "supplier.return": "negative",
   count: "either",
   inspection: "zero",
+  "shortpick.hold": "zero",
   "transfer.dispatch": "transfer",
   "transfer.receive": "transfer",
   "transfer.loss": "negative",

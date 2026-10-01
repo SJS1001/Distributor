@@ -115,6 +115,7 @@ export class Inventory {
       CREATE TABLE IF NOT EXISTS inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_allocations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),consumed INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0,stage TEXT NOT NULL DEFAULT 'reserved' CHECK(stage IN('reserved','picked')),CHECK(consumed>=0 AND released>=0 AND consumed+released<=quantity)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over'))) STRICT;
+      CREATE TABLE IF NOT EXISTS inventory_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,allocation_id TEXT NOT NULL,source_unit_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
       CREATE UNIQUE INDEX IF NOT EXISTS inventory_replacement_reserved ON inventory_replacements(org_id,unit_id) WHERE state='reserved';
       CREATE TABLE IF NOT EXISTS inventory_movements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,type TEXT NOT NULL,quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_cost_sequences(sequence INTEGER PRIMARY KEY,org_id TEXT NOT NULL,movement_id TEXT NOT NULL UNIQUE) STRICT;
@@ -278,6 +279,7 @@ export class Inventory {
         WHERE l.org_id=?
         UNION SELECT r.unit_id,l.unit_id FROM inventory_transfer_receipts r
         JOIN inventory_transfer_lines l ON l.org_id=r.org_id AND l.id=r.line_id WHERE r.org_id=?
+        UNION SELECT held_unit_id,source_unit_id FROM inventory_short_picks WHERE org_id=?
         UNION SELECT r.unit_id,l.unit_id FROM inventory_transfer_recoveries r
         JOIN inventory_transfer_losses x ON x.org_id=r.org_id AND x.id=r.loss_id
         JOIN inventory_transfer_lines l ON l.org_id=x.org_id AND l.id=x.line_id WHERE r.org_id=?
@@ -285,6 +287,7 @@ export class Inventory {
         SELECT ? UNION SELECT e.parent FROM edges e JOIN lineage a ON e.child=a.unit_id
       ) SELECT DISTINCT m.reference FROM lineage a JOIN inventory_movements m ON m.unit_id=a.unit_id
       WHERE m.org_id=? AND m.type='receipt'`,
+      actor.orgId,
       actor.orgId,
       actor.orgId,
       actor.orgId,
@@ -1046,6 +1049,107 @@ export class Inventory {
       row.id,
     );
     return row;
+  }
+  // Called within the owning order/fulfillment transaction. A shortage report
+  // segregates expected book stock for review; it does not confirm a loss.
+  holdShortPick(
+    actor: Actor,
+    input: {
+      allocationId: string;
+      unitRevision: number;
+      quantity: number;
+      reason: string;
+    },
+    reference: string,
+  ) {
+    permit(actor, ["warehouse"]);
+    const a = this.store.get<Allocation>(
+      "SELECT * FROM inventory_allocations WHERE org_id=? AND id=?",
+      actor.orgId,
+      input.allocationId,
+    );
+    check(a, "NOT_FOUND", "Allocation not found.", 404);
+    site(actor, a.warehouse_id);
+    const u = this.unit(actor, a.unit_id),
+      quantity = integer(input.quantity, "short quantity", 1, 100000),
+      reason = text(input.reason, "short-pick evidence", 1000);
+    check(
+      u.revision === input.unitRevision,
+      "REVISION",
+      "Stock changed; refresh before reporting a shortage.",
+    );
+    check(
+      u.state === "stock" && u.condition === "usable",
+      "STATE",
+      "Allocated stock is unavailable.",
+    );
+    check(
+      quantity <= a.quantity - a.consumed - a.released,
+      "QUANTITY",
+      "Short quantity exceeds the remaining allocation.",
+    );
+    this.store.run(
+      "UPDATE inventory_allocations SET released=released+? WHERE id=?",
+      quantity,
+      a.id,
+    );
+    check(
+      quantity <= u.quantity - this.reserved(u.id),
+      "STOCK",
+      "Short quantity overlaps another stock commitment.",
+    );
+    let heldId = u.id;
+    if (quantity === u.quantity) {
+      this.store.run(
+        "UPDATE inventory_units SET condition='quarantine',revision=revision+1 WHERE id=?",
+        u.id,
+      );
+    } else {
+      check(
+        !u.serial,
+        "SERIAL",
+        "A serialized shortage requires the entire unit.",
+      );
+      heldId = id();
+      this.store.run(
+        "UPDATE inventory_units SET quantity=quantity-?,revision=revision+1 WHERE id=?",
+        quantity,
+        u.id,
+      );
+      this.store.run(
+        "INSERT INTO inventory_units(id,org_id,product_id,warehouse_id,bin,quantity,cost,condition,state) VALUES(?,?,?,?,?,?,?,'quarantine','stock')",
+        heldId,
+        actor.orgId,
+        u.product_id,
+        u.warehouse_id,
+        u.bin,
+        quantity,
+        u.cost,
+      );
+    }
+    this.store.run(
+      "INSERT INTO inventory_short_picks VALUES(?,?,?,?,?,?,?,?,?)",
+      reference,
+      actor.orgId,
+      a.id,
+      u.id,
+      heldId,
+      quantity,
+      reason,
+      actor.id,
+      now(),
+    );
+    this.movement(actor, u, "shortpick.hold", 0, reference, reason);
+    if (heldId !== u.id)
+      this.movement(
+        actor,
+        this.unit(actor, heldId),
+        "shortpick.hold",
+        0,
+        reference,
+        reason,
+      );
+    return { heldUnitId: heldId, productId: a.product_id, quantity };
   }
   release(actor: Actor, orderId: string, productId: string, quantity: number) {
     if (quantity === 0) return 0;

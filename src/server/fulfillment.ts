@@ -33,6 +33,17 @@ export type Shipment = {
   shipped_at: string | null;
 };
 type PackedLine = { allocationId: string; quantity: number };
+type ShortPick = {
+  id: string;
+  org_id: string;
+  order_id: string;
+  allocation_id: string;
+  held_unit_id: string;
+  quantity: number;
+  reason: string;
+  actor_id: string;
+  created_at: string;
+};
 export class Fulfillment {
   private store: Store;
   constructor(
@@ -47,6 +58,8 @@ export class Fulfillment {
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS fulfillment_shipments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('packed','shipped','void')),mode TEXT NOT NULL CHECK(mode IN('carrier','collection')),address TEXT NOT NULL,tracking TEXT,carrier TEXT,lines TEXT NOT NULL,units TEXT NOT NULL DEFAULT '[]',invoice_id TEXT,created_at TEXT NOT NULL,shipped_at TEXT) STRICT;
     CREATE TABLE IF NOT EXISTS fulfillment_delivery(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,reference TEXT NOT NULL,delivered_at TEXT NOT NULL,actor_id TEXT NOT NULL,UNIQUE(org_id,shipment_id)) STRICT;
+    CREATE TABLE IF NOT EXISTS fulfillment_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,allocation_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
+    CREATE INDEX IF NOT EXISTS fulfillment_short_pick_history ON fulfillment_short_picks(org_id,order_id,created_at,id);
   `);
   }
   shipment(actor: Actor, shipmentId: string): Shipment {
@@ -85,6 +98,7 @@ export class Fulfillment {
       ...a,
       serial: this.inventory.unit(actor, a.unit_id).serial,
       bin: this.inventory.unit(actor, a.unit_id).bin,
+      unitRevision: this.inventory.unit(actor, a.unit_id).revision,
       packed: packed.get(a.id) ?? 0,
       packable:
         a.stage === "picked"
@@ -94,6 +108,115 @@ export class Fulfillment {
             )
           : 0,
     }));
+  }
+  shortPicks(actor: Actor, orderId: string, after?: string) {
+    const current = this.identity.currentActor(actor);
+    permit(current, ["warehouse", "commercial", "support"]);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reading shortages.",
+      403,
+    );
+    this.orders.order(current, orderId);
+    const cursor =
+      after === undefined
+        ? undefined
+        : this.store.get<ShortPick>(
+            "SELECT * FROM fulfillment_short_picks WHERE org_id=? AND order_id=? AND id=?",
+            current.orgId,
+            orderId,
+            text(after, "Short-pick cursor", 128),
+          );
+    check(
+      after === undefined || cursor,
+      "CURSOR",
+      "Short-pick cursor does not belong to this order.",
+      400,
+    );
+    const rows = this.store.all<ShortPick>(
+      "SELECT * FROM fulfillment_short_picks WHERE org_id=? AND order_id=? AND (? IS NULL OR created_at>? OR (created_at=? AND id>?)) ORDER BY created_at,id LIMIT 21",
+      current.orgId,
+      orderId,
+      cursor?.created_at ?? null,
+      cursor?.created_at ?? null,
+      cursor?.created_at ?? null,
+      cursor?.id ?? null,
+    );
+    const items = rows.slice(0, 20);
+    return { items, nextCursor: rows.length > 20 ? items.at(-1)!.id : null };
+  }
+  shortPick(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      revision: number;
+      allocationId: string;
+      unitRevision: number;
+      quantity: number;
+      reason: string;
+    },
+  ) {
+    let current: Actor;
+    return this.platform.command(
+      actor,
+      "fulfillment.short-pick",
+      key,
+      input,
+      () => {
+        current = this.identity.currentActor(actor);
+        permit(current, ["warehouse"]);
+        check(
+          !this.identity.security(current).passwordChangeRequired,
+          "PASSWORD_CHANGE_REQUIRED",
+          "Change your password before reporting a shortage.",
+          403,
+        );
+        site(current, this.orders.order(current, input.orderId).warehouse_id);
+      },
+      () => {
+        const quantity = integer(input.quantity, "short quantity", 1, 100000),
+          reason = text(input.reason, "short-pick evidence", 1000),
+          a = this.inventory
+            .allocations(current, input.orderId)
+            .find((a) => a.id === input.allocationId);
+        check(a, "NOT_FOUND", "Allocation not found on this order.", 404);
+        check(
+          quantity <=
+            a.quantity -
+              a.consumed -
+              a.released -
+              (this.packedQuantities(current, input.orderId).get(a.id) ?? 0),
+          "PACKED",
+          "Short quantity overlaps packed or already supplied stock. Void conflicting packing first.",
+        );
+        const reportId = id(),
+          result = this.orders.shortPick(
+            current,
+            { ...input, quantity, reason },
+            reportId,
+          );
+        this.store.run(
+          "INSERT INTO fulfillment_short_picks VALUES(?,?,?,?,?,?,?,?,?)",
+          reportId,
+          current.orgId,
+          input.orderId,
+          a.id,
+          result.heldUnitId,
+          quantity,
+          reason,
+          current.id,
+          now(),
+        );
+        this.platform.event(current, "fulfillment.short-pick", reportId, {
+          orderId: input.orderId,
+          allocationId: a.id,
+          ...result,
+        });
+        return { id: reportId, ...result };
+      },
+    );
   }
   private packedQuantities(actor: Actor, orderId: string) {
     const quantities = new Map<string, number>();
