@@ -2392,3 +2392,534 @@ test("browser: camera fallback, Enter suffix and cancelled pending access preser
     .toBe(2);
   expect(errors).toEqual([]);
 });
+
+test("browser: customer inbox review, cancellation and lost responses preserve explicit personal receipt and withdrawal history", async ({
+  page,
+  browser,
+}) => {
+  const errors: string[] = [];
+  const origin = "http://127.0.0.1:3117";
+  const initial = "inbox-initial-password",
+    password = "inbox-changed-password";
+  const signIn = async (
+    p: Page,
+    email: string,
+    secret: string,
+    heading = "Overview",
+  ) => {
+    p.on("pageerror", (e) => errors.push(e.message));
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p.getByLabel("Password", { exact: true }).fill(secret);
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: heading, exact: true }),
+    ).toBeVisible();
+  };
+  const cmd = async (name: string, data: unknown) => {
+    const session = await (await page.request.get("/api/session")).json();
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        origin,
+        "x-csrf-token": session.csrf,
+        "idempotency-key": crypto.randomUUID(),
+      },
+      data,
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  };
+  const inbox = async (p = page) =>
+    (await p.request.get("/api/billing/inbox")).json();
+  await signIn(page, "admin@example.test", "long-test-only-password");
+  const account = await cmd("account.create", {
+    name: "Browser inbox customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const other = await cmd("account.create", {
+    name: "Browser other inbox customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "INBOX-BROWSER",
+    name: "Synthetic inbox equipment",
+    serialized: false,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const warehouseId = dashboard.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 2, unitCost: 6000 }],
+  });
+  const orders = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: orders.orders.find((x: any) => x.id === po.id).lines[0].id,
+    deliveryRef: "BROWSER-INBOX-DELIVERY",
+    quantity: 2,
+    serials: [],
+    bin: "INBOX",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 2 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await (await page.request.get("/api/dashboard")).json();
+  const pack = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((x: any) => x.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  const shipped = await cmd("fulfillment.ship", {
+    shipmentId: pack.id,
+    handoverEvidence: "Synthetic inbox handover",
+  });
+  for (const [suffix, accountId] of [
+    ["buyer", account.id],
+    ["colleague", account.id],
+    ["other", other.id],
+  ])
+    await cmd("user.create", {
+      email: `inbox-${suffix}@example.test`,
+      name: `Inbox ${suffix}`,
+      password: initial,
+      role: "buyer",
+      accountId,
+      sites: [],
+      currentPassword: "long-test-only-password",
+    });
+  const before = await (await page.request.get("/api/dashboard")).json();
+  const invoice = before.invoices.find((i: any) => i.id === shipped.invoiceId);
+  expect(invoice.total).toBe(22600);
+  await page.reload();
+  await nav(page, "Billing");
+  const invoiceRow = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("button", {
+        name: "Download invoice PDF",
+        exact: true,
+      }),
+    })
+    .filter({ hasText: invoice.number });
+  const review = async () => {
+    const event = page.waitForEvent("download");
+    await invoiceRow
+      .getByRole("button", { name: "Review and publish invoice", exact: true })
+      .click();
+    const download = await event;
+    const bytes = await readFile((await download.path())!);
+    await expect(
+      page.getByRole("dialog", { name: "Publish reviewed PDF", exact: true }),
+    ).toBeVisible();
+    return bytes;
+  };
+  const original = await review();
+  const hash = createHash("sha256").update(original).digest("hex");
+  await expect(page.getByRole("dialog")).toContainText(
+    "buyer must separately confirm receipt",
+  );
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  expect(
+    (await inbox()).filter((p: any) => p.document_id === invoice.id),
+  ).toHaveLength(0);
+  expect(await review()).toEqual(original);
+  const publishKeys: string[] = [];
+  await page.route("**/api/commands/billing.portal.publish", async (route) => {
+    publishKeys.push(route.request().headers()["idempotency-key"]!);
+    if (publishKeys.length === 1) {
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page
+    .getByRole("dialog")
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic finance review of original customer PDF");
+  const publish = page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Publish to customer inbox", exact: true });
+  await publish.click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await publish.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(publishKeys).toHaveLength(2);
+  expect(publishKeys[0]).toBe(publishKeys[1]);
+  await page.unroute("**/api/commands/billing.portal.publish");
+  const publications = (await inbox()).filter(
+    (p: any) => p.document_id === invoice.id,
+  );
+  expect(publications).toHaveLength(1);
+  const publication = publications[0];
+  expect(publication.content_hash).toBe(hash);
+  expect(publication.acknowledgments).toHaveLength(0);
+  const contexts = [];
+  try {
+    const buyerContext = await browser.newContext();
+    contexts.push(buyerContext);
+    const buyer = await buyerContext.newPage();
+    const loginBuyer = async (p: Page, suffix: string) => {
+      await signIn(
+        p,
+        `inbox-${suffix}@example.test`,
+        initial,
+        "Change initial password",
+      );
+      await p.getByLabel("Current password", { exact: true }).fill(initial);
+      await p
+        .getByLabel("New password (14–256 characters)", { exact: true })
+        .fill(password);
+      await p
+        .getByLabel("Confirm new password", { exact: true })
+        .fill(password);
+      await p
+        .getByRole("button", { name: "Change password", exact: true })
+        .click();
+      await expect(
+        p.getByRole("heading", {
+          name: "Sign in to your workspace",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await signIn(p, `inbox-${suffix}@example.test`, password);
+      await nav(p, "Billing");
+    };
+    await loginBuyer(buyer, "buyer");
+    const otherContext = await browser.newContext();
+    contexts.push(otherContext);
+    const otherBuyer = await otherContext.newPage();
+    await loginBuyer(otherBuyer, "other");
+    expect(await inbox(otherBuyer)).toEqual([]);
+    await expect(
+      otherBuyer.getByRole("row").filter({ hasText: invoice.number }),
+    ).toHaveCount(0);
+    const buyerRow = buyer
+      .getByRole("row")
+      .filter({
+        has: buyer.getByRole("button", {
+          name: "Download and review receipt",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: invoice.number });
+    const downloadKeys: string[] = [];
+    await buyer.route(
+      `**/api/billing/inbox/${publication.id}/pdf`,
+      async (route) => {
+        downloadKeys.push(route.request().headers()["idempotency-key"]!);
+        if (downloadKeys.length === 1) {
+          const response = await route.fetch(),
+            headers = response.headers();
+          delete headers["x-download-receipt"];
+          await route.fulfill({ response, headers });
+        } else if (downloadKeys.length === 2) {
+          await route.fetch();
+          await route.abort("failed");
+        } else await route.continue();
+      },
+    );
+    const downloadButton = buyerRow.getByRole("button", {
+      name: "Download and review receipt",
+      exact: true,
+    });
+    await downloadButton.click();
+    await expect(buyer.getByRole("alert")).toContainText(
+      "Download receipt is missing",
+    );
+    await expect(buyer.getByRole("dialog")).toHaveCount(0);
+    await downloadButton.click();
+    await expect(buyer.getByRole("alert")).toBeVisible();
+    const event = buyer.waitForEvent("download");
+    await downloadButton.click();
+    const downloaded = await event;
+    expect(await readFile((await downloaded.path())!)).toEqual(original);
+    await expect(
+      buyer.getByRole("dialog", {
+        name: "Confirm document receipt",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(downloadKeys).toHaveLength(3);
+    expect(new Set(downloadKeys).size).toBe(1);
+    let current = (await inbox())[0];
+    expect(current.downloads).toHaveLength(1);
+    expect(current.downloads[0].state).toBe("prepared");
+    expect(current.acknowledgments).toHaveLength(0);
+    await buyer
+      .getByRole("dialog")
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    expect((await inbox())[0].acknowledgments).toHaveLength(0);
+    const confirmDownload = buyer.waitForEvent("download");
+    await downloadButton.click();
+    await confirmDownload;
+    const confirmDialog = buyer.getByRole("dialog", {
+      name: "Confirm document receipt",
+      exact: true,
+    });
+    await expect(confirmDialog).toContainText(
+      "does not confirm payment or agreement",
+    );
+    const ackKeys: string[] = [];
+    await buyer.route(
+      "**/api/commands/billing.portal.acknowledge",
+      async (route) => {
+        ackKeys.push(route.request().headers()["idempotency-key"]!);
+        if (ackKeys.length === 1) {
+          await route.fetch();
+          await route.abort("failed");
+        } else await route.continue();
+      },
+    );
+    await confirmDialog
+      .getByRole("button", { name: "Confirm receipt", exact: true })
+      .click();
+    await expect(confirmDialog.getByRole("alert")).toBeVisible();
+    await confirmDialog
+      .getByRole("button", { name: "Confirm receipt", exact: true })
+      .click();
+    await expect(confirmDialog).toHaveCount(0);
+    expect(ackKeys).toHaveLength(2);
+    expect(ackKeys[0]).toBe(ackKeys[1]);
+    current = (await inbox())[0];
+    expect(current.acknowledgments).toHaveLength(1);
+    expect(current.acknowledgments[0].content_hash).toBe(hash);
+    expect(current.acknowledgments[0].actor_name).toBe("Inbox buyer");
+    const received = buyer
+      .getByRole("row")
+      .filter({
+        has: buyer.getByRole("button", {
+          name: "Download received PDF",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: invoice.number });
+    const again = buyer.waitForEvent("download");
+    await received
+      .getByRole("button", { name: "Download received PDF", exact: true })
+      .click();
+    await again;
+    await expect(
+      received.getByRole("button", {
+        name: "Download received PDF",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await expect(buyer.getByRole("dialog")).toHaveCount(0);
+    expect((await inbox())[0].acknowledgments).toHaveLength(1);
+    const colleagueContext = await browser.newContext();
+    contexts.push(colleagueContext);
+    const colleague = await colleagueContext.newPage();
+    await loginBuyer(colleague, "colleague");
+    const personal = (await inbox(colleague)).find(
+      (p: any) => p.id === publication.id,
+    );
+    expect(personal.downloads).toHaveLength(0);
+    expect(personal.acknowledgments).toHaveLength(0);
+    await expect(
+      colleague
+        .getByRole("row")
+        .filter({
+          has: colleague.getByRole("button", {
+            name: "Download and review receipt",
+            exact: true,
+          }),
+        })
+        .filter({ hasText: invoice.number }),
+    ).toContainText("Awaiting buyer confirmation");
+    await page.reload();
+    await nav(page, "Billing");
+    const staffRow = page
+      .getByRole("row")
+      .filter({
+        has: page.getByRole("button", {
+          name: "Withdraw publication",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: invoice.number });
+    await expect(staffRow).toContainText("Inbox buyer");
+    await staffRow
+      .getByRole("button", { name: "Withdraw publication", exact: true })
+      .click();
+    const withdrawDialog = page.getByRole("dialog", {
+      name: "Withdraw portal publication",
+      exact: true,
+    });
+    await withdrawDialog
+      .getByLabel("Reason / evidence", { exact: true })
+      .fill("Synthetic routing correction");
+    const withdrawalKeys: string[] = [];
+    await page.route(
+      "**/api/commands/billing.portal.withdraw",
+      async (route) => {
+        withdrawalKeys.push(route.request().headers()["idempotency-key"]!);
+        if (withdrawalKeys.length === 1) {
+          await route.fetch();
+          await route.abort("failed");
+        } else await route.continue();
+      },
+    );
+    await withdrawDialog
+      .getByRole("button", { name: "Withdraw from inbox", exact: true })
+      .click();
+    await expect(withdrawDialog.getByRole("alert")).toBeVisible();
+    await withdrawDialog
+      .getByRole("button", { name: "Withdraw from inbox", exact: true })
+      .click();
+    await expect(withdrawDialog).toHaveCount(0);
+    expect(withdrawalKeys).toHaveLength(2);
+    expect(withdrawalKeys[0]).toBe(withdrawalKeys[1]);
+    // A stale open page must recheck withdrawal before delivering cached bytes.
+    await received
+      .getByRole("button", { name: "Download received PDF", exact: true })
+      .click();
+    await expect(buyer.getByRole("alert")).toContainText("DOCUMENT_WITHDRAWN");
+    await expect(buyer.getByRole("dialog")).toHaveCount(0);
+    await buyer.reload();
+    await nav(buyer, "Billing");
+    await expect(
+      buyer.getByRole("button", { name: "Download received PDF", exact: true }),
+    ).toHaveCount(0);
+    current = (await inbox())[0];
+    expect(current.state).toBe("withdrawn");
+    expect(current.acknowledgments).toHaveLength(1);
+    const after = await (await page.request.get("/api/dashboard")).json();
+    expect(after.invoices).toEqual(before.invoices);
+    expect(after.stock).toEqual(before.stock);
+    expect(after.orders).toEqual(before.orders);
+    expect(after.shipments).toEqual(before.shipments);
+    expect(await review()).toEqual(original);
+    await page
+      .getByRole("dialog")
+      .getByLabel("Reason / evidence", { exact: true })
+      .fill("Synthetic reviewed republication");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Publish to customer inbox", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const history = (await inbox()).filter(
+      (p: any) => p.document_id === invoice.id,
+    );
+    expect(history).toHaveLength(2);
+    const replacement = history.find((p: any) => p.state === "available");
+    expect(replacement.id).not.toBe(publication.id);
+    expect(replacement.content_hash).toBe(hash);
+    expect(replacement.acknowledgments).toHaveLength(0);
+    expect(
+      history.find((p: any) => p.id === publication.id).acknowledgments,
+    ).toHaveLength(1);
+    const credit = await cmd("billing.credit", {
+      invoiceId: invoice.id,
+      reference: "BROWSER-INBOX-CREDIT",
+      reason: "Synthetic original-price return",
+      lines: [{ lineId: invoice.lines[0].id, quantity: 1 }],
+    });
+    await page.reload();
+    await nav(page, "Billing");
+    const creditRow = page
+      .getByRole("row")
+      .filter({
+        has: page.getByRole("button", {
+          name: "Review and publish credit",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: credit.number });
+    const creditDownload = page.waitForEvent("download");
+    await creditRow
+      .getByRole("button", { name: "Review and publish credit", exact: true })
+      .click();
+    const creditBytes = await readFile((await (await creditDownload).path())!);
+    const creditHash = createHash("sha256").update(creditBytes).digest("hex");
+    await expect(
+      page.getByRole("dialog", { name: "Publish reviewed PDF", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Reason / evidence", { exact: true })
+      .fill("Synthetic credit PDF review");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Publish to customer inbox", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const creditPub = (await inbox()).find(
+      (p: any) => p.document_id === credit.id,
+    );
+    expect(creditPub.kind).toBe("credit");
+    expect(creditPub.content_hash).toBe(creditHash);
+    await buyer.reload();
+    await nav(buyer, "Billing");
+    const buyerCredit = buyer
+      .getByRole("row")
+      .filter({
+        has: buyer.getByRole("button", {
+          name: "Download and review receipt",
+          exact: true,
+        }),
+      })
+      .filter({ hasText: creditPub.number });
+    const creditEvent = buyer.waitForEvent("download");
+    await buyerCredit
+      .getByRole("button", { name: "Download and review receipt", exact: true })
+      .click();
+    expect(await readFile((await (await creditEvent).path())!)).toEqual(
+      creditBytes,
+    );
+    await buyer
+      .getByRole("dialog", { name: "Confirm document receipt", exact: true })
+      .getByRole("button", { name: "Confirm receipt", exact: true })
+      .click();
+    await expect(buyer.getByRole("dialog")).toHaveCount(0);
+    expect(
+      (await inbox()).find((p: any) => p.id === creditPub.id).acknowledgments[0]
+        .content_hash,
+    ).toBe(creditHash);
+    const final = await (await page.request.get("/api/dashboard")).json();
+    expect(final.invoices.find((i: any) => i.id === invoice.id).balance).toBe(
+      11300,
+    );
+    expect(final.stock).toEqual(before.stock);
+    expect(final.orders).toEqual(before.orders);
+    expect(final.shipments).toEqual(before.shipments);
+    expect(errors).toEqual([]);
+  } finally {
+    for (const context of contexts) await context.close();
+  }
+});

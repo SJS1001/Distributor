@@ -103,6 +103,9 @@ async function downloadPdf(path: string, payload: unknown, storageKey: string) {
     hash !== response.headers.get("x-document-sha256")
   )
     throw new Error("PDF integrity check failed. Retry the download.");
+  const receipt = response.headers.get("x-download-receipt");
+  if (!receipt?.trim())
+    throw new Error("Download receipt is missing. Retry the PDF.");
   const filename =
     response.headers
       .get("content-disposition")
@@ -118,5 +121,5 @@ async function downloadPdf(path: string, payload: unknown, storageKey: string) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
   sessionStorage.removeItem(storageKey);
-  return response.headers.get("x-download-receipt");
+  return receipt;
 }

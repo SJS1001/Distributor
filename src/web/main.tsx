@@ -295,6 +295,12 @@ function App() {
       .then((downloadId) => {
         if (typeof downloadId !== "string" || !downloadId)
           throw new Error("Download receipt is missing. Retry the PDF.");
+        if (
+          publication.acknowledgments.some(
+            (a: Item) => a.actor_id === actor?.id,
+          )
+        )
+          return;
         open(
           "Confirm document receipt",
           [],
