@@ -58,6 +58,10 @@ export class QuickBooksAuthorization {
       revision: number,
       bundle: TokenBundle,
     ) => { revision: number },
+    private disable: (
+      binding: CredentialBinding,
+      revision: number,
+    ) => ReturnType<ProviderCredentials["status"]>,
   ) {
     store.migrate(`CREATE TABLE IF NOT EXISTS integration_authorizations (
       id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,account_id TEXT NOT NULL,worker_id TEXT NOT NULL,
@@ -233,6 +237,40 @@ export class QuickBooksAuthorization {
         credentials: current.credentials,
         attempt: row ? this.metadata(row) : null,
       };
+    });
+  }
+  disconnect(
+    binding: AuthorizationBinding,
+    sessionToken: string,
+    revision: number,
+  ) {
+    integer(revision, "credential revision");
+    return this.database.transaction(() => {
+      const actor = this.browserPrincipal(binding, sessionToken);
+      this.current(binding, false);
+      // Stopping local access requires neither provider consent nor decryption.
+      // The vault revision/claim fence prevents a late refresh from reinstalling tokens.
+      const credentials = this.disable(binding, revision);
+      const canceled = Number(
+        this.store.run(
+          "UPDATE integration_authorizations SET state='canceled',claim=NULL WHERE org_id=? AND binding_id=? AND state IN('pending','exchanging')",
+          binding.orgId,
+          binding.id,
+        ).changes,
+      );
+      this.platform.audit(
+        actor,
+        "provider.authorization.disconnect",
+        binding.id,
+        {
+          provider: "quickbooks",
+          environment: "sandbox",
+          workerUserId: binding.workerUserId,
+          revision: credentials.revision,
+          canceledAttempts: canceled,
+        },
+      );
+      return credentials;
     });
   }
   status(

@@ -2326,6 +2326,21 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.body.attemptId,
       ),
   );
+  http.post<{ Body: { revision: number } }>(
+    "/api/quickbooks/authorization/disconnect",
+    {
+      schema: {
+        body: obj({
+          revision: { type: "integer", minimum: 0, maximum: 1000000000 },
+        }),
+      },
+    },
+    async (request) =>
+      authorization().disconnect(
+        request.cookies.distributor_session!,
+        request.body.revision,
+      ),
+  );
   http.post<{ Body: { attemptId: string; callbackUrl: string } }>(
     "/api/quickbooks/authorization/complete",
     {

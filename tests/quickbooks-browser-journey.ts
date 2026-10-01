@@ -146,6 +146,96 @@ test("browser: QuickBooks authorization keeps Strict login cookies, cancels atte
   await expect(
     page.getByRole("region", { name: "QuickBooks connection" }),
   ).toContainText("Revision 1");
+  const connection = page.getByRole("region", {
+    name: "QuickBooks connection",
+    exact: true,
+  });
+  await connection
+    .getByRole("button", {
+      name: "Review local QuickBooks disconnect",
+      exact: true,
+    })
+    .click();
+  const review = page.getByRole("region", {
+    name: "Review QuickBooks disconnect",
+    exact: true,
+  });
+  await expect(review).toContainText("revision 1");
+  await expect(review).toContainText("This does not revoke access at Intuit");
+  await review
+    .getByRole("button", { name: "Keep QuickBooks connection", exact: true })
+    .click();
+  await expect(review).toHaveCount(0);
+  await expect(connection).toContainText("Credentials: ready");
+  await connection
+    .getByRole("button", {
+      name: "Review local QuickBooks disconnect",
+      exact: true,
+    })
+    .click();
+  await connection
+    .getByRole("button", {
+      name: "Check QuickBooks connection status",
+      exact: true,
+    })
+    .click();
+  await expect(review).toHaveCount(0);
+  await expect(
+    connection.getByRole("button", {
+      name: "Check QuickBooks connection status",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await connection
+    .getByRole("button", {
+      name: "Review local QuickBooks disconnect",
+      exact: true,
+    })
+    .click();
+  let disconnects = 0;
+  await page.route(
+    "**/api/quickbooks/authorization/disconnect",
+    async (route) => {
+      disconnects++;
+      expect(route.request().postDataJSON()).toEqual({ revision: 1 });
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    },
+  );
+  await review
+    .getByRole("button", {
+      name: "Confirm local QuickBooks disconnect",
+      exact: true,
+    })
+    .click();
+  await expect(connection.getByRole("alert")).toBeVisible();
+  await expect(review).toHaveCount(0);
+  await expect(
+    connection.getByRole("button", {
+      name: "Review local QuickBooks disconnect",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await connection
+    .getByRole("button", {
+      name: "Check QuickBooks connection status",
+      exact: true,
+    })
+    .click();
+  await expect(connection).toContainText("Credentials: disabled");
+  await expect(connection).toContainText("Revision 2");
+  await expect(
+    connection.getByRole("button", {
+      name: "Review local QuickBooks disconnect",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  expect(disconnects).toBe(1);
+  await page.reload();
+  await billing();
+  await expect(connection).toContainText("Credentials: disabled");
+  expect(disconnects).toBe(1);
   const dimensions = await page.evaluate(() => ({
     screen: document.documentElement.clientWidth,
     content: document.documentElement.scrollWidth,

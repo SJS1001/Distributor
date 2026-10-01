@@ -30,10 +30,12 @@ export function QuickBooksConnection() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
+  const [review, setReview] = useState<number | null>(null);
   const epoch = useRef(0);
   const read = useRef<AbortController | null>(null);
   const active = useRef(false);
   const load = async () => {
+    setReview(null);
     read.current?.abort();
     const controller = new AbortController(),
       current = ++epoch.current;
@@ -63,8 +65,9 @@ export function QuickBooksConnection() {
       read.current?.abort();
     };
   }, []);
-  const act = async (action: "begin" | "cancel") => {
+  const act = async (action: "begin" | "cancel" | "disconnect") => {
     if (!summary?.enabled || busy || uncertain) return;
+    if (action === "disconnect" && review === null) return;
     setBusy(true);
     setError("");
     try {
@@ -73,9 +76,14 @@ export function QuickBooksConnection() {
         {
           method: "POST",
           body: JSON.stringify(
-            action === "begin"
-              ? { revision: summary.credentials.revision }
-              : { attemptId: summary.attempt!.id },
+            action === "cancel"
+              ? { attemptId: summary.attempt!.id }
+              : {
+                  revision:
+                    action === "disconnect"
+                      ? review
+                      : summary.credentials.revision,
+                },
           ),
         },
       );
@@ -95,6 +103,7 @@ export function QuickBooksConnection() {
       } else await load();
     } catch (e) {
       if (active.current) {
+        setReview(null);
         setError((e as Error).message);
         setUncertain(true);
       }
@@ -148,13 +157,50 @@ export function QuickBooksConnection() {
                   Cancel connection attempt
                 </button>
               )}
+            {!["missing", "disabled"].includes(summary.credentials.state) && (
+              <button
+                className="secondary"
+                disabled={busy || uncertain || review !== null}
+                onClick={() => setReview(summary.credentials.revision)}
+              >
+                Review local QuickBooks disconnect
+              </button>
+            )}
           </div>
+          {review !== null && (
+            <section aria-label="Review QuickBooks disconnect">
+              <h3>Disconnect local QuickBooks access</h3>
+              <p>
+                Remove stored credentials for sandbox company {summary.realm},
+                revision {review}, and cancel all pending connections for this
+                binding. Existing accounting records remain. This does not
+                revoke access at Intuit or undo requests already sent. Review
+                the connected app in Intuit separately to revoke upstream
+                access.
+              </p>
+              <div className="actions">
+                <button
+                  disabled={busy || uncertain}
+                  onClick={() => void act("disconnect")}
+                >
+                  Confirm local QuickBooks disconnect
+                </button>
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setReview(null)}
+                >
+                  Keep QuickBooks connection
+                </button>
+              </div>
+            </section>
+          )}
         </>
       )}
       {uncertain && (
         <p>
           The response was not confirmed. Check status before starting another
-          attempt.
+          attempt or disconnecting.
         </p>
       )}
       {error && <p role="alert">{error}</p>}

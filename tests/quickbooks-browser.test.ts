@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { Application } from "../src/server/application.ts";
 import {
@@ -608,4 +609,353 @@ test("HTTP browser authorization requires finance, exact Origin/CSRF and strict 
     ).statusCode,
     503,
   );
+});
+
+function installed(f: ReturnType<typeof setup>, expired = false) {
+  f.app.providerCredentials.install(f.binding, 0, {
+    accessToken: "synthetic-disconnect-access",
+    refreshToken: "synthetic-disconnect-refresh",
+    accessExpiresAt: Date.now() + (expired ? -1000 : 3600000),
+    refreshExpiresAt: Date.now() + 86400000,
+  });
+}
+
+test("browser disconnect removes only configured material, cancels all its pending initiators, audits the human and survives restart without IO", async (t) => {
+  const f = setup(t);
+  installed(f);
+  const foreign = { ...f.binding, id: "other-binding" };
+  f.app.providerCredentials.install(foreign, 0, {
+    accessToken: "synthetic-other-access",
+    refreshToken: "synthetic-other-refresh",
+    accessExpiresAt: Date.now() + 3600000,
+    refreshExpiresAt: Date.now() + 86400000,
+  });
+  const otherBefore = f.store.get(
+    "SELECT * FROM integration_credentials WHERE binding_id=?",
+    foreign.id,
+  );
+  const own = f.browser.begin(f.session.token, 1);
+  const cli = f.flow.begin(f.binding, 1);
+  const another = f.app.identity.login("finance@example.test", password);
+  const latest = f.browser.begin(another.token, 1);
+  let calls = 0;
+  mock(t, async () => {
+    calls++;
+    throw Error("No disconnect IO");
+  });
+  chooseProviders(f, f.actor, "disconnect-withdraw", {
+    accountId: f.buyer,
+    region: "CA",
+    mode: "strict",
+    providers: [],
+    version: 2,
+    acknowledgment: "Synthetic withdrawal",
+  });
+  assert.equal(f.browser.disconnect(f.session.token, 1).state, "disabled");
+  assert.equal(f.browser.status(f.session.token).credentials.revision, 2);
+  for (const start of [own, cli, latest])
+    assert.equal(state(f, start.id), "canceled");
+  const disabled = f.store.get(
+    "SELECT * FROM integration_credentials WHERE binding_id=?",
+    f.binding.id,
+  )!;
+  assert.equal(disabled.material, null);
+  assert.equal(disabled.claim, null);
+  assert.equal(disabled.started_at, null);
+  assert.deepEqual(
+    f.store.get(
+      "SELECT * FROM integration_credentials WHERE binding_id=?",
+      foreign.id,
+    ),
+    otherBefore,
+  );
+  assert.throws(
+    () => f.browser.disconnect(f.session.token, 1),
+    isCode("REVISION"),
+  );
+  const audit = f.app.database
+    .owned("platform")
+    .get(
+      "SELECT * FROM platform_audit WHERE action='provider.authorization.disconnect'",
+    )!;
+  assert.equal(audit.actor_id, f.session.actor.id);
+  assert.deepEqual(JSON.parse(String(audit.detail)), {
+    provider: "quickbooks",
+    environment: "sandbox",
+    workerUserId: f.actor.id,
+    revision: 2,
+    canceledAttempts: 1,
+  });
+  const reopened = new Application(f.path, "CA", security);
+  try {
+    const browser = new QuickBooksBrowser(
+      reopened,
+      f.binding,
+      "synthetic-client-secret",
+      origin,
+    );
+    assert.equal(browser.status(f.session.token).credentials.state, "disabled");
+    assert.equal(browser.status(another.token).attempt!.state, "canceled");
+  } finally {
+    reopened.close();
+  }
+  assert.equal(calls, 0);
+  for (const secret of [
+    "synthetic-disconnect-access",
+    "synthetic-disconnect-refresh",
+  ])
+    assert.equal(readFileSync(f.path).includes(Buffer.from(secret)), false);
+});
+
+test("browser disconnect rejects stale revisions and current login/role/password/MFA/worker scope before mutations", (t) => {
+  const f = setup(t);
+  installed(f);
+  const start = f.browser.begin(f.session.token, 1);
+  const iam = f.app.database.owned("iam");
+  const before = f.store.get("SELECT * FROM integration_credentials");
+  assert.throws(
+    () => f.browser.disconnect(f.session.token, 0),
+    isCode("REVISION"),
+  );
+  assert.throws(
+    () =>
+      f.flow.disconnect({ ...f.binding, orgId: "other" }, f.session.token, 1),
+    isCode("FORBIDDEN"),
+  );
+  iam.run("UPDATE iam_users SET role='support' WHERE id=?", f.session.actor.id);
+  assert.throws(
+    () => f.browser.disconnect(f.session.token, 1),
+    isCode("FORBIDDEN"),
+  );
+  iam.run("UPDATE iam_users SET role='finance' WHERE id=?", f.session.actor.id);
+  iam.run(
+    "UPDATE iam_user_security SET password_change_required=1 WHERE user_id=?",
+    f.session.actor.id,
+  );
+  assert.throws(
+    () => f.browser.disconnect(f.session.token, 1),
+    isCode("OAUTH_SECURITY"),
+  );
+  iam.run(
+    "UPDATE iam_user_security SET password_change_required=0 WHERE user_id=?",
+    f.session.actor.id,
+  );
+  iam.run("UPDATE iam_users SET active=0 WHERE id=?", f.actor.id);
+  assert.throws(
+    () => f.browser.disconnect(f.session.token, 1),
+    isCode("FORBIDDEN"),
+  );
+  iam.run("UPDATE iam_users SET active=1 WHERE id=?", f.actor.id);
+  f.app.identity.logout(f.session.token);
+  assert.throws(
+    () => f.browser.disconnect(f.session.token, 1),
+    isCode("UNAUTHENTICATED"),
+  );
+  assert.deepEqual(
+    f.store.get("SELECT * FROM integration_credentials"),
+    before,
+  );
+  assert.equal(state(f, start.id), "pending");
+  const mfa = setup(t, true);
+  installed(mfa);
+  assert.throws(
+    () => mfa.browser.disconnect(mfa.session.token, 1),
+    isCode("OAUTH_SECURITY"),
+  );
+  assert.equal(mfa.app.providerCredentials.status(mfa.binding).state, "ready");
+});
+
+test("late human disconnect audit failure rolls back tokens, revision, canceled attempts and earlier worker audit", (t) => {
+  const f = setup(t);
+  installed(f);
+  const start = f.browser.begin(f.session.token, 1);
+  const before = f.store.get("SELECT * FROM integration_credentials");
+  const audits = f.app.database
+    .owned("platform")
+    .all("SELECT * FROM platform_audit ORDER BY rowid");
+  const original = f.app.platform.audit;
+  f.app.platform.audit = (...args: Parameters<typeof original>) => {
+    if (args[1] === "provider.authorization.disconnect")
+      throw Error("Synthetic late audit fault");
+    return original.apply(f.app.platform, args);
+  };
+  try {
+    assert.throws(
+      () => f.browser.disconnect(f.session.token, 1),
+      /Synthetic late audit fault/,
+    );
+  } finally {
+    f.app.platform.audit = original;
+  }
+  assert.deepEqual(
+    f.store.get("SELECT * FROM integration_credentials"),
+    before,
+  );
+  assert.equal(state(f, start.id), "pending");
+  assert.deepEqual(
+    f.app.database
+      .owned("platform")
+      .all("SELECT * FROM platform_audit ORDER BY rowid"),
+    audits,
+  );
+});
+
+for (const phase of ["token", "company"] as const) {
+  test(`disconnect fences an authorization response at ${phase} and cannot reinstall stored tokens`, async (t) => {
+    const f = setup(t);
+    installed(f);
+    const start = f.browser.begin(f.session.token, 1);
+    let calls = 0;
+    mock(t, async () => {
+      calls++;
+      if (calls === (phase === "token" ? 1 : 2))
+        f.browser.disconnect(f.session.token, 1);
+      return calls === 1
+        ? tokens()
+        : Response.json({ CompanyInfo: { Id: "1234" } });
+    });
+    await assert.rejects(
+      f.browser.complete(f.session.token, start.id, callback(start)),
+      (e) => (e as { status: number }).status === 503,
+    );
+    assert.equal(calls, phase === "token" ? 1 : 2);
+    assert.equal(state(f, start.id), "canceled");
+    assert.equal(
+      f.browser.status(f.session.token).credentials.state,
+      "disabled",
+    );
+    assert.equal(f.browser.status(f.session.token).credentials.revision, 2);
+    assert.equal(
+      f.store.get("SELECT material FROM integration_credentials")!.material,
+      null,
+    );
+  });
+}
+
+test("browser disconnect fences an in-flight refresh and works without a decryption key after restart", async (t) => {
+  const f = setup(t);
+  installed(f, true);
+  mock(t, async () => {
+    f.browser.disconnect(f.session.token, 1);
+    return tokens();
+  });
+  const effect = {
+    id: "synthetic-effect",
+    org_id: f.actor.orgId,
+    account_id: f.buyer,
+    provider: "quickbooks" as const,
+    kind: "invoice",
+    reference: "synthetic",
+    payload: "{}",
+    state: "pending",
+    external_ref: null,
+    result: null,
+    created_at: new Date().toISOString(),
+    residency_version: 2,
+    started_at: null,
+    error: null,
+  };
+  await assert.rejects(
+    f.app.providerCredentials.access(f.binding, "secret", effect),
+    isCode("CREDENTIAL_STALE"),
+  );
+  assert.equal(f.browser.status(f.session.token).credentials.state, "disabled");
+  f.app.providerCredentials.install(f.binding, 2, {
+    accessToken: "synthetic-new",
+    refreshToken: "synthetic-new-refresh",
+    accessExpiresAt: Date.now() + 3600000,
+    refreshExpiresAt: Date.now() + 86400000,
+  });
+  const withoutKey = new Application(f.path, "CA");
+  try {
+    // Native browser-owned command can remove encrypted material without reading it.
+    // Normal opted-in browser startup still requires its configured encryption key.
+    assert.equal(
+      withoutKey.providerCredentials.authorization.disconnect(
+        f.binding,
+        f.session.token,
+        3,
+      ).revision,
+      4,
+    );
+    assert.equal(
+      withoutKey.providerCredentials.status(f.binding).state,
+      "disabled",
+    );
+  } finally {
+    withoutKey.close();
+  }
+});
+
+test("HTTP disconnect enforces login, strict revision, Origin/CSRF, fixed binding and current finance authority", async (t) => {
+  const f = setup(t);
+  installed(f);
+  const http = await createHttp(f.app, {
+    origin,
+    quickbooksBrowser: f.browser,
+  });
+  t.after(() => http.close());
+  const headers = {
+    origin,
+    cookie: `distributor_session=${f.session.token}`,
+    "x-csrf-token": f.session.csrf,
+  };
+  const url = "/api/quickbooks/authorization/disconnect";
+  const post = (payload: object, h = headers) =>
+    http.inject({ method: "POST", url, headers: h, payload });
+  assert.equal(
+    (await post({ revision: 1 }, { ...headers, cookie: "" })).statusCode,
+    401,
+  );
+  assert.equal(
+    (
+      await post(
+        { revision: 1 },
+        { ...headers, origin: "https://evil.example.test" },
+      )
+    ).statusCode,
+    403,
+  );
+  assert.equal(
+    (await post({ revision: 1 }, { ...headers, "x-csrf-token": "wrong" }))
+      .statusCode,
+    403,
+  );
+  for (const payload of [
+    {},
+    { revision: "1" },
+    { revision: -1 },
+    { revision: 1, bindingId: "other" },
+  ])
+    assert.equal((await post(payload)).statusCode, 400);
+  assert.equal((await post({ revision: 0 })).json().code, "REVISION");
+  assert.equal(f.browser.status(f.session.token).credentials.state, "ready");
+  f.app.database
+    .owned("iam")
+    .run("UPDATE iam_users SET role='support' WHERE id=?", f.session.actor.id);
+  assert.equal((await post({ revision: 1 })).statusCode, 403);
+  f.app.database
+    .owned("iam")
+    .run("UPDATE iam_users SET role='finance' WHERE id=?", f.session.actor.id);
+  const result = await post({ revision: 1 });
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.json().state, "disabled");
+  assert.equal(result.json().revision, 2);
+  assert.equal(result.body.includes("synthetic-disconnect"), false);
+  const disabled = await createHttp(f.app, { origin });
+  try {
+    assert.equal(
+      (
+        await disabled.inject({
+          method: "POST",
+          url,
+          headers,
+          payload: { revision: 2 },
+        })
+      ).statusCode,
+      503,
+    );
+  } finally {
+    await disabled.close();
+  }
 });

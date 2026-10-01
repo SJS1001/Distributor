@@ -47,6 +47,13 @@ export class QuickBooksBrowser {
       token,
     );
   }
+  disconnect(token: string, revision: number) {
+    return this.app.providerCredentials.authorization.disconnect(
+      this.binding,
+      token,
+      revision,
+    );
+  }
   cancel(token: string, attemptId: string) {
     return this.app.providerCredentials.authorization.cancel(
       this.binding,

@@ -74,6 +74,7 @@ export class ProviderCredentials {
       this,
       (binding, revision, bundle) =>
         this.writeInstall(binding, revision, bundle),
+      (binding, revision) => this.writeDisable(binding, revision),
     );
   }
   get available() {
@@ -510,30 +511,34 @@ export class ProviderCredentials {
     return this.status(binding);
   }
   disable(binding: CredentialBinding, revision: number) {
-    return this.database.transaction(() => {
-      this.validateBinding(binding);
-      const actor = this.identity.workerActor(
-          binding.orgId,
-          binding.workerUserId,
-        ),
-        row = this.row(binding);
-      check(
-        row && row.revision === revision,
-        "REVISION",
-        "Credentials changed; inspect current state before disabling.",
-      );
-      this.store.run(
-        "UPDATE integration_credentials SET revision=revision+1,state='disabled',material=NULL,claim=NULL,started_at=NULL WHERE org_id=? AND binding_id=?",
+    return this.database.transaction(() =>
+      this.writeDisable(binding, revision),
+    );
+  }
+  private writeDisable(binding: CredentialBinding, revision: number) {
+    integer(revision, "credential revision");
+    this.validateBinding(binding);
+    const actor = this.identity.workerActor(
         binding.orgId,
-        binding.id,
-      );
-      this.platform.audit(actor, "provider.credentials.disable", binding.id, {
-        revision: revision + 1,
-        provider: "quickbooks",
-        providerRevocationConfirmed: false,
-      });
-      return this.status(binding);
+        binding.workerUserId,
+      ),
+      row = this.row(binding);
+    check(
+      row && row.revision === revision,
+      "REVISION",
+      "Credentials changed; inspect current state before disabling.",
+    );
+    this.store.run(
+      "UPDATE integration_credentials SET revision=revision+1,state='disabled',material=NULL,claim=NULL,started_at=NULL WHERE org_id=? AND binding_id=?",
+      binding.orgId,
+      binding.id,
+    );
+    this.platform.audit(actor, "provider.credentials.disable", binding.id, {
+      revision: revision + 1,
+      provider: "quickbooks",
+      providerRevocationConfirmed: false,
     });
+    return this.status(binding);
   }
   // Snapshot refresh tokens may have rotated or been revoked after the cutoff.
   invalidateRestoredCredentials() {
