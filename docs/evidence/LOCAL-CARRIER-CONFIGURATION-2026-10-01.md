@@ -1,0 +1,25 @@
+# Explicit sandbox carrier startup — 2026-10-01
+
+**PASS within captured local regression scope only. All 44 acceptance tasks and 10 gates remain NOT VERIFIED; the full system remains incomplete.** Partial D-027/D-036 engineering for REQ-03/REQ-16/REQ-19 and CH-05/CH-07/CH-09. Reviewer: Codex self-review, without independent security or operator/carrier acceptance.
+
+Parent `d6efe114404d079a01398c3fb79bf2ff6991c725`, branch `codex/local-distributor-checkpoint`. Final candidate captured at `2026-10-01T21:01:12.885943+00:00`. The [companion](LOCAL-CARRIER-CONFIGURATION-2026-10-01.json) binds all 243 non-document application/configuration/test/script/repository inputs, 165 unchanged historical evidence files, unchanged baseline license/notice files, final scope documents, commands/logs and private captures. No schema, dependency or license changes. See [the startup procedure](../CARRIER-BOOKINGS.md#explicit-sandbox-startup-configuration).
+
+Environment: direct workstation `/Users/stevensmith/Documents/Distributor`, macOS arm64, Node v24.16.0/npm 11.13.0, disposable native SQLite, repository-pinned Playwright/Chromium. Synthetic US/Canadian organizations, fake carrier configuration/responses and local HTTP/browser/subprocesses only. No actual carrier authentication, provider account or external request.
+
+| Check | Observed outcome |
+| --- | --- |
+| Full backend, `npm test` | PASS 877/877, zero fail/cancel/skip/todo; TAP duration 52100.672667 ms; process elapsed 52.45182374998694 s |
+| Full browser/build, `npm run test:e2e` | Production build PASS, Chromium 52/52; process elapsed 133.28620479200617 s |
+| Type/format | `npm run typecheck`, `npm run format:check` PASS, exit 0 |
+| Corrected focused carrier checks | PASS 181/181 before the additional entry-point check |
+| Entry-point/current-withdrawal checks | PASS 3/3; normal server startup with outbound fetch blocked |
+
+Expected/observed configuration: absent/false carrier switch ignores subordinate credentials, payment/accounting switches cannot enable carriers, and explicit enablement requires at least one selected sandbox client and an existing organization in the regional store. Strict flags, bounded trimmed strings, exact shipper/service structures, supported country/service/pickup mappings and sanitized errors reject malformed configuration. Only selected clients are built. Organization lookup stays owned by IAM; no credential/bookings writes or authentication occur during configuration. Shipping geography remains independent of data-storage region. Captured configuration cannot silently change account, token, organization or mappings after environment mutation.
+
+Expected/observed native/HTTP: US/CA UPS and FedEx configured sends use the original sandbox credentials/accounts through authenticated reviewed booking operations. Private label bytes match fixtures; inventory, invoice and native shipment facts remain unchanged. A second send rejects STATE/409 without another provider request. Forged organization and deactivated actor fail current authority. Existing customer-choice withdrawal checks now use configured runtime: withdrawal during authentication prevents shipping transmission. UPS lost-response restart recovers by exact read-only observation without another shipment; FedEx unknown outcomes retain the unsupported-recovery and resend fences. Native handover remains a separate reviewed operation.
+
+A distinct process runs the normal server entry point with synthetic UPS configuration, payment providers disabled and outbound fetch replaced by an exit-on-call guard. A parent loopback HTTP read confirms the retained review is enabled/pending; no booking, secret output or outbound request occurs. The process starts and terminates normally under bounded waits. This proves local wiring, not actual provider or production network behavior.
+
+Preserved failures: first focused regression FAIL 174/181 and type FAIL because the test refactor accidentally changed adjacent direct-adapter recovery calls, and new replay oracles expected 200 instead of the existing STATE/409. Restored those adapter calls and corrected replay expectations while preserving no-additional-request assertions. A first repair script stopped on a title mismatch before changes. Corrected focused checks/type passed; final captured full checks above include the additional actual-entry-point test. Failed/intermediate logs remain under `/tmp/distributor-carrier-config-checkpoint`; temporary retention is not guaranteed.
+
+Receipt-stage planning/local-link and whitespace outcomes are recorded in the companion; structure is not product acceptance. Actual providers/services, other major carriers, vendor terms and disclosures, credentials/rotation/custody, physical devices/labels, infrastructure residency, security/load/restore/retention and operator acceptance remain unqualified. This change does not authorize activation or enable production endpoints. Work remains direct workstation/local commits only: no CI jobs/runners/workflows, delegation/cloud source transfer, push/PR, deployment/publication, purchases, live customer data or OPUS/UB integration.

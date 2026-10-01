@@ -6,6 +6,7 @@ import { check } from "./core.ts";
 import { type Region } from "./iam.ts";
 import { configuredProviders } from "./provider-runtime.ts";
 import { configuredQuickBooksBrowser } from "./quickbooks-browser.ts";
+import { configuredCarriers } from "./carrier-config.ts";
 const host = process.env.HOST ?? "127.0.0.1",
   port = Number(process.env.PORT ?? 3000),
   origin = process.env.PUBLIC_ORIGIN ?? `http://127.0.0.1:${port}`,
@@ -38,6 +39,7 @@ const http = await createHttp(app, {
   secureCookies,
   providers: configuredProviders(app),
   quickbooksBrowser: configuredQuickBooksBrowser(app, origin),
+  carriers: configuredCarriers(app),
 });
 // Local application maintenance only. Startup also processes one batch; each
 // minute erases at most 100 expired enrollment bundles without provider I/O.

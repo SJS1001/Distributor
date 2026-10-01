@@ -1,4 +1,9 @@
 import { test } from "node:test";
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { fixture, accept, chooseProviders } from "./fixtures.ts";
@@ -8,6 +13,7 @@ import {
   UpsSandbox,
   type UpsSandboxConfig,
 } from "../src/server/ups-sandbox.ts";
+import { configuredCarriers } from "../src/server/carrier-config.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
 import { createHttp } from "../src/server/http.ts";
 import type { CarrierIntent } from "../src/server/carrier-bookings.ts";
@@ -142,6 +148,18 @@ function setup(
     intent,
     config,
   });
+}
+function startupEnvironment(config: UpsSandboxConfig): NodeJS.ProcessEnv {
+  return {
+    CARRIERS_ENABLED: "true",
+    UPS_SANDBOX_ENABLED: "true",
+    CARRIER_ORG_ID: config.orgId,
+    UPS_CLIENT_ID: config.clientId,
+    UPS_CLIENT_SECRET: config.clientSecret,
+    UPS_SHIPPER_NUMBER: config.shipperNumber,
+    UPS_SHIPPER_JSON: JSON.stringify(config.shipper),
+    UPS_SERVICES_JSON: JSON.stringify(config.services),
+  };
 }
 type F = ReturnType<typeof setup>;
 function native(f: F) {
@@ -796,11 +814,14 @@ test("UPS lost successful response survives restart, recovers exact reference wi
   const f = setup(t),
     before = native(f),
     sim = simulator({ loseShipping: true });
-  const client = new UpsSandbox(f.config, sim.transport);
-  await assert.rejects(
-    () => f.app.carriers.execute(f.actor, f.prepared.id, client),
-    { code: "CARRIER_TRANSPORT" },
-  );
+  const client = configuredCarriers(
+    f.app,
+    startupEnvironment(f.config),
+    sim.transport,
+  )!;
+  await assert.rejects(() => client.execute(f.actor, f.prepared.id), {
+    code: "CARRIER_TRANSPORT",
+  });
   assert.equal(
     f.app.carriers.review(f.actor, f.shipmentId).booking!.state,
     "unknown",
@@ -808,16 +829,15 @@ test("UPS lost successful response survives restart, recovers exact reference wi
   assert.deepEqual(native(f), before);
   f.app.close();
   f.app = new Application(f.path, "CA");
-  const restarted = new UpsSandbox(f.config, sim.transport);
-  await assert.rejects(
-    () => f.app.carriers.execute(f.actor, f.prepared.id, restarted),
-    { code: "STATE" },
-  );
-  const recovered = await f.app.carriers.reconcile(
-    f.actor,
-    f.prepared.id,
-    restarted,
-  );
+  const restarted = configuredCarriers(
+    f.app,
+    startupEnvironment(f.config),
+    sim.transport,
+  )!;
+  await assert.rejects(() => restarted.execute(f.actor, f.prepared.id), {
+    code: "STATE",
+  });
+  const recovered = await restarted.reconcile(f.actor, f.prepared.id);
   assert.equal(recovered.state, "booked");
   assert.equal(recovered.tracking, tracking);
   assert.equal(
@@ -897,7 +917,9 @@ for (const kind of ["foreign reference", "not found", "foreign label"] as const)
     );
     await assert.rejects(
       () => f.app.carriers.execute(f.actor, f.prepared.id, client),
-      { code: "STATE" },
+      {
+        code: "STATE",
+      },
     );
     await assert.rejects(() =>
       f.app.carriers.reconcile(f.actor, f.prepared.id, client),
@@ -926,11 +948,11 @@ test("UPS rechecks withdrawn customer choice after token retrieval before any sh
       },
     });
   await assert.rejects(() =>
-    f.app.carriers.execute(
-      f.actor,
-      f.prepared.id,
-      new UpsSandbox(f.config, sim.transport),
-    ),
+    configuredCarriers(
+      f.app,
+      startupEnvironment(f.config),
+      sim.transport,
+    )!.execute(f.actor, f.prepared.id),
   );
   assert.equal(sim.calls.length, 1);
   assert.equal(
@@ -982,4 +1004,178 @@ test("UPS confirmed GIF download retains exact bytes, private headers and curren
     401,
   );
   assert.equal(sim.calls.length, 2);
+});
+
+for (const country of ["CA", "US"] as const)
+  test(`Configured UPS ${country} startup sends the reviewed HTTP booking with captured sandbox credentials and retains native facts`, async (t) => {
+    const f = setup(t, country),
+      sim = simulator(),
+      before = native(f),
+      env = startupEnvironment(f.config);
+    const runtime = configuredCarriers(f.app, env, sim.transport)!;
+    const http = await createHttp(f.app, {
+      origin: "http://localhost:3100",
+      staticRoot: "/nonexistent-configured-carrier-test",
+      carriers: runtime,
+    });
+    t.after(async () => {
+      await http.close();
+    });
+    assert.equal(sim.calls.length, 0);
+    // Later environment edits cannot silently select another account/token/service.
+    for (const key of Object.keys(env)) env[key] = "mutated-private-value";
+    const login = f.app.identity.login(
+      "admin@example.test",
+      "long-test-only-password",
+    );
+    const headers = {
+      cookie: `distributor_session=${login.token}`,
+      origin: "http://localhost:3100",
+      "x-csrf-token": login.csrf,
+    };
+    const sent = await http.inject({
+      method: "POST",
+      url: `/api/carrier/${f.prepared.id}/send`,
+      headers,
+      payload: {},
+    });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.equal(sent.json().state, "booked");
+    assert.equal(sim.calls.length, 2);
+    assert.equal(
+      (sim.calls[0]!.init.headers as Record<string, string>).authorization,
+      "Basic " +
+        Buffer.from("synthetic-ups-client:synthetic-ups-secret").toString(
+          "base64",
+        ),
+    );
+    assert.equal(
+      (sim.calls[1]!.body as Json).ShipmentRequest.Shipment.Shipper
+        .ShipperNumber,
+      "A1B2C3",
+    );
+    assert.deepEqual(native(f), before);
+    const replay = await http.inject({
+      method: "POST",
+      url: `/api/carrier/${f.prepared.id}/send`,
+      headers,
+      payload: {},
+    });
+    assert.equal(replay.statusCode, 409, replay.body);
+    assert.equal(replay.json().code, "STATE");
+    assert.equal(sim.calls.length, 2);
+    const label = await http.inject({
+      method: "GET",
+      url: `/api/carrier/${f.prepared.id}/label`,
+      headers,
+    });
+    assert.equal(label.statusCode, 200);
+    assert.deepEqual(label.rawPayload, gif);
+    assert.doesNotMatch(
+      sent.body,
+      /synthetic-ups-secret|mutated-private-value/,
+    );
+  });
+
+test("Normal server entry point registers configured carriers without outbound access or payment credentials", async (t) => {
+  const f = setup(t),
+    login = f.app.identity.login(
+      "admin@example.test",
+      "long-test-only-password",
+    );
+  const reservation = createServer();
+  await new Promise<void>((resolve, reject) => {
+    reservation.once("error", reject);
+    reservation.listen(0, "127.0.0.1", resolve);
+  });
+  const address = reservation.address();
+  assert.ok(address && typeof address !== "string");
+  const port = address.port;
+  await new Promise<void>((resolve, reject) =>
+    reservation.close((error) => (error ? reject(error) : resolve())),
+  );
+  const guard = join(dirname(f.path), "startup-no-egress.mjs");
+  writeFileSync(
+    guard,
+    'globalThis.fetch = () => { process.stderr.write("Unexpected outbound fetch during startup\\n"); process.exit(87); };\n',
+  );
+  const origin = `http://127.0.0.1:${port}`;
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      pathToFileURL(guard).href,
+      "--import",
+      "tsx",
+      "src/server/main.ts",
+    ],
+    {
+      cwd: process.cwd(),
+      env: {
+        PATH: process.env.PATH,
+        ...startupEnvironment(f.config),
+        HOST: "127.0.0.1",
+        PORT: String(port),
+        PUBLIC_ORIGIN: origin,
+        DATABASE_PATH: f.path,
+        DATA_REGION: "CA",
+        PROVIDERS_ENABLED: "false",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let output = "";
+  const exited = new Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+  }>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("Server did not start within ten seconds")),
+        10000,
+      );
+      const collect = (bytes: Buffer) => {
+        output += bytes.toString();
+        if (output.includes("Distributor listening")) {
+          clearTimeout(timer);
+          resolve();
+        }
+      };
+      child.stdout.on("data", collect);
+      child.stderr.on("data", collect);
+      void exited.then((result) => {
+        clearTimeout(timer);
+        reject(
+          new Error(`Server exited before startup: ${JSON.stringify(result)}`),
+        );
+      }, reject);
+    });
+    const response = await fetch(
+      `${origin}/api/shipments/${f.shipmentId}/carrier`,
+      { headers: { cookie: `distributor_session=${login.token}` } },
+    );
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.enabled, true);
+    assert.equal(result.booking.provider, "ups");
+    assert.equal(result.booking.state, "pending");
+    assert.equal(
+      f.app.carriers.review(f.actor, f.shipmentId).booking!.state,
+      "pending",
+    );
+    assert.doesNotMatch(
+      output,
+      /Unexpected outbound|synthetic-ups-secret|synthetic-ups-client/,
+    );
+  } finally {
+    child.kill("SIGTERM");
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+    const result = await exited;
+    clearTimeout(timer);
+    assert.equal(result.code, 0, output);
+  }
 });

@@ -20,7 +20,7 @@ const base = "https://wwwcie.ups.com";
 const maximumLabel = 1_048_576;
 const maximumResponse = 2_097_152;
 
-// Explicit injection only. Normal startup never creates this client or credentials.
+// Explicit sandbox configuration only; construction performs no provider I/O.
 // CustomerContext correlates a response; it is NOT vendor write idempotency.
 export class UpsSandbox implements CarrierAdapter {
   readonly provider = "ups" as const;

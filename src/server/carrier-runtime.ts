@@ -6,7 +6,7 @@ import { carrierNames, type CarrierName } from "../shared/carrier-booking.ts";
 export type CarrierBinding = { orgId: string; adapter: CarrierAdapter };
 
 // Explicit organization/provider registrations; dispatch follows the stored review.
-// No environment setting or production bootstrap creates a carrier binding.
+// Startup registrations remain separately opt-in and sandbox-only.
 export class CarrierRuntime {
   private readonly bindings: readonly CarrierBinding[];
   constructor(

@@ -197,9 +197,14 @@ export class Identity {
     });
   }
   organization(actor: Actor): Organization {
+    return this.configurationOrganization(actor.orgId);
+  }
+  // Trusted local startup may validate a binding without inventing a user/grant.
+  // Browser/business callers must continue to use their current actor authority.
+  configurationOrganization(orgId: string): Organization {
     const row = this.store.get(
       "SELECT * FROM iam_organizations WHERE id=? AND region=?",
-      actor.orgId,
+      orgId,
       this.region,
     );
     check(row, "FORBIDDEN", "Organization is unavailable in this region.", 403);

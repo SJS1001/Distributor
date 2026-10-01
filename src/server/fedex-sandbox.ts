@@ -25,7 +25,7 @@ const base = "https://apis-sandbox.fedex.com";
 const maximumResponse = 2_097_152;
 const maximumLabel = 1_048_576;
 
-// Trusted injection only; normal startup supplies neither binding nor credentials.
+// Explicit sandbox configuration only; construction performs no provider I/O.
 // Customer transaction/reference values correlate results, not write idempotency.
 export class FedexSandbox implements CarrierAdapter {
   readonly provider = "fedex" as const;

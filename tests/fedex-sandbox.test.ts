@@ -8,6 +8,7 @@ import {
   FedexSandbox,
   type FedexSandboxConfig,
 } from "../src/server/fedex-sandbox.ts";
+import { configuredCarriers } from "../src/server/carrier-config.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
 import { createHttp } from "../src/server/http.ts";
 import type { CarrierIntent } from "../src/server/carrier-bookings.ts";
@@ -148,6 +149,19 @@ function setup(
     intent,
     config,
   });
+}
+function startupEnvironment(config: FedexSandboxConfig): NodeJS.ProcessEnv {
+  return {
+    CARRIERS_ENABLED: "true",
+    FEDEX_SANDBOX_ENABLED: "true",
+    CARRIER_ORG_ID: config.orgId,
+    FEDEX_CLIENT_ID: config.clientId,
+    FEDEX_CLIENT_SECRET: config.clientSecret,
+    FEDEX_ACCOUNT_NUMBER: config.accountNumber,
+    FEDEX_COUNTRY: config.country,
+    FEDEX_PICKUP_TYPE: config.pickupType,
+    FEDEX_SERVICES_JSON: JSON.stringify(config.services),
+  };
 }
 type F = ReturnType<typeof setup>;
 function native(f: F) {
@@ -889,25 +903,27 @@ test("FedEx a lost response stays unknown across restart and unsupported reconci
     sim = simulator({ loseShipping: true });
   await assert.rejects(
     () =>
-      f.app.carriers.execute(
-        f.actor,
-        f.prepared.id,
-        new FedexSandbox(f.config, sim.transport),
-      ),
+      configuredCarriers(
+        f.app,
+        startupEnvironment(f.config),
+        sim.transport,
+      )!.execute(f.actor, f.prepared.id),
     { code: "CARRIER_TRANSPORT" },
   );
   f.app.close();
   f.app = new Application(f.path, "CA");
-  const client = new FedexSandbox(f.config, sim.transport);
+  const client = configuredCarriers(
+    f.app,
+    startupEnvironment(f.config),
+    sim.transport,
+  )!;
   for (let i = 0; i < 2; i++)
-    await assert.rejects(
-      () => f.app.carriers.reconcile(f.actor, f.prepared.id, client),
-      { code: "CARRIER_RECOVERY_UNSUPPORTED" },
-    );
-  await assert.rejects(
-    () => f.app.carriers.execute(f.actor, f.prepared.id, client),
-    { code: "STATE" },
-  );
+    await assert.rejects(() => client.reconcile(f.actor, f.prepared.id), {
+      code: "CARRIER_RECOVERY_UNSUPPORTED",
+    });
+  await assert.rejects(() => client.execute(f.actor, f.prepared.id), {
+    code: "STATE",
+  });
   assert.throws(
     () =>
       f.app.carriers.cancel(f.actor, "fedex-cancel-unknown", {
@@ -997,11 +1013,11 @@ test("FedEx withdrawn named customer choice during token retrieval blocks the sh
       },
     });
   await assert.rejects(() =>
-    f.app.carriers.execute(
-      f.actor,
-      f.prepared.id,
-      new FedexSandbox(f.config, sim.transport),
-    ),
+    configuredCarriers(
+      f.app,
+      startupEnvironment(f.config),
+      sim.transport,
+    )!.execute(f.actor, f.prepared.id),
   );
   assert.equal(sim.calls.length, 1);
   assert.equal(
@@ -1137,3 +1153,71 @@ test("FedEx HTTP dispatch follows the retained provider and serves only private 
   );
   assert.equal(sim.calls.length, 2);
 });
+
+for (const country of ["CA", "US"] as const)
+  test(`Configured FEDEX ${country} startup sends the reviewed HTTP booking with captured sandbox credentials and retains native facts`, async (t) => {
+    const f = setup(t, country),
+      sim = simulator(),
+      before = native(f),
+      env = startupEnvironment(f.config);
+    const runtime = configuredCarriers(f.app, env, sim.transport)!;
+    const http = await createHttp(f.app, {
+      origin: "http://localhost:3100",
+      staticRoot: "/nonexistent-configured-carrier-test",
+      carriers: runtime,
+    });
+    t.after(async () => {
+      await http.close();
+    });
+    assert.equal(sim.calls.length, 0);
+    // Later environment edits cannot silently select another account/token/service.
+    for (const key of Object.keys(env)) env[key] = "mutated-private-value";
+    const login = f.app.identity.login(
+      "admin@example.test",
+      "long-test-only-password",
+    );
+    const headers = {
+      cookie: `distributor_session=${login.token}`,
+      origin: "http://localhost:3100",
+      "x-csrf-token": login.csrf,
+    };
+    const sent = await http.inject({
+      method: "POST",
+      url: `/api/carrier/${f.prepared.id}/send`,
+      headers,
+      payload: {},
+    });
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.equal(sent.json().state, "booked");
+    assert.equal(sim.calls.length, 2);
+    assert.deepEqual(
+      Object.fromEntries(new URLSearchParams(sim.calls[0]!.body as string)),
+      {
+        grant_type: "client_credentials",
+        client_id: "synthetic-fedex-client",
+        client_secret: "synthetic-fedex-secret",
+      },
+    );
+    assert.equal((sim.calls[1]!.body as Json).accountNumber.value, "123456789");
+    assert.deepEqual(native(f), before);
+    const replay = await http.inject({
+      method: "POST",
+      url: `/api/carrier/${f.prepared.id}/send`,
+      headers,
+      payload: {},
+    });
+    assert.equal(replay.statusCode, 409, replay.body);
+    assert.equal(replay.json().code, "STATE");
+    assert.equal(sim.calls.length, 2);
+    const label = await http.inject({
+      method: "GET",
+      url: `/api/carrier/${f.prepared.id}/label`,
+      headers,
+    });
+    assert.equal(label.statusCode, 200);
+    assert.deepEqual(label.rawPayload, pdf);
+    assert.doesNotMatch(
+      sent.body,
+      /synthetic-fedex-secret|mutated-private-value/,
+    );
+  });
