@@ -6,6 +6,7 @@ import { canonical, digest, DomainError } from "../src/server/core.ts";
 import {
   CanadaPostTestClient,
   type CanadaPostTestConfig,
+  type CanadaPostManifestReview,
 } from "../src/server/canada-post-test.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
 import type {
@@ -1233,4 +1234,959 @@ test("Canada Post requires an explicit transport and synchronous write guard bef
     { code: "CARRIER_CONFIG" },
   );
   assert.equal(sim.calls.length, 0);
+});
+
+function manifestBatch(f: F): CanadaPostManifestReview {
+  const second = revise(f.intent, {
+    bookingId: "synthetic-booking-two",
+    shipmentId: "synthetic-native-two",
+    nativeSnapshot: { ...f.intent.nativeSnapshot, id: "synthetic-native-two" },
+  });
+  return {
+    manifestId: "synthetic-manifest-review",
+    groupId: group,
+    entries: [
+      { intent: f.intent, shipmentId: id, tracking },
+      {
+        intent: second,
+        shipmentId: "synthetic-shipment-two",
+        tracking: "1234567890123457",
+      },
+    ],
+  };
+}
+const po = "D906402103";
+const manifests = "/1234567/1234567/manifests";
+function manifestSimulator(
+  f: F,
+  batch: CanadaPostManifestReview,
+  options: {
+    lostReply?: boolean;
+    tokenHook?: () => void;
+    state?: (entry: number, transmitted: boolean) => "created" | "transmitted";
+    po?: (entry: number) => unknown;
+    groupLinks?: (links: Json[]) => unknown;
+    manifestLinks?: (links: Json[]) => unknown;
+    info?: (reply: Json, entry: number) => void;
+    shipmentDetail?: (reply: Json, entry: number) => void;
+    transmit?: (links: Json[]) => unknown;
+    manifest?: (reply: Json) => void;
+    detail?: (reply: Json) => void;
+    raw?: (call: Call) => Response | undefined;
+  } = {},
+) {
+  const frozen = structuredClone(batch),
+    config = structuredClone(f.config),
+    wire = expectedBody(f);
+  const calls: Call[] = [];
+  let transmitted = false,
+    reference = "",
+    writeCount = 0;
+  const links = frozen.entries.map((entry) => ({
+    rel: "shipment",
+    mediaType: "application/json",
+    href: shipping + account + "/" + entry.shipmentId,
+  }));
+  const requestId = (entry: CanadaPostManifestReview["entries"][number]) => {
+    const { clientId: _id, clientSecret: _secret, ...binding } = config;
+    return (
+      "D" +
+      digest(
+        canonical({
+          configurationHash: digest(canonical(binding)),
+          bookingId: entry.intent.bookingId,
+          reviewHash: entry.intent.reviewHash,
+          groupId: frozen.groupId,
+        }),
+      )
+        .slice(0, 31)
+        .toUpperCase()
+    );
+  };
+  const transport: typeof fetch = async (input, init) => {
+    const url = new URL(String(input)),
+      body =
+        init?.body && (init.body as string).startsWith("{")
+          ? (JSON.parse(init.body as string) as Json)
+          : undefined;
+    // Token is form encoded, not JSON.
+    const call: Call = { url, init: init!, body };
+    calls.push(call);
+    assert.equal(init!.redirect, "error");
+    assert.ok(init!.signal instanceof AbortSignal);
+    const raw = options.raw?.(call);
+    if (raw) return raw;
+    if (url.pathname.endsWith("/oauth2/token")) {
+      options.tokenHook?.();
+      return json({
+        token_type: "Bearer",
+        access_token: "synthetic-token",
+        expires_in: 3600,
+        scope: "merchant",
+      });
+    }
+    assert.equal(
+      (init!.headers as Json).authorization,
+      "Bearer synthetic-token",
+    );
+    if (url.pathname === new URL(shipping + account).pathname) {
+      assert.equal(init!.method, "GET");
+      assert.equal(
+        url.searchParams.get("limit"),
+        String(frozen.entries.length + 1),
+      );
+      if (url.searchParams.has("group-id")) {
+        assert.equal(url.searchParams.get("group-id"), frozen.groupId);
+        return json(options.groupLinks?.(structuredClone(links)) ?? links);
+      }
+      assert.equal(url.searchParams.get("manifest-id"), po);
+      return json(
+        options.manifestLinks?.(structuredClone(links)) ?? links.toReversed(),
+      );
+    }
+    if (url.pathname === new URL(shipping + manifests).pathname) {
+      assert.equal(init!.method, "POST");
+      writeCount++;
+      transmitted = true;
+      reference = body!.customerReference;
+      assert.match(reference, /^D[A-F0-9]{11}$/);
+      assert.deepEqual(body, {
+        groupIds: [frozen.groupId],
+        ...(config.shippingPoint.kind === "pickup"
+          ? {
+              cpcPickupIndicator: true,
+              requestedShippingPoint: config.shippingPoint.postalCode,
+            }
+          : { shippingPointId: config.shippingPoint.siteId }),
+        detailedManifests: true,
+        methodOfPayment: "Account",
+        manifestAddress: {
+          manifestCompany: config.company,
+          manifestName: wire.deliverySpec.sender.name,
+          phoneNumber: wire.deliverySpec.sender.contactPhone,
+          addressDetails: wire.deliverySpec.sender.addressDetails,
+        },
+        customerReference: reference,
+      });
+      if (options.lostReply)
+        throw new Error("synthetic-cp-secret lost manifest response");
+      const result = [
+        {
+          rel: "manifest",
+          mediaType: "application/json",
+          href: shipping + manifests + "/" + po,
+        },
+      ];
+      return json(options.transmit?.(result) ?? result);
+    }
+    if (url.pathname === new URL(shipping + manifests + "/" + po).pathname) {
+      assert.equal(init!.method, "GET");
+      const reply: Json = {
+        poNumber: po,
+        links: [
+          {
+            rel: "details",
+            mediaType: "application/json",
+            href: shipping + manifests + "/" + po + "/details",
+          },
+          {
+            rel: "artifact",
+            mediaType: "application/pdf",
+            href:
+              shipping + "/artifacts/" + po + "/shipping/synthetic-manifest/0",
+          },
+        ],
+      };
+      options.manifest?.(reply);
+      return json(reply);
+    }
+    if (
+      url.pathname ===
+      new URL(shipping + manifests + "/" + po + "/details").pathname
+    ) {
+      const reply: Json = {
+        poNumber: po,
+        customerRef: reference,
+        mailedByCustomer: config.customerNumber,
+        "mailed-on-behalf-of": config.customerNumber,
+        paidByCustomer: config.customerNumber,
+        contractId: config.contractId,
+        methodOfPayment: "Account",
+        finalShippingPoint: "M5V1A1",
+        shippingPointName: "Synthetic shipping point",
+        shippingPointId: "A1B2",
+        ...(config.shippingPoint.kind === "pickup"
+          ? { cpcPickupIndicator: true }
+          : {}),
+        manifestDate: "2026-10-01",
+        manifestTime: "15:00 EDT",
+        manifestAddress: {
+          manifestCompany: config.company,
+          manifestName: wire.deliverySpec.sender.name,
+          phoneNumber: wire.deliverySpec.sender.contactPhone,
+          addressDetails: structuredClone(
+            wire.deliverySpec.sender.addressDetails,
+          ),
+        },
+        manifestPricingInfo: {
+          baseCost: 20,
+          automationDiscount: -1,
+          optionsAndSurcharges: 2,
+          gst: 0,
+          pst: 0,
+          hst: 2.73,
+          totalDueCpc: 23.73,
+        },
+      };
+      options.detail?.(reply);
+      return json(reply);
+    }
+    if (
+      url.pathname ===
+      new URL(shipping + "/artifacts/" + po + "/shipping/synthetic-manifest/0")
+        .pathname
+    ) {
+      assert.equal((init!.headers as Json).accept, "application/pdf");
+      return new Response(pdf, {
+        headers: { "content-type": "application/pdf" },
+      });
+    }
+    for (let i = 0; i < frozen.entries.length; i++) {
+      const entry = frozen.entries[i]!,
+        prefix = shipping + account + "/" + entry.shipmentId;
+      const state =
+        options.state?.(i, transmitted) ??
+        (transmitted ? "transmitted" : "created");
+      if (url.pathname === new URL(prefix).pathname) {
+        const reply: Json = {
+          customerRequestId: requestId(entry),
+          shipmentId: entry.shipmentId,
+          trackingPin: entry.tracking,
+          shipmentStatus: state,
+          ...(state === "transmitted"
+            ? { poNumber: options.po?.(i) ?? po }
+            : {}),
+          links: [
+            { rel: "self", mediaType: "application/json", href: prefix },
+            {
+              rel: "details",
+              mediaType: "application/json",
+              href: prefix + "/details",
+            },
+            {
+              rel: "label",
+              mediaType: "application/pdf",
+              index: 0,
+              href:
+                shipping + "/artifacts/1234567/shipping/synthetic-artifact/0",
+            },
+          ],
+        };
+        options.info?.(reply, i);
+        return json(reply);
+      }
+      if (url.pathname === new URL(prefix + "/details").pathname) {
+        const reply: Json = {
+          customerRequestId: requestId(entry),
+          trackingPin: entry.tracking,
+          shipmentStatus: state,
+          ...(config.shippingPoint.kind === "pickup"
+            ? {
+                cpcPickupIndicator: true,
+                finalShippingPoint: config.shippingPoint.postalCode,
+              }
+            : { shippingPointId: config.shippingPoint.siteId }),
+          shipmentDetail: {
+            groupId: frozen.groupId,
+            deliverySpec: structuredClone(wire.deliverySpec),
+          },
+        };
+        reply.shipmentDetail.deliverySpec.references.customerRef1 =
+          requestId(entry);
+        options.shipmentDetail?.(reply, i);
+        return json(reply);
+      }
+    }
+    assert.fail("Unexpected fixture route " + url);
+  };
+  return {
+    calls,
+    transport,
+    get writes() {
+      return writeCount;
+    },
+    setReference(value: string) {
+      reference = value;
+    },
+  };
+}
+const manifestWrites = (calls: Call[]) =>
+  calls.filter(
+    (call) =>
+      call.init.method === "POST" && call.url.pathname.endsWith("/manifests"),
+  );
+for (const pickup of [true, false])
+  test(`Canada Post manifest confirms exact two-shipment ${pickup ? "pickup" : "deposit"} batch without native effects`, async (t) => {
+    const f = setup(t, pickup),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch),
+      before = native(f);
+    let guards = 0;
+    const result = await new CanadaPostTestClient(
+      f.config,
+      sim.transport,
+    ).transmitManifest(batch, () => {
+      guards++;
+      assert.equal(sim.writes, 0);
+    });
+    assert.equal(guards, 1);
+    assert.equal(sim.writes, 1);
+    assert.equal(result.manifestId, batch.manifestId);
+    assert.equal(result.groupId, group);
+    assert.equal(result.poNumber, po);
+    assert.equal(result.totalCents, 2373);
+    assert.equal(result.manifestDate, "2026-10-01");
+    assert.deepEqual(result.shipmentIds, [id, "synthetic-shipment-two"]);
+    assert.deepEqual(result.document.bytes, pdf);
+    assert.equal(
+      sim.calls.filter((call) => call.url.pathname.includes("/artifacts/"))
+        .length,
+      1,
+    );
+    assert.deepEqual(native(f), before);
+    const recovery = await new CanadaPostTestClient(
+      { ...f.config, clientSecret: "rotated-synthetic-secret" },
+      sim.transport,
+    ).recoverManifest(batch);
+    assert.deepEqual(recovery, result);
+    assert.equal(sim.writes, 1);
+    assert.deepEqual(native(f), before);
+  });
+test("Canada Post lost manifest reply recovers through fresh client reads without another write", async (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    sim = manifestSimulator(f, batch, { lostReply: true }),
+    before = native(f);
+  await assert.rejects(
+    new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+      batch,
+      () => {},
+    ),
+    (error) =>
+      error instanceof DomainError &&
+      error.code === "CARRIER_TRANSPORT" &&
+      !error.message.includes("synthetic-cp-secret"),
+  );
+  assert.equal(sim.writes, 1);
+  const recovered = await new CanadaPostTestClient(
+    f.config,
+    sim.transport,
+  ).recoverManifest(batch);
+  assert.equal(recovered!.poNumber, po);
+  assert.equal(sim.writes, 1);
+  await assert.rejects(
+    new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+      batch,
+      () => assert.fail("Guard must not be reached"),
+    ),
+  );
+  assert.equal(sim.writes, 1);
+  assert.deepEqual(native(f), before);
+});
+test("Canada Post empty manifest recovery reads all retained shipments and grants no resend", async (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    sim = manifestSimulator(f, batch);
+  assert.equal(
+    await new CanadaPostTestClient(f.config, sim.transport).recoverManifest(
+      batch,
+    ),
+    null,
+  );
+  assert.equal(sim.writes, 0);
+  assert.equal(
+    sim.calls.filter((call) => call.url.pathname.endsWith("/oauth2/token"))
+      .length,
+    1,
+  );
+  assert.equal(
+    sim.calls.filter((call) => call.init.method === "GET").length,
+    4,
+  );
+});
+test("Canada Post captures whole manifest review/configuration before token await", async (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    original = structuredClone(batch);
+  const sim = manifestSimulator(f, batch, {
+    tokenHook: () => {
+      batch.manifestId = "changed";
+      batch.groupId = "changed";
+      batch.entries[0]!.intent.origin.line1 = "Changed warehouse";
+      (batch.entries as unknown[]).pop();
+      f.config.company = "Changed company";
+      f.config.customerNumber = "9999999";
+    },
+  });
+  const client = new CanadaPostTestClient(f.config, sim.transport),
+    result = await client.transmitManifest(batch, () => {});
+  assert.equal(result.manifestId, original.manifestId);
+  assert.equal(result.groupId, original.groupId);
+  assert.equal(result.shipmentIds.length, 2);
+  assert.equal(sim.writes, 1);
+});
+test("Canada Post manifest synchronous guard runs after preflight and blocks purchase", async (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    sim = manifestSimulator(f, batch);
+  const denied = new DomainError(
+    "CONSENT",
+    "Synthetic withdrawn permission",
+    403,
+  );
+  await assert.rejects(
+    new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+      batch,
+      () => {
+        assert.equal(
+          sim.calls.filter((call) => call.init.method === "GET").length,
+          5,
+        );
+        throw denied;
+      },
+    ),
+    (error) => error === denied,
+  );
+  assert.equal(sim.writes, 0);
+});
+for (const [name, change] of Object.entries({
+  empty: (batch: CanadaPostManifestReview) => {
+    batch.entries = [];
+  },
+  oversized: (batch: CanadaPostManifestReview) => {
+    batch.entries = Array(101).fill(batch.entries[0]);
+  },
+  duplicate: (batch: CanadaPostManifestReview) => {
+    batch.entries = [batch.entries[0]!, batch.entries[0]!];
+  },
+  tracking: (batch: CanadaPostManifestReview) => {
+    (batch.entries[1] as Json).tracking = batch.entries[0]!.tracking;
+  },
+  booking: (batch: CanadaPostManifestReview) => {
+    batch.entries[1]!.intent = revise(batch.entries[1]!.intent, {
+      bookingId: batch.entries[0]!.intent.bookingId,
+    });
+  },
+  native: (batch: CanadaPostManifestReview) => {
+    batch.entries[1]!.intent = revise(batch.entries[1]!.intent, {
+      shipmentId: batch.entries[0]!.intent.shipmentId,
+      nativeSnapshot: batch.entries[0]!.intent.nativeSnapshot,
+    });
+  },
+  sender: (batch: CanadaPostManifestReview) => {
+    batch.entries[1]!.intent = revise(batch.entries[1]!.intent, {
+      origin: {
+        ...batch.entries[1]!.intent.origin,
+        line1: "Different reviewed warehouse",
+      },
+    });
+  },
+  foreignWarehouse: (batch: CanadaPostManifestReview) => {
+    batch.entries[1]!.intent = revise(batch.entries[1]!.intent, {
+      nativeSnapshot: {
+        ...batch.entries[1]!.intent.nativeSnapshot,
+        warehouse_id: "foreign",
+      },
+    });
+  },
+  corruptedReview: (batch: CanadaPostManifestReview) => {
+    batch.entries[0]!.intent.destination.line1 = "Unreviewed receiver";
+  },
+  invalidGroup: (batch: CanadaPostManifestReview) => {
+    batch.groupId = "bad?group";
+  },
+  invalidTracking: (batch: CanadaPostManifestReview) => {
+    (batch.entries[0] as Json).tracking = "123";
+  },
+  invalidShipment: (batch: CanadaPostManifestReview) => {
+    (batch.entries[0] as Json).shipmentId = "../other";
+  },
+}))
+  test(`Canada Post manifest rejects ${name} before transport`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f);
+    change(batch);
+    let calls = 0;
+    const client = new CanadaPostTestClient(f.config, async () => {
+      calls++;
+      assert.fail("No IO before valid complete review");
+    });
+    await assert.rejects(client.transmitManifest(batch, () => {}));
+    await assert.rejects(client.recoverManifest(batch));
+    assert.equal(calls, 0);
+  });
+for (const [name, change] of Object.entries({
+  missing: (links: Json[]) => links.slice(0, 1),
+  extra: (links: Json[]) => [
+    ...links,
+    { ...links[0], href: shipping + account + "/extra" },
+  ],
+  duplicate: (links: Json[]) => [links[0], links[0]],
+  changed: (links: Json[]) => [
+    { ...links[0], href: shipping + account + "/foreign" },
+    links[1],
+  ],
+  foreignAccount: (links: Json[]) => [
+    { ...links[0], href: shipping + "/9999999/9999999/shipments/x" },
+    links[1],
+  ],
+  query: (links: Json[]) => [
+    { ...links[0], href: links[0]!.href + "?token=secret" },
+    links[1],
+  ],
+  redirectHost: (links: Json[]) => [
+    { ...links[0], href: "https://foreign.invalid/x" },
+    links[1],
+  ],
+}))
+  for (const post of [false, true])
+    test(`Canada Post ${post ? "post-manifest" : "preflight"} rejects ${name} membership`, async (t) => {
+      const f = setup(t),
+        batch = manifestBatch(f),
+        sim = manifestSimulator(
+          f,
+          batch,
+          post ? { manifestLinks: change } : { groupLinks: change },
+        );
+      await assert.rejects(
+        new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+          batch,
+          () => {},
+        ),
+      );
+      assert.equal(sim.writes, post ? 1 : 0);
+      assert.equal(
+        sim.calls.filter((call) => call.url.pathname.includes("/artifacts/"))
+          .length,
+        0,
+      );
+    });
+for (const [name, change] of Object.entries({
+  reference: (reply: Json) => {
+    reply.customerRef = "FOREIGN";
+  },
+  payer: (reply: Json) => {
+    reply.paidByCustomer = "9999999";
+  },
+  mailedBy: (reply: Json) => {
+    reply.mailedByCustomer = "9999999";
+  },
+  behalf: (reply: Json) => {
+    reply["mailed-on-behalf-of"] = "9999999";
+  },
+  contract: (reply: Json) => {
+    reply.contractId = "999999";
+  },
+  payment: (reply: Json) => {
+    reply.methodOfPayment = "CreditCard";
+  },
+  cardReceipt: (reply: Json) => {
+    reply.ccReceiptDetails = {};
+  },
+  supplierReceipt: (reply: Json) => {
+    reply.supplierAccountReceiptDetails = {};
+  },
+  sender: (reply: Json) => {
+    reply.manifestAddress.addressDetails.addressLine1 = "Foreign sender";
+  },
+  addedLine: (reply: Json) => {
+    reply.manifestAddress.addressDetails.addressLine2 = "Foreign line";
+  },
+  company: (reply: Json) => {
+    reply.manifestAddress.manifestCompany = "Foreign company";
+  },
+  point: (reply: Json) => {
+    reply.finalShippingPoint = "K1A0B1";
+  },
+  pickup: (reply: Json) => delete reply.cpcPickupIndicator,
+  date: (reply: Json) => {
+    reply.manifestDate = "2026-02-30";
+  },
+  time: (reply: Json) => {
+    reply.manifestTime = "25:61 EST";
+  },
+  fractionalCent: (reply: Json) => {
+    reply.manifestPricingInfo.totalDueCpc = 23.731;
+  },
+  negativeTotal: (reply: Json) => {
+    reply.manifestPricingInfo.totalDueCpc = -1;
+  },
+  missingPricing: (reply: Json) => delete reply.manifestPricingInfo.baseCost,
+  enormousPrice: (reply: Json) => {
+    reply.manifestPricingInfo.totalDueCpc = 1000001;
+  },
+}))
+  test(`Canada Post manifest rejects ${name} detail before document retrieval`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, { detail: change });
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+        batch,
+        () => {},
+      ),
+    );
+    assert.equal(sim.writes, 1);
+    assert.equal(
+      sim.calls.filter((call) => call.url.pathname.includes("/artifacts/"))
+        .length,
+      0,
+    );
+  });
+for (const [name, change] of Object.entries({
+  foreignAccount: (reply: Json) => {
+    reply.links[0].href =
+      shipping + "/9999999/9999999/manifests/" + po + "/details";
+  },
+  foreignArtifact: (reply: Json) => {
+    reply.links[1].href = "https://foreign.invalid/artifact";
+  },
+  wrongOrderArtifact: (reply: Json) => {
+    reply.links[1].href =
+      shipping + "/artifacts/FOREIGN/shipping/synthetic-manifest/0";
+  },
+  queryArtifact: (reply: Json) => {
+    reply.links[1].href += "?secret=hidden";
+  },
+  jsonArtifact: (reply: Json) => {
+    reply.links[1].mediaType = "application/json";
+  },
+  duplicateArtifact: (reply: Json) => reply.links.push(reply.links[1]),
+  changedOrder: (reply: Json) => {
+    reply.poNumber = "OTHER";
+  },
+}))
+  test(`Canada Post manifest rejects ${name} links before retrieval`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, { manifest: change });
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+        batch,
+        () => {},
+      ),
+    );
+    assert.equal(sim.writes, 1);
+    assert.equal(
+      sim.calls.filter((call) => call.url.pathname.includes("/artifacts/"))
+        .length,
+      0,
+    );
+  });
+for (const [name, options] of Object.entries({
+  alreadyTransmitted: { state: () => "transmitted" as const },
+  mixed: {
+    state: (i: number) =>
+      i === 0 ? ("created" as const) : ("transmitted" as const),
+  },
+  changedReference: {
+    info: (reply: Json) => {
+      reply.customerRequestId = "FOREIGN";
+    },
+  },
+  changedTracking: {
+    info: (reply: Json) => {
+      reply.trackingPin = "9999999999999999";
+    },
+  },
+  changedParcel: {
+    shipmentDetail: (reply: Json) => {
+      reply.shipmentDetail.deliverySpec.parcelCharacteristics.weight = 29;
+    },
+  },
+  wrongGroup: {
+    shipmentDetail: (reply: Json) => {
+      reply.shipmentDetail.groupId = "ForeignGroup";
+    },
+  },
+  createdOrder: {
+    info: (reply: Json) => {
+      reply.poNumber = po;
+    },
+  },
+}))
+  test(`Canada Post rejects ${name} shipment before manifest purchase`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, options);
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+        batch,
+        () => {},
+      ),
+    );
+    assert.equal(sim.writes, 0);
+  });
+for (const [name, options] of Object.entries({
+  mixed: {
+    state: (i: number) =>
+      i === 0 ? ("created" as const) : ("transmitted" as const),
+  },
+  differentOrders: {
+    state: () => "transmitted" as const,
+    po: (i: number) => (i === 0 ? po : "OTHER"),
+  },
+  invalidOrder: { state: () => "transmitted" as const, po: () => "../foreign" },
+  foreignTracking: {
+    info: (reply: Json) => {
+      reply.trackingPin = "9999999999999999";
+    },
+  },
+}))
+  test(`Canada Post ${name} manifest recovery remains uncertain with zero shipping writes`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, options);
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).recoverManifest(batch),
+    );
+    assert.equal(sim.writes, 0);
+  });
+for (const status of [202, 400, 401, 503])
+  test(`Canada Post manifest ${status} response never resends`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, {
+        raw: (call) =>
+          call.init.method === "POST" &&
+          call.url.pathname.endsWith("/manifests")
+            ? json(
+                {
+                  errors: [
+                    { errorCode: "9153", message: "synthetic-cp-secret" },
+                  ],
+                },
+                status,
+              )
+            : undefined,
+      });
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+        batch,
+        () => {},
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        error.code === "CARRIER_TRANSPORT" &&
+        !error.message.includes("synthetic-cp-secret"),
+    );
+    assert.equal(manifestWrites(sim.calls).length, 1);
+  });
+
+test("Canada Post manifest identity is stable across entry order and credential rotation, changes with reviewed scope", (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    never: typeof fetch = async () => assert.fail("Identity performs no IO");
+  const original = new CanadaPostTestClient(f.config, never).manifestIdentity(
+    batch,
+  );
+  assert.deepEqual(
+    new CanadaPostTestClient(
+      {
+        ...f.config,
+        clientId: "rotated-client",
+        clientSecret: "rotated-secret",
+      },
+      never,
+    ).manifestIdentity({ ...batch, entries: batch.entries.toReversed() }),
+    original,
+  );
+  for (const changed of [
+    { ...batch, groupId: "OtherGroup" },
+    { ...batch, manifestId: "other-review" },
+    { ...batch, entries: batch.entries.slice(0, 1) },
+    {
+      ...batch,
+      entries: batch.entries.map((entry, i) =>
+        i
+          ? entry
+          : {
+              ...entry,
+              intent: revise(entry.intent, {
+                destination: {
+                  ...entry.intent.destination,
+                  line1: "Other reviewed destination",
+                },
+              }),
+            },
+      ),
+    },
+  ]) {
+    assert.notEqual(
+      new CanadaPostTestClient(f.config, never).manifestIdentity(changed)
+        .reviewHash,
+      original.reviewHash,
+    );
+  }
+  assert.notEqual(
+    new CanadaPostTestClient(
+      { ...f.config, contractId: "999999" },
+      never,
+    ).manifestIdentity(batch).reviewHash,
+    original.reviewHash,
+  );
+});
+test("Canada Post manifest supports complete 100-shipment batch at the explicit bound", async (t) => {
+  const f = setup(t),
+    base = f.intent,
+    batch: CanadaPostManifestReview = {
+      manifestId: "synthetic-largest-manifest",
+      groupId: group,
+      entries: Array.from({ length: 100 }, (_, i) => ({
+        intent: revise(base, {
+          bookingId: "batch-booking-" + i,
+          shipmentId: "batch-native-" + i,
+          nativeSnapshot: { ...base.nativeSnapshot, id: "batch-native-" + i },
+        }),
+        shipmentId: "batch-provider-" + i,
+        tracking: String(10000000000 + i),
+      })),
+    };
+  const sim = manifestSimulator(f, batch),
+    result = await new CanadaPostTestClient(
+      f.config,
+      sim.transport,
+    ).transmitManifest(batch, () => {});
+  assert.equal(result.shipmentIds.length, 100);
+  assert.equal(sim.writes, 1);
+  assert.equal(
+    sim.calls.filter(
+      (call) =>
+        call.url.searchParams.has("group-id") ||
+        call.url.searchParams.has("manifest-id"),
+    ).length,
+    2,
+  );
+  assert.equal(
+    sim.calls.filter((call) => call.url.pathname.includes("/artifacts/"))
+      .length,
+    1,
+  );
+});
+for (const [name, change] of Object.entries({
+  empty: () => [],
+  multiple: (links: Json[]) => [...links, ...links],
+  foreign: (links: Json[]) => [
+    { ...links[0], href: "https://foreign.invalid/manifest" },
+  ],
+  account: (links: Json[]) => [
+    { ...links[0], href: shipping + "/9999999/9999999/manifests/" + po },
+  ],
+  query: (links: Json[]) => [
+    { ...links[0], href: links[0]!.href + "?secret=hidden" },
+  ],
+}))
+  test(`Canada Post ${name} transmit result remains uncertain after one write`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, { transmit: change });
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+        batch,
+        () => {},
+      ),
+    );
+    assert.equal(sim.writes, 1);
+  });
+for (const [name, raw] of Object.entries({
+  unavailable: () => json({ message: "synthetic-cp-secret" }, 503),
+  wrongType: () =>
+    new Response(pdf, { headers: { "content-type": "text/plain" } }),
+  invalidSignature: () =>
+    new Response("Not a PDF", {
+      headers: { "content-type": "application/pdf" },
+    }),
+  excessiveLength: () =>
+    new Response(pdf, {
+      headers: {
+        "content-type": "application/pdf",
+        "content-length": "1048577",
+      },
+    }),
+  excessiveStream: () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(Buffer.alloc(1048577));
+          controller.close();
+        },
+      }),
+      { headers: { "content-type": "application/pdf" } },
+    ),
+}))
+  test(`Canada Post ${name} manifest document leaves purchase uncertain without retry`, async (t) => {
+    const f = setup(t),
+      batch = manifestBatch(f),
+      sim = manifestSimulator(f, batch, {
+        raw: (call) =>
+          call.url.pathname.includes("/artifacts/") ? raw() : undefined,
+      });
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+        batch,
+        () => {},
+      ),
+      (error) =>
+        error instanceof DomainError &&
+        !error.message.includes("synthetic-cp-secret"),
+    );
+    assert.equal(sim.writes, 1);
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).recoverManifest(batch),
+    );
+    assert.equal(sim.writes, 1);
+  });
+test("Canada Post unfinished manifest recovery error is retained, never converted to another transmit", async (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    sim = manifestSimulator(f, batch, {
+      lostReply: true,
+      raw: (call) =>
+        call.init.method === "GET" &&
+        call.url.pathname === new URL(shipping + manifests + "/" + po).pathname
+          ? json(
+              {
+                errors: [{ errorCode: "9153", message: "synthetic-cp-secret" }],
+              },
+              400,
+            )
+          : undefined,
+    });
+  await assert.rejects(
+    new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+      batch,
+      () => {},
+    ),
+  );
+  for (let i = 0; i < 2; i++)
+    await assert.rejects(
+      new CanadaPostTestClient(f.config, sim.transport).recoverManifest(batch),
+    );
+  assert.equal(sim.writes, 1);
+});
+test("Canada Post changed recovery review cannot accept prior manifest", async (t) => {
+  const f = setup(t),
+    batch = manifestBatch(f),
+    sim = manifestSimulator(f, batch);
+  await new CanadaPostTestClient(f.config, sim.transport).transmitManifest(
+    batch,
+    () => {},
+  );
+  await assert.rejects(
+    new CanadaPostTestClient(f.config, sim.transport).recoverManifest({
+      ...batch,
+      manifestId: "different-reviewed-attempt",
+    }),
+  );
+  assert.equal(sim.writes, 1);
 });

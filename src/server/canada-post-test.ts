@@ -35,6 +35,29 @@ export type CanadaPostShipmentObservation = {
   status: "created" | "transmitted";
   label: { mediaType: "application/pdf"; bytes: Buffer };
 };
+// The caller must persist this complete review, close the group to new creates
+// and own a durable exclusive claim. These protocol methods do not do that.
+export type CanadaPostManifestReview = {
+  manifestId: string;
+  groupId: string;
+  entries: readonly {
+    intent: CarrierIntent;
+    shipmentId: string;
+    tracking: string;
+  }[];
+};
+export type CanadaPostManifestObservation = {
+  manifestId: string;
+  reviewHash: string;
+  configurationHash: string;
+  groupId: string;
+  customerReference: string;
+  poNumber: string;
+  shipmentIds: string[];
+  manifestDate: string;
+  totalCents: number;
+  document: { mediaType: "application/pdf"; bytes: Buffer };
+};
 const gateway =
   "https://api.canadapost-postescanada.ca/prod/devportal-portaildesdeveloppeurs";
 const shipping = gateway + "/shipping/v1";
@@ -379,6 +402,31 @@ export class CanadaPostTestClient {
     token: string,
     creation: boolean,
   ): Promise<CanadaPostShipmentObservation> {
+    const observed = await this.shipmentDetails(
+      review,
+      response,
+      token,
+      creation,
+    );
+    const label = await this.pdf(observed.labelUrl, token);
+    return {
+      bookingId: review.bookingId,
+      reviewHash: review.reviewHash,
+      configurationHash: this.configurationHash,
+      groupId: review.groupId,
+      customerRequestId: review.customerRequestId,
+      shipmentId: observed.shipmentId,
+      tracking: observed.tracking,
+      status: observed.status,
+      label,
+    };
+  }
+  private async shipmentDetails(
+    review: ReturnType<CanadaPostTestClient["review"]>,
+    response: Record<string, unknown>,
+    token: string,
+    creation: boolean,
+  ) {
     const shipmentId = identifier(response.shipmentId),
       tracking = pin(response.trackingPin);
     check(
@@ -465,10 +513,12 @@ export class CanadaPostTestClient {
       "CARRIER_RESULT",
       "Canada Post details must match the reviewed group, contacts, parcel, service, shipping point and settlement account.",
     );
-    const labelUrl = label.href as string;
+    return { shipmentId, tracking, status, labelUrl: label.href as string };
+  }
+  private async pdf(url: string, token: string) {
     let bytes: Buffer;
     try {
-      const pdf = await this.transport(labelUrl, {
+      const pdf = await this.transport(url, {
         method: "GET",
         headers: { ...this.headers(token), accept: "application/pdf" },
         redirect: "error",
@@ -481,7 +531,7 @@ export class CanadaPostTestClient {
             pdf.headers.get("content-type") ?? "",
           ),
         "CARRIER_TRANSPORT",
-        "Canada Post did not return a private PDF label.",
+        "Canada Post did not return a private PDF document.",
         502,
       );
       bytes = await bounded(pdf, maximumLabel);
@@ -489,24 +539,402 @@ export class CanadaPostTestClient {
       check(
         false,
         "CARRIER_TRANSPORT",
-        "Canada Post label is unavailable or invalid. Retain uncertainty; do not resend.",
+        "Canada Post document is unavailable or invalid. Retain uncertainty; do not resend.",
         502,
       );
     }
     const qualifiedLabel = { mediaType: "application/pdf" as const, bytes };
     validateCarrierLabel(qualifiedLabel);
+    return qualifiedLabel;
+  }
+  private manifestReview(input: CanadaPostManifestReview) {
+    check(
+      input &&
+        valid(input.manifestId, 128) &&
+        Array.isArray(input.entries) &&
+        input.entries.length > 0 &&
+        input.entries.length <= 100,
+      "CARRIER_UNSUPPORTED",
+      "Review one closed Canada Post group containing between one and 100 ordinary shipments.",
+    );
+    const entries = input.entries
+      .map((entry) => {
+        check(entry, "CARRIER_MISMATCH", "Manifest entry is missing.");
+        return {
+          review: this.review(entry.intent, input.groupId),
+          shipmentId: identifier(entry.shipmentId),
+          tracking: pin(entry.tracking),
+        };
+      })
+      .sort((a, b) =>
+        a.shipmentId < b.shipmentId ? -1 : a.shipmentId > b.shipmentId ? 1 : 0,
+      );
+    for (const values of [
+      entries.map((entry) => entry.shipmentId),
+      entries.map((entry) => entry.tracking),
+      entries.map((entry) => entry.review.bookingId),
+      input.entries.map((entry) => entry.intent.shipmentId),
+    ])
+      check(
+        new Set(values).size === entries.length,
+        "CARRIER_MISMATCH",
+        "Manifest entries must have distinct provider shipments, tracking and native booking identities.",
+      );
+    const sender = entries[0]!.review.body.deliverySpec.sender;
+    check(
+      entries.every(
+        (entry) =>
+          canonical(entry.review.body.deliverySpec.sender) ===
+          canonical(sender),
+      ),
+      "CARRIER_MISMATCH",
+      "All manifest shipments must have the same reviewed warehouse sender.",
+    );
+    const manifestId = input.manifestId,
+      groupId = input.groupId;
+    const reviewHash = digest(
+      canonical({
+        manifestId,
+        groupId,
+        configurationHash: this.configurationHash,
+        entries,
+      }),
+    );
+    // Published customerRequestId is future use. This reference is correlation,
+    // never an idempotency promise; exact membership is additionally required.
+    const customerReference = "D" + reviewHash.slice(0, 11).toUpperCase();
+    const body = {
+      groupIds: [groupId],
+      ...(this.config.shippingPoint.kind === "pickup"
+        ? {
+            cpcPickupIndicator: true,
+            requestedShippingPoint: this.config.shippingPoint.postalCode,
+          }
+        : { shippingPointId: this.config.shippingPoint.siteId }),
+      detailedManifests: true,
+      methodOfPayment: "Account",
+      manifestAddress: {
+        manifestCompany: sender.company,
+        manifestName: sender.name,
+        phoneNumber: sender.contactPhone,
+        addressDetails: { ...sender.addressDetails },
+      },
+      customerReference,
+    };
     return {
-      bookingId: review.bookingId,
+      manifestId,
+      groupId,
+      reviewHash,
+      customerReference,
+      entries,
+      body,
+    };
+  }
+  private manifestPath() {
+    return `/${this.config.customerNumber}/${this.config.customerNumber}/manifests`;
+  }
+  manifestIdentity(input: CanadaPostManifestReview) {
+    const review = this.manifestReview(input);
+    return {
+      manifestId: review.manifestId,
+      groupId: review.groupId,
+      reviewHash: review.reviewHash,
+      configurationHash: this.configurationHash,
+      customerReference: review.customerReference,
+      shipmentIds: review.entries.map((entry) => entry.shipmentId),
+    };
+  }
+  private manifestLink(link: unknown) {
+    const value = object(link),
+      prefix = shipping + this.manifestPath() + "/";
+    check(
+      value.rel === "manifest" &&
+        value.mediaType === "application/json" &&
+        typeof value.href === "string" &&
+        value.href.startsWith(prefix),
+      "CARRIER_RESULT",
+      "Manifest link must use the exact configured account and fixed gateway.",
+    );
+    return purchaseOrder((value.href as string).slice(prefix.length));
+  }
+  private async membership(
+    review: ReturnType<CanadaPostTestClient["manifestReview"]>,
+    token: string,
+    filter: { "group-id": string } | { "manifest-id": string },
+  ) {
+    const result = await this.json(
+      shipping +
+        this.accountPath() +
+        "?" +
+        new URLSearchParams({
+          ...filter,
+          limit: String(review.entries.length + 1),
+        }),
+      { method: "GET", headers: this.headers(token) },
+    );
+    check(
+      Array.isArray(result) && result.length === review.entries.length,
+      "CARRIER_RESULT",
+      "Canada Post membership must contain exactly the reviewed shipments; missing, extra or truncated results remain uncertain.",
+    );
+    const actual = result
+      .map((link) => {
+        const value = object(link);
+        check(
+          value.rel === "shipment" && value.mediaType === "application/json",
+          "CARRIER_RESULT",
+          "Membership must contain exact shipment links.",
+        );
+        return this.shipmentLink(value.href).slice(
+          this.accountPath().length + 1,
+        );
+      })
+      .sort();
+    check(
+      canonical(actual) ===
+        canonical(review.entries.map((entry) => entry.shipmentId).sort()),
+      "CARRIER_RESULT",
+      "Canada Post membership differs from the frozen reviewed group.",
+    );
+  }
+  private async manifestShipments(
+    review: ReturnType<CanadaPostTestClient["manifestReview"]>,
+    token: string,
+  ) {
+    const states: {
+      status: "created" | "transmitted";
+      poNumber: string | null;
+    }[] = [];
+    for (const entry of review.entries) {
+      const response = object(
+        await this.json(
+          shipping + this.accountPath() + "/" + entry.shipmentId,
+          { method: "GET", headers: this.headers(token) },
+        ),
+      );
+      const detail = await this.shipmentDetails(
+        entry.review,
+        response,
+        token,
+        false,
+      );
+      check(
+        detail.shipmentId === entry.shipmentId &&
+          detail.tracking === entry.tracking,
+        "CARRIER_RESULT",
+        "Manifest shipment identity or tracking differs from its retained creation.",
+      );
+      const poNumber =
+        detail.status === "transmitted"
+          ? purchaseOrder(response.poNumber)
+          : null;
+      check(
+        detail.status !== "created" || response.poNumber === undefined,
+        "CARRIER_RESULT",
+        "An untransmitted shipment cannot identify a purchase order.",
+      );
+      states.push({ status: detail.status, poNumber });
+    }
+    return states;
+  }
+  async transmitManifest(
+    input: CanadaPostManifestReview,
+    beforeWrite: () => void,
+  ): Promise<CanadaPostManifestObservation> {
+    check(
+      typeof beforeWrite === "function",
+      "CARRIER_CONFIG",
+      "Manifest transmission requires a synchronous durable claim and closed-group write guard.",
+      500,
+    );
+    const review = this.manifestReview(input),
+      body = JSON.stringify(review.body),
+      token = await this.token();
+    await this.membership(review, token, { "group-id": review.groupId });
+    const before = await this.manifestShipments(review, token);
+    check(
+      before.every((state) => state.status === "created"),
+      "CARRIER_RESULT",
+      "Transmit only the exact untransmitted reviewed group; use read-only recovery for uncertainty.",
+    );
+    // The API transmits by group, with no atomic shipment allowlist. External
+    // group writers remain a qualification risk despite these two fences.
+    const links = await this.json(
+      shipping + this.manifestPath(),
+      {
+        method: "POST",
+        headers: { ...this.headers(token), "content-type": "application/json" },
+        body,
+      },
+      beforeWrite,
+    );
+    check(
+      Array.isArray(links) && links.length === 1,
+      "CARRIER_RESULT",
+      "This reviewed ordinary domestic account group must identify exactly one manifest.",
+    );
+    const poNumber = this.manifestLink(links[0]);
+    const after = await this.manifestShipments(review, token);
+    check(
+      after.every(
+        (state) =>
+          state.status === "transmitted" && state.poNumber === poNumber,
+      ),
+      "CARRIER_RESULT",
+      "Every reviewed shipment must identify the same transmitted manifest.",
+    );
+    return this.manifestObservation(review, poNumber, token);
+  }
+  async recoverManifest(
+    input: CanadaPostManifestReview,
+  ): Promise<CanadaPostManifestObservation | null> {
+    const review = this.manifestReview(input),
+      token = await this.token();
+    const states = await this.manifestShipments(review, token);
+    if (states.every((state) => state.status === "created")) return null;
+    const poNumber = states[0]!.poNumber;
+    check(
+      poNumber !== null &&
+        states.every(
+          (state) =>
+            state.status === "transmitted" && state.poNumber === poNumber,
+        ),
+      "CARRIER_RESULT",
+      "Mixed or different manifest outcomes remain uncertain; never retransmit.",
+    );
+    return this.manifestObservation(review, poNumber, token);
+  }
+  private async manifestObservation(
+    review: ReturnType<CanadaPostTestClient["manifestReview"]>,
+    poNumber: string,
+    token: string,
+  ): Promise<CanadaPostManifestObservation> {
+    const path = this.manifestPath() + "/" + poNumber;
+    const response = object(
+      await this.json(shipping + path, {
+        method: "GET",
+        headers: this.headers(token),
+      }),
+    );
+    check(
+      response.poNumber === poNumber &&
+        Array.isArray(response.links) &&
+        response.links.length <= 20,
+      "CARRIER_RESULT",
+      "Manifest must retain its exact purchase order and bounded private links.",
+    );
+    const one = (rel: string) => {
+      const links = (response.links as unknown[])
+        .map(object)
+        .filter((link) => link.rel === rel);
+      check(
+        links.length === 1,
+        "CARRIER_RESULT",
+        "Manifest must identify one exact details and PDF artifact link.",
+      );
+      return links[0]!;
+    };
+    const details = one("details"),
+      artifact = one("artifact");
+    check(
+      details.mediaType === "application/json" &&
+        details.href === shipping + path + "/details" &&
+        artifact.mediaType === "application/pdf" &&
+        typeof artifact.href === "string" &&
+        new RegExp(
+          "^" +
+            escape(shipping + "/artifacts/" + poNumber + "/shipping/") +
+            "[A-Za-z0-9_-]{1,18}/0$",
+        ).test(artifact.href),
+      "CARRIER_RESULT",
+      "Manifest links must use the exact account, purchase order and fixed private PDF gateway.",
+    );
+    const detail = object(
+      await this.json(shipping + path + "/details", {
+        method: "GET",
+        headers: this.headers(token),
+      }),
+    );
+    const address = object(detail.manifestAddress),
+      expected = review.body.manifestAddress;
+    check(
+      detail.poNumber === poNumber &&
+        detail.customerRef === review.customerReference &&
+        detail.mailedByCustomer === this.config.customerNumber &&
+        detail["mailed-on-behalf-of"] === this.config.customerNumber &&
+        detail.paidByCustomer === this.config.customerNumber &&
+        detail.contractId === this.config.contractId &&
+        detail.methodOfPayment === "Account" &&
+        detail.ccReceiptDetails === undefined &&
+        detail.supplierAccountReceiptDetails === undefined &&
+        matches(address, expected) &&
+        (expected.addressDetails.addressLine2 !== undefined ||
+          object(address.addressDetails).addressLine2 === undefined ||
+          object(address.addressDetails).addressLine2 === "") &&
+        postal(detail.finalShippingPoint) &&
+        valid(detail.shippingPointName, 35) &&
+        typeof detail.shippingPointId === "string" &&
+        /^[A-Z0-9]{4}$/.test(detail.shippingPointId) &&
+        (this.config.shippingPoint.kind === "pickup"
+          ? detail.cpcPickupIndicator === true &&
+            detail.finalShippingPoint === this.config.shippingPoint.postalCode
+          : detail.cpcPickupIndicator === undefined &&
+            detail.shippingPointId === this.config.shippingPoint.siteId) &&
+        date(detail.manifestDate) &&
+        typeof detail.manifestTime === "string" &&
+        /^(?:[01]\d|2[0-3]):[0-5]\d [A-Za-z ]{1,20}$/.test(detail.manifestTime),
+      "CARRIER_RESULT",
+      "Manifest details must match the reviewed reference, Canadian sender, shipping point, contract, payer and account payment.",
+    );
+    const pricing = object(detail.manifestPricingInfo);
+    const totalCents = cents(pricing.totalDueCpc);
+    for (const key of ["baseCost", "gst", "pst", "hst"]) cents(pricing[key]);
+    for (const key of ["automationDiscount", "optionsAndSurcharges"])
+      cents(pricing[key], true);
+    // Keep provider pricing as an observation, never native invoice or cash.
+    await this.membership(review, token, { "manifest-id": poNumber });
+    const document = await this.pdf(artifact.href as string, token);
+    return {
+      manifestId: review.manifestId,
       reviewHash: review.reviewHash,
       configurationHash: this.configurationHash,
       groupId: review.groupId,
-      customerRequestId: review.customerRequestId,
-      shipmentId,
-      tracking,
-      status,
-      label: qualifiedLabel,
+      customerReference: review.customerReference,
+      poNumber,
+      shipmentIds: review.entries.map((entry) => entry.shipmentId),
+      manifestDate: detail.manifestDate as string,
+      totalCents,
+      document,
     };
   }
+}
+function purchaseOrder(value: unknown): string {
+  check(
+    typeof value === "string" && /^[A-Za-z0-9]{1,10}$/.test(value),
+    "CARRIER_RESULT",
+    "Canada Post manifest purchase order is invalid.",
+  );
+  return value;
+}
+function date(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString().slice(0, 10) === value
+  );
+}
+function cents(value: unknown, signed = false): number {
+  check(
+    typeof value === "number" &&
+      Number.isFinite(value) &&
+      Math.abs(value) <= 1_000_000 &&
+      (signed || value >= 0) &&
+      Math.abs(value * 100 - Math.round(value * 100)) < 0.0000001,
+    "CARRIER_RESULT",
+    "Manifest pricing must contain bounded exact cent amounts.",
+  );
+  return Math.round(value * 100);
 }
 function escape(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
