@@ -239,6 +239,12 @@ h2 {
   font-size: 0.82rem;
   padding: 0.5rem 0.7rem;
 }
+.claim-activity-detail {
+  min-width: 12rem;
+  max-width: 40rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .table-wrap {
   border: 1px solid #d9e5e1;
   border-radius: 8px;

@@ -3695,7 +3695,7 @@ function App() {
                       setDecisionClaim(c.id);
                     }}
                   >
-                    Review and remedy history
+                    Claim activity
                   </button>
                   {c.state === "submitted" &&
                     can("warranty") &&

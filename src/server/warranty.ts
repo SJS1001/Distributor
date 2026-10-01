@@ -1199,7 +1199,9 @@ export class Warranty {
           "Unit already has an active claim.",
         );
         const coverageEnd = entitlement.coverageEnd,
-          claimId = id();
+          claimId = id(),
+          issue = text(input.issue, "issue", 2000),
+          evidence = text(input.evidence, "evidence reference", 2000);
         this.store.run(
           "INSERT INTO warranty_claims(id,org_id,account_id,unit_id,shipment_id,invoice_id,type,state,issue,evidence,coverage_end,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
           claimId,
@@ -1210,11 +1212,12 @@ export class Warranty {
           entitlement.invoiceId,
           input.type,
           "submitted",
-          text(input.issue, "issue", 2000),
-          text(input.evidence, "evidence reference", 2000),
+          issue,
+          evidence,
           coverageEnd,
           now(),
         );
+        this.recordActivity(actor, claimId, "submitted", issue);
         return { id: claimId, coverageEnd, coveragePolicyApproved: false };
       },
     );
@@ -1225,17 +1228,38 @@ export class Warranty {
     action: string,
     reason: string,
   ) {
-    this.store.run(
-      "INSERT INTO warranty_decisions VALUES(?,?,?,?,?,?,?)",
-      id(),
-      actor.orgId,
+    this.recordActivity(
+      actor,
       claimId,
       action,
       text(reason, "decision reason", 1000),
+      { reason },
+    );
+  }
+  // Detail is validated by the native operation. Original issue and inspection
+  // findings retain their existing 2,000-character limits, not decision limits.
+  private recordActivity(
+    actor: Actor,
+    claimId: string,
+    action: string,
+    detail: string,
+    decisionAudit?: { reason: string },
+  ) {
+    const activityId = id();
+    this.store.run(
+      "INSERT INTO warranty_decisions VALUES(?,?,?,?,?,?,?)",
+      activityId,
+      actor.orgId,
+      claimId,
+      action,
+      detail,
       actor.id,
       now(),
     );
-    this.platform.audit(actor, `warranty.${action}`, claimId, { reason });
+    this.platform.audit(actor, `warranty.${action}`, claimId, {
+      activityId,
+      ...decisionAudit,
+    });
   }
   review(
     actor: Actor,
@@ -1325,6 +1349,13 @@ export class Warranty {
           "UPDATE warranty_claims SET state='received' WHERE id=?",
           claim.id,
         );
+        const received = this.inventory.unit(actor, claim.unit_id);
+        this.recordActivity(
+          actor,
+          claim.id,
+          "received",
+          `Serial ${received.serial} received into quarantine at warehouse ${received.warehouse_id}, bin ${received.bin}.`,
+        );
         return { id: claim.id, state: "received" };
       },
     );
@@ -1351,11 +1382,13 @@ export class Warranty {
           "STATE",
           "Return must be received first.",
         );
+        const findings = text(input.findings, "inspection findings", 2000);
         this.store.run(
           "UPDATE warranty_claims SET state='inspected',inspection=? WHERE id=?",
-          text(input.findings, "inspection findings", 2000),
+          findings,
           claim.id,
         );
+        this.recordActivity(actor, claim.id, "inspected", findings);
         return { id: claim.id, state: "inspected" };
       },
     );

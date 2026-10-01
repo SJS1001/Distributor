@@ -8915,6 +8915,12 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
     } finally {
       release();
       await finished;
+      // Keep interception stable until the whole dashboard refresh completes;
+      // the history's first page can finish before the remaining reads.
+      if (action === "Refresh")
+        await expect(
+          page.getByRole("button", { name: "Refresh", exact: true }),
+        ).toBeEnabled();
       await page.unroute(routePattern);
     }
     await expect(
@@ -11832,7 +11838,7 @@ test("browser: invoice refund payment selection pages, retries and cancels befor
   expect(errors).toEqual([]);
 });
 
-test("browser: warranty decisions page, retry, cancel and preserve buyer privacy", async ({
+test("browser: warranty activity page, retry, cancel and preserve buyer privacy", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -11966,6 +11972,16 @@ test("browser: warranty decisions page, retry, cancel and preserve buyer privacy
       reason: `Private cancellation ${i}`,
     });
   }
+  await cmd("warranty.receive", {
+    claimId: claim.id,
+    warehouseId,
+    bin: "Private receipt bin",
+    serial: "DEC-SERIAL",
+  });
+  await cmd("warranty.inspect", {
+    claimId: claim.id,
+    findings: "Private inspection " + "x".repeat(1500),
+  });
   await cmd("user.create", {
     name: "Decision buyer",
     email: "decision-buyer@example.test",
@@ -12008,18 +12024,18 @@ test("browser: warranty decisions page, retry, cancel and preserve buyer privacy
       .filter({ hasText: id.slice(0, 8) })
       .filter({
         has: page.getByRole("button", {
-          name: "Review and remedy history",
+          name: "Claim activity",
           exact: true,
         }),
       })
-      .getByRole("button", { name: "Review and remedy history", exact: true });
+      .getByRole("button", { name: "Claim activity", exact: true });
   const panel = page.getByRole("region", {
-    name: "Review and remedy history",
+    name: "Claim activity",
     exact: true,
   });
   await opener(claim.id).click();
   await expect(panel.getByRole("heading")).toBeFocused();
-  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("20 records loaded");
   await expect(panel).toContainText("Private decision approval");
   await expect(
     panel.getByRole("columnheader", { name: "Recorded by", exact: true }),
@@ -12038,45 +12054,69 @@ test("browser: warranty decisions page, retry, cancel and preserve buyer privacy
     } else await route.continue();
   });
   await panel
-    .getByRole("button", { name: "Load more decisions", exact: true })
+    .getByRole("button", { name: "Load more activity", exact: true })
     .click();
   await expect(panel.getByRole("alert")).toContainText(
     "Synthetic decision read failure",
   );
-  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("20 records loaded");
   await expect(
-    panel.getByRole("button", { name: "Retry decision history", exact: true }),
+    panel.getByRole("button", { name: "Retry claim activity", exact: true }),
   ).toBeFocused();
   await panel
-    .getByRole("button", { name: "Retry decision history", exact: true })
+    .getByRole("button", { name: "Retry claim activity", exact: true })
     .click();
-  await expect(panel.getByRole("status")).toHaveText("40 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("40 records loaded");
   expect(cursors[0]).toBe(cursors[1]);
   await expect(
-    panel.getByRole("button", { name: "Load more decisions", exact: true }),
+    panel.getByRole("button", { name: "Load more activity", exact: true }),
   ).toBeFocused();
   await panel
-    .getByRole("button", { name: "Load more decisions", exact: true })
+    .getByRole("button", { name: "Load more activity", exact: true })
     .click();
-  await expect(panel.getByRole("status")).toHaveText("43 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("46 records loaded");
   await expect(
-    panel.getByRole("button", { name: "All decisions loaded", exact: true }),
+    panel.getByRole("button", { name: "All records loaded", exact: true }),
   ).toBeDisabled();
-  expect(await panel.getByRole("row").count()).toBe(44);
+  expect(await panel.getByRole("row").count()).toBe(47);
+  await expect(panel).toContainText("Private receipt bin");
+  await expect(panel).toContainText("Private inspection " + "x".repeat(1500));
+  for (const action of ["submitted", "received", "inspected"])
+    await expect(
+      panel.getByRole("cell", { name: action, exact: true }),
+    ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await panel
+      .locator(".claim-activity-detail")
+      .last()
+      .evaluate((el) => ({
+        contained: el.scrollWidth <= el.clientWidth,
+        fitsPhone: el.getBoundingClientRect().width <= 390,
+        multiline: el.getBoundingClientRect().height > 32,
+      })),
+  ).toEqual({ contained: true, fitsPhone: true, multiline: true });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await expect(panel.getByRole("heading")).toBeFocused();
   await page.unroute(`**${path}?after=*`);
   await panel
-    .getByRole("button", { name: "Close decision history", exact: true })
+    .getByRole("button", { name: "Close claim activity", exact: true })
     .click();
   await expect(opener(claim.id)).toBeFocused();
   await opener(claim.id).click();
-  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("20 records loaded");
   await opener(second.id).click();
-  await expect(panel.getByRole("status")).toHaveText("0 decisions loaded");
-  await expect(panel).toContainText("No review or remedy decisions recorded.");
+  await expect(panel.getByRole("status")).toHaveText("1 record loaded");
+  await expect(panel).toContainText("submitted");
+  await expect(panel).toContainText("Synthetic second claim");
   await expect(panel).not.toContainText("Private decision approval");
   await panel
-    .getByRole("button", { name: "Close decision history", exact: true })
+    .getByRole("button", { name: "Close claim activity", exact: true })
     .click();
   // Every exit must cancel the actual browser request, including the first page.
   for (const exit of ["close", "refresh", "navigation", "signout"] as const) {
@@ -12095,7 +12135,7 @@ test("browser: warranty decisions page, retry, cancel and preserve buyer privacy
     await started;
     if (exit === "close")
       await panel
-        .getByRole("button", { name: "Close decision history", exact: true })
+        .getByRole("button", { name: "Close claim activity", exact: true })
         .click();
     else if (exit === "refresh")
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -12107,12 +12147,12 @@ test("browser: warranty decisions page, retry, cancel and preserve buyer privacy
     await aborted;
     release();
     await done;
-    await page.unroute(pattern);
-    await expect(panel).toHaveCount(0);
     if (exit === "refresh")
       await expect(
         page.getByRole("button", { name: "Refresh", exact: true }),
       ).toBeEnabled();
+    await page.unroute(pattern);
+    await expect(panel).toHaveCount(0);
     if (exit === "navigation") await nav(page, "Returns");
   }
   await page
@@ -12128,21 +12168,21 @@ test("browser: warranty decisions page, retry, cancel and preserve buyer privacy
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
   await opener(claim.id).click();
-  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("20 records loaded");
   await expect(
-    panel.getByRole("columnheader", { name: "Reason", exact: true }),
+    panel.getByRole("columnheader", { name: "Detail", exact: true }),
   ).toHaveCount(0);
   await expect(
     panel.getByRole("columnheader", { name: "Recorded by", exact: true }),
   ).toHaveCount(0);
   await panel
-    .getByRole("button", { name: "Load more decisions", exact: true })
+    .getByRole("button", { name: "Load more activity", exact: true })
     .click();
-  await expect(panel.getByRole("status")).toHaveText("40 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("40 records loaded");
   await panel
-    .getByRole("button", { name: "Load more decisions", exact: true })
+    .getByRole("button", { name: "Load more activity", exact: true })
     .click();
-  await expect(panel.getByRole("status")).toHaveText("43 decisions loaded");
+  await expect(panel.getByRole("status")).toHaveText("46 records loaded");
   await expect(panel).not.toContainText("Private");
   expect(
     await page.evaluate(

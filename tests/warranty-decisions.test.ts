@@ -61,7 +61,7 @@ function facts(f: Fixture) {
     ["orders", ["orders"]],
     ["fulfillment", ["shipments"]],
     ["billing", ["invoices", "credits", "payments"]],
-    ["platform", ["commands", "audit", "events"]],
+    ["platform", ["commands", "audit", "audit_order", "audit_clock", "events"]],
   ] as const)
     for (const table of tables) {
       const name = `${owner}_${table}`;
@@ -71,13 +71,14 @@ function facts(f: Fixture) {
     }
   return rows;
 }
-test("native review, manufacturer and repair/credit decisions persist once and history reads change no retained facts", (t) => {
+test("native submission, receipt, inspection, manufacturer and repair/credit records persist once and history reads change no retained facts", (t) => {
   const f = fixture(t),
     c = claim(f);
-  assert.deepEqual(f.app.warranty.decisionHistory(f.actor, c.id), {
-    items: [],
-    next: null,
-  });
+  const submitted = f.app.warranty.decisionHistory(f.actor, c.id);
+  assert.equal(submitted.items.length, 1);
+  assert.equal(submitted.items[0]!.action, "submitted");
+  assert.equal(submitted.items[0]!.reason, "Synthetic warranty");
+  assert.equal(submitted.next, null);
   approve(f, c.id);
   approve(f, c.id);
   manufacturer(f, c.id, 0);
@@ -111,16 +112,19 @@ test("native review, manufacturer and repair/credit decisions persist once and h
   assert.deepEqual(
     page.items.map((i) => i.action),
     [
+      "submitted",
       "approved",
       "manufacturer.referred",
       "manufacturer.cancelled",
+      "received",
+      "inspected",
       "disposition.repair",
       "disposition.scrap",
       "credited",
     ],
   );
   assert.equal(page.next, null);
-  assert.equal(page.items[0]!.reason, "Private approval reason");
+  assert.equal(page.items[1]!.reason, "Private approval reason");
   assert.ok(page.items.every((i) => i.actorId === f.actor.id));
   f.app.close();
   f.app = new Application(f.path, "CA");
@@ -156,10 +160,10 @@ test("bounded stable insertion pages cover native decisions with tied timestamps
   assert.equal(second.next, expected[39]);
   manufacturer(f, c.id, 21);
   const third = f.app.warranty.decisionHistory(f.actor, c.id, second.next!);
-  assert.equal(third.items.length, 5);
+  assert.equal(third.items.length, 6);
   assert.equal(third.next, null);
   assert.deepEqual(
-    [...first.items, ...second.items, ...third.items.slice(0, 3)].map(
+    [...first.items, ...second.items, ...third.items.slice(0, 4)].map(
       (i) => i.id,
     ),
     expected,
@@ -171,14 +175,14 @@ test("bounded stable insertion pages cover native decisions with tied timestamps
   assert.equal(
     new Set([...first.items, ...second.items, ...third.items].map((i) => i.id))
       .size,
-    45,
+    46,
   );
 });
 test("exact page edge, cursor scope and validation deny foreign claim/organization traversal", (t) => {
   const f = fixture(t),
     c = claim(f),
     other = claim(f, "S2");
-  // One approval and twenty native manufacturer decisions exercise both sides of the page edge.
+  // Submission, approval and twenty native manufacturer decisions exercise both sides of the page edge.
   approve(f, c.id);
   for (let i = 0; i < 10; i++) manufacturer(f, c.id, i);
   const first = f.app.warranty.decisionHistory(f.actor, c.id);
@@ -187,7 +191,7 @@ test("exact page edge, cursor scope and validation deny foreign claim/organizati
   const final = f.app.warranty.decisionHistory(
     f.actor,
     c.id,
-    first.items[0]!.id,
+    first.items[1]!.id,
   );
   assert.equal(final.items.length, 20);
   assert.equal(final.next, null);
@@ -210,7 +214,7 @@ test("exact page edge, cursor scope and validation deny foreign claim/organizati
     });
   assert.equal(
     f.app.warranty.decisionHistory(f.actor, c.id, first.next!).items.length,
-    1,
+    2,
   );
 });
 test("current accounts, roles, sites, disabled users and forced-password restrictions govern every history page", (t) => {
@@ -230,7 +234,7 @@ test("current accounts, roles, sites, disabled users and forced-password restric
   assert.throws(() => f.app.warranty.decisionHistory(support, c.id), {
     code: "FORBIDDEN",
   });
-  assert.equal(f.app.warranty.decisionHistory(warehouse, c.id).items.length, 1);
+  assert.equal(f.app.warranty.decisionHistory(warehouse, c.id).items.length, 2);
   warrantyGrants(f, warehouse, { sites: [f.w2] });
   assert.throws(() => f.app.warranty.decisionHistory(warehouse, c.id), {
     code: "FORBIDDEN",
@@ -300,6 +304,16 @@ test("HTTP history enforces strict query, authentication, private projection and
   const f = fixture(t),
     c = claim(f);
   approve(f, c.id);
+  f.app.warranty.receive(f.actor, "http-receive", {
+    claimId: c.id,
+    warehouseId: f.w1,
+    serial: "S1",
+    bin: "Private HTTP quarantine",
+  });
+  f.app.warranty.inspect(f.actor, "http-inspect", {
+    claimId: c.id,
+    findings: "Private HTTP inspection",
+  });
   const buyer = warrantyUser(f, "buyer");
   const email = String(
     f.app.identity.users(f.actor).find((u) => u.id === buyer.id)!.email,
@@ -323,11 +337,14 @@ test("HTTP history enforces strict query, authentication, private projection and
     headers = { cookie: `${cookie.name}=${cookie.value}` };
   const page = await http.inject({ method: "GET", url, headers });
   assert.equal(page.statusCode, 200);
-  assert.deepEqual(Object.keys(page.json().items[0]).sort(), [
-    "action",
-    "createdAt",
-    "id",
-  ]);
+  assert.deepEqual(
+    page.json().items.map((item: { action: string }) => item.action),
+    ["submitted", "approved", "received", "inspected"],
+  );
+  for (const item of page.json().items)
+    assert.deepEqual(Object.keys(item).sort(), ["action", "createdAt", "id"]);
+  assert.ok(!page.body.includes("Private"));
+  assert.ok(!page.body.includes(f.actor.id));
   for (const query of [
     "?after=",
     "?after=" + "x".repeat(129),
@@ -353,5 +370,187 @@ test("HTTP history enforces strict query, authentication, private projection and
   assert.equal(
     (await http.inject({ method: "GET", url, headers })).statusCode,
     401,
+  );
+});
+
+test("original long issue and inspection snapshots survive later custody changes without widening decision input limits", (t) => {
+  const f = fixture(t);
+  ship(f, accept(f).id);
+  const unitId = f.app.inventory.trace(f.actor, "S1").unit.id;
+  const issue = "Private issue " + "i".repeat(1986);
+  const evidence = "Private evidence " + "e".repeat(1983);
+  const input = {
+    accountId: f.buyer,
+    unitId,
+    type: "return" as const,
+    issue,
+    evidence,
+  };
+  const c = f.app.warranty.submit(f.actor, "long-submit", input);
+  assert.deepEqual(f.app.warranty.submit(f.actor, "long-submit", input), c);
+  assert.equal(f.app.warranty.claim(f.actor, c.id).evidence, evidence);
+  assert.throws(
+    () =>
+      f.app.warranty.review(f.actor, "too-long", {
+        claimId: c.id,
+        approved: true,
+        reason: "r".repeat(1001),
+      }),
+    { code: "VALIDATION" },
+  );
+  assert.equal(f.app.warranty.claim(f.actor, c.id).state, "submitted");
+  approve(f, c.id);
+  const receipt = {
+    claimId: c.id,
+    warehouseId: f.w2,
+    bin: " Original Q ",
+    serial: "S1",
+  };
+  f.app.warranty.receive(f.actor, "long-receive", receipt);
+  f.app.warranty.receive(f.actor, "long-receive", receipt);
+  const findings = "Private findings " + "f".repeat(1983);
+  const inspection = { claimId: c.id, findings };
+  f.app.warranty.inspect(f.actor, "long-inspect", inspection);
+  f.app.warranty.inspect(f.actor, "long-inspect", inspection);
+  f.app.warranty.dispose(f.actor, "long-restock", {
+    claimId: c.id,
+    disposition: "restock",
+    reason: "Private remedy",
+  });
+  const page = f.app.warranty.decisionHistory(f.actor, c.id);
+  assert.deepEqual(
+    page.items.map((i) => i.action),
+    ["submitted", "approved", "received", "inspected", "disposition.restock"],
+  );
+  assert.equal(page.items[0]!.reason, issue);
+  assert.equal(
+    page.items[2]!.reason,
+    `Serial S1 received into quarantine at warehouse ${f.w2}, bin Original Q.`,
+  );
+  assert.equal(page.items[3]!.reason, findings);
+  const audits = f.app.database
+    .owned("platform")
+    .all<{ detail: string }>(
+      "SELECT detail FROM platform_audit WHERE reference=? AND action IN ('warranty.submitted','warranty.received','warranty.inspected') ORDER BY rowid",
+      c.id,
+    );
+  assert.deepEqual(
+    audits.map((a) => JSON.parse(a.detail)),
+    [0, 2, 3].map((n) => ({ activityId: page.items[n]!.id })),
+  );
+  assert.equal(f.app.inventory.unit(f.actor, unitId).condition, "usable");
+  assert.equal(f.app.warranty.claim(f.actor, c.id).inspection, findings);
+  const buyer = warrantyUser(f, "buyer");
+  const publicPage = f.app.warranty.decisionHistory(buyer, c.id);
+  for (const item of publicPage.items)
+    assert.deepEqual(Object.keys(item).sort(), ["action", "createdAt", "id"]);
+  assert.ok(!JSON.stringify(publicPage).includes("Private"));
+  assert.ok(!JSON.stringify(publicPage).includes("Original Q"));
+  assert.ok(!JSON.stringify(publicPage).includes(f.actor.id));
+  f.app.close();
+  f.app = new Application(f.path, "CA");
+  assert.deepEqual(f.app.warranty.decisionHistory(f.actor, c.id), page);
+});
+
+for (const phase of ["submit", "receive", "inspect"] as const)
+  for (const failure of ["activity audit", "command receipt audit"] as const)
+    test(`native ${phase} activity rolls back all module facts on ${failure} failure and retries once`, (t) => {
+      const f = fixture(t);
+      ship(f, accept(f).id);
+      const unitId = f.app.inventory.trace(f.actor, "S1").unit.id;
+      const submit = {
+        accountId: f.buyer,
+        unitId,
+        type: "warranty" as const,
+        issue: "Private rollback issue",
+        evidence: "Private rollback reference",
+      };
+      const c =
+        phase === "submit"
+          ? null
+          : f.app.warranty.submit(f.actor, "prior-submit", submit);
+      if (c) approve(f, c.id);
+      const receipt = {
+        claimId: c?.id ?? "",
+        warehouseId: f.w1,
+        bin: "Q",
+        serial: "S1",
+      };
+      if (phase === "inspect")
+        f.app.warranty.receive(f.actor, "prior-receive", receipt);
+      const perform = () =>
+        phase === "submit"
+          ? f.app.warranty.submit(f.actor, "activity-key", submit)
+          : phase === "receive"
+            ? f.app.warranty.receive(f.actor, "activity-key", receipt)
+            : f.app.warranty.inspect(f.actor, "activity-key", {
+                claimId: c!.id,
+                findings: "Private rollback inspection",
+              });
+      const before = facts(f),
+        audit = f.app.platform.audit;
+      const action =
+        failure === "activity audit"
+          ? `warranty.${{ submit: "submitted", receive: "received", inspect: "inspected" }[phase]}`
+          : `warranty.${phase}`;
+      f.app.platform.audit = function (actor, name, reference, detail) {
+        audit.call(this, actor, name, reference, detail);
+        if (name === action) throw new Error("Synthetic late activity failure");
+      };
+      try {
+        assert.throws(perform, /Synthetic late activity failure/);
+      } finally {
+        f.app.platform.audit = audit;
+      }
+      assert.deepEqual(facts(f), before);
+      const result = perform(),
+        committed = facts(f);
+      assert.deepEqual(perform(), result);
+      assert.deepEqual(facts(f), committed);
+      const entries = f.app.warranty.decisionHistory(f.actor, result.id).items;
+      assert.equal(
+        entries.filter(
+          (i) =>
+            i.action ===
+            { submit: "submitted", receive: "received", inspect: "inspected" }[
+              phase
+            ],
+        ).length,
+        1,
+      );
+      const unit = f.app.inventory.unit(f.actor, unitId);
+      assert.equal(unit.quantity, phase === "submit" ? 0 : 1);
+      assert.equal(
+        unit.condition,
+        phase === "submit" ? "usable" : "quarantine",
+      );
+    });
+
+test("legacy claim records and cached old receipts do not fabricate missing activity", (t) => {
+  const f = fixture(t),
+    c = claim(f);
+  // Simulate the previous release: original claim and permanent receipt, no submission activity.
+  f.app.database
+    .owned("warranty")
+    .run("DELETE FROM warranty_decisions WHERE claim_id=?", c.id);
+  f.app.close();
+  f.app = new Application(f.path, "CA");
+  const before = facts(f);
+  assert.deepEqual(f.app.warranty.decisionHistory(f.actor, c.id), {
+    items: [],
+    next: null,
+  });
+  f.app.warranty.submit(f.actor, "claim-S1", {
+    accountId: f.buyer,
+    unitId: f.app.inventory.trace(f.actor, "S1").unit.id,
+    type: "warranty",
+    issue: "Synthetic warranty",
+    evidence: "Synthetic report",
+  });
+  assert.deepEqual(facts(f), before);
+  approve(f, c.id);
+  assert.deepEqual(
+    f.app.warranty.decisionHistory(f.actor, c.id).items.map((i) => i.action),
+    ["approved"],
   );
 });
