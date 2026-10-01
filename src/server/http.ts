@@ -583,6 +583,10 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.warranty.decideManufacturer(a, k, p),
     },
+    "stripe.refund": {
+      schema: obj({ refundId: str }),
+      run: (a, k, p) => app.integration.refund(a, k, p),
+    },
     "stripe.checkout": {
       schema: obj({ invoiceId: str }),
       run: (a, k, p) => app.integration.checkout(a, k, p),
@@ -977,6 +981,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .send(result.bytes);
     },
   );
+  http.get("/api/billing/payments", async (request) =>
+    app.billing.refunds.payments(actor(request)),
+  );
+  http.get("/api/billing/refunds", async (request) =>
+    app.billing.refunds.list(actor(request)),
+  );
   http.get("/api/effects", async (request) =>
     app.integration.list(actor(request)),
   );
@@ -996,6 +1006,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
       async (request) =>
         providers()[operation](actor(request), request.params.effectId),
     );
+  http.post<{ Params: { effectId: string } }>(
+    "/api/effects/:effectId/refresh-refund",
+    { schema: { params: obj({ effectId: str }) } },
+    async (request) =>
+      providers().refreshRefund(actor(request), request.params.effectId),
+  );
   http.get("/api/provider-callbacks", async (request) =>
     app.integration.callbacks(actor(request)),
   );

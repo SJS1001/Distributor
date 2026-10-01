@@ -3785,3 +3785,220 @@ test("browser: replacement collection retries, cancellation, scan validation and
   expect(successor.coverage_end).toBe(original.coverage_end);
   expect(errors).toEqual([]);
 });
+
+test("browser: credited cash refund request and bank verification retry one reservation and one repayment", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const account = await cmd("account.create", {
+    name: "Refund browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "REF-BROWSER",
+    name: "Refund browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await (await page.request.get("/api/dashboard")).json(),
+    warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 1, unitCost: 6000 }],
+  });
+  const received = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: received.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "REF-BROWSER-DEL",
+    quantity: 1,
+    serials: ["REF-BROWSER-UNIT"],
+    bin: "REF",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await (await page.request.get("/api/dashboard")).json();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic refund fixture counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  const shipped = await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic refund fixture handover",
+  });
+  const invoiceId = shipped.invoiceId;
+  await cmd("billing.payment.manual", {
+    invoiceId,
+    amount: 11300,
+    reference: "REF-BROWSER-PAY",
+    reason: "Synthetic payment evidence",
+  });
+  const paid = await (await page.request.get("/api/dashboard")).json(),
+    invoice = paid.invoices.find((i: any) => i.id === invoiceId);
+  await cmd("billing.credit", {
+    invoiceId,
+    reference: "REF-BROWSER-CR",
+    reason: "Synthetic credit",
+    lines: [{ lineId: invoice.lines[0].id, quantity: 1 }],
+  });
+  const before = await (await page.request.get("/api/dashboard")).json();
+  await page.reload();
+  await nav(page, "Billing");
+  const row = page.getByRole("row").filter({ hasText: invoice.number });
+  await row
+    .getByRole("button", { name: "Request refund", exact: true })
+    .click();
+  let dialog = page.getByRole("dialog", {
+    name: "Request credited cash refund",
+    exact: true,
+  });
+  await dialog
+    .getByLabel("Unique refund reference", { exact: true })
+    .fill("REF-BROWSER-REQUEST");
+  await dialog
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic credited cash request");
+  let lost = false;
+  const keys: string[] = [];
+  await page.route("**/api/commands/billing.refund.request", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!lost) {
+      lost = true;
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  let refunds = await (await page.request.get("/api/billing/refunds")).json();
+  expect(refunds.filter((r: any) => r.invoice_id === invoiceId)).toHaveLength(
+    1,
+  );
+  await row
+    .getByRole("button", { name: "Request refund", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Request credited cash refund",
+    exact: true,
+  });
+  await dialog
+    .getByLabel("Unique refund reference", { exact: true })
+    .fill("REF-BROWSER-OVER");
+  await dialog
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic excess check");
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Refund exceeds");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  const refundRow = page
+    .getByRole("row")
+    .filter({ hasText: "REF-BROWSER-REQUEST" });
+  await refundRow
+    .getByRole("button", { name: "Verify manual refund", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Verify bank refund",
+    exact: true,
+  });
+  await dialog
+    .getByLabel("Bank refund reference", { exact: true })
+    .fill("REF-BROWSER-BANK");
+  await dialog
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic verified bank repayment");
+  let bankLost = false;
+  const bankKeys: string[] = [];
+  await page.route("**/api/commands/billing.refund.manual", async (route) => {
+    bankKeys.push(route.request().headers()["idempotency-key"]!);
+    if (!bankLost) {
+      bankLost = true;
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(bankKeys).toHaveLength(2);
+  expect(bankKeys[0]).toBe(bankKeys[1]);
+  await expect(refundRow).toContainText("completed");
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(
+    page.getByRole("row").filter({ hasText: "REF-BROWSER-REQUEST" }),
+  ).toContainText("completed");
+  refunds = await (await page.request.get("/api/billing/refunds")).json();
+  expect(refunds.find((r: any) => r.invoice_id === invoiceId).state).toBe(
+    "completed",
+  );
+  const after = await (await page.request.get("/api/dashboard")).json();
+  const final = after.invoices.find((i: any) => i.id === invoiceId);
+  expect(final.paid).toBe(11300);
+  expect(final.credited).toBe(11300);
+  expect(final.refunded).toBe(11300);
+  expect(final.balance).toBe(0);
+  expect(after.stock).toEqual(before.stock);
+  expect(after.orders).toEqual(before.orders);
+  expect(after.shipments).toEqual(before.shipments);
+  expect(errors).toEqual([]);
+});

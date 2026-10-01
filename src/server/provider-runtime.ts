@@ -118,6 +118,15 @@ export class ProviderRuntime {
       this.adapter(actor, effect.provider),
     );
   }
+  async refreshRefund(actor: Actor, effectId: string) {
+    const effect = this.app.integration.effect(actor, effectId);
+    return this.app.integration.refunds.run(
+      actor,
+      effectId,
+      this.adapter(actor, "stripe"),
+      false,
+    );
+  }
   receiveStripe(bindingId: string, raw: Buffer, signature: unknown) {
     const binding = this.bindings.find((b) => b.id === bindingId);
     check(binding?.stripe, "NOT_FOUND", "Webhook endpoint not found.", 404);
@@ -205,6 +214,7 @@ export class ProviderRuntime {
         120000,
         binding.orgId,
       );
+      this.app.integration.refunds.recover(120000, binding.orgId);
       report.recoveredCallbacks += this.app.integration.recoverCallbacks(
         120000,
         binding.orgId,
@@ -226,6 +236,13 @@ export class ProviderRuntime {
         }
       }
       if (!binding.stripe) continue;
+      for (const effect of this.app.integration.refunds.due(actor(), limit)) {
+        try {
+          await this.refreshRefund(actor(), effect.id);
+        } catch {
+          report.deferred++;
+        }
+      }
       for (const callback of this.app.integration.dueCallbacks(
         actor(),
         binding.id,

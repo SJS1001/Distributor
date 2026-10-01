@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { refundStatuses, type RefundIntent } from "./billing-refunds.ts";
 import { check, integer } from "./core.ts";
 import { type Adapter, type Effect, type EffectResult } from "./integration.ts";
 import { type CommercialLine, type Invoice } from "./billing.ts";
@@ -62,8 +63,109 @@ export class StripeAdapter implements Adapter {
       },
     };
   }
+  private async refundPayment(effect: Effect) {
+    const p = JSON.parse(effect.payload) as RefundIntent;
+    const payment = await this.client.paymentIntents.retrieve(p.paymentId);
+    check(
+      payment.id === p.paymentId &&
+        payment.livemode === false &&
+        payment.status === "succeeded" &&
+        payment.amount_received === p.paymentAmount &&
+        payment.currency === p.currency &&
+        p.amount > 0 &&
+        p.amount <= p.paymentAmount,
+      "REFUND_MISMATCH",
+      "Stripe payment is not the expected settled test payment.",
+    );
+    return p;
+  }
+  private refundResult(effect: Effect, refund: Stripe.Refund): EffectResult {
+    const p = JSON.parse(effect.payload) as RefundIntent;
+    const paymentId =
+      typeof refund.payment_intent === "string"
+        ? refund.payment_intent
+        : refund.payment_intent?.id;
+    check(
+      refund.object === "refund" &&
+        /^re_[a-zA-Z0-9_]+$/.test(refund.id) &&
+        refund.amount === p.amount &&
+        refund.currency === p.currency &&
+        paymentId === p.paymentId &&
+        refund.metadata?.effect_id === effect.id &&
+        refund.metadata?.refund_id === p.refundId &&
+        refundStatuses.includes(
+          refund.status as (typeof refundStatuses)[number],
+        ),
+      "REFUND_MISMATCH",
+      "Stripe refund identity, status or money differs from the intent.",
+    );
+    return {
+      reference: refund.id,
+      result: {
+        effectId: effect.id,
+        refundId: p.refundId,
+        paymentId,
+        amount: refund.amount,
+        currency: refund.currency,
+        status: refund.status,
+      },
+    };
+  }
+  private async refundLookup(effect: Effect) {
+    const p = await this.refundPayment(effect);
+    if (effect.external_ref)
+      return this.refundResult(
+        effect,
+        await this.client.refunds.retrieve(effect.external_ref),
+      );
+    let after: string | undefined;
+    let found: Stripe.Refund | undefined;
+    for (let page = 0; page < 10; page++) {
+      const rows = await this.client.refunds.list({
+        payment_intent: p.paymentId,
+        limit: 100,
+        ...(after ? { starting_after: after } : {}),
+      });
+      for (const row of rows.data)
+        if (row.metadata?.effect_id === effect.id) {
+          check(
+            !found,
+            "REFUND_DUPLICATE",
+            "Multiple provider refunds require finance review.",
+          );
+          found = row;
+        }
+      if (!rows.has_more)
+        return found ? this.refundResult(effect, found) : null;
+      check(
+        rows.data.length > 0,
+        "PROVIDER_RESPONSE",
+        "Stripe pagination made no progress.",
+      );
+      after = rows.data.at(-1)!.id;
+    }
+    check(
+      false,
+      "REFUND_LOOKUP_LIMIT",
+      "Refund lookup exceeded the review limit; absence is not confirmed.",
+    );
+  }
   async execute(effect: Effect): Promise<EffectResult> {
     this.allow();
+    if (effect.kind === "refund") {
+      const p = await this.refundPayment(effect);
+      return this.refundResult(
+        effect,
+        await this.client.refunds.create(
+          {
+            payment_intent: p.paymentId,
+            amount: p.amount,
+            metadata: { effect_id: effect.id, refund_id: p.refundId },
+          },
+          { idempotencyKey: `distributor:${effect.id}` },
+        ),
+      );
+    }
     check(
       effect.kind === "checkout",
       "PROVIDER_OPERATION",
@@ -100,6 +202,12 @@ export class StripeAdapter implements Adapter {
   }
   async lookup(effect: Effect): Promise<EffectResult | null> {
     this.allow();
+    if (effect.kind === "refund") return this.refundLookup(effect);
+    check(
+      effect.kind === "checkout",
+      "PROVIDER_OPERATION",
+      "Unsupported Stripe operation.",
+    );
     const created = Math.floor(Date.parse(effect.created_at) / 1000);
     let inspected = 0;
     for await (const s of this.client.checkout.sessions.list({

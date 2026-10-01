@@ -88,6 +88,10 @@ function App() {
       e.effects = await request("/api/effects");
     if (["admin", "finance", "support"].includes(actor?.role ?? ""))
       e.callbacks = await request("/api/provider-callbacks");
+    if (["admin", "finance", "support"].includes(actor?.role ?? "")) {
+      e.payments = await request("/api/billing/payments");
+      e.refunds = await request("/api/billing/refunds");
+    }
     if (actor?.role === "admin") {
       e.users = await request("/api/users");
       e.openingImports = await request("/api/imports/opening");
@@ -1774,6 +1778,37 @@ function App() {
                       ).catch(() => {});
                     })}
                   {can("finance") &&
+                    i.balance < 0 &&
+                    button("Request refund", () =>
+                      simple(
+                        "Request credited cash refund",
+                        [
+                          select(
+                            "paymentId",
+                            "Original payment",
+                            (extra.payments ?? []).filter(
+                              (p: Item) => p.invoice_id === i.id,
+                            ),
+                            (p) =>
+                              `${p.provider} · ${money(p.amount, i.currency)} · ${p.external_ref}`,
+                          ),
+                          {
+                            name: "amount",
+                            label: "Amount in cents",
+                            type: "number",
+                            value: -i.balance,
+                          },
+                          {
+                            name: "reference",
+                            label: "Unique refund reference",
+                          },
+                          reason,
+                        ],
+                        "billing.refund.request",
+                        (v) => ({ ...v, invoiceId: i.id }),
+                      ),
+                    )}
+                  {can("finance") &&
                     i.lines.some((l: Item) => l.creditable_quantity > 0) &&
                     button("Credit units", () =>
                       simple(
@@ -2060,6 +2095,69 @@ function App() {
                 )}
               </>
             )}
+            {extra.refunds?.length > 0 && (
+              <>
+                <h2>Cash refunds</h2>
+                {table(
+                  [
+                    "Reference",
+                    "Amount",
+                    "Status",
+                    "Provider history",
+                    "Actions",
+                  ],
+                  extra.refunds,
+                  (r: Item) => [
+                    r.reference,
+                    money(
+                      r.amount,
+                      data.invoices.find((i: Item) => i.id === r.invoice_id)
+                        ?.currency ?? "CAD",
+                    ),
+                    `${r.state}${r.provider_status ? ` · ${r.provider_status}` : ""}`,
+                    <>
+                      {r.provider_reference}
+                      <small>
+                        {r.observations
+                          .map(
+                            (o: Item) =>
+                              `${o.status}${o.applied ? "" : " (retained, not applied)"}`,
+                          )
+                          .join(" → ")}
+                      </small>
+                    </>,
+                    <div className="actions">
+                      {can("finance") &&
+                        r.state === "pending" &&
+                        (r.provider === "manual"
+                          ? button("Verify manual refund", () =>
+                              simple(
+                                "Verify bank refund",
+                                [
+                                  {
+                                    name: "reference",
+                                    label: "Bank refund reference",
+                                  },
+                                  reason,
+                                ],
+                                "billing.refund.manual",
+                                (v) => ({ ...v, refundId: r.id }),
+                              ),
+                            )
+                          : !extra.effects?.some(
+                              (e: Item) =>
+                                e.kind === "refund" && e.reference === r.id,
+                            ) &&
+                            button("Queue Stripe refund", () => {
+                              void run(() =>
+                                command("stripe.refund", { refundId: r.id }),
+                              ).catch(() => {});
+                            }))}
+                    </div>,
+                  ],
+                )}
+              </>
+            )}
             {extra.effects && (
               <>
                 <h2>Provider operations</h2>
@@ -2067,8 +2165,10 @@ function App() {
                   ["Provider", "Status", "Result", "Actions"],
                   extra.effects,
                   (e: Item) => [
-                    e.provider,
-                    e.state,
+                    `${e.provider} · ${e.kind}`,
+                    e.result?.status
+                      ? `${e.state} · ${e.result.status}`
+                      : e.state,
                     checkoutUrl(e.result?.checkoutUrl) ? (
                       <a
                         href={checkoutUrl(e.result.checkoutUrl)!}
@@ -2078,11 +2178,14 @@ function App() {
                         Open secure checkout
                       </a>
                     ) : (
-                      (e.error ?? "Awaiting configured provider processing")
+                      (e.error ??
+                      e.external_ref ??
+                      "Awaiting configured provider processing")
                     ),
                     can("finance", "support") ? (
                       <div className="actions">
-                        {e.state === "pending" &&
+                        {(e.kind !== "refund" || can("finance")) &&
+                          e.state === "pending" &&
                           button("Send to provider", () => {
                             void run(() =>
                               request(`/api/effects/${e.id}/execute`, {
@@ -2090,7 +2193,18 @@ function App() {
                               }),
                             ).catch(() => {});
                           })}
-                        {e.state === "unknown" &&
+                        {can("finance") &&
+                          e.kind === "refund" &&
+                          e.state === "completed" &&
+                          button("Refresh refund status", () => {
+                            void run(() =>
+                              request(`/api/effects/${e.id}/refresh-refund`, {
+                                method: "POST",
+                              }),
+                            ).catch(() => {});
+                          })}
+                        {(e.kind !== "refund" || can("finance")) &&
+                          e.state === "unknown" &&
                           button("Check provider outcome", () => {
                             void run(() =>
                               request(`/api/effects/${e.id}/reconcile`, {

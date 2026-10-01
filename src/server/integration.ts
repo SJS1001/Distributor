@@ -13,6 +13,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
+import { IntegrationRefunds } from "./integration-refunds.ts";
 import { Billing } from "./billing.ts";
 export type Effect = {
   id: string;
@@ -55,6 +56,7 @@ export type Callback = {
 };
 export class Integration {
   private store: Store;
+  readonly refunds: IntegrationRefunds;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -68,6 +70,14 @@ export class Integration {
     CREATE TABLE IF NOT EXISTS integration_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,session_id TEXT NOT NULL,effect_id TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL;
   `);
+    this.refunds = new IntegrationRefunds(
+      database,
+      this.store,
+      platform,
+      identity,
+      billing,
+      this,
+    );
   }
   effect(actor: Actor, effectId: string): Effect {
     const row = this.store.get<Effect>(
@@ -86,7 +96,12 @@ export class Integration {
         "SELECT * FROM integration_effects WHERE org_id=? ORDER BY created_at DESC",
         actor.orgId,
       )
-      .filter((e) => actor.role !== "buyer" || e.account_id === actor.accountId)
+      .filter(
+        (e) =>
+          (actor.role !== "buyer" || e.account_id === actor.accountId) &&
+          (e.kind !== "refund" ||
+            ["admin", "finance", "support"].includes(actor.role)),
+      )
       .map((e) => ({
         ...e,
         payload: undefined,
@@ -321,6 +336,42 @@ export class Integration {
       },
     );
   }
+  refund(actor: Actor, key: string, input: { refundId: string }) {
+    actor = this.identity.workerActor(actor.orgId, actor.id);
+    return this.platform.command(
+      actor,
+      "stripe.refund",
+      key,
+      input,
+      () => {
+        permit(actor, ["finance"]);
+        this.platform.assertProviderAccess();
+        const { invoice } = this.billing.refunds.get(actor, input.refundId);
+        this.identity.providerAllowed(actor, invoice.account_id, "stripe");
+      },
+      () => {
+        const { row, invoice } = this.billing.refunds.get(
+          actor,
+          input.refundId,
+        );
+        check(
+          row.state === "pending",
+          "STATE",
+          "Only pending refunds may be queued.",
+        );
+        const result = this.queue(
+          actor,
+          invoice.account_id,
+          "stripe",
+          "refund",
+          input.refundId,
+          this.billing.refunds.intent(actor, input.refundId),
+        );
+        this.refunds.register(actor, result.id);
+        return result;
+      },
+    );
+  }
   accounting(
     actor: Actor,
     key: string,
@@ -405,6 +456,8 @@ export class Integration {
     );
   }
   async execute(actor: Actor, effectId: string, adapter: Adapter) {
+    if (this.effect(actor, effectId).kind === "refund")
+      return this.refunds.run(actor, effectId, adapter, true);
     permit(actor, ["finance", "support"]);
     this.platform.assertProviderAccess();
     const effect = this.database.transaction(() => {
@@ -460,6 +513,8 @@ export class Integration {
     });
   }
   async reconcile(actor: Actor, effectId: string, adapter: Adapter) {
+    if (this.effect(actor, effectId).kind === "refund")
+      return this.refunds.run(actor, effectId, adapter, false);
     permit(actor, ["finance", "support"]);
     this.platform.assertProviderAccess();
     const effect = this.effect(actor, effectId);
