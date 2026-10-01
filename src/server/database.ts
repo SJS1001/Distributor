@@ -141,4 +141,20 @@ export class Store {
       (db) => db.prepare(sql).all(...params) as T[],
     );
   }
+  visit<T extends Row = Row>(
+    sql: string,
+    params: SQLInputValue[],
+    visitor: (row: T) => unknown,
+  ): void {
+    this.database.execute(this.owner, (db) => {
+      for (const row of db.prepare(sql).iterate(...params)) {
+        const result = visitor(row as T);
+        if (result && typeof (result as { then?: unknown }).then === "function")
+          throw new DomainError(
+            "ITERATION",
+            "Async work is forbidden inside a database visitor.",
+          );
+      }
+    });
+  }
 }

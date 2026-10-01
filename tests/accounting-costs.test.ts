@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import type { SQLInputValue } from "node:sqlite";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { fixture, accept, ship } from "./fixtures.ts";
@@ -6,6 +7,7 @@ import { Application } from "../src/server/application.ts";
 import { digest } from "../src/server/core.ts";
 import { createHttp } from "../src/server/http.ts";
 import type { CostInput } from "../src/server/integration-costs.ts";
+import { Store } from "../src/server/database.ts";
 
 type Fixture = ReturnType<typeof fixture>;
 function initial(f: Fixture, batchRef = "COST-1"): CostInput {
@@ -734,6 +736,117 @@ test("bounded sequential packets and paged history retain stable source identiti
     new Set([...page.items, ...older.items].map((p) => p.id)).size,
     24,
   );
+});
+
+test("cost windows reconcile thousands of units without retaining full result arrays and refuse evidence faults beyond the selected cutoff", (t) => {
+  const f = fixture(t);
+  const product = f.app.catalog.create(f.actor, "large-cost-product", {
+    sku: "STREAMED-COST",
+    name: "Synthetic streamed equipment",
+    serialized: true,
+    unitPrice: 20,
+    taxBasisPoints: 0,
+  }).id;
+  const po = f.app.procurement.create(f.actor, "large-cost-po", {
+    supplierId: f.supplier,
+    warehouseId: f.w1,
+    lines: [{ productId: product, quantity: 2000, unitCost: 7 }],
+  }).id;
+  const lineId = String(
+    f.app.procurement.orders(f.actor).find((p) => p.id === po)!.lines[0]!.id,
+  );
+  for (let batch = 0; batch < 4; batch++)
+    f.app.procurement.receive(f.actor, `large-cost-receipt-${batch}`, {
+      poId: po,
+      lineId,
+      deliveryRef: `STREAM-${batch}`,
+      quantity: 500,
+      serials: Array.from(
+        { length: 500 },
+        (_, i) => `STREAM-${batch * 500 + i}`,
+      ),
+      bin: "A-1",
+      quarantine: false,
+    });
+  const source = f.app.inventory.costs.window(f.actor, 0);
+  assert.equal(source.movements.length, 500);
+  assert.equal(source.closingValue, 18000 + 497 * 7);
+  assert.equal(source.more, true);
+  const all = Store.prototype.all;
+  const materialized: number[] = [];
+  t.mock.method(
+    Store.prototype,
+    "all",
+    function (this: Store, sql: string, ...params: SQLInputValue[]) {
+      const rows = all.call(this, sql, ...params);
+      materialized.push(rows.length);
+      assert.ok(
+        rows.length <= 501,
+        "Cost reconciliation must not retain the complete history or physical unit list.",
+      );
+      return rows;
+    },
+  );
+  assert.deepEqual(f.app.inventory.costs.window(f.actor, 0), source);
+  let after = 0,
+    total = 0,
+    count = 0;
+  const sizes: number[] = [];
+  while (true) {
+    const window = f.app.inventory.costs.window(f.actor, after);
+    assert.equal(window.openingValue, total);
+    total += window.increase - window.decrease;
+    assert.equal(window.closingValue, total);
+    count += window.movements.length;
+    sizes.push(window.movements.length);
+    after = window.throughSequence;
+    if (!window.more) break;
+  }
+  assert.deepEqual(sizes, [500, 500, 500, 500, 3]);
+  assert.equal(count, 2003);
+  assert.equal(total, 32000);
+  assert.equal(
+    f.app.inventory.costs.window(f.actor, after).movements.length,
+    0,
+  );
+  assert.ok(materialized.length > 0);
+  const store = f.app.database.owned("inventory");
+  const late = store.get<{ id: string; unit_id: string }>(
+    "SELECT m.id,m.unit_id FROM inventory_movements m JOIN inventory_cost_sequences s ON s.movement_id=m.id AND s.org_id=m.org_id WHERE m.org_id=? ORDER BY s.sequence DESC LIMIT 1",
+    f.actor.orgId,
+  )!;
+  for (const [sql, code] of [
+    [
+      "UPDATE inventory_movements SET type='unsupported' WHERE id=?",
+      "COST_EVIDENCE",
+    ],
+    [
+      "UPDATE inventory_movements SET created_at='2026-02-30T00:00:00.000Z' WHERE id=?",
+      "COST_EVIDENCE",
+    ],
+    [
+      "UPDATE inventory_units SET cost=cost+1 WHERE id=?",
+      "COST_RECONCILIATION",
+    ],
+  ])
+    assert.throws(
+      () =>
+        f.app.database.transaction(() => {
+          store.run(
+            sql!,
+            sql!.includes("inventory_units") ? late.unit_id : late.id,
+          );
+          f.app.inventory.costs.window(f.actor, 0, source.throughSequence);
+        }),
+      { code },
+    );
+  assert.deepEqual(f.app.inventory.costs.window(f.actor, 0), source);
+  assert.throws(() => f.app.inventory.costs.window(f.actor, 0, after), {
+    code: "COST_BATCH_SIZE",
+  });
+  assert.throws(() => f.app.inventory.costs.window(f.actor, 0, after + 1), {
+    code: "COST_CUTOFF",
+  });
 });
 
 test("HTTP cost commands enforce session, CSRF and strict fields; download hash matches raw attachment bytes", async (t) => {
