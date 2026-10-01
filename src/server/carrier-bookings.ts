@@ -188,6 +188,10 @@ export class CarrierBookings {
     const booking = this.latest(actor.orgId, shipmentId);
     return { shipmentId, booking: booking ? this.view(booking) : null };
   }
+  providerForBooking(actor: Actor, bookingId: string): CarrierName {
+    actor = this.principal(actor);
+    return this.intent(this.booking(actor, bookingId)).provider;
+  }
   history(
     actor: Actor,
     shipmentId: string,

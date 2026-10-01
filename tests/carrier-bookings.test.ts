@@ -15,6 +15,7 @@ import type {
   CarrierPrepare,
   CarrierAddress,
 } from "../src/shared/carrier-booking.ts";
+import { carrierNames } from "../src/shared/carrier-booking.ts";
 
 const origin: CarrierAddress = {
   name: "Synthetic warehouse",
@@ -1151,4 +1152,448 @@ test("failed preparation event rolls back booking, receipt and audit together", 
     0,
   );
   assert.ok(prepare(f).id);
+});
+
+for (const provider of carrierNames)
+  test(`named runtime routes ${provider} by retained booking rather than registration order`, async (t) => {
+    const f = setup(t),
+      before = native(f),
+      calls: string[] = [];
+    chooseProviders(f, f.actor, "routing-choice", {
+      accountId: f.buyer,
+      region: "CA",
+      mode: "provider-exceptions",
+      providers: [provider],
+      version: 2,
+      acknowledgment: "Synthetic exact named carrier acceptance",
+    });
+    const receipt = f.app.carriers.prepare(f.actor, "named-prepare", {
+      ...f.input,
+      provider,
+    });
+    const runtime = new CarrierRuntime(
+      f.app,
+      carrierNames
+        .map((named) => ({
+          orgId: f.actor.orgId,
+          adapter: adapter({
+            provider: named,
+            book: async (intent, guard) => {
+              calls.push(`book:${named}`);
+              assert.equal(intent.provider, named);
+              guard();
+              return proof(intent);
+            },
+            lookup: async () => {
+              calls.push(`lookup:${named}`);
+              return null;
+            },
+          }),
+        }))
+        .reverse(),
+    );
+    assert.equal(runtime.enabled(f.actor, provider), true);
+    const result = await runtime.execute(f.actor, receipt.id);
+    assert.equal(result.provider, provider);
+    assert.equal(result.state, "booked");
+    assert.deepEqual(calls, [`book:${provider}`]);
+    assert.deepEqual(native(f), before);
+  });
+
+test("named runtime rejects duplicate organization/provider registrations and malformed configuration", (t) => {
+  const f = setup(t);
+  const valid = { orgId: f.actor.orgId, adapter: adapter() };
+  const invalid: unknown[] = [
+    [],
+    new Array(1),
+    null,
+    {},
+    [null],
+    [{}],
+    [{ orgId: f.actor.orgId, adapter: null }],
+    [valid, { ...valid, adapter: adapter() }],
+    [{ ...valid, orgId: " " }],
+    [{ ...valid, orgId: ` ${f.actor.orgId}` }],
+    [{ ...valid, orgId: "x\n" }],
+    [{ ...valid, orgId: "x".repeat(129) }],
+    [{ ...valid, adapter: { ...adapter(), provider: "other" } }],
+    [{ ...valid, adapter: { ...adapter(), sandbox: false } }],
+    [{ ...valid, adapter: { ...adapter(), book: null } }],
+    [{ ...valid, adapter: { ...adapter(), lookup: null } }],
+  ];
+  for (const bindings of invalid)
+    assert.throws(
+      () =>
+        new CarrierRuntime(
+          f.app,
+          bindings as ConstructorParameters<typeof CarrierRuntime>[1],
+        ),
+      { code: "CARRIER_CONFIG" },
+    );
+  assert.doesNotThrow(
+    () =>
+      new CarrierRuntime(f.app, [
+        valid,
+        { ...valid, orgId: "synthetic-other-org" },
+      ]),
+  );
+});
+
+test("runtime snapshots registrations and bound methods without losing adapter receiver", async (t) => {
+  const f = setup(t),
+    receipt = prepare(f);
+  let writes = 0;
+  const a = {
+    ...adapter(),
+    marker: "synthetic receiver",
+    async book(intent: CarrierIntent, guard: () => void) {
+      assert.equal(this.marker, "synthetic receiver");
+      guard();
+      writes++;
+      return proof(intent);
+    },
+  };
+  const binding = { orgId: f.actor.orgId, adapter: a },
+    bindings = [binding];
+  const runtime = new CarrierRuntime(f.app, bindings);
+  bindings.splice(0);
+  binding.orgId = "synthetic-other-org";
+  a.provider = "fedex";
+  a.book = async () => {
+    throw Error("must not select replaced method");
+  };
+  assert.equal(runtime.enabled(f.actor, "ups"), true);
+  assert.equal(runtime.enabled(f.actor, "fedex"), false);
+  assert.equal((await runtime.execute(f.actor, receipt.id)).state, "booked");
+  assert.equal(writes, 1);
+});
+
+test("runtime never falls back to another provider or organization for send or reconciliation", async (t) => {
+  const f = setup(t),
+    receipt = prepare(f),
+    before = native(f);
+  let calls = 0;
+  const tracked = (provider: CarrierAdapter["provider"]) =>
+    adapter({
+      provider,
+      book: async () => {
+        calls++;
+        throw Error("unexpected send");
+      },
+      lookup: async () => {
+        calls++;
+        throw Error("unexpected lookup");
+      },
+    });
+  const runtime = new CarrierRuntime(f.app, [
+    { orgId: f.actor.orgId, adapter: tracked("fedex") },
+    { orgId: "synthetic-other-org", adapter: tracked("ups") },
+  ]);
+  assert.equal(runtime.enabled(f.actor, "ups"), false);
+  assert.equal(runtime.enabled(f.actor, "fedex"), true);
+  assert.throws(() => runtime.execute(f.actor, receipt.id), {
+    code: "CARRIER_DISABLED",
+  });
+  assert.throws(() => runtime.reconcile(f.actor, receipt.id), {
+    code: "CARRIER_DISABLED",
+  });
+  assert.equal(current(f).state, "pending");
+  assert.equal(calls, 0);
+  assert.deepEqual(native(f), before);
+});
+
+test("uncertain booking reconciliation retains its provider when registrations are reordered", async (t) => {
+  const f = setup(t),
+    receipt = prepare(f),
+    before = native(f),
+    calls: string[] = [];
+  const ups = adapter({
+    book: async (_intent, guard) => {
+      guard();
+      calls.push("ups:book");
+      throw Error("synthetic lost response");
+    },
+    lookup: async (intent) => {
+      calls.push("ups:lookup");
+      return proof(intent);
+    },
+  });
+  const fedex = adapter({
+    provider: "fedex",
+    book: async () => {
+      calls.push("fedex:book");
+      throw Error("unexpected carrier");
+    },
+    lookup: async () => {
+      calls.push("fedex:lookup");
+      throw Error("unexpected carrier");
+    },
+  });
+  const first = new CarrierRuntime(f.app, [
+    { orgId: f.actor.orgId, adapter: ups },
+    { orgId: f.actor.orgId, adapter: fedex },
+  ]);
+  await assert.rejects(first.execute(f.actor, receipt.id));
+  assert.equal(current(f).state, "unknown");
+  const restarted = new CarrierRuntime(f.app, [
+    { orgId: f.actor.orgId, adapter: fedex },
+    { orgId: f.actor.orgId, adapter: ups },
+  ]);
+  await assert.rejects(restarted.execute(f.actor, receipt.id), {
+    code: "STATE",
+  });
+  assert.equal(
+    (await restarted.reconcile(f.actor, receipt.id)).state,
+    "booked",
+  );
+  assert.deepEqual(calls, ["ups:book", "ups:lookup"]);
+  assert.deepEqual(native(f), before);
+});
+
+for (const restriction of ["role", "site", "inactive", "password"] as const)
+  test(`runtime rereads ${restriction} authority before resolving a booking or adapter`, (t) => {
+    const f = setup(t),
+      actor = user(f),
+      receipt = prepare(f, actor);
+    let calls = 0;
+    const runtime = new CarrierRuntime(f.app, [
+      {
+        orgId: f.actor.orgId,
+        adapter: adapter({
+          book: async () => {
+            calls++;
+            throw Error("unexpected send");
+          },
+          lookup: async () => {
+            calls++;
+            return null;
+          },
+        }),
+      },
+    ]);
+    restrict(f, actor, restriction);
+    const forged = { ...actor, role: "admin" as const, sites: [f.w1] };
+    for (const action of ["execute", "reconcile"] as const)
+      assert.throws(() => runtime[action](forged, receipt.id));
+    if (restriction === "site") {
+      // Registration eligibility carries no shipment permission; dispatch checks its site.
+      assert.equal(runtime.enabled(forged, "ups"), true);
+    } else {
+      assert.throws(() => runtime.enabled(forged, "ups"));
+    }
+    assert.equal(calls, 0);
+    assert.equal(current(f).state, "pending");
+  });
+
+test("runtime rejects absent and foreign organization booking IDs before any adapter hook", (t) => {
+  const f = setup(t),
+    other = setup(t),
+    otherReceipt = prepare(other);
+  const foreign = other.app.database.owned("integration").get<{
+    id: string;
+    org_id: string;
+    shipment_id: string;
+    state: string;
+    review_hash: string;
+    intent: string;
+    created_at: string;
+  }>("SELECT * FROM integration_carrier_bookings WHERE id=?", otherReceipt.id)!;
+  // Integration-owned test fault places an actual foreign row in the same store.
+  const store = f.app.database.owned("integration");
+  store.run(
+    "INSERT INTO integration_carrier_bookings(id,org_id,shipment_id,state,review_hash,intent,created_at) VALUES(?,?,?,?,?,?,?)",
+    foreign.id,
+    foreign.org_id,
+    foreign.shipment_id,
+    foreign.state,
+    foreign.review_hash,
+    foreign.intent,
+    foreign.created_at,
+  );
+  const retained = store.get(
+    "SELECT id,org_id,state,intent FROM integration_carrier_bookings WHERE id=?",
+    foreign.id,
+  );
+  let calls = 0;
+  const runtime = new CarrierRuntime(f.app, [
+    {
+      orgId: f.actor.orgId,
+      adapter: adapter({
+        book: async () => {
+          calls++;
+          throw Error("unexpected send");
+        },
+        lookup: async () => {
+          calls++;
+          return null;
+        },
+      }),
+    },
+  ]);
+  for (const id of [otherReceipt.id, "synthetic-absent-booking"])
+    for (const action of ["execute", "reconcile"] as const)
+      assert.throws(() => runtime[action](f.actor, id), { code: "NOT_FOUND" });
+  assert.equal(calls, 0);
+  assert.deepEqual(
+    store.get(
+      "SELECT id,org_id,state,intent FROM integration_carrier_bookings WHERE id=?",
+      foreign.id,
+    ),
+    retained,
+  );
+  assert.equal(f.app.carriers.review(f.actor, f.shipmentId).booking, null);
+});
+
+test("carrier HTTP selects stored FedEx booking with UPS registered first and rejects a dispatch override", async (t) => {
+  const f = setup(t),
+    before = native(f),
+    calls: string[] = [];
+  chooseProviders(f, f.actor, "http-fedex-choice", {
+    accountId: f.buyer,
+    region: "CA",
+    mode: "provider-exceptions",
+    providers: ["fedex"],
+    version: 2,
+    acknowledgment: "Synthetic named FedEx acceptance",
+  });
+  const receipt = f.app.carriers.prepare(f.actor, "http-fedex-prepare", {
+    ...f.input,
+    provider: "fedex",
+  });
+  const http = await createHttp(f.app, {
+    origin: "http://localhost:3000",
+    secureCookies: false,
+    carriers: new CarrierRuntime(
+      f.app,
+      ["ups", "fedex"].map((provider) => ({
+        orgId: f.actor.orgId,
+        adapter: adapter({
+          provider: provider as CarrierAdapter["provider"],
+          book: async (intent, guard) => {
+            calls.push(provider);
+            guard();
+            return proof(intent);
+          },
+        }),
+      })),
+    ),
+  });
+  t.after(async () => {
+    await http.close();
+  });
+  const login = f.app.identity.login(
+    "admin@example.test",
+    "long-test-only-password",
+  );
+  const headers = {
+    cookie: `distributor_session=${login.token}`,
+    "x-csrf-token": login.csrf,
+    origin: "http://localhost:3000",
+  };
+  const url = `/api/carrier/${receipt.id}/send`;
+  const review = await http.inject({
+    method: "GET",
+    url: `/api/shipments/${f.shipmentId}/carrier`,
+    headers,
+  });
+  assert.equal(review.statusCode, 200);
+  assert.equal(review.json().booking.provider, "fedex");
+  assert.equal(review.json().enabled, true);
+  const invalid = await http.inject({
+    method: "POST",
+    url,
+    headers,
+    payload: { provider: "ups" },
+  });
+  assert.equal(invalid.statusCode, 400);
+  assert.deepEqual(calls, []);
+  assert.equal(current(f).state, "pending");
+  const sent = await http.inject({ method: "POST", url, headers, payload: {} });
+  assert.equal(sent.statusCode, 200);
+  assert.equal(sent.json().provider, "fedex");
+  assert.equal(sent.json().state, "booked");
+  assert.deepEqual(calls, ["fedex"]);
+  assert.deepEqual(native(f), before);
+});
+
+test("multiple runtime registrations cannot grant an undisclosed provider or bypass withdrawn consent", async (t) => {
+  const f = setup(t),
+    before = native(f);
+  let calls = 0;
+  const tracked = (provider: CarrierAdapter["provider"]) =>
+    adapter({
+      provider,
+      book: async () => {
+        calls++;
+        throw Error("unexpected write");
+      },
+      lookup: async () => {
+        calls++;
+        return null;
+      },
+    });
+  const runtime = new CarrierRuntime(f.app, [
+    { orgId: f.actor.orgId, adapter: tracked("ups") },
+    { orgId: f.actor.orgId, adapter: tracked("fedex") },
+  ]);
+  assert.equal(runtime.enabled(f.actor, "fedex"), true);
+  assert.throws(() =>
+    f.app.carriers.prepare(f.actor, "unapproved-fedex", {
+      ...f.input,
+      provider: "fedex",
+    }),
+  );
+  assert.equal(current(f), null);
+  const receipt = prepare(f);
+  restrict(f, f.actor, "choice");
+  await assert.rejects(runtime.execute(f.actor, receipt.id));
+  assert.equal(current(f).state, "pending");
+  assert.equal(calls, 0);
+  assert.deepEqual(native(f), before);
+});
+
+test("runtime provider resolution verifies retained intent integrity before accessing an adapter", (t) => {
+  const f = setup(t),
+    receipt = prepare(f);
+  const store = f.app.database.owned("integration");
+  const row = store.get<{ intent: string }>(
+    "SELECT intent FROM integration_carrier_bookings WHERE id=?",
+    receipt.id,
+  )!;
+  // Explicit integration-owned corruption fault; changing provider invalidates the saved review hash.
+  store.run(
+    "UPDATE integration_carrier_bookings SET intent=? WHERE id=?",
+    JSON.stringify({ ...JSON.parse(row.intent), provider: "fedex" }),
+    receipt.id,
+  );
+  let calls = 0;
+  const runtime = new CarrierRuntime(
+    f.app,
+    ["ups", "fedex"].map((provider) => ({
+      orgId: f.actor.orgId,
+      adapter: adapter({
+        provider: provider as CarrierAdapter["provider"],
+        book: async () => {
+          calls++;
+          throw Error("unexpected send");
+        },
+        lookup: async () => {
+          calls++;
+          return null;
+        },
+      }),
+    })),
+  );
+  for (const action of ["execute", "reconcile"] as const)
+    assert.throws(() => runtime[action](f.actor, receipt.id), {
+      code: "CARRIER_MISMATCH",
+    });
+  assert.equal(calls, 0);
+  assert.equal(
+    store.get<{ state: string }>(
+      "SELECT state FROM integration_carrier_bookings WHERE id=?",
+      receipt.id,
+    )!.state,
+    "pending",
+  );
 });
