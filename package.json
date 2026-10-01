@@ -11,6 +11,7 @@
     "dev:web": "vite",
     "start": "tsx src/server/main.ts",
     "worker": "tsx src/server/worker.ts",
+    "events:worker": "tsx src/server/event-worker.ts",
     "recovery": "tsx src/server/recovery-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",

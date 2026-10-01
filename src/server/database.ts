@@ -14,6 +14,7 @@ export type Owner =
   | "warranty"
   | "integration"
   | "migration"
+  | "report"
   | "platform";
 export class Database {
   #db: DatabaseSync;

@@ -13,6 +13,8 @@ import { Warranty } from "./warranty.ts";
 import { Integration } from "./integration.ts";
 import { ProviderCredentials } from "./provider-credentials.ts";
 import { Migration } from "./migration.ts";
+import { EventDelivery } from "./event-delivery.ts";
+import { EventReport } from "./event-report.ts";
 
 export class Application {
   database: Database;
@@ -29,12 +31,14 @@ export class Application {
   integration: Integration;
   migration: Migration;
   providerCredentials: ProviderCredentials;
+  eventDelivery: EventDelivery;
   constructor(
     path: string,
     region: Region = "CA",
     security: {
       mfaEncryptionKey?: string;
       providerEncryptionKey?: string;
+      eventReports?: boolean;
     } = {},
   ) {
     check(
@@ -124,6 +128,17 @@ export class Application {
       this.inventory,
       this.catalog,
       this.billing,
+    );
+    this.eventDelivery = new EventDelivery(
+      this.database,
+      this.platform,
+      this.identity,
+      security.eventReports === false ? [] : [new EventReport(this.database)],
+    );
+    this.platform.configureProjection(() =>
+      security.eventReports === false
+        ? 0
+        : this.eventDelivery.tick("event-report", { enabled: true }).completed,
     );
   }
   dashboard(actor: Actor) {

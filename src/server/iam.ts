@@ -189,6 +189,18 @@ export class Identity {
       policy: String(row.policy),
     };
   }
+  // Filesystem-authorized local workers must not process a differently tagged store.
+  assertRegionalStore() {
+    check(
+      !this.store.get(
+        "SELECT id FROM iam_organizations WHERE region<>? LIMIT 1",
+        this.region,
+      ),
+      "REGION",
+      "Database organizations do not match the selected region.",
+      403,
+    );
+  }
   private recordAuthenticationFailure(email: string, timestamp: number) {
     // Count in SQL so simultaneous processes cannot overwrite a prior failure.
     this.store.run(

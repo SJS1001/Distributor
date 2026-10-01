@@ -48,6 +48,15 @@ export function commands(app: Application): Record<string, Spec> {
     maximum: Number.MAX_SAFE_INTEGER,
   };
   return {
+    "events.retry": {
+      schema: obj({
+        consumerId: str,
+        eventId: str,
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.eventDelivery.retry(a, k, p),
+    },
     "accounting.cost.prepare": {
       schema: obj({
         version: { const: 1, type: "integer" },
@@ -1404,6 +1413,45 @@ export async function createHttp(app: Application, options: HttpOptions) {
   });
   http.get("/api/audit", async (request) =>
     app.platform.audits(actor(request)),
+  );
+  http.get<{ Params: { consumerId: string }; Querystring: { after?: string } }>(
+    "/api/events/:consumerId/deliveries",
+    {
+      schema: {
+        params: obj({ consumerId: str }),
+        querystring: obj({ after: str }, ["after"]),
+      },
+    },
+    async (request) =>
+      app.eventDelivery.diagnostics(
+        actor(request),
+        request.params.consumerId,
+        request.query.after,
+      ),
+  );
+  http.get<{
+    Params: { consumerId: string; eventId: string };
+    Querystring: { before?: string };
+  }>(
+    "/api/events/:consumerId/deliveries/:eventId/history",
+    {
+      schema: {
+        params: obj({ consumerId: str, eventId: str }),
+        querystring: obj(
+          { before: { type: "string", pattern: "^[1-9][0-9]{0,9}$" } },
+          ["before"],
+        ),
+      },
+    },
+    async (request) =>
+      app.eventDelivery.history(
+        actor(request),
+        request.params.consumerId,
+        request.params.eventId,
+        request.query.before === undefined
+          ? undefined
+          : Number(request.query.before),
+      ),
   );
   http.get("/api/accounting.csv", async (request, reply) =>
     reply

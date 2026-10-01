@@ -13,6 +13,7 @@ import { Database, type Store } from "./database.ts";
 
 export class Platform {
   private store: Store;
+  private projection?: () => number;
   constructor(private database: Database) {
     this.store = database.owned("platform");
     this.store.migrate(`
@@ -125,14 +126,11 @@ export class Platform {
       actor.orgId,
     );
   }
+  // Compile-time application composition; no business module imports the optional report.
+  configureProjection(run: () => number) {
+    this.projection = run;
+  }
   project(enabled: boolean) {
-    if (!enabled) return 0;
-    return this.database.transaction(() =>
-      Number(
-        this.store.run(
-          `INSERT OR IGNORE INTO platform_projections(event_id,org_id,type,reference,created_at) SELECT id,org_id,type,reference,created_at FROM platform_events`,
-        ).changes,
-      ),
-    );
+    return enabled ? (this.projection?.() ?? 0) : 0;
   }
 }
