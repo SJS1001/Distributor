@@ -9,6 +9,7 @@ type Page<T extends Item = Item> = { items: T[]; next: string | number | null };
 export function usePages<T extends Item = Item>(
   endpoint: string,
   initial?: Page<T>,
+  cursorName: "after" | "before" = "after",
 ) {
   const [page, setPage] = useState<Page<T>>(
     initial ?? { items: [], next: null },
@@ -28,7 +29,9 @@ export function usePages<T extends Item = Item>(
     try {
       const result = await request<Page<T>>(
         endpoint +
-          (previous?.next ? `?after=${encodeURIComponent(previous.next)}` : ""),
+          (previous?.next
+            ? `?${cursorName}=${encodeURIComponent(previous.next)}`
+            : ""),
         { signal: controller.signal },
       );
       if (!active.current || pending.current !== controller) return;

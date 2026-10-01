@@ -124,6 +124,7 @@ aside {
   flex-direction: column;
   position: fixed;
   height: 100vh;
+  overflow-y: auto;
 }
 .workspace {
   font-size: 0.85rem;

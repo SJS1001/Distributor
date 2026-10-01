@@ -365,6 +365,43 @@ for (let i = 0; i < 27; i++) {
     }
   }
 }
+// Synthetic report failures exercise the actual local delivery/review paths.
+// No worker is scheduled; these foreground fixture batches end before listen.
+for (const role of ["admin", "support"] as const)
+  f.app.identity.createUser(f.actor, `event-${role}`, {
+    name: `Synthetic event ${role}`,
+    email: `event-${role}@example.test`,
+    password: "long-event-test-password",
+    role,
+    sites: [f.w1, f.w2],
+  });
+while (
+  f.app.eventDelivery.tick("event-report", { enabled: true, limit: 100 })
+    .claimed
+) {}
+const eventStore = f.app.database.owned("platform");
+for (let i = 0; i < 24; i++)
+  eventStore.run(
+    "INSERT INTO platform_events VALUES(?,?,'SyntheticBrowserFact',999,?,?,?)",
+    `ui-event-${String(i).padStart(2, "0")}`,
+    f.actor.orgId,
+    `synthetic-event-${i}`,
+    JSON.stringify({ private: "private event payload" }),
+    new Date().toISOString(),
+  );
+f.app.eventDelivery.tick("event-report", { enabled: true, limit: 100 });
+for (let i = 0; i < 22; i++) {
+  const row = eventStore.get(
+    "SELECT revision FROM platform_deliveries WHERE consumer_id='event-report' AND event_id='ui-event-23'",
+  )!;
+  f.app.eventDelivery.retry(f.actor, `fixture-event-retry-${i}`, {
+    consumerId: "event-report",
+    eventId: "ui-event-23",
+    revision: Number(row.revision),
+    reason: "Synthetic compatibility review; unsupported version retained.",
+  });
+  f.app.eventDelivery.tick("event-report", { enabled: true, limit: 100 });
+}
 class BrowserProviders extends ProviderRuntime {
   override async execute(actor: Actor, effectId: string) {
     const effect = f.app.integration.effect(actor, effectId);

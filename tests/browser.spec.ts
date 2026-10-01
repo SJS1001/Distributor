@@ -7299,3 +7299,304 @@ test("browser: shipment pages retain rows after failure and discard continuation
     expect(final[key]).toEqual(before[key]);
   expect(errors).toEqual([]);
 });
+
+test("browser: event diagnostics preserve pages and exact reviewed retries without changing native facts", async ({
+  page,
+  browser,
+}) => {
+  const errors: string[] = [];
+  const login = async (
+    p: Page,
+    email: string,
+    password = "long-event-test-password",
+  ) => {
+    p.on("pageerror", (e) => errors.push(e.message));
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p.getByLabel("Password", { exact: true }).fill(password);
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await login(page, "event-admin@example.test");
+  // A longer navigation must keep every control reachable on short desktops.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  const signOut = page.getByRole("button", { name: "Sign out", exact: true });
+  await signOut.scrollIntoViewIfNeeded();
+  await expect(signOut).toBeInViewport();
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const before = await dashboard();
+  const endpoint = "/api/events/event-report/deliveries";
+  let initialFailure = false;
+  await page.route(`**${endpoint}`, async (route) => {
+    if (!initialFailure) {
+      initialFailure = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await nav(page, "Event reporting");
+  const panel = page.getByRole("region", {
+    name: "Event reporting",
+    exact: true,
+  });
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await panel
+    .getByRole("button", { name: "Retry event deliveries", exact: true })
+    .click();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  const diagnostic = await (await page.request.get(endpoint)).json();
+  expect(JSON.stringify(diagnostic)).not.toMatch(
+    /payload|lease_token|private event payload/,
+  );
+  await expect(
+    panel.getByRole("list", { name: "Delivery totals", exact: true }),
+  ).toContainText("quarantined: 24");
+  let pageFailure = false;
+  await page.route(`**${endpoint}?after=*`, async (route) => {
+    if (!pageFailure) {
+      pageFailure = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Load older deliveries", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  await panel
+    .getByRole("button", { name: "Retry event deliveries", exact: true })
+    .click();
+  await expect(panel.locator("tbody tr").nth(23)).toBeVisible();
+  const loaded = await panel
+    .locator("tbody tr td:first-child")
+    .allTextContents();
+  expect(new Set(loaded).size).toBe(loaded.length);
+  const row = panel.locator("tbody tr").filter({
+    has: page.getByRole("cell", { name: "ui-event-23", exact: true }),
+  });
+  const opener = row.getByRole("button", {
+    name: "View attempts",
+    exact: true,
+  });
+  await opener.click();
+  const history = page.getByRole("region", {
+    name: "Event attempt history",
+    exact: true,
+  });
+  await expect(history.getByRole("heading")).toBeFocused();
+  await expect(history.locator("li")).toHaveCount(20);
+  let historyFailure = false;
+  await page.route(
+    `**${endpoint}/ui-event-23/history?before=*`,
+    async (route) => {
+      if (!historyFailure) {
+        historyFailure = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await history
+    .getByRole("button", { name: "Load older attempts", exact: true })
+    .click();
+  await expect(history.getByRole("alert")).toBeVisible();
+  await expect(history.locator("li")).toHaveCount(20);
+  await history
+    .getByRole("button", { name: "Retry attempt history", exact: true })
+    .click();
+  await expect(history.locator("li")).toHaveCount(23);
+  expect(new Set(await history.locator("li").allTextContents()).size).toBe(23);
+  await history
+    .getByRole("button", { name: "Close attempt history", exact: true })
+    .click();
+  await expect(opener).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await row.getByRole("button", { name: "Review retry", exact: true }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Review event retry",
+    exact: true,
+  });
+  await expect(dialog.getByLabel("Reason / evidence")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    row.getByRole("button", { name: "Review retry", exact: true }),
+  ).toBeFocused();
+  const original = diagnostic.items.find(
+    (item: any) => item.event_id === "ui-event-23",
+  );
+  await row.getByRole("button", { name: "Review retry", exact: true }).click();
+  await dialog
+    .getByLabel("Reason / evidence")
+    .fill("Synthetic reviewed compatibility decision");
+  const keys: string[] = [],
+    payloads: string[] = [];
+  let lost = false;
+  await page.route("**/api/commands/events.retry", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    payloads.push(route.request().postData()!);
+    if (!lost) {
+      lost = true;
+      expect((await route.fetch()).status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await dialog
+    .getByRole("button", { name: "Queue reviewed retry", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Queue reviewed retry", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  expect(payloads[0]).toBe(payloads[1]);
+  const afterRetry = await (await page.request.get(endpoint)).json();
+  const saved = afterRetry.items.find(
+    (item: any) => item.event_id === "ui-event-23",
+  );
+  expect(saved.revision).toBe(original.revision + 1);
+  expect(saved.state).toBe("retry");
+  expect(saved.attempts).toBe(23);
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  // Concurrent reviewed update makes the displayed revision stale.
+  const stale = afterRetry.items.find(
+    (item: any) => item.event_id === "ui-event-22",
+  );
+  const session = await (await page.request.get("/api/session")).json();
+  const payload = {
+    consumerId: "event-report",
+    eventId: stale.event_id,
+    revision: stale.revision,
+    reason: "Concurrent synthetic review",
+  };
+  const headers = {
+    origin: "http://127.0.0.1:3117",
+    "x-csrf-token": session.csrf,
+    "idempotency-key": "browser-concurrent-event-review",
+  };
+  expect(
+    (
+      await page.request.post("/api/commands/events.retry", {
+        data: payload,
+        headers,
+      })
+    ).status(),
+  ).toBe(200);
+  const staleRow = panel.locator("tbody tr").filter({
+    has: page.getByRole("cell", { name: "ui-event-22", exact: true }),
+  });
+  await staleRow
+    .getByRole("button", { name: "Review retry", exact: true })
+    .click();
+  await dialog.getByLabel("Reason / evidence").fill("Stale synthetic review");
+  await dialog
+    .getByRole("button", { name: "Queue reviewed retry", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText("REVISION");
+  await expect(
+    dialog.getByRole("button", { name: "Queue reviewed retry", exact: true }),
+  ).toBeEnabled();
+  await expect(dialog.getByLabel("Reason / evidence")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  const supportContext = await browser.newContext(),
+    buyerContext = await browser.newContext();
+  try {
+    const support = await supportContext.newPage(),
+      buyer = await buyerContext.newPage();
+    await login(support, "event-support@example.test");
+    await nav(support, "Event reporting");
+    const supportPanel = support.getByRole("region", {
+      name: "Event reporting",
+      exact: true,
+    });
+    await expect(supportPanel.locator("tbody tr")).toHaveCount(20);
+    await expect(
+      supportPanel.getByRole("button", { name: "Review retry", exact: true }),
+    ).toHaveCount(0);
+    const supportSession = await (
+      await support.request.get("/api/session")
+    ).json();
+    expect(
+      (
+        await support.request.post("/api/commands/events.retry", {
+          data: { ...payload, revision: stale.revision + 1 },
+          headers: {
+            ...headers,
+            "x-csrf-token": supportSession.csrf,
+            "idempotency-key": "support-event-review",
+          },
+        })
+      ).status(),
+    ).toBe(403);
+    await login(
+      buyer,
+      "refund-buyer@example.test",
+      "long-notice-test-password",
+    );
+    await expect(
+      buyer
+        .getByRole("navigation", { name: "Workspace" })
+        .getByRole("button", { name: "Event reporting", exact: true }),
+    ).toHaveCount(0);
+    expect((await buyer.request.get(endpoint)).status()).toBe(403);
+    expect(
+      (await buyer.request.get(`${endpoint}/ui-event-23/history`)).status(),
+    ).toBe(403);
+  } finally {
+    await supportContext.close();
+    await buyerContext.close();
+  }
+  await page.unroute(`**${endpoint}?after=*`);
+  for (const action of ["Refresh", "Sign out"] as const) {
+    let announce!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**${endpoint}?after=*`, async (route) => {
+      const response = await route.fetch();
+      announce();
+      await held;
+      await route.fulfill({ response });
+    });
+    await panel
+      .getByRole("button", { name: "Load older deliveries", exact: true })
+      .click();
+    await started;
+    await page.getByRole("button", { name: action, exact: true }).click();
+    if (action === "Refresh")
+      await expect(panel.locator("tbody tr")).toHaveCount(20);
+    else
+      await expect(
+        page.getByRole("button", { name: "Sign in", exact: true }),
+      ).toBeVisible();
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+    if (action === "Refresh")
+      await expect(panel.locator("tbody tr")).toHaveCount(20);
+    else await expect(panel).toHaveCount(0);
+  }
+  expect(
+    (
+      await page.request.post("/api/login", {
+        data: {
+          email: "event-admin@example.test",
+          password: "long-event-test-password",
+        },
+        headers: { origin: "http://127.0.0.1:3117" },
+      })
+    ).status(),
+  ).toBe(200);
+  const after = await dashboard();
+  for (const key of ["stock", "orders", "invoices"])
+    expect(after[key]).toEqual(before[key]);
+  expect(errors).toEqual([]);
+});

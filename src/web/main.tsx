@@ -12,6 +12,7 @@ import { AccountingCosts } from "./accounting-costs.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
+import { EventReporting } from "./event-reporting.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
@@ -69,6 +70,7 @@ function App() {
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
+  const [eventViewEpoch, setEventViewEpoch] = useState(0);
   const shipmentRequest = useRef<number | null>(null);
   const shipmentHeading = useRef<HTMLHeadingElement | null>(null);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
@@ -83,6 +85,7 @@ function App() {
     const d = await request("/api/dashboard");
     if (shipmentEpoch.current !== epoch) return;
     setData(d);
+    setEventViewEpoch((value) => value + 1);
     const e: Item = {};
     if (
       ["admin", "commercial", "warehouse", "finance"].includes(
@@ -755,6 +758,7 @@ function App() {
         "Returns",
         "Customers",
         "Security",
+        ...(can("support") ? ["Event reporting"] : []),
         ...(admin ? ["Imports", "Administration"] : []),
       ]
     : ["Overview", "Orders", "Billing", "Returns", "Customers", "Security"];
@@ -824,6 +828,27 @@ function App() {
             Recovery workspace: provider operations and payment links are on
             hold. An operator must reconcile this snapshot before activation.
           </p>
+        )}
+        {page === "Event reporting" && can("support") && (
+          <EventReporting
+            key={eventViewEpoch}
+            admin={admin}
+            retry={(delivery) =>
+              open(
+                "Review event retry",
+                [reason],
+                (values) =>
+                  command("events.retry", {
+                    consumerId: "event-report",
+                    eventId: delivery.event_id,
+                    revision: delivery.revision,
+                    reason: values.reason,
+                  }),
+                `Event ${delivery.event_id} · ${delivery.state} · failure ${delivery.last_error ?? "None"} · report version ${delivery.consumer_version}. Verify compatible report code and the original event before retrying. This queues a local report attempt and preserves history. After a lost response, submit the same reason again.`,
+                "Queue reviewed retry",
+              )
+            }
+          />
         )}
         {page === "Overview" && (
           <>
@@ -4675,6 +4700,17 @@ function Modal({
       if (previous?.isConnected) previous.focus();
     };
   }, [dialog.title]);
+  useEffect(() => {
+    // Disabling the submit button can move focus outside the dialog. Restore
+    // it after a rejected command so keyboard recovery remains available.
+    const element = ref.current;
+    if (!busy && error && element && !element.contains(document.activeElement))
+      element
+        .querySelector<HTMLElement>(
+          "input,select,textarea,button:not(:disabled)",
+        )
+        ?.focus();
+  }, [busy, error]);
   return (
     <div className="modal-backdrop">
       <section
