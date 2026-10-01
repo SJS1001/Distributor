@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-01T05:07:51.327261+00:00",
+  "parentCommit": "c1cfe2c",
+  "environment": {
+    "execution": "direct workstation commands",
+    "os": "macOS arm64",
+    "node": "24.16.0",
+    "npm": "11.13.0",
+    "ciJobsStarted": false,
+    "pushed": false
+  },
+  "candidateSha256": {
+    "src/server/billing-delivery.ts": "b1db4d972bb1059807086780234c2d3480563479571cbd5b85e43813904698f2",
+    "src/server/http.ts": "8d2cce97ad4ebb9366bc0dd389b5a10725177f23734742046db059b00551d7a9",
+    "tests/billing-delivery.test.ts": "7732c550bafd7caddddf030fae6823ee24134b5f181e4d70a9c43cd1daa1c323",
+    "package.json": "5bba0fc4a2d4eb96b1955c01856686946e6ff76ba53c883749428265bdc6e9b1",
+    "package-lock.json": "c145862ab111fbc82dbb5a1b2c2729703068e1406e344c4ce75eabc2c17e81ca",
+    "tsconfig.json": "bd5c007563df3080d76b2fd2066b3c1da1e95f7c312eafdb5bab802667c36c95"
+  },
+  "checks": {
+    "typecheck": "PASS after nullable test variable correction",
+    "format": "PASS",
+    "build": "PASS, 87ms",
+    "focusedNode": {
+      "pass": 10,
+      "fail": 0,
+      "durationMs": 2753.156375
+    },
+    "fullNode": {
+      "pass": 119,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "durationMs": 7350.437209
+    },
+    "plan": {
+      "status": "PASS",
+      "tasks": 44,
+      "gates": 10,
+      "scenarios": 11,
+      "decisionSheets": 14,
+      "requirements": 22,
+      "markdownFiles": 43,
+      "localLinks": 283,
+      "baselineDeveloperDays": [
+        248,
+        396
+      ],
+      "optionalUbDeveloperDays": [
+        8,
+        14
+      ],
+      "scope": "planning structure only"
+    }
+  },
+  "historicalFailure": [
+    "Initial typecheck: tests/billing-delivery.test.ts:917 and :1024, TS2322 string|null assigned to inferred string; explicit nullable continuation variables fixed both."
+  ],
+  "limitations": [
+    "API-only; existing UI uses bounded legacy endpoint",
+    "No new browser test for new routes",
+    "No production/provider/hardware/human qualification",
+    "History deletion/rowid reuse/VACUUM, production load/retention/migration/recovery unqualified",
+    "All tasks and gates NOT VERIFIED"
+  ]
+}

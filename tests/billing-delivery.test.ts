@@ -810,6 +810,59 @@ test("HTTP portal requires current buyer session, exact JSON/key/origin/CSRF and
       .acknowledgments.length,
     1,
   );
+  const page = await http.inject({
+    url: "/api/billing/inbox/page?limit=1",
+    headers,
+  });
+  assert.equal(page.statusCode, 200, page.body);
+  assert.equal(page.headers["cache-control"], "no-store");
+  assert.equal(page.json().items[0].id, pubId);
+  assert.equal(page.json().next, null);
+  const history = await http.inject({
+    url: `/api/billing/inbox/${pubId}/history/downloads?limit=1`,
+    headers,
+  });
+  assert.equal(history.statusCode, 200, history.body);
+  assert.equal(history.json().items[0].actor_id, p.buyer.id);
+  assert.equal(
+    (
+      await http.inject({
+        url: `/api/billing/inbox/${pubId}/history/acknowledgments`,
+        headers,
+      })
+    ).json().items.length,
+    1,
+  );
+  for (const query of [
+    "limit=0",
+    "limit=101",
+    "limit=1.5",
+    "limit=01",
+    "limit=1&limit=2",
+    "after=",
+    "after=invalid",
+    "accountId=foreign",
+  ]) {
+    assert.equal(
+      (await http.inject({ url: `/api/billing/inbox/page?${query}`, headers }))
+        .statusCode,
+      400,
+      query,
+    );
+  }
+  assert.equal(
+    (
+      await http.inject({
+        url: `/api/billing/inbox/${pubId}/history/unknown`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.equal(
+    (await http.inject({ url: "/api/billing/inbox/page" })).statusCode,
+    401,
+  );
   f.app.database
     .owned("iam")
     .run("DELETE FROM iam_sessions WHERE user_id=?", p.buyer.id);
@@ -817,5 +870,186 @@ test("HTTP portal requires current buyer session, exact JSON/key/origin/CSRF and
   assert.equal(
     (await http.inject({ url: "/api/billing/inbox", headers })).statusCode,
     401,
+  );
+});
+
+test("inbox pages retain complete publication history beyond 200 records while new insertions and tied timestamps cannot skip earlier pages", async (t) => {
+  const f = fixture(t),
+    p = await published(f),
+    delivery = f.app.billing.delivery;
+  const before = f.app.dashboard(f.actor);
+  const ids = [String(p.publication.id)];
+  let current = p.publication;
+  for (let i = 1; i < 205; i++) {
+    delivery.withdraw(f.actor, `page-withdraw-${i}`, {
+      publicationId: String(current.id),
+      revision: 1,
+      reason: "Synthetic history correction",
+    });
+    current = delivery.publish(f.actor, `page-publish-${i}`, p.input);
+    ids.push(String(current.id));
+  }
+  // Test-only timestamp fixture: enumeration must not depend on wall-clock order.
+  f.app.database
+    .owned("billing")
+    .run(
+      "UPDATE billing_publications SET published_at=?",
+      "2026-01-01T00:00:00.000Z",
+    );
+  const first = delivery.page(p.buyer, { limit: 100 });
+  assert.equal(first.items.length, 100);
+  assert.ok(first.next);
+  assert.deepEqual(
+    first.items.map((x) => x.id),
+    ids.slice().reverse().slice(0, 100),
+  );
+  delivery.withdraw(f.actor, "page-later-withdraw", {
+    publicationId: String(current.id),
+    revision: 1,
+    reason: "Synthetic later insertion",
+  });
+  const later = delivery.publish(f.actor, "page-later-publish", p.input);
+  const found = first.items.map((x) => x.id);
+  let next: string | null = first.next;
+  while (next) {
+    const page = delivery.page(p.buyer, { after: next, limit: 100 });
+    found.push(...page.items.map((x) => x.id));
+    next = page.next;
+  }
+  assert.deepEqual(found, ids.slice().reverse());
+  assert.equal(new Set(found).size, 205);
+  assert.equal(delivery.page(p.buyer).items[0]!.id, later.id);
+  assert.equal(delivery.list(p.buyer).length, 200);
+  assert.deepEqual(f.app.dashboard(f.actor), before);
+  for (const limit of [0, 101, 1.5, NaN])
+    assert.throws(() => delivery.page(p.buyer, { limit }), {
+      code: "VALIDATION",
+    });
+  assert.throws(() => delivery.page(f.actor, { after: first.next! }), {
+    code: "INVALID_CURSOR",
+  });
+  const otherAccount = f.app.identity.createCustomer(
+    f.actor,
+    "page-other-account",
+    { name: "Other synthetic account", tier: "standard", creditLimit: 1000000 },
+  ).id;
+  const otherBuyer = reader(f, "page-other-buyer", "buyer", otherAccount);
+  assert.deepEqual(delivery.page(otherBuyer), { items: [], next: null });
+  assert.throws(
+    () => delivery.history(otherBuyer, String(p.publication.id), "downloads"),
+    { code: "FORBIDDEN" },
+  );
+  f.app.database
+    .owned("iam")
+    .run(
+      "UPDATE iam_users SET account_id=? WHERE id=?",
+      otherAccount,
+      p.buyer.id,
+    );
+  assert.throws(() => delivery.page(p.buyer, { after: first.next! }), {
+    code: "INVALID_CURSOR",
+  });
+  assert.deepEqual(delivery.page(p.buyer), { items: [], next: null });
+});
+
+test("paged personal PDF history survives withdrawal, bounds previews and rechecks access for every cursor", async (t) => {
+  const f = fixture(t),
+    p = await published(f),
+    delivery = f.app.billing.delivery;
+  const pubId = String(p.publication.id),
+    colleague = reader(f, "history-colleague");
+  const before = f.app.dashboard(f.actor),
+    ids: string[] = [];
+  for (let i = 0; i < 205; i++)
+    ids.push(
+      delivery.download(p.buyer, `history-download-${i}`, pubId).receipt.id,
+    );
+  const last = delivery.download(
+    colleague,
+    "history-colleague-download",
+    pubId,
+  );
+  const colleagueAck = delivery.acknowledge(
+    colleague,
+    "history-colleague-ack",
+    confirm(pubId, last.receipt),
+  );
+  const personalDownload = delivery.download(
+    p.buyer,
+    "history-personal-download",
+    pubId,
+  );
+  ids.push(personalDownload.receipt.id);
+  const personalAck = delivery.acknowledge(
+    p.buyer,
+    "history-personal-ack",
+    confirm(pubId, personalDownload.receipt),
+  );
+  const preview = delivery.page(p.buyer).items[0]!;
+  assert.equal(preview.downloads.length, 5);
+  assert.equal(preview.downloadCount, 206);
+  assert.equal(preview.acknowledgmentCount, 1);
+  const staff = delivery.page(f.actor).items[0]!;
+  assert.equal(staff.downloadCount, 207);
+  assert.equal(staff.acknowledgmentCount, 2);
+  assert.equal(
+    delivery.history(p.buyer, pubId, "acknowledgments").items[0]!.id,
+    personalAck.id,
+  );
+  assert.equal(
+    delivery.history(colleague, pubId, "acknowledgments").items[0]!.id,
+    colleagueAck.id,
+  );
+  const first = delivery.history(p.buyer, pubId, "downloads", { limit: 100 });
+  assert.ok(first.next);
+  const inserted = delivery.download(
+    p.buyer,
+    "history-after-first-page",
+    pubId,
+  );
+  delivery.withdraw(f.actor, "history-withdraw", {
+    publicationId: pubId,
+    revision: 1,
+    reason: "Synthetic withdrawal retaining evidence",
+  });
+  const found = first.items.map((x) => x.id);
+  let next: string | null = first.next;
+  while (next) {
+    const page = delivery.history(p.buyer, pubId, "downloads", {
+      after: next,
+      limit: 100,
+    });
+    assert.ok(page.items.every((x) => x.actor_id === p.buyer.id));
+    found.push(...page.items.map((x) => x.id));
+    next = page.next;
+  }
+  assert.deepEqual(found, ids.slice().reverse());
+  assert.equal(
+    delivery.history(p.buyer, pubId, "downloads").items[0]!.id,
+    inserted.receipt.id,
+  );
+  assert.throws(
+    () =>
+      delivery.history(colleague, pubId, "downloads", { after: first.next! }),
+    { code: "INVALID_CURSOR" },
+  );
+  assert.throws(
+    () =>
+      delivery.history(p.buyer, pubId, "acknowledgments", {
+        after: first.next!,
+      }),
+    { code: "INVALID_CURSOR" },
+  );
+  assert.throws(
+    () => delivery.history(p.buyer, pubId, "downloads", { after: "invalid" }),
+    { code: "INVALID_CURSOR" },
+  );
+  assert.deepEqual(f.app.dashboard(f.actor), before);
+  f.app.database
+    .owned("iam")
+    .run("UPDATE iam_users SET active=0 WHERE id=?", p.buyer.id);
+  assert.throws(
+    () => delivery.history(p.buyer, pubId, "downloads", { after: first.next! }),
+    { code: "FORBIDDEN" },
   );
 });

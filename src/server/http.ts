@@ -759,6 +759,53 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/billing/inbox", async (request) =>
     app.billing.delivery.list(actor(request)),
   );
+  const inboxQuery = obj(
+    {
+      after: { type: "string", minLength: 1, maxLength: 512 },
+      limit: { type: "string", pattern: "^(?:[1-9][0-9]?|100)$" },
+    },
+    ["after", "limit"],
+  );
+  http.get<{ Querystring: { after?: string; limit?: string } }>(
+    "/api/billing/inbox/page",
+    { schema: { querystring: inboxQuery } },
+    async (request) =>
+      app.billing.delivery.page(actor(request), {
+        after: request.query.after,
+        limit:
+          request.query.limit === undefined
+            ? undefined
+            : Number(request.query.limit),
+      }),
+  );
+  http.get<{
+    Params: { publicationId: string; kind: "downloads" | "acknowledgments" };
+    Querystring: { after?: string; limit?: string };
+  }>(
+    "/api/billing/inbox/:publicationId/history/:kind",
+    {
+      schema: {
+        params: obj({
+          publicationId: str,
+          kind: choice("downloads", "acknowledgments"),
+        }),
+        querystring: inboxQuery,
+      },
+    },
+    async (request) =>
+      app.billing.delivery.history(
+        actor(request),
+        request.params.publicationId,
+        request.params.kind,
+        {
+          after: request.query.after,
+          limit:
+            request.query.limit === undefined
+              ? undefined
+              : Number(request.query.limit),
+        },
+      ),
+  );
   http.post<{ Params: { publicationId: string } }>(
     "/api/billing/inbox/:publicationId/pdf",
     {

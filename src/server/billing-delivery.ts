@@ -1,6 +1,7 @@
 import {
   account,
   check,
+  digest,
   id,
   integer,
   now,
@@ -24,6 +25,9 @@ const readers = [
 export const receiptStatement =
   "I confirm receipt of this PDF for my customer account. This does not confirm payment or agreement with its contents.";
 
+export type InboxPageInput = { after?: string; limit?: number };
+type HistoryKind = "downloads" | "acknowledgments";
+
 type Publication = Row & {
   id: string;
   state: "available" | "withdrawn";
@@ -45,6 +49,7 @@ export class BillingDelivery {
       CREATE UNIQUE INDEX IF NOT EXISTS billing_publication_available ON billing_publications(org_id,kind,document_id) WHERE state='available';
       CREATE INDEX IF NOT EXISTS billing_publication_account ON billing_publications(org_id,account_id,published_at);
       CREATE TABLE IF NOT EXISTS billing_portal_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,publication_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,content_hash TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT;
+      CREATE INDEX IF NOT EXISTS billing_portal_download_history ON billing_portal_downloads(org_id,publication_id,actor_id);
       CREATE TABLE IF NOT EXISTS billing_acknowledgments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,publication_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,download_id TEXT NOT NULL,content_hash TEXT NOT NULL,statement_version INTEGER NOT NULL CHECK(statement_version=1),statement TEXT NOT NULL,acknowledged_at TEXT NOT NULL,UNIQUE(org_id,publication_id,actor_id)) STRICT;
     `);
   }
@@ -351,8 +356,185 @@ export class BillingDelivery {
       },
     );
   }
+  // Cursors select positions only; every query independently applies current access.
+  // A high-water rowid excludes later insertions even when timestamps tie/backdate.
+  private pageRows(
+    actor: Actor,
+    table:
+      | "billing_publications"
+      | "billing_portal_downloads"
+      | "billing_acknowledgments",
+    where: string,
+    values: (string | number | null)[],
+    scope: string,
+    input: InboxPageInput,
+  ) {
+    const limit = integer(input.limit ?? 50, "Page size", 1, 100);
+    const scopeHash = digest(
+      JSON.stringify([
+        actor.orgId,
+        actor.id,
+        actor.role,
+        actor.accountId,
+        scope,
+      ]),
+    );
+    let high = Number(
+      this.store.get(
+        `SELECT COALESCE(MAX(rowid),0) AS position FROM ${table} WHERE ${where}`,
+        ...values,
+      )!.position,
+    );
+    let before = high + 1;
+    if (input.after !== undefined) {
+      let token: unknown;
+      if (
+        typeof input.after === "string" &&
+        /^[A-Za-z0-9_-]{1,512}$/.test(input.after)
+      ) {
+        try {
+          token = JSON.parse(
+            Buffer.from(input.after, "base64url").toString("utf8"),
+          );
+        } catch {}
+      }
+      check(
+        Array.isArray(token) &&
+          token.length === 4 &&
+          token[0] === 1 &&
+          Number.isSafeInteger(token[1]) &&
+          token[1] > 0 &&
+          Number.isSafeInteger(token[2]) &&
+          token[2] > 0 &&
+          token[2] <= token[1] &&
+          token[3] === scopeHash,
+        "INVALID_CURSOR",
+        "History position is invalid for your current access. Reload the first page.",
+        400,
+      );
+      high = token[1];
+      before = token[2];
+    }
+    const rows = this.store.all(
+      `SELECT rowid AS position,* FROM ${table} WHERE ${where} AND rowid<=? AND rowid<? ORDER BY rowid DESC LIMIT ?`,
+      ...values,
+      high,
+      before,
+      limit + 1,
+    );
+    const items = rows.slice(0, limit);
+    const next =
+      rows.length > limit
+        ? Buffer.from(
+            JSON.stringify([1, high, items.at(-1)!.position, scopeHash]),
+          ).toString("base64url")
+        : null;
+    return { items: items.map(({ position: _position, ...row }) => row), next };
+  }
+  private evidence(actor: Actor, publication: Publication, maximum: number) {
+    const values = [
+      actor.orgId,
+      String(publication.id),
+      actor.role === "buyer" ? actor.id : null,
+      actor.id,
+    ];
+    const downloads = this.store.all(
+      "SELECT id,actor_id,content_hash,size,requested_at,state FROM billing_portal_downloads WHERE org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?) ORDER BY rowid DESC LIMIT ?",
+      ...values,
+      maximum,
+    );
+    const acknowledgments = this.store.all(
+      "SELECT * FROM billing_acknowledgments WHERE org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?) ORDER BY rowid DESC LIMIT ?",
+      ...values,
+      maximum,
+    );
+    const downloadCount = Number(
+      this.store.get(
+        "SELECT COUNT(*) AS count FROM billing_portal_downloads WHERE org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?)",
+        ...values,
+      )!.count,
+    );
+    const acknowledgmentCount = Number(
+      this.store.get(
+        "SELECT COUNT(*) AS count FROM billing_acknowledgments WHERE org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?)",
+        ...values,
+      )!.count,
+    );
+    return {
+      ...publication,
+      downloads,
+      acknowledgments,
+      downloadCount,
+      acknowledgmentCount,
+    };
+  }
+  page(actor: Actor, input: InboxPageInput = {}) {
+    actor = this.current(actor);
+    const page = this.pageRows(
+      actor,
+      "billing_publications",
+      "org_id=? AND (? IS NULL OR account_id=?)",
+      [
+        actor.orgId,
+        actor.role === "buyer" ? actor.accountId : null,
+        actor.accountId,
+      ],
+      "publications",
+      input,
+    );
+    return {
+      ...page,
+      items: page.items.map((p) => this.evidence(actor, p as Publication, 5)),
+    };
+  }
+  history(
+    actor: Actor,
+    publicationId: string,
+    kind: HistoryKind,
+    input: InboxPageInput = {},
+  ) {
+    actor = this.current(actor);
+    this.publication(actor, publicationId); // Withdrawal retains readable evidence.
+    check(
+      kind === "downloads" || kind === "acknowledgments",
+      "VALIDATION",
+      "Unknown inbox history kind.",
+      400,
+    );
+    const page = this.pageRows(
+      actor,
+      kind === "downloads"
+        ? "billing_portal_downloads"
+        : "billing_acknowledgments",
+      "org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?)",
+      [
+        actor.orgId,
+        publicationId,
+        actor.role === "buyer" ? actor.id : null,
+        actor.id,
+      ],
+      `${publicationId}:${kind}`,
+      input,
+    );
+    return {
+      ...page,
+      items: page.items.map((row) =>
+        kind === "downloads"
+          ? {
+              id: row.id,
+              actor_id: row.actor_id,
+              content_hash: row.content_hash,
+              size: row.size,
+              requested_at: row.requested_at,
+              state: row.state,
+            }
+          : row,
+      ),
+    };
+  }
   list(actor: Actor) {
     actor = this.current(actor);
+    // Compatibility endpoint retains its historical bounded shape.
     return this.store
       .all<Publication>(
         "SELECT * FROM billing_publications WHERE org_id=? AND (? IS NULL OR account_id=?) ORDER BY published_at DESC,rowid DESC LIMIT 200",
@@ -360,23 +542,6 @@ export class BillingDelivery {
         actor.role === "buyer" ? actor.accountId : null,
         actor.accountId,
       )
-      .map((publication) => ({
-        ...publication,
-        // Buyers see their own personal receipts; staff see account evidence.
-        downloads: this.store.all(
-          "SELECT id,actor_id,content_hash,size,requested_at,state FROM billing_portal_downloads WHERE org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?) ORDER BY rowid DESC LIMIT 200",
-          actor.orgId,
-          String(publication.id),
-          actor.role === "buyer" ? actor.id : null,
-          actor.id,
-        ),
-        acknowledgments: this.store.all(
-          "SELECT * FROM billing_acknowledgments WHERE org_id=? AND publication_id=? AND (? IS NULL OR actor_id=?) ORDER BY rowid DESC LIMIT 200",
-          actor.orgId,
-          String(publication.id),
-          actor.role === "buyer" ? actor.id : null,
-          actor.id,
-        ),
-      }));
+      .map((p) => this.evidence(actor, p, 200));
   }
 }
