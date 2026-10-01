@@ -994,7 +994,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
   });
   const sessions = new WeakMap<
     object,
-    { actor: Actor; csrf: string; passwordChangeRequired: boolean }
+    {
+      actor: Actor;
+      csrf: string;
+      passwordChangeRequired: boolean;
+      mfaEnrollmentRequired: boolean;
+    }
   >();
   const actor = (request: object) => sessions.get(request)!.actor;
   const cookieOptions = {
@@ -1037,6 +1042,21 @@ export async function createHttp(app: Application, options: HttpOptions) {
         ].includes(request.url.split("?")[0]!),
       "PASSWORD_CHANGE_REQUIRED",
       "Change your password before entering the workspace.",
+      403,
+    );
+    check(
+      !session.mfaEnrollmentRequired ||
+        [
+          "/api/session",
+          "/api/logout",
+          "/api/security",
+          "/api/security/mfa/setup",
+          "/api/security/mfa/confirm",
+          "/api/commands/user.password.change",
+          "/api/commands/user.sessions.end-own",
+        ].includes(request.url.split("?")[0]!),
+      "MFA_ENROLLMENT_REQUIRED",
+      "Set up an authenticator before opening the workspace.",
       403,
     );
   });
@@ -1112,6 +1132,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor: session.actor,
         csrf: session.csrf,
         passwordChangeRequired: session.passwordChangeRequired,
+        mfaEnrollmentRequired: session.mfaEnrollmentRequired,
       };
     },
   );

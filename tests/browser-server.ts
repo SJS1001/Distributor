@@ -9,7 +9,7 @@ import { check, type Actor } from "../src/server/core.ts";
 const cleanup: (() => void)[] = [];
 const f = fixture(
   { after: (fn) => cleanup.push(fn) },
-  { mfaEncryptionKey: "a1".repeat(32) },
+  { mfaEncryptionKey: "a1".repeat(32), mfaRequiredRoles: ["warranty"] },
 );
 const residencyBuyer = f.app.identity.createCustomer(
   f.actor,
@@ -229,6 +229,13 @@ f.app.procurement.receive(f.actor, "return-receipt", {
   serials: [],
   bin: "RET-1",
   quarantine: false,
+});
+f.app.identity.createUser(f.actor, "required-mfa-browser-user", {
+  name: "Synthetic required authenticator operator",
+  email: "required-mfa@example.test",
+  password: "long-required-mfa-password",
+  role: "warranty",
+  sites: [f.w1],
 });
 f.app.identity.createUser(f.actor, "mfa-browser-user", {
   name: "Synthetic authenticator operator",

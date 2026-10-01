@@ -1,4 +1,5 @@
-import { check, type Actor } from "./core.ts";
+import { validateMfaPolicy } from "./mfa-policy.ts";
+import { check, type Actor, type Role } from "./core.ts";
 import { Database } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity, type Region } from "./iam.ts";
@@ -39,6 +40,7 @@ export class Application {
     region: Region = "CA",
     security: {
       mfaEncryptionKey?: string;
+      mfaRequiredRoles?: readonly Role[];
       providerEncryptionKey?: string;
       eventReports?: boolean;
     } = {},
@@ -48,6 +50,10 @@ export class Application {
       "REGION",
       "Runtime residency region must be CA or US.",
       500,
+    );
+    const mfaRoles = validateMfaPolicy(
+      security.mfaRequiredRoles ?? [],
+      security.mfaEncryptionKey,
     );
     this.database = new Database(path);
     try {
@@ -65,6 +71,7 @@ export class Application {
                 this.inventory.warehouse(actor, siteId);
             },
             security.mfaEncryptionKey,
+            mfaRoles,
           );
           this.platform.configureReadAuthority((actor) => {
             const current = this.identity.currentActor(actor);

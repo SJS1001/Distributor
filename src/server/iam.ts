@@ -1,3 +1,4 @@
+import { validateMfaPolicy } from "./mfa-policy.ts";
 import { MultiFactor } from "./iam-mfa.ts";
 import { ProviderResidency, type ProviderAcceptance } from "./iam-residency.ts";
 import {
@@ -61,6 +62,7 @@ function passwordHash(password: string, salt: string) {
 export class Identity {
   private store: Store;
   readonly mfa: MultiFactor;
+  private readonly mfaRequiredRoles: readonly Role[];
   readonly residency: ProviderResidency;
   constructor(
     private database: Database,
@@ -68,7 +70,12 @@ export class Identity {
     public region: Region,
     private validateSites: (actor: Actor, sites: string[]) => void,
     mfaEncryptionKey?: string,
+    mfaRequiredRoles: readonly Role[] = [],
   ) {
+    this.mfaRequiredRoles = validateMfaPolicy(
+      mfaRequiredRoles,
+      mfaEncryptionKey,
+    );
     this.store = database.owned("iam");
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS iam_organizations(id TEXT PRIMARY KEY,name TEXT NOT NULL,region TEXT NOT NULL CHECK(region IN ('CA','US')),currency TEXT NOT NULL CHECK(currency IN ('CAD','USD')),policy TEXT NOT NULL) STRICT;
@@ -105,6 +112,8 @@ export class Identity {
           );
           return current;
         },
+        required: (actor) =>
+          this.mfaRequiredRoles.includes(this.currentActor(actor).role),
         revision: (actor) => Number(this.user(actor, actor.id).revision),
         changed: (actor) => ({
           revision: this.advance(this.user(actor, actor.id)),
@@ -308,6 +317,7 @@ export class Identity {
           csrf,
           actor,
           passwordChangeRequired: this.passwordChangeRequired(actor.id),
+          mfaEnrollmentRequired: this.mfaEnrollmentRequired(actor),
         };
       });
     } catch (error) {
@@ -334,6 +344,7 @@ export class Identity {
       actor,
       csrf: String(row.csrf),
       passwordChangeRequired: this.passwordChangeRequired(actor.id),
+      mfaEnrollmentRequired: this.mfaEnrollmentRequired(actor),
     };
   }
   logout(token: string) {
@@ -408,6 +419,12 @@ export class Identity {
     check(row, "NOT_FOUND", "User not found.", 404);
     return row;
   }
+  private mfaEnrollmentRequired(actor: Actor) {
+    return (
+      this.mfaRequiredRoles.includes(actor.role) &&
+      !this.mfa.summary(actor).enabled
+    );
+  }
   security(actor: Actor) {
     const current = this.currentActor(actor),
       row = this.user(current, current.id);
@@ -416,7 +433,10 @@ export class Identity {
       email: String(row.email),
       revision: Number(row.revision),
       passwordChangeRequired: row.password_change_required === 1,
-      mfa: this.mfa.summary(current),
+      mfa: {
+        ...this.mfa.summary(current),
+        required: this.mfaRequiredRoles.includes(current.role),
+      },
       sessions: Number(
         this.store.get(
           "SELECT COUNT(*) AS total FROM iam_sessions WHERE user_id=? AND expires_at>?",

@@ -23,6 +23,7 @@ import { OrderAmendments } from "./order-amendments.tsx";
 import { OrderReservations, ReservationStatus } from "./order-reservations.tsx";
 import { SupplierReturnHistory } from "./supplier-return-history.tsx";
 import { AuditHistory } from "./audit-history.tsx";
+import { RequiredMfa } from "./required-mfa.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
@@ -70,6 +71,7 @@ function App() {
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({});
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
   const [providerHistoryAccount, setProviderHistoryAccount] = useState<
     string | null
@@ -224,14 +226,15 @@ function App() {
       .then((s) => {
         setCsrf(s.csrf);
         setPasswordChangeRequired(s.passwordChangeRequired);
+        setMfaEnrollmentRequired(s.mfaEnrollmentRequired);
         setActor(s.actor);
       })
       .catch(() => {});
   }, []);
   useEffect(() => {
-    if (actor && !passwordChangeRequired)
+    if (actor && !passwordChangeRequired && !mfaEnrollmentRequired)
       void refresh().catch((e) => setError(e.message));
-  }, [actor, passwordChangeRequired]);
+  }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
     setCarrierShipmentId(null);
     carrierOpener.current = null;
@@ -254,6 +257,7 @@ function App() {
     setDialog(null);
     setPage("Overview");
     setPasswordChangeRequired(false);
+    setMfaEnrollmentRequired(false);
     setPassword("");
     setLoginCode("");
     setMfaRequired(false);
@@ -712,6 +716,7 @@ function App() {
               });
               setCsrf(s.csrf);
               setPasswordChangeRequired(s.passwordChangeRequired);
+              setMfaEnrollmentRequired(s.mfaEnrollmentRequired);
               setActor(s.actor);
               setPassword("");
               setLoginCode("");
@@ -803,6 +808,8 @@ function App() {
         </button>
       </main>
     );
+  if (mfaEnrollmentRequired)
+    return <RequiredMfa sessionEnded={clearSession} signOut={signOut} />;
   if (!data)
     return (
       <main className="login">

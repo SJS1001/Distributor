@@ -15,6 +15,7 @@ export function MfaSecurity({
     revision: number;
     mfa: {
       available: boolean;
+      required?: boolean;
       enabled: boolean;
       recoveryCodesRemaining: number;
     };
@@ -110,7 +111,11 @@ export function MfaSecurity({
           ? `Enabled · ${security.mfa.recoveryCodesRemaining} unused recovery codes.`
           : "Add a second sign-in step with a six-digit authenticator code."}
       </p>
-      {!security.mfa.available ? (
+      {security.mfa.enabled && security.mfa.required ? (
+        <p role="status">
+          Your role requires an authenticator. Removal is unavailable.
+        </p>
+      ) : !security.mfa.available ? (
         <p role="status">
           Authenticator service is unavailable. Contact your administrator.
         </p>

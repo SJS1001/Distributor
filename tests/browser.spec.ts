@@ -10663,3 +10663,147 @@ test("browser: cash refund pages and on-demand history retain failed pages and c
   await expect(refunds).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("browser: required role MFA blocks workspace, retries and cancels setup reads, survives reload and prevents removal", async ({
+  page,
+}) => {
+  const email = "required-mfa@example.test",
+    password = "long-required-mfa-password",
+    errors: string[] = [],
+    workspaceReads: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("request", (r) => {
+    if (/\/api\/(dashboard|users|stock)(?:\?|$)/.test(r.url()))
+      workspaceReads.push(r.url());
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const login = async () => {
+    await page.goto("/");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  };
+  await page.route(
+    "**/api/security",
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Synthetic setup read failed" }),
+      }),
+    { times: 1 },
+  );
+  await login();
+  const heading = page.getByRole("heading", {
+      name: "Set up your authenticator",
+      exact: true,
+    }),
+    panel = page.getByRole("region", { name: "Authenticator security" });
+  await expect(heading).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText(
+    "Synthetic setup read failed",
+  );
+  await expect(page.getByRole("navigation", { name: "Workspace" })).toHaveCount(
+    0,
+  );
+  expect(workspaceReads).toEqual([]);
+  expect((await page.request.get("/api/dashboard")).status()).toBe(403);
+  await page
+    .getByRole("button", { name: "Retry security setup", exact: true })
+    .click();
+  await expect(panel).toBeVisible();
+  await page.reload();
+  await expect(heading).toBeVisible();
+  await expect(panel).toBeVisible();
+  expect(workspaceReads).toEqual([]);
+  // Signing out must abort a pending security read and never restore its response.
+  let entered!: () => void, release!: () => void;
+  const reading = new Promise<void>((resolve) => (entered = resolve)),
+    paused = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/security", async (route) => {
+    const response = await route.fetch();
+    entered();
+    await paused;
+    try {
+      await route.fulfill({ response });
+    } catch {
+      /* The request was canceled by sign-out. */
+    }
+  });
+  const aborted = page.waitForEvent("requestfailed", {
+    predicate: (r) => r.url().endsWith("/api/security"),
+  });
+  await page.reload();
+  await reading;
+  await page
+    .getByRole("button", { name: "Back to sign in", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  await aborted;
+  release();
+  await page.unroute("**/api/security");
+  await expect(panel).toHaveCount(0);
+  await login();
+  await expect(panel).toBeVisible();
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel
+    .getByRole("button", { name: "Set up authenticator", exact: true })
+    .click();
+  const secret = await panel.getByLabel("Authenticator setup key").inputValue();
+  const codes = await panel
+    .getByRole("list", { name: "Recovery codes" })
+    .locator("code")
+    .allTextContents();
+  expect(codes).toHaveLength(10);
+  const stored = await page.evaluate(() =>
+    JSON.stringify({
+      local: { ...localStorage },
+      session: { ...sessionStorage },
+    }),
+  );
+  for (const value of [password, secret, ...codes])
+    expect(stored).not.toContain(value);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel.getByLabel("I saved my recovery codes securely").check();
+  await panel
+    .getByLabel("Authenticator or recovery code")
+    .fill(totp(secret, Math.floor(Date.now() / 30000)));
+  await panel
+    .getByRole("button", { name: "Enable authenticator", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Sign in to your workspace",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect((await page.request.get("/api/dashboard")).status()).toBe(401);
+  expect(workspaceReads).toEqual([]);
+  await login();
+  await expect(
+    page.getByLabel("Authenticator or recovery code", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Authenticator or recovery code", { exact: true })
+    .fill(codes[0]!);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  await expect(panel).toContainText("9 unused recovery codes");
+  await expect(panel.getByRole("status")).toHaveText(
+    "Your role requires an authenticator. Removal is unavailable.",
+  );
+  await expect(
+    panel.getByRole("button", { name: "Remove authenticator", exact: true }),
+  ).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

@@ -5,6 +5,7 @@ import { Platform } from "./platform.ts";
 import { encodeSecret, FactorCipher, matchingStep } from "./totp.ts";
 
 type Access = {
+  required?: (actor: Actor) => boolean;
   authenticate: (actor: Actor, password: string, throttle: boolean) => Actor;
   revision: (actor: Actor) => number;
   changed: (actor: Actor) => { revision: number; sessionsEnded: number };
@@ -306,6 +307,12 @@ export class MultiFactor {
       this.database.transaction(() => {
         this.access.authenticate(actor, input.currentPassword, false);
         this.cipher.require();
+        check(
+          !this.access.required?.(actor),
+          "MFA_POLICY",
+          "Your role requires an authenticator; removal is unavailable.",
+          403,
+        );
         check(
           integer(input.revision, "security revision", 1) ===
             this.access.revision(actor),

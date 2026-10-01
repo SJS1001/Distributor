@@ -1,3 +1,4 @@
+import { configuredMfaRoles } from "./mfa-policy.ts";
 import { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { createHttp } from "./http.ts";
@@ -27,6 +28,7 @@ const app = new Application(
   {
     eventReports: configuredEventReports(),
     mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
+    mfaRequiredRoles: configuredMfaRoles(),
     providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
   },
 );

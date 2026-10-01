@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Application } from "../src/server/application.ts";
-import type { Actor } from "../src/server/core.ts";
+import type { Actor, Role } from "../src/server/core.ts";
 import type { Region } from "../src/server/iam.ts";
 import { providerNames } from "../src/shared/provider-choices.ts";
 import type { DisclosureInput } from "../src/server/iam-residency.ts";
@@ -85,6 +85,7 @@ export function fixture(
   t: { after: (fn: () => void) => void },
   security: {
     mfaEncryptionKey?: string;
+    mfaRequiredRoles?: readonly Role[];
     providerEncryptionKey?: string;
     eventReports?: boolean;
   } = {},
