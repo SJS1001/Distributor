@@ -11,6 +11,7 @@ import {
 import { check, DomainError } from "./core.ts";
 import { UpsSandbox, type UpsSandboxConfig } from "./ups-sandbox.ts";
 import { FedexSandbox, type FedexSandboxConfig } from "./fedex-sandbox.ts";
+import { UspsSandbox, type UspsSandboxConfig } from "./usps-sandbox.ts";
 
 // Trusted workstation/server environment, never request-body configuration.
 // Capture all values at startup; no token acquisition, send or background task.
@@ -31,9 +32,10 @@ export function configuredCarriers(
   if (!flag("CARRIERS_ENABLED")) return undefined;
   const ups = flag("UPS_SANDBOX_ENABLED"),
     fedex = flag("FEDEX_SANDBOX_ENABLED"),
+    usps = flag("USPS_TEM_ENABLED"),
     canadaPost = flag("CANADA_POST_TEST_ENABLED");
   check(
-    ups || fedex || canadaPost,
+    ups || fedex || usps || canadaPost,
     "CARRIER_CONFIG",
     "Select at least one supported sandbox carrier.",
     500,
@@ -167,6 +169,35 @@ export function configuredCarriers(
               "service",
               "code",
             ]) as UpsSandboxConfig["services"],
+          },
+          transport,
+        ),
+      });
+    }
+    if (usps) {
+      check(
+        env.USPS_TEM_CREDENTIALS_ACK === "tem-only",
+        "CARRIER_CONFIG",
+        "Explicitly acknowledge USPS TEM credentials and endpoint only.",
+        500,
+      );
+      bindings.push({
+        orgId,
+        adapter: new UspsSandbox(
+          {
+            orgId,
+            clientId: required("USPS_CLIENT_ID", 512),
+            clientSecret: required("USPS_CLIENT_SECRET"),
+            crid: required("USPS_CRID", 18),
+            mid: required("USPS_MID", 9),
+            manifestMid: required("USPS_MANIFEST_MID", 9),
+            epsAccount: required("USPS_EPS_ACCOUNT", 20),
+            mailingDate: required("USPS_MAILING_DATE", 10),
+            services: services("USPS_SERVICES_JSON", [
+              "service",
+              "code",
+              "processingCategory",
+            ]) as UspsSandboxConfig["services"],
           },
           transport,
         ),
