@@ -9,6 +9,7 @@ import {
   downloadStockLabel,
   downloadInboxDocument,
 } from "./api.ts";
+import { CanadaPostWarehouse } from "./canada-post.tsx";
 import { CarrierBooking } from "./carrier-booking.tsx";
 import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
@@ -107,6 +108,10 @@ function App() {
     null,
   );
   const carrierOpener = useRef<HTMLElement | null>(null);
+  const [canadaPostWarehouse, setCanadaPostWarehouse] = useState<string | null>(
+    null,
+  );
+  const canadaPostOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
   const shipmentRequest = useRef<number | null>(null);
@@ -130,6 +135,8 @@ function App() {
       payments: undefined,
     }));
     setCarrierShipmentId(null);
+    setCanadaPostWarehouse(null);
+    canadaPostOpener.current = null;
     carrierOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
@@ -268,6 +275,8 @@ function App() {
     setDecisionClaim(null);
     decisionOpener.current = null;
     setCarrierShipmentId(null);
+    setCanadaPostWarehouse(null);
+    canadaPostOpener.current = null;
     carrierOpener.current = null;
     shipmentEpoch.current++;
     shipmentRequest.current = null;
@@ -306,6 +315,8 @@ function App() {
     setDecisionClaim(null);
     decisionOpener.current = null;
     setCarrierShipmentId(null);
+    setCanadaPostWarehouse(null);
+    canadaPostOpener.current = null;
     carrierOpener.current = null;
     void request("/api/logout", { method: "POST" })
       .catch(() => {})
@@ -898,6 +909,8 @@ function App() {
                 setDecisionClaim(null);
                 decisionOpener.current = null;
                 setCarrierShipmentId(null);
+                setCanadaPostWarehouse(null);
+                canadaPostOpener.current = null;
                 carrierOpener.current = null;
                 setProviderHistoryAccount(null);
                 setSupplierHistoryId(null);
@@ -1522,6 +1535,31 @@ function App() {
                 Newest first. Loaded: {data.shipments.length}. Saved changes or
                 refresh reload the newest page.
               </p>
+              {can("warehouse") && data.warehouses.length > 0 && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={(event) => {
+                    canadaPostOpener.current = event.currentTarget;
+                    setCarrierShipmentId(null);
+                    setCanadaPostWarehouse(data.warehouses[0].id);
+                  }}
+                >
+                  Review Canada Post warehouse groups
+                </button>
+              )}
+              {canadaPostWarehouse && (
+                <CanadaPostWarehouse
+                  key={`${canadaPostWarehouse}:${eventViewEpoch}`}
+                  warehouses={data.warehouses}
+                  initialWarehouse={canadaPostWarehouse}
+                  onClose={() => {
+                    setCanadaPostWarehouse(null);
+                    canadaPostOpener.current?.focus();
+                    canadaPostOpener.current = null;
+                  }}
+                />
+              )}
               {table(
                 ["Shipment", "Destination", "Units", "Status", "Actions"],
                 data.shipments,
@@ -1542,6 +1580,7 @@ function App() {
                           disabled={busy}
                           onClick={(event) => {
                             carrierOpener.current = event.currentTarget;
+                            setCanadaPostWarehouse(null);
                             setCarrierShipmentId(s.id);
                           }}
                         >
@@ -1661,8 +1700,19 @@ function App() {
                         (s: Item) => s.id === carrierShipmentId,
                       )!.state === "packed"
                     }
+                    onCanadaPost={() => {
+                      setCanadaPostWarehouse(
+                        data.shipments.find(
+                          (s: Item) => s.id === carrierShipmentId,
+                        )!.warehouse_id,
+                      );
+                      canadaPostOpener.current = carrierOpener.current;
+                      setCarrierShipmentId(null);
+                    }}
                     onClose={() => {
                       setCarrierShipmentId(null);
+                      setCanadaPostWarehouse(null);
+                      canadaPostOpener.current = null;
                       carrierOpener.current?.focus();
                       carrierOpener.current = null;
                     }}

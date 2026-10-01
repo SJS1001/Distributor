@@ -6,10 +6,14 @@ import {
   type CarrierBookingView,
   type CarrierPrepare,
   type CarrierReview,
+  type CanadaPostGroupView,
 } from "../shared/carrier-booking.ts";
 import { providerChoices } from "../shared/provider-choices.ts";
 
-type Review = CarrierReview & { enabled?: boolean };
+type Review = CarrierReview & {
+  enabled?: boolean;
+  canadaPostGroup?: CanadaPostGroupView | null;
+};
 const label = (provider: string) =>
   providerChoices.find((p) => p.id === provider)?.label ?? provider;
 const addressFields = [
@@ -84,11 +88,13 @@ export function CarrierBooking({
   packedDestination,
   packed,
   onClose,
+  onCanadaPost,
 }: {
   shipmentId: string;
   packedDestination: string;
   packed: boolean;
   onClose: () => void;
+  onCanadaPost?: () => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   const lifetime = useRef<AbortController | null>(null);
@@ -125,6 +131,11 @@ export function CarrierBooking({
         `/api/shipments/${encodeURIComponent(shipmentId)}/carrier`,
         { signal: controller.signal },
       );
+      if (result.booking?.provider === "canada-post")
+        result.canadaPostGroup = await request<CanadaPostGroupView | null>(
+          `/api/carrier/${encodeURIComponent(result.booking.id)}/canada-post/group`,
+          { signal: controller.signal },
+        );
       if (
         live(token) &&
         currentRead.current === controller &&
@@ -284,20 +295,42 @@ export function CarrierBooking({
       >
         {error ? "Retry current carrier review" : "Refresh carrier review"}
       </button>
-      {review && review.enabled !== true && (
-        <p>
-          Carrier send and reconciliation are disabled. No qualified carrier
-          adapter is enabled for this booking. Named customer acceptance,
-          carrier service and credential configuration, residency and provider
-          qualification must be completed before activation. Manual handover
-          remains a separate warehouse operation; unresolved bookings restrict
-          it.
-        </p>
-      )}
+      {review &&
+        review.enabled !== true &&
+        booking?.provider !== "canada-post" && (
+          <p>
+            Carrier send and reconciliation are disabled. No qualified carrier
+            adapter is enabled for this booking. Named customer acceptance,
+            carrier service and credential configuration, residency and provider
+            qualification must be completed before activation. Manual handover
+            remains a separate warehouse operation; unresolved bookings restrict
+            it.
+          </p>
+        )}
       {booking && (
         <>
           <h4>Current booking</h4>
           <BookingMetadata booking={booking} />
+          {booking.provider === "canada-post" && (
+            <>
+              <p>
+                Canada Post uses warehouse groups and a separately reviewed
+                manifest.{" "}
+                {review.canadaPostGroup
+                  ? `Current group: ${review.canadaPostGroup.id} · ${review.canadaPostGroup.state}. Resolve this group before canceling an individual booking.`
+                  : "This booking has no active warehouse group."}
+              </p>
+              {onCanadaPost && (
+                <button
+                  type="button"
+                  disabled={busy || loading}
+                  onClick={onCanadaPost}
+                >
+                  Open Canada Post warehouse groups
+                </button>
+              )}
+            </>
+          )}
           <h4>Reviewed origin</h4>
           <AddressDetail address={booking.origin} />
           <h4>Reviewed destination</h4>
@@ -322,7 +355,7 @@ export function CarrierBooking({
               Download carrier label
             </a>
           )}
-          {booking.state === "pending" && packed && (
+          {booking.state === "pending" && packed && !review.canadaPostGroup && (
             <form
               onSubmit={(event) => {
                 event.preventDefault();

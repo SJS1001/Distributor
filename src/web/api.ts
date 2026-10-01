@@ -248,3 +248,72 @@ export async function downloadCostFile(packetId: string, expectedHash: string) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+
+export async function downloadCanadaPostManifest(
+  groupId: string,
+  signal: AbortSignal,
+) {
+  const response = await fetch(
+    `/api/canada-post/groups/${encodeURIComponent(groupId)}/manifest/document`,
+    { credentials: "same-origin", signal },
+  );
+  if (!response.ok) {
+    const result = await response.json();
+    throw Error(
+      `${result.message ?? "Manifest download failed"} (${result.code ?? response.status})`,
+    );
+  }
+  if (
+    !response.headers
+      .get("content-type")
+      ?.startsWith("application/octet-stream") ||
+    response.headers.get("x-document-media-type") !== "application/pdf" ||
+    response.headers.get("cache-control") !== "no-store"
+  )
+    throw Error("Manifest download headers are invalid.");
+  const reader = response.body?.getReader();
+  if (!reader) throw Error("Manifest download body is missing.");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 1_048_576)
+        throw Error("Manifest exceeds the document size limit.");
+      chunks.push(value);
+    }
+  } catch (e) {
+    await reader.cancel().catch(() => {});
+    throw e;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const hash = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    (v) => v.toString(16).padStart(2, "0"),
+  ).join("");
+  if (
+    hash !== response.headers.get("x-document-sha256") ||
+    new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-"
+  )
+    throw Error("Manifest integrity check failed. Retry the download.");
+  signal.throwIfAborted();
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: "application/pdf" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "canada-post-manifest.pdf";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}

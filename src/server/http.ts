@@ -1821,6 +1821,38 @@ export async function createHttp(app: Application, options: HttpOptions) {
     Params: { warehouseId: string };
     Querystring: { after?: string };
   }>(
+    "/api/warehouses/:warehouseId/canada-post/candidates",
+    {
+      schema: {
+        params: obj({ warehouseId: str }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) => {
+      const current = actor(request);
+      const page = app.carriers.canadaPostCandidates(
+        current,
+        request.params.warehouseId,
+        request.query.after,
+      );
+      app.inventory.warehouse(current, request.params.warehouseId);
+      return {
+        ...page,
+        enabled:
+          options.carriers?.canadaPostEnabled(
+            current,
+            request.params.warehouseId,
+          ) ?? false,
+      };
+    },
+  );
+  http.get<{
+    Params: { warehouseId: string };
+    Querystring: { after?: string };
+  }>(
     "/api/warehouses/:warehouseId/canada-post/groups",
     {
       schema: {
@@ -1862,6 +1894,15 @@ export async function createHttp(app: Application, options: HttpOptions) {
     { schema: { params: obj({ groupId: str }), querystring: obj({}) } },
     async (request) =>
       app.carriers.reviewCanadaPostGroup(
+        actor(request),
+        request.params.groupId,
+      ),
+  );
+  http.get<{ Params: { groupId: string } }>(
+    "/api/canada-post/groups/:groupId/bookings",
+    { schema: { params: obj({ groupId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.carriers.canadaPostGroupBookings(
         actor(request),
         request.params.groupId,
       ),

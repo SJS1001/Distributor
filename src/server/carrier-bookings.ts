@@ -28,6 +28,8 @@ import {
   type CarrierParcel,
   type CarrierPrepare,
   type CarrierReview,
+  type CanadaPostGroupView,
+  type CanadaPostManifestIdentity,
 } from "../shared/carrier-booking.ts";
 
 export type CarrierIntent = CarrierPrepare & {
@@ -68,15 +70,10 @@ export interface CanadaPostCreationClient {
     groupId: string,
   ): Promise<CanadaPostShipmentObservation | null>;
 }
-export type CanadaPostManifestIdentity = Pick<
-  CanadaPostManifestObservation,
-  | "manifestId"
-  | "groupId"
-  | "reviewHash"
-  | "configurationHash"
-  | "customerReference"
-  | "shipmentIds"
->;
+export type {
+  CanadaPostGroupView,
+  CanadaPostManifestIdentity,
+} from "../shared/carrier-booking.ts";
 // Application code must honor one guarded transmission and read-only recovery.
 // Identity is computed synchronously without provider I/O by the captured client.
 export interface CanadaPostManifestClient {
@@ -153,16 +150,6 @@ type CanadaPostMember = {
 export type CanadaPostGroupPrepare = {
   configurationHash: string;
   entries: readonly { bookingId: string; reviewHash: string }[];
-};
-export type CanadaPostGroupView = {
-  id: string;
-  warehouseId: string;
-  configurationHash: string;
-  providerGroupId: string;
-  reviewHash: string;
-  state: string;
-  entries: { bookingId: string; reviewHash: string; state: string }[];
-  createdAt: string;
 };
 
 export class CarrierBookings {
@@ -496,6 +483,13 @@ export class CarrierBookings {
       createdAt: group.created_at,
     };
   }
+  canadaPostGroupBookings(actor: Actor, groupId: string) {
+    actor = this.principal(actor);
+    const { members } = this.canadaPostGroup(actor, groupId);
+    return members.map((member) =>
+      this.view(this.booking(actor, member.booking_id)),
+    );
+  }
   canadaPostBookingWarehouse(actor: Actor, bookingId: string) {
     actor = this.principal(actor);
     const booking = this.booking(actor, bookingId),
@@ -516,6 +510,37 @@ export class CarrierBookings {
       bookingId,
     );
     return member ? this.reviewCanadaPostGroup(actor, member.group_id) : null;
+  }
+  canadaPostCandidates(actor: Actor, warehouseId: string, after?: string) {
+    actor = this.principal(actor);
+    warehouseId = text(warehouseId, "Warehouse", 128);
+    site(actor, warehouseId);
+    const cursor = after === undefined ? undefined : this.booking(actor, after);
+    if (cursor) {
+      check(
+        this.canadaPostBookingWarehouse(actor, cursor.id) === warehouseId,
+        "CURSOR",
+        "The booking cursor belongs to a different warehouse.",
+        400,
+      );
+    }
+    const rows = this.store.all<Booking>(
+      `SELECT b.* FROM integration_carrier_bookings b
+       WHERE b.org_id=? AND b.state='pending' AND b.sequence>?
+       AND json_extract(b.intent,'$.provider')='canada-post'
+       AND json_extract(b.intent,'$.nativeSnapshot.warehouse_id')=?
+       AND NOT EXISTS(SELECT 1 FROM integration_canada_post_members m
+         WHERE m.org_id=b.org_id AND m.booking_id=b.id AND m.active=1)
+       ORDER BY b.sequence LIMIT 21`,
+      actor.orgId,
+      cursor?.sequence ?? 0,
+      warehouseId,
+    );
+    const items = rows.slice(0, 20).map((row) => {
+      this.booking(actor, row.id);
+      return this.view(row);
+    });
+    return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
   }
   canadaPostGroups(actor: Actor, warehouseId: string, after?: string) {
     actor = this.principal(actor);

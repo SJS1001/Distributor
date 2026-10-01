@@ -3,6 +3,7 @@ import { totp } from "../src/server/totp.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import "./quickbooks-browser-journey.ts";
+import "./canada-post-browser-journey.ts";
 test("browser: checkout rechecks stale balance, refreshes expiry, cancels navigation reads and opens only after a fresh scoped request", async ({
   page,
   context,

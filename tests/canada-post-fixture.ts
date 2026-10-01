@@ -30,6 +30,24 @@ export function setup(
     version: 1,
     acknowledgment: "Synthetic explicit Canada Post processing choice",
   });
+  if (count > 3) {
+    const po = f.app.procurement.create(f.actor, "cp-extra-stock", {
+      supplierId: f.supplier,
+      warehouseId: f.w1,
+      lines: [{ productId: f.product, quantity: count - 3, unitCost: 6000 }],
+    }).id;
+    const line = f.app.procurement.orders(f.actor).find((p) => p.id === po)!
+      .lines[0]!;
+    f.app.procurement.receive(f.actor, "cp-extra-receipt", {
+      poId: po,
+      lineId: String(line.id),
+      deliveryRef: "CP-EXTRA",
+      quantity: count - 3,
+      serials: Array.from({ length: count - 3 }, (_, i) => `CP-EXTRA-${i}`),
+      bin: "A-1",
+      quarantine: false,
+    });
+  }
   const shipments: string[] = [],
     entries = [];
   for (let i = 0; i < count; i++) {

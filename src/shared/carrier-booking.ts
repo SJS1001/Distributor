@@ -54,3 +54,22 @@ export type CarrierReview = {
   shipmentId: string;
   booking: CarrierBookingView | null;
 };
+
+export type CanadaPostGroupView = {
+  id: string;
+  warehouseId: string;
+  configurationHash: string;
+  providerGroupId: string;
+  reviewHash: string;
+  state: string;
+  entries: { bookingId: string; reviewHash: string; state: string }[];
+  createdAt: string;
+};
+export type CanadaPostManifestIdentity = {
+  manifestId: string;
+  groupId: string;
+  configurationHash: string;
+  reviewHash: string;
+  customerReference: string;
+  shipmentIds: string[];
+};
