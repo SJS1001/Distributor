@@ -635,7 +635,7 @@
   "scopeDocumentSha256": {
     "docs/CARRIER-BOOKINGS.md": "4275907d24245fbf016432f87ca9a7cde2aa1c484169f605b59916386c49b296",
     "docs/IMPLEMENTATION.md": "515f45b9f327a96b8725fdaa439ebecc4de5d9ec10b6b19d7f55587827d6de43",
-    "docs/HANDOFF.md": "a1c60fbc07d9f573c1831e9076266a0ae39fa76f5b9cca7b6b58181a15946fd3",
+    "docs/HANDOFF.md": "07a63c50fd953093dda0e644d97f1d28012995077705eebf9675a08c6b93c129",
     "docs/evidence/LOCAL-CANADA-POST-TRANSMISSION-2026-10-01.md": "7b4d1e470eabcd41b113ec48c8b944da87e8094c2b8fb8884f1723e806a86a6b"
   },
   "commands": {
@@ -924,5 +924,15 @@
     "Device/operator/security/load/retention/recovery qualification outstanding",
     "Private temporary artifacts not guaranteed archived",
     "Local workstation checks/commits only; no CI/cloud/provider/push/PR/deployment/publication/live data"
-  ]
+  ],
+  "sourceCommit": "a4215ad8c1f4b61f4602950c5279b97507d2a326",
+  "committedByteAudit": {
+    "path": "/tmp/distributor-canada-post-transmission-checkpoint/post-commit-audit.json",
+    "sha256": "ec9c43506cac9ccbb73d51a5d4403fe495fac66f845141df34f974f0a0436763",
+    "status": "PASS",
+    "repositoryFiles": 435,
+    "dependencyLicenseFiles": 170,
+    "commandRecords": 13,
+    "scope": "Captured local regression and receipts only; no acceptance gate verified"
+  }
 }
