@@ -30,6 +30,7 @@ import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
 import { WarrantyDecisions } from "./warranty-decisions.tsx";
+import { SoldCoverage } from "./warranty-coverage.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -79,6 +80,8 @@ function App() {
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
   const [decisionClaim, setDecisionClaim] = useState<string | null>(null);
   const decisionOpener = useRef<HTMLElement | null>(null);
+  const [coverageOpen, setCoverageOpen] = useState(false);
+  const coverageOpener = useRef<HTMLElement | null>(null);
   const [providerHistoryAccount, setProviderHistoryAccount] = useState<
     string | null
   >(null);
@@ -108,6 +111,8 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setCoverageOpen(false);
+    coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
     setExtra((current) => ({
@@ -249,6 +254,8 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    setCoverageOpen(false);
+    coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
     setCarrierShipmentId(null);
@@ -282,6 +289,8 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    setCoverageOpen(false);
+    coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
     setCarrierShipmentId(null);
@@ -863,6 +872,8 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 setPage(p);
+                setCoverageOpen(false);
+                coverageOpener.current = null;
                 setDecisionClaim(null);
                 decisionOpener.current = null;
                 setCarrierShipmentId(null);
@@ -3669,7 +3680,27 @@ function App() {
                       }),
                   );
                 })}
+              {can("warranty", "commercial", "buyer") && (
+                <button
+                  className="secondary"
+                  onClick={(event) => {
+                    coverageOpener.current = event.currentTarget;
+                    setCoverageOpen(true);
+                  }}
+                >
+                  Check sold serial coverage
+                </button>
+              )}
             </div>
+            {coverageOpen && (
+              <SoldCoverage
+                units={data.soldUnits}
+                onClose={() => {
+                  setCoverageOpen(false);
+                  coverageOpener.current?.focus();
+                }}
+              />
+            )}
             {table(
               ["Claim", "Customer", "Issue", "State", "Actions"],
               data.claims,

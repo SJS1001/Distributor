@@ -11838,6 +11838,251 @@ test("browser: invoice refund payment selection pages, retries and cancels befor
   expect(errors).toEqual([]);
 });
 
+test("browser: sold coverage is on demand, retries, clears serial changes, cancels exits and shows buyer provisional dates", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const login = async (email: string, password = "long-test-only-password") => {
+    await page.goto("/");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    const reply = page.waitForResponse(
+      (r) => r.url().endsWith("/api/login") && r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    const csrf = (await (await reply).json()).csrf;
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    return csrf;
+  };
+  const csrf = await login("admin@example.test");
+  const cmd = async (name: string, payload: unknown) => {
+    const r = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(r.status(), await r.text()).toBe(200);
+    return r.json();
+  };
+  const account = await cmd("account.create", {
+    name: "Coverage browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "COVERAGE-BROWSER",
+    name: "Coverage browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await (await page.request.get("/api/dashboard")).json(),
+    warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 2, unitCost: 6000 }],
+  });
+  const afterPurchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: afterPurchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "COV-DEL",
+    quantity: 2,
+    serials: ["COV-S1", "COV-S2"],
+    bin: "A",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 2 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const current = await (await page.request.get("/api/dashboard")).json();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: current.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic coverage handover",
+  });
+  await cmd("user.create", {
+    currentPassword: "long-test-only-password",
+    name: "Coverage buyer",
+    email: "coverage-browser@example.test",
+    password: "long-user-test-password",
+    role: "buyer",
+    accountId: account.id,
+    sites: [],
+    requirePasswordChange: false,
+  });
+  const reads: string[] = [];
+  const pattern = "**/api/warranty/sold-units/*/coverage?*";
+  page.on("request", (r) => {
+    if (r.url().includes("/coverage?")) reads.push(r.url());
+  });
+  const opener = page.getByRole("button", {
+    name: "Check sold serial coverage",
+    exact: true,
+  });
+  const panel = page.getByRole("region", {
+    name: "Sold serial coverage",
+    exact: true,
+  });
+  const select = panel.getByLabel("Sold serial for coverage", { exact: true });
+  const check = panel.getByRole("button", {
+    name: "Check coverage dates",
+    exact: true,
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeEnabled();
+  await nav(page, "Returns");
+  expect(reads).toEqual([]);
+  await opener.click();
+  await expect(panel.getByRole("heading")).toBeFocused();
+  await expect(check).toBeDisabled();
+  await select.selectOption({ label: "COV-S1" });
+  expect(reads).toEqual([]);
+  let failed = false;
+  await page.route(pattern, async (route) => {
+    if (!failed) {
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        json: { message: "Synthetic coverage read failure", code: "TEST" },
+      });
+    } else await route.continue();
+  });
+  await check.click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "Synthetic coverage read failure",
+  );
+  await panel
+    .getByRole("button", { name: "Retry coverage lookup", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toHaveText("Coverage dates loaded");
+  expect(reads[0]).toBe(reads[1]);
+  await expect(panel).toContainText(
+    "Current provisional duration: 365 days after shipment.",
+  );
+  await expect(panel).toContainText("Eligibility requires review.");
+  await select.selectOption({ label: "COV-S2" });
+  await expect(panel).not.toContainText("Serial COV-S1");
+  await expect(panel.getByRole("status")).toHaveText(
+    "Select a serial and check its coverage dates.",
+  );
+  await check.click();
+  await expect(panel).toContainText("Serial COV-S2");
+  await page.unroute(pattern);
+  for (const exit of [
+    "serial",
+    "close",
+    "refresh",
+    "navigation",
+    "signout",
+  ] as const) {
+    let release!: () => void, handled!: () => void;
+    const held = new Promise<void>((r) => {
+        release = r;
+      }),
+      done = new Promise<void>((r) => {
+        handled = r;
+      });
+    await page.route(pattern, async () => {
+      await held;
+      handled();
+    });
+    const started = page.waitForRequest((r) => r.url().includes("/coverage?"));
+    await check.click();
+    const pending = await started;
+    const cancelled = page.waitForEvent("requestfailed", (r) => r === pending);
+    if (exit === "serial") await select.selectOption({ label: "COV-S1" });
+    else if (exit === "close")
+      await panel
+        .getByRole("button", { name: "Close coverage lookup", exact: true })
+        .click();
+    else if (exit === "refresh")
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    else if (exit === "navigation") await nav(page, "Overview");
+    else
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await cancelled;
+    release();
+    await done;
+    await page.unroute(pattern);
+    if (exit === "serial") {
+      await expect(panel).not.toContainText("Serial COV-S2");
+      await panel
+        .getByRole("button", { name: "Close coverage lookup", exact: true })
+        .click();
+    }
+    if (exit === "serial" || exit === "close")
+      await expect(opener).toBeFocused();
+    if (exit === "signout") break;
+    if (exit === "refresh")
+      await expect(
+        page.getByRole("button", { name: "Refresh", exact: true }),
+      ).toBeEnabled();
+    await nav(page, "Returns");
+    await opener.click();
+    await select.selectOption({ label: "COV-S2" });
+  }
+  await login("coverage-browser@example.test", "long-user-test-password");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await nav(page, "Returns");
+  await opener.click();
+  expect(await select.locator("option").allTextContents()).toEqual([
+    "Select a sold serial",
+    "COV-S1",
+    "COV-S2",
+  ]);
+  await select.selectOption({ label: "COV-S1" });
+  await check.click();
+  await expect(panel.getByRole("status")).toHaveText("Coverage dates loaded");
+  await expect(panel).toContainText("Coverage rules are provisional.");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test("browser: warranty activity page, retry, cancel and preserve buyer privacy", async ({
   page,
 }) => {

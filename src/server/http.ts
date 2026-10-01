@@ -1393,6 +1393,21 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     ["after", "limit"],
   );
+  http.get<{ Params: { unitId: string }; Querystring: { accountId: string } }>(
+    "/api/warranty/sold-units/:unitId/coverage",
+    {
+      schema: {
+        params: obj({ unitId: str }),
+        querystring: obj({ accountId: str }),
+      },
+    },
+    async (request) =>
+      app.warranty.coverage(
+        actor(request),
+        request.params.unitId,
+        request.query.accountId,
+      ),
+  );
   http.get<{ Params: { claimId: string }; Querystring: { after?: string } }>(
     "/api/warranty/claims/:claimId/decisions",
     {

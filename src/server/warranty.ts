@@ -18,6 +18,7 @@ import { Fulfillment } from "./fulfillment.ts";
 import { Billing } from "./billing.ts";
 import { WarrantyEvidence } from "./warranty-evidence.ts";
 import type { WarrantyDecisionPage } from "../shared/warranty-decisions.ts";
+import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
 export type Claim = {
   id: string;
   org_id: string;
@@ -867,19 +868,79 @@ export class Warranty {
       return {
         shipmentId: c.shipment_id,
         invoiceId: c.invoice_id,
-        coverageEnd: r.coverage_end,
+        coverageEnd: this.coverageDate(r.coverage_end),
+        shippedAt: this.coverageDate(
+          this.fulfillment.shipment(actor, c.shipment_id).shipped_at,
+        ),
+        source: "replacement_inherited" as const,
+        provisionalDays: null,
       };
     }
     const sale = this.fulfillment.soldUnit(actor, unitId, accountId);
-    const days = JSON.parse(this.identity.organization(actor).policy)
-      .coverageDays as number;
+    const days = JSON.parse(
+      this.identity.organization(actor).policy,
+    ).coverageDays;
+    check(
+      Number.isSafeInteger(days) && days >= 0 && days <= 36500,
+      "COVERAGE_POLICY",
+      "Provisional coverage duration must be a whole number of days from 0 to 36500.",
+    );
+    const shippedAt = this.coverageDate(sale.shipment.shipped_at);
+    const end = new Date(Date.parse(shippedAt) + days * 86400000);
+    check(
+      Number.isFinite(end.getTime()),
+      "COVERAGE_DATE",
+      "Calculated coverage end is outside the supported date range.",
+    );
     return {
       shipmentId: sale.shipment.id,
       invoiceId: sale.shipment.invoice_id!,
-      coverageEnd: new Date(
-        Date.parse(sale.shipment.shipped_at!) + days * 86400000,
-      ).toISOString(),
+      coverageEnd: end.toISOString(),
+      shippedAt,
+      source: "current_provisional_policy" as const,
+      provisionalDays: days as number,
     };
+  }
+  private coverageDate(value: unknown): string {
+    check(
+      typeof value === "string" &&
+        Number.isFinite(Date.parse(value)) &&
+        new Date(value).toISOString() === value,
+      "COVERAGE_DATE",
+      "Coverage requires a valid retained UTC date.",
+    );
+    return value;
+  }
+  coverage(actor: Actor, unitId: string, accountId: string): WarrantyCoverage {
+    return this.database.transaction(() => {
+      actor = this.authority(actor, ["warranty", "commercial", "buyer"]);
+      unitId = text(unitId, "Sold unit ID");
+      accountId = text(accountId, "Customer account ID");
+      const entitlement = this.entitlement(actor, unitId, accountId),
+        unit = this.inventory.unit(actor, unitId);
+      check(
+        unit.state === "sold" && unit.serial,
+        "NOT_FOUND",
+        "No currently sold serial for this account.",
+        404,
+      );
+      const assessedAt = now();
+      return {
+        unitId,
+        serial: unit.serial,
+        accountId,
+        ...entitlement,
+        assessedAt,
+        datePosition:
+          Date.parse(assessedAt) < Date.parse(entitlement.shippedAt)
+            ? "before_start"
+            : Date.parse(assessedAt) >= Date.parse(entitlement.coverageEnd)
+              ? "elapsed"
+              : "within_dates",
+        eligibility: "requires_review",
+        coveragePolicyApproved: false,
+      };
+    });
   }
   soldUnits(actor: Actor) {
     return this.database.transaction(() => {
