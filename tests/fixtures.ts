@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Application } from "../src/server/application.ts";
 import type { Actor } from "../src/server/core.ts";
+import type { Region } from "../src/server/iam.ts";
 import { providerNames } from "../src/shared/provider-choices.ts";
 import type { DisclosureInput } from "../src/server/iam-residency.ts";
 
@@ -82,11 +83,16 @@ export function chooseProviders(
 }
 export function fixture(
   t: { after: (fn: () => void) => void },
-  security: { mfaEncryptionKey?: string; providerEncryptionKey?: string } = {},
+  security: {
+    mfaEncryptionKey?: string;
+    providerEncryptionKey?: string;
+    eventReports?: boolean;
+  } = {},
+  region: Region = "CA",
 ) {
   const directory = mkdtempSync(join(tmpdir(), "distributor-"));
   const path = join(directory, "app.db");
-  const app = new Application(path, "CA", security);
+  const app = new Application(path, region, security);
   let current: { app: Application } = { app };
   t.after(() => {
     current.app.close();
@@ -96,7 +102,7 @@ export function fixture(
     "Synthetic Distributor",
     "admin@example.test",
     "long-test-only-password",
-    "CAD",
+    region === "CA" ? "CAD" : "USD",
   );
   seedDisclosures(app, actor);
   const w1 = app.inventory.createWarehouse(actor, "w1", { name: "Toronto" }).id,

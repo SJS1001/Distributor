@@ -21,7 +21,7 @@ import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Application } from "./application.ts";
 import { check, DomainError } from "./core.ts";
-import { inspectConnection } from "./schema.ts";
+import { inspectConnection, type SchemaInspection } from "./schema.ts";
 import { type Region } from "./iam.ts";
 
 const magic = Buffer.from("DISTBKP1"),
@@ -81,34 +81,18 @@ async function hashFile(path: string) {
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
-function schema(db: DatabaseSync) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify(
-        db
-          .prepare(
-            "SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name",
-          )
-          .all(),
-      ),
-    )
-    .digest("hex");
-}
-function inspect(path: string, region: Region, expectedSchema: string) {
+function inspect(path: string, region: Region) {
   // Storage maintenance reads only schema, integrity and region; business mutations use their owners.
   const db = new DatabaseSync(path, { readOnly: true });
   try {
     db.exec("PRAGMA trusted_schema=OFF");
-    check(
-      schema(db) === expectedSchema,
-      "RECOVERY_SCHEMA",
-      "Snapshot schema differs from this application; use a separately tested upgrade procedure.",
-    );
     // A matching DDL hash alone cannot validate altered version/profile metadata.
     // Preserve recovery's public error vocabulary instead of leaking SQLite text.
+    let inspected: SchemaInspection;
     try {
+      inspected = inspectConnection(db);
       check(
-        inspectConnection(db).kind === "current",
+        inspected.kind === "current" && inspected.version !== null,
         "RECOVERY_SCHEMA",
         "Snapshot requires a supported current schema receipt.",
       );
@@ -134,16 +118,9 @@ function inspect(path: string, region: Region, expectedSchema: string) {
       "RECOVERY_REGION",
       "Snapshot and requested regional store must match and contain an organization.",
     );
+    return { ...inspected, version: inspected.version };
   } finally {
     db.close();
-  }
-}
-function currentSchema() {
-  const app = new Application(":memory:");
-  try {
-    return app.database.execute("platform", schema);
-  } finally {
-    app.close();
   }
 }
 async function syncFile(path: string) {
@@ -204,14 +181,13 @@ export async function createBackup(
     }
     await chmod(snapshot, 0o600);
     const bytes = (await regular(snapshot)).size,
-      schemaHash = currentSchema();
-    inspect(snapshot, region, schemaHash);
+      inspected = inspect(snapshot, region);
     const manifest: Manifest = {
       version: 1,
       region,
       completedAt: new Date().toISOString(),
       snapshotHash: await hashFile(snapshot),
-      schemaHash,
+      schemaHash: inspected.schemaHash,
       bytes,
       iv: randomBytes(12).toString("hex"),
     };
@@ -233,7 +209,13 @@ export async function createBackup(
     );
     await appendFile(encrypted, cipher.getAuthTag());
     await publish(encrypted, target);
-    return { startedAt, ...manifest, path: resolve(target) };
+    return {
+      startedAt,
+      ...manifest,
+      path: resolve(target),
+      schemaVersion: inspected.version,
+      eventReports: inspected.eventReports,
+    };
   } finally {
     await rm(work, { recursive: true, force: true });
   }
@@ -272,16 +254,40 @@ export async function restoreBackup(
         "RECOVERY_FORMAT",
         "Incomplete recovery header.",
       );
-      manifest = JSON.parse(header.toString("utf8")) as Manifest;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(header.toString("utf8"));
+      } catch {
+        throw new DomainError("RECOVERY_FORMAT", "Invalid recovery manifest.");
+      }
+      check(
+        parsed !== null &&
+          typeof parsed === "object" &&
+          Object.getPrototypeOf(parsed) === Object.prototype,
+        "RECOVERY_FORMAT",
+        "Invalid recovery manifest.",
+      );
+      manifest = parsed as Manifest;
       check(
         manifest.version === 1 &&
+          typeof manifest.region === "string" &&
           ["CA", "US"].includes(manifest.region) &&
-          /^\d{4}-\d{2}-\d{2}T/.test(manifest.completedAt) &&
+          typeof manifest.completedAt === "string" &&
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+            manifest.completedAt,
+          ) &&
+          Number.isFinite(Date.parse(manifest.completedAt)) &&
+          new Date(manifest.completedAt).toISOString() ===
+            manifest.completedAt &&
+          typeof manifest.snapshotHash === "string" &&
           /^[a-f0-9]{64}$/.test(manifest.snapshotHash) &&
+          typeof manifest.schemaHash === "string" &&
           /^[a-f0-9]{64}$/.test(manifest.schemaHash) &&
+          typeof manifest.iv === "string" &&
           /^[a-f0-9]{24}$/.test(manifest.iv) &&
           Number.isSafeInteger(manifest.bytes) &&
           manifest.bytes > 0 &&
+          manifest.bytes <= maxBytes &&
           manifest.bytes === size - 12 - length - 16,
         "RECOVERY_FORMAT",
         "Invalid recovery manifest.",
@@ -318,14 +324,15 @@ export async function restoreBackup(
       "RECOVERY_INTEGRITY",
       "Snapshot hash differs from the authenticated manifest.",
     );
-    const expectedSchema = currentSchema();
+    const inspected = inspect(snapshot, region);
     check(
-      manifest.schemaHash === expectedSchema,
+      manifest.schemaHash === inspected.schemaHash,
       "RECOVERY_SCHEMA",
-      "Snapshot schema differs from this application.",
+      "Snapshot schema differs from the authenticated manifest.",
     );
-    inspect(snapshot, region, expectedSchema);
-    const app = new Application(snapshot, region);
+    const app = new Application(snapshot, region, {
+      eventReports: inspected.eventReports,
+    });
     let invalidatedSessions: number;
     try {
       invalidatedSessions = app.database.transaction(() => {
@@ -339,12 +346,22 @@ export async function restoreBackup(
     } finally {
       app.close();
     }
-    inspect(snapshot, region, expectedSchema);
+    const restored = inspect(snapshot, region);
+    check(
+      restored.schemaHash === inspected.schemaHash &&
+        restored.version === inspected.version &&
+        restored.eventReports === inspected.eventReports,
+      "RECOVERY_SCHEMA",
+      "Restored schema differs from the verified snapshot profile.",
+    );
     await publish(snapshot, target, true);
     return {
       path: resolve(target),
       region,
       snapshotHash: manifest.snapshotHash,
+      schemaHash: inspected.schemaHash,
+      schemaVersion: inspected.version,
+      eventReports: inspected.eventReports,
       sourceCompletedAt: manifest.completedAt,
       restoredAt: new Date().toISOString(),
       invalidatedSessions,
