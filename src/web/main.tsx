@@ -2366,12 +2366,13 @@ function App() {
             )}
             {extra.callbacks?.length > 0 && (
               <>
-                <h2>Payment confirmations</h2>
+                <h2>Payment and refund confirmations</h2>
                 {table(
-                  ["Event", "Status", "Review", "Actions"],
+                  ["Event", "Operation", "Status", "Review", "Actions"],
                   extra.callbacks,
                   (c: Item) => [
                     c.event_id,
+                    c.kind === "refund" ? "Refund" : "Payment",
                     c.state,
                     c.error ?? "",
                     can("finance") &&

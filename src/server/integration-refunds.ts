@@ -37,11 +37,24 @@ export class IntegrationRefunds {
     // Same restriction as a background finance worker, including forced credential change.
     return this.identity.workerActor(current.orgId, current.id);
   }
-  async run(actor: Actor, effectId: string, adapter: Adapter, send: boolean) {
+  async run(
+    actor: Actor,
+    effectId: string,
+    adapter: Adapter,
+    send: boolean,
+    verification?: {
+      reference: string;
+      assertCurrent: () => void;
+      complete: () => void;
+    },
+  ) {
     actor = this.principal(actor);
     this.platform.assertProviderAccess();
     const token = id();
     const effect = this.database.transaction(() => {
+      actor = this.principal(actor);
+      this.platform.assertProviderAccess();
+      verification?.assertCurrent();
       const e = this.integration.effect(actor, effectId);
       check(
         e.provider === "stripe" && e.kind === "refund",
@@ -54,6 +67,13 @@ export class IntegrationRefunds {
           : ["unknown", "completed"].includes(e.state),
         "STATE",
         "Refund operation is not ready for this action.",
+      );
+      check(
+        !verification ||
+          (!send &&
+            (!e.external_ref || e.external_ref === verification.reference)),
+        "REFUND_MISMATCH",
+        "Bound refund reference differs from signed event.",
       );
       this.identity.providerAllowed(actor, e.account_id, "stripe");
       const poll = this.store.get(
@@ -85,10 +105,16 @@ export class IntegrationRefunds {
     try {
       const result = send
         ? await adapter.execute(effect)
-        : await adapter.lookup(effect);
+        : await adapter.lookup(
+            verification
+              ? { ...effect, external_ref: verification.reference }
+              : effect,
+          );
       actor = this.principal(actor);
       return this.database.transaction(() => {
+        actor = this.principal(actor);
         this.platform.assertProviderAccess();
+        verification?.assertCurrent();
         const poll = this.store.get(
           "SELECT token FROM integration_refund_polls WHERE org_id=? AND effect_id=?",
           actor.orgId,
@@ -104,7 +130,8 @@ export class IntegrationRefunds {
         let status: string | null = null;
         if (result) {
           check(
-            result.result.effectId === effect.id,
+            result.result.effectId === effect.id &&
+              (!verification || result.reference === verification.reference),
             "REFUND_MISMATCH",
             "Provider effect identity differs from the refund intent.",
           );
@@ -132,7 +159,7 @@ export class IntegrationRefunds {
           });
         } else {
           check(
-            !effect.external_ref,
+            !effect.external_ref && !verification,
             "REFUND_MISMATCH",
             "Previously bound refund was not returned by the provider.",
           );
@@ -147,6 +174,7 @@ export class IntegrationRefunds {
           Date.now() + 30000,
           effectId,
         );
+        verification?.complete();
         return {
           id: effectId,
           state: this.integration.effect(actor, effectId).state,

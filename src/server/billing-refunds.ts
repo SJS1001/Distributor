@@ -136,7 +136,7 @@ export class BillingRefunds {
     );
     const status = result.status as RefundStatus;
     // Failed/canceled observations are terminal. Pending observations cannot undo success;
-    // a later bank failure can undo success while preserving all earlier observations.
+    // a later bank failure or returned transfer requiring action can undo success with history retained.
     const applied =
       !old ||
       (old.status !== "failed" &&
@@ -144,6 +144,7 @@ export class BillingRefunds {
         (old.status !== "succeeded" ||
           status === "failed" ||
           status === "canceled" ||
+          status === "requires_action" ||
           status === "succeeded"));
     this.store.run(
       "INSERT INTO billing_refund_observations(org_id,refund_id,external_ref,status,applied,created_at) VALUES(?,?,?,?,?,?)",

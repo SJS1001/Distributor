@@ -161,6 +161,54 @@ export class ProviderRuntime {
       binding.workerUserId,
     );
     if (
+      ["refund.created", "refund.updated", "refund.failed"].includes(event.type)
+    ) {
+      const refund = event.data.object as Stripe.Refund;
+      check(
+        refund.object === "refund" && /^re_[a-zA-Z0-9_]+$/.test(refund.id),
+        "WEBHOOK_SCOPE",
+        "Unsupported refund event.",
+        400,
+      );
+      // Manual/provider-created refunds without Distributor markers belong to separate reconciliation.
+      if (!refund.metadata?.effect_id && !refund.metadata?.refund_id)
+        return { received: true, ignored: true };
+      const eventId = text(event.id, "Stripe event ID"),
+        effectId = text(
+          refund.metadata?.effect_id,
+          "Distributor refund operation",
+        ),
+        refundId = text(
+          refund.metadata?.refund_id,
+          "Distributor refund identity",
+        ),
+        paymentId =
+          typeof refund.payment_intent === "string"
+            ? refund.payment_intent
+            : refund.payment_intent?.id;
+      check(
+        /^evt_[a-zA-Z0-9_]+$/.test(eventId) &&
+          typeof paymentId === "string" &&
+          /^pi_[a-zA-Z0-9_]+$/.test(paymentId),
+        "WEBHOOK_SCOPE",
+        "Invalid refund event identity.",
+        400,
+      );
+      const receipt = this.app.integration.refundCallbacks.receive(actor, {
+        bindingId: binding.id,
+        eventId,
+        effectId,
+        refundId,
+        paymentId,
+        reference: refund.id,
+        amount: refund.amount,
+        currency: refund.currency,
+        eventType: event.type,
+        hash: digest(canonical(event)),
+      });
+      return { received: true, ...receipt };
+    }
+    if (
       ![
         "checkout.session.completed",
         "checkout.session.async_payment_succeeded",
@@ -241,6 +289,24 @@ export class ProviderRuntime {
           await this.refreshRefund(actor(), effect.id);
         } catch {
           report.deferred++;
+        }
+      }
+      for (const callback of this.app.integration.refundCallbacks.due(
+        actor(),
+        binding.id,
+        limit,
+      )) {
+        try {
+          const outcome = await this.app.integration.refundCallbacks.run(
+            actor(),
+            callback.id,
+            binding.stripe.adapter,
+          );
+          if (outcome.state === "completed") report.settled++;
+          else report.deferred++;
+        } catch (error) {
+          if (error instanceof DomainError && error.code === "STATE") continue;
+          throw error;
         }
       }
       for (const callback of this.app.integration.dueCallbacks(

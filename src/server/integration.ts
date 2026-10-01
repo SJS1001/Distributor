@@ -14,6 +14,7 @@ import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
+import { IntegrationRefundCallbacks } from "./integration-refund-callbacks.ts";
 import { IntegrationRefunds } from "./integration-refunds.ts";
 import {
   Billing,
@@ -82,6 +83,7 @@ export type Callback = {
 export class Integration {
   private store: Store;
   readonly refunds: IntegrationRefunds;
+  readonly refundCallbacks: IntegrationRefundCallbacks;
   private readonly operations: IntegrationOperations;
   constructor(
     private database: Database,
@@ -111,6 +113,13 @@ export class Integration {
       platform,
       identity,
       billing,
+      this,
+    );
+    this.refundCallbacks = new IntegrationRefundCallbacks(
+      database,
+      this.store,
+      platform,
+      identity,
       this,
     );
   }
@@ -169,6 +178,16 @@ export class Integration {
     permit(actor, ["finance"]);
     this.identity.organization(actor);
     return this.database.transaction(() => {
+      check(
+        !this.store.get(
+          "SELECT id FROM integration_refund_callbacks WHERE org_id=? AND binding_id=? AND event_id=?",
+          actor.orgId,
+          input.bindingId,
+          input.eventId,
+        ),
+        "EVENT_CONFLICT",
+        "Signed event identity changed.",
+      );
       const old = this.store.get<Callback>(
         "SELECT * FROM integration_callbacks WHERE org_id=? AND binding_id=? AND event_id=?",
         actor.orgId,
@@ -205,12 +224,23 @@ export class Integration {
   }
   callbacks(actor: Actor) {
     permit(actor, ["finance", "support"]);
-    return this.store
+    actor = this.identity.currentActor(actor);
+    permit(actor, ["finance", "support"]);
+    const checkout = this.store
       .all<Callback>(
-        "SELECT * FROM integration_callbacks WHERE org_id=? ORDER BY created_at DESC LIMIT 200",
+        "SELECT * FROM integration_callbacks WHERE org_id=? ORDER BY created_at DESC,id LIMIT 200",
         actor.orgId,
       )
-      .map(({ hash, ...row }) => row);
+      .map(({ hash: _hash, ...c }) => ({ ...c, kind: "checkout" as const }));
+    const refunds = this.refundCallbacks
+      .list(actor)
+      .map(({ hash: _hash, ...c }) => c);
+    return [...checkout, ...refunds]
+      .sort(
+        (a, b) =>
+          b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id),
+      )
+      .slice(0, 200);
   }
   dueCallbacks(actor: Actor, bindingId: string, limit = 20) {
     permit(actor, ["finance"]);
@@ -273,6 +303,8 @@ export class Integration {
     });
   }
   retryCallback(actor: Actor, callbackId: string) {
+    if (this.refundCallbacks.has(actor, callbackId))
+      return this.refundCallbacks.retry(actor, callbackId);
     permit(actor, ["finance"]);
     return this.database.transaction(() => {
       const row = this.store.get<Callback>(
@@ -678,15 +710,17 @@ export class Integration {
     );
   }
   recoverCallbacks(milliseconds = 120000, orgId: string | null = null) {
-    return this.database.transaction(() =>
-      Number(
-        this.store.run(
-          "UPDATE integration_callbacks SET state='waiting',retry_at=0,error='Worker interrupted; safely verify settlement again.' WHERE state='processing' AND started_at<? AND (? IS NULL OR org_id=?)",
-          Date.now() - milliseconds,
-          orgId,
-          orgId,
-        ).changes,
-      ),
+    return this.database.transaction(
+      () =>
+        this.refundCallbacks.recover(milliseconds, orgId) +
+        Number(
+          this.store.run(
+            "UPDATE integration_callbacks SET state='waiting',retry_at=0,error='Worker interrupted; safely verify settlement again.' WHERE state='processing' AND started_at<? AND (? IS NULL OR org_id=?)",
+            Date.now() - milliseconds,
+            orgId,
+            orgId,
+          ).changes,
+        ),
     );
   }
   async execute(actor: Actor, effectId: string, adapter: Adapter) {
