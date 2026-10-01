@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import {
   ProviderRuntime,
   configuredProviders,
@@ -15,7 +15,7 @@ const secret = "whsec_synthetic_test_only",
 function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -207,7 +207,7 @@ test("lost sends never auto-repeat; callback waits for reconciliation and consen
   assert.deepEqual(f.counts(), { sent: 1, reads: 0 });
   await f.runtime.reconcile(f.actor, f.effect.id);
   const callback = f.app.integration.callbacks(f.actor)[0]!;
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -219,7 +219,7 @@ test("lost sends never auto-repeat; callback waits for reconciliation and consen
   await f.runtime.tick();
   assert.equal(f.app.integration.callbacks(f.actor)[0]!.state, "blocked");
   assert.equal(f.counts().reads, 0);
-  f.app.identity.residencyChoice(f.actor, "restore", {
+  chooseProviders(f, f.actor, "restore", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

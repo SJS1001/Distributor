@@ -157,7 +157,11 @@ export class Application {
     return {
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
-      accounts: this.identity.customers(actor),
+      accounts: this.identity.customers(actor).map((customer) => ({
+        ...customer,
+        providerReviews: this.identity.residency.status(actor, customer),
+      })),
+      providerDisclosures: this.identity.residency.current(actor),
       products: this.catalog.products(actor),
       warehouses: this.inventory.warehouses(actor),
       orders: this.orders.list(actor),

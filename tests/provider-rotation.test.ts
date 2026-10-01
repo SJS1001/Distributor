@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { fixture } from "./fixtures.ts";
+import { chooseProviders, fixture, seedDisclosures } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { type Effect } from "../src/server/integration.ts";
 const key = "ab".repeat(32),
@@ -18,7 +18,7 @@ const tokens = () => ({
 });
 function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t, { providerEncryptionKey: key });
-  f.app.identity.residencyChoice(f.actor, "rotation-choice", {
+  chooseProviders(f, f.actor, "rotation-choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -348,6 +348,16 @@ test("every credential and pending authorization organization requires its own c
         .join(",")})`,
       ...Object.values(row),
     );
+  // This second organization's copied account needs its own reviewed terms.
+  seedDisclosures(f.app, foreign.actor);
+  chooseProviders(f, foreign.actor, "foreign-rotation-choice", {
+    accountId: foreign.buyer,
+    region: "CA",
+    mode: "provider-exceptions",
+    providers: ["quickbooks"],
+    version: Number(account.residency_version),
+    acknowledgment: "Synthetic foreign customer review",
+  });
   const binding = {
     ...f.binding,
     id: "foreign-binding",

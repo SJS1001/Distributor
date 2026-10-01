@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { QuickBooksAdapter } from "../src/server/providers.ts";
 import { configuredProviders } from "../src/server/provider-runtime.ts";
@@ -19,7 +19,7 @@ async function setup(
 ) {
   const f = fixture(t),
     invoiceId = ship(f, accept(f, 2).id).invoiceId;
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -199,7 +199,7 @@ test("current grants, password, customer choice and restoration guard both cache
     f.actor.id,
   );
   retry();
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -208,7 +208,7 @@ test("current grants, password, customer choice and restoration guard both cache
     acknowledgment: "Synthetic withdrawal",
   });
   refuse("RESIDENCY_BLOCKED");
-  f.app.identity.residencyChoice(f.actor, "restore-choice", {
+  chooseProviders(f, f.actor, "restore-choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -1045,7 +1045,7 @@ test("confirmed accounting expense is retained when native cash or customer perm
         if (path.endsWith("/purchase")) {
           if (change === "native-reversal") bankFailure(f);
           else
-            f.app.identity.residencyChoice(f.actor, "withdraw-during-post", {
+            chooseProviders(f, f.actor, "withdraw-during-post", {
               accountId: f.buyer,
               region: "CA",
               mode: "strict",
@@ -1111,7 +1111,7 @@ test("the final asynchronous token step cannot bypass consent or restore holds b
                 new Date().toISOString(),
               );
             else
-              f.app.identity.residencyChoice(f.actor, "withdraw-at-token", {
+              chooseProviders(f, f.actor, "withdraw-at-token", {
                 accountId: f.buyer,
                 region: "CA",
                 mode: "strict",

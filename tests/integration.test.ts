@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { type Adapter } from "../src/server/integration.ts";
 
 test("strict residency blocks intent; named customer exceptions are versioned and withdrawn before sending", async (t) => {
@@ -14,7 +14,7 @@ test("strict residency blocks intent; named customer exceptions are versioned an
     { code: "RESIDENCY_BLOCKED" },
   );
   assert.equal(f.app.integration.list(f.actor).length, 0);
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -24,7 +24,7 @@ test("strict residency blocks intent; named customer exceptions are versioned an
   });
   assert.throws(
     () =>
-      f.app.identity.residencyChoice(f.actor, "stale", {
+      chooseProviders(f, f.actor, "stale", {
         accountId: f.buyer,
         region: "CA",
         mode: "strict",
@@ -36,7 +36,7 @@ test("strict residency blocks intent; named customer exceptions are versioned an
   );
   assert.throws(
     () =>
-      f.app.identity.residencyChoice(f.actor, "migration", {
+      chooseProviders(f, f.actor, "migration", {
         accountId: f.buyer,
         region: "US",
         mode: "strict",
@@ -57,7 +57,7 @@ test("strict residency blocks intent; named customer exceptions are versioned an
     () => f.app.identity.providerAllowed(f.actor, f.buyer, "quickbooks"),
     { code: "RESIDENCY_BLOCKED" },
   );
-  f.app.identity.residencyChoice(f.actor, "revoke", {
+  chooseProviders(f, f.actor, "revoke", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -82,7 +82,7 @@ test("strict residency blocks intent; named customer exceptions are versioned an
 test("lost provider response enters unknown, never auto-resends, reconciles once, and deduplicates verified settlement", async (t) => {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -178,7 +178,7 @@ test("lost provider response enters unknown, never auto-resends, reconciles once
 test("abandoned running provider operation recovers only to unknown; regional store mismatch rejects organization access", (t) => {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

@@ -224,20 +224,80 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ accountId: str, held: bool, reason: str }),
       run: (a, k, p) => app.identity.setHold(a, k, p),
     },
-    "account.residency": {
+    "provider.disclosure.publish": {
       schema: obj({
-        accountId: str,
+        provider: choice(...providerNames),
         region: choice("CA", "US"),
-        mode: choice("strict", "provider-exceptions"),
-        providers: {
-          type: "array",
-          items: choice(...providerNames),
-          maxItems: providerNames.length,
+        previousDisclosureId: { anyOf: [str, { type: "null" }] },
+        version: str,
+        purposes: str,
+        minimumData: {
+          ...arr({ ...str, maxLength: 200 }),
+          minItems: 1,
+          maxItems: 30,
           uniqueItems: true,
         },
-        version: num,
-        acknowledgment: str,
+        processingCountries: {
+          ...arr({ type: "string", pattern: "^[A-Z]{2}$" }),
+          minItems: 1,
+          maxItems: 30,
+          uniqueItems: true,
+        },
+        subprocessors: {
+          ...arr({ ...str, maxLength: 200 }),
+          maxItems: 30,
+          uniqueItems: true,
+        },
+        retention: str,
+        withdrawal: str,
+        termsReference: str,
+        reviewEvidence: str,
       }),
+      run: (a, k, p) => app.identity.residency.publish(a, k, p),
+    },
+    "provider.disclosure.withdraw": {
+      schema: obj({
+        provider: choice(...providerNames),
+        disclosureId: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.identity.residency.withdraw(a, k, p),
+    },
+    "account.residency": {
+      schema: obj(
+        {
+          accountId: str,
+          region: choice("CA", "US"),
+          mode: choice("strict", "provider-exceptions"),
+          providers: {
+            type: "array",
+            items: choice(...providerNames),
+            maxItems: providerNames.length,
+            uniqueItems: true,
+          },
+          version: num,
+          acknowledgment: str,
+          acceptance: obj(
+            {
+              basis: choice("buyer", "recorded"),
+              representative: { ...str, maxLength: 200 },
+              evidenceRef: str,
+              disclosures: {
+                ...arr(
+                  obj({
+                    provider: choice(...providerNames),
+                    disclosureId: str,
+                  }),
+                ),
+                minItems: 1,
+                maxItems: 8,
+              },
+            },
+            ["representative", "evidenceRef"],
+          ),
+        },
+        ["acceptance"],
+      ),
       run: (a, k, p) => app.identity.residencyChoice(a, k, p),
     },
     "user.create": {
@@ -985,6 +1045,35 @@ export async function createHttp(app: Application, options: HttpOptions) {
   }
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
+  http.get("/api/provider-disclosures", async (request) =>
+    app.identity.residency.current(actor(request)),
+  );
+  http.get<{ Params: { disclosureId: string } }>(
+    "/api/provider-disclosures/:disclosureId",
+    { schema: { params: obj({ disclosureId: str }) } },
+    async (request) =>
+      app.identity.residency.disclosure(
+        actor(request),
+        request.params.disclosureId,
+      ),
+  );
+  http.get<{ Params: { accountId: string }; Querystring: { version: string } }>(
+    "/api/accounts/:accountId/provider-acceptances",
+    {
+      schema: {
+        params: obj({ accountId: str }),
+        querystring: obj({
+          version: { type: "string", pattern: "^[1-9][0-9]{0,11}$" },
+        }),
+      },
+    },
+    async (request) =>
+      app.identity.residency.acceptances(
+        actor(request),
+        request.params.accountId,
+        Number(request.query.version),
+      ),
+  );
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));
   http.get("/api/purchases", async (request) => ({
     suppliers: app.procurement.suppliers(actor(request)),

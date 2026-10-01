@@ -2,6 +2,84 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Application } from "../src/server/application.ts";
+import type { Actor } from "../src/server/core.ts";
+import { providerNames } from "../src/shared/provider-choices.ts";
+import type { DisclosureInput } from "../src/server/iam-residency.ts";
+
+export function syntheticDisclosure(
+  app: Application,
+  provider: DisclosureInput["provider"],
+  previousDisclosureId: string | null = null,
+  version = "synthetic-v1",
+): DisclosureInput {
+  return {
+    provider,
+    region: app.identity.region,
+    previousDisclosureId,
+    version,
+    purposes: "Synthetic test processing only; no vendor qualification",
+    minimumData: [
+      "Synthetic customer identifier",
+      "Synthetic transaction total",
+    ],
+    processingCountries: ["US", "CA"],
+    subprocessors: ["Synthetic processor"],
+    retention: "Synthetic fixture retained only during this test",
+    withdrawal:
+      "Future processing stops; in-flight or previously transmitted data cannot be recalled",
+    termsReference: "synthetic:test-only-terms",
+    reviewEvidence:
+      "Synthetic fixture qualification; not actual vendor evidence",
+  };
+}
+export function seedDisclosures(app: Application, actor: Actor) {
+  for (const provider of providerNames)
+    app.identity.residency.publish(
+      actor,
+      `synthetic-disclosure-${provider}`,
+      syntheticDisclosure(app, provider),
+    );
+}
+type ChoiceInput = Parameters<Application["identity"]["residencyChoice"]>[2];
+export function reviewedChoiceInput(
+  app: Application,
+  actor: Actor,
+  input: ChoiceInput,
+): ChoiceInput {
+  if (!input.providers.length) return input;
+  const current = app.identity.currentActor(actor),
+    offers = app.identity.residency.current(current);
+  return {
+    ...input,
+    acceptance: {
+      basis: current.role === "buyer" ? "buyer" : "recorded",
+      ...(current.role === "buyer"
+        ? {}
+        : {
+            representative: "Synthetic customer representative",
+            evidenceRef: "synthetic:explicit-customer-acceptance",
+          }),
+      disclosures: input.providers.map((provider) => ({
+        provider: provider as DisclosureInput["provider"],
+        disclosureId:
+          offers.find((d) => d.provider === provider)?.id ??
+          "synthetic-invalid-disclosure",
+      })),
+    },
+  };
+}
+export function chooseProviders(
+  f: { app: Application },
+  actor: Actor,
+  key: string,
+  input: ChoiceInput,
+) {
+  return f.app.identity.residencyChoice(
+    actor,
+    key,
+    reviewedChoiceInput(f.app, actor, input),
+  );
+}
 export function fixture(
   t: { after: (fn: () => void) => void },
   security: { mfaEncryptionKey?: string; providerEncryptionKey?: string } = {},
@@ -20,6 +98,7 @@ export function fixture(
     "long-test-only-password",
     "CAD",
   );
+  seedDisclosures(app, actor);
   const w1 = app.inventory.createWarehouse(actor, "w1", { name: "Toronto" }).id,
     w2 = app.inventory.createWarehouse(actor, "w2", { name: "Ottawa" }).id;
   const buyer = app.identity.createCustomer(actor, "buyer", {

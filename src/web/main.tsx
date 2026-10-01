@@ -14,6 +14,7 @@ import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
+import { DisclosureReview } from "./provider-disclosures.tsx";
 import { AuditHistory } from "./audit-history.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
@@ -38,7 +39,7 @@ type Dialog = {
   title: string;
   fields: Field[];
   perform: (values: Item) => Promise<unknown>;
-  description?: string;
+  description?: React.ReactNode;
   submitLabel?: string;
 };
 const money = (value: number, currency = "CAD") =>
@@ -253,7 +254,7 @@ function App() {
     title: string,
     fields: Field[],
     perform: Dialog["perform"],
-    description?: string,
+    description?: React.ReactNode,
     submitLabel?: string,
   ) => {
     setNotice("");
@@ -3590,6 +3591,123 @@ function App() {
                   ),
                 )}
             </div>
+            {admin && (
+              <section className="panel">
+                <h2>Provider disclosures</h2>
+                <p>
+                  Publish vendor-reviewed terms before offering an exception.
+                  Each new version requires renewed customer acceptance.
+                  Qualification evidence must refer to the applicable contract
+                  and processing locations.
+                </p>
+                <DisclosureReview disclosures={data.providerDisclosures} />
+                {button("Publish provider disclosure", () =>
+                  open(
+                    "Publish provider disclosure",
+                    [
+                      {
+                        name: "provider",
+                        label: "Named provider",
+                        options: providerChoices.map((p) => ({
+                          value: p.id,
+                          label: p.label,
+                        })),
+                      },
+                      { name: "version", label: "New disclosure version" },
+                      {
+                        name: "purposes",
+                        label: "Processing purposes",
+                        type: "textarea",
+                      },
+                      {
+                        name: "minimumData",
+                        label: "Minimum data fields",
+                        type: "textarea",
+                        help: "One entry per line.",
+                      },
+                      {
+                        name: "processingCountries",
+                        label: "Processing countries",
+                        help: "Comma-separated uppercase two-letter country codes.",
+                      },
+                      {
+                        name: "subprocessors",
+                        label: "Subprocessors",
+                        type: "textarea",
+                        optional: true,
+                        help: "One named entity per line; leave empty only if reviewed terms identify none.",
+                      },
+                      {
+                        name: "retention",
+                        label: "Retention and deletion",
+                        type: "textarea",
+                      },
+                      {
+                        name: "withdrawal",
+                        label: "Withdrawal consequences",
+                        type: "textarea",
+                      },
+                      {
+                        name: "termsReference",
+                        label: "Terms reference",
+                        type: "textarea",
+                      },
+                      {
+                        name: "reviewEvidence",
+                        label: "Vendor and business qualification evidence",
+                        type: "textarea",
+                      },
+                    ],
+                    (v) =>
+                      command("provider.disclosure.publish", {
+                        provider: v.provider,
+                        region: data.organization.region,
+                        previousDisclosureId:
+                          data.providerDisclosures.find(
+                            (d: Item) => d.provider === v.provider,
+                          )?.id ?? null,
+                        version: v.version,
+                        purposes: v.purposes,
+                        minimumData: v.minimumData
+                          .split("\n")
+                          .map((x: string) => x.trim())
+                          .filter(Boolean),
+                        processingCountries: v.processingCountries
+                          .split(",")
+                          .map((x: string) => x.trim())
+                          .filter(Boolean),
+                        subprocessors: v.subprocessors
+                          .split("\n")
+                          .map((x: string) => x.trim())
+                          .filter(Boolean),
+                        retention: v.retention,
+                        withdrawal: v.withdrawal,
+                        termsReference: v.termsReference,
+                        reviewEvidence: v.reviewEvidence,
+                      }),
+                  ),
+                )}
+                {data.providerDisclosures.map((d: Item) => (
+                  <div key={d.id}>
+                    {button(
+                      `Withdraw ${providerChoices.find((p) => p.id === d.provider)?.label} disclosure`,
+                      () =>
+                        open(
+                          "Withdraw provider disclosure",
+                          [reason],
+                          (v) =>
+                            command("provider.disclosure.withdraw", {
+                              provider: d.provider,
+                              disclosureId: d.id,
+                              reason: v.reason,
+                            }),
+                          "Withdrawal blocks subsequent provider processing. Historical terms and customer acceptance remain recorded.",
+                        ),
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
             {table(
               [
                 "Customer",
@@ -3605,7 +3723,19 @@ function App() {
                 a.tier,
                 money(a.credit_limit, a.currency),
                 a.held ? "On hold" : "Clear",
-                `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}`,
+                `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
+                  .filter(
+                    (p) =>
+                      JSON.parse(a.provider_exceptions).includes(p) &&
+                      !a.providerReviews.some(
+                        (r: Item) => r.provider === p && r.current === 1,
+                      ),
+                  )
+                  .map(
+                    (p) =>
+                      ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
+                  )
+                  .join("")}`,
                 <div className="actions">
                   {can("finance") &&
                     button(a.held ? "Clear hold" : "Apply hold", () =>
@@ -3617,7 +3747,7 @@ function App() {
                     )}
                   {can("commercial", "buyer") &&
                     button("Residency choice", () =>
-                      simple(
+                      open(
                         "Choose data residency",
                         [
                           {
@@ -3644,29 +3774,87 @@ function App() {
                             ],
                             value: a.residency_mode,
                           },
-                          ...providerChoices.map(({ id, label }): Field => ({
-                            name: id,
-                            label: `Allow ${label} processing outside the storage region`,
-                            type: "checkbox",
-                            value: JSON.parse(a.provider_exceptions).includes(
-                              id,
-                            ),
-                          })),
+                          ...providerChoices
+                            .filter((p) =>
+                              data.providerDisclosures.some(
+                                (d: Item) => d.provider === p.id,
+                              ),
+                            )
+                            .map(({ id, label }): Field => ({
+                              name: id,
+                              label: `Allow ${label} processing outside the storage region`,
+                              type: "checkbox",
+                              value:
+                                JSON.parse(a.provider_exceptions).includes(
+                                  id,
+                                ) &&
+                                a.providerReviews.some(
+                                  (r: Item) =>
+                                    r.provider === id && r.current === 1,
+                                ),
+                            })),
+                          ...(actor.role === "buyer"
+                            ? []
+                            : [
+                                {
+                                  name: "representative",
+                                  label: "Authorized customer representative",
+                                  optional: true,
+                                  help: "Required when staff records a customer exception.",
+                                },
+                                {
+                                  name: "evidenceRef",
+                                  label:
+                                    "External customer acceptance evidence",
+                                  type: "textarea" as const,
+                                  optional: true,
+                                  help: "Reference the customer acceptance of these exact terms; a staff acknowledgment alone is insufficient.",
+                                },
+                              ]),
                           {
                             name: "acknowledgment",
                             label: "Acknowledgment of reviewed processor terms",
                             type: "textarea",
                           },
                         ],
-                        "account.residency",
-                        (v) => ({
-                          accountId: a.id,
-                          region: v.region,
-                          mode: v.mode,
-                          providers: providerNames.filter((p) => v[p]),
-                          version: a.residency_version,
-                          acknowledgment: v.acknowledgment,
-                        }),
+                        (v) =>
+                          command("account.residency", {
+                            accountId: a.id,
+                            region: v.region,
+                            mode: v.mode,
+                            providers: providerNames.filter((p) => v[p]),
+                            ...(providerNames.some((p) => v[p])
+                              ? {
+                                  acceptance: {
+                                    basis:
+                                      actor.role === "buyer"
+                                        ? "buyer"
+                                        : "recorded",
+                                    ...(actor.role === "buyer"
+                                      ? {}
+                                      : {
+                                          representative: v.representative,
+                                          evidenceRef: v.evidenceRef,
+                                        }),
+                                    disclosures: providerNames
+                                      .filter((p) => v[p])
+                                      .map((provider) => ({
+                                        provider,
+                                        disclosureId:
+                                          data.providerDisclosures.find(
+                                            (d: Item) =>
+                                              d.provider === provider,
+                                          ).id,
+                                      })),
+                                  },
+                                }
+                              : {}),
+                            version: a.residency_version,
+                            acknowledgment: v.acknowledgment,
+                          }),
+                        <DisclosureReview
+                          disclosures={data.providerDisclosures}
+                        />,
                       ),
                     )}
                 </div>,
@@ -4693,7 +4881,7 @@ function Modal({
       >
         <h2 id="dialog-title">{dialog.title}</h2>
         {dialog.description && (
-          <p className="description">{dialog.description}</p>
+          <div className="description">{dialog.description}</div>
         )}
         {error && (
           <p role="alert" className="error">

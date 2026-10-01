@@ -94,6 +94,20 @@ test("browser: named carrier choices preserve legacy warning, retry once, reload
   expect(account.residency_mode).toBe("strict");
   expect(JSON.parse(account.provider_exceptions)).toEqual([]);
 });
+async function recordedProviderAcceptance(page: Page, providers: string[]) {
+  const disclosures = await (
+    await page.request.get("/api/provider-disclosures")
+  ).json();
+  return {
+    basis: "recorded",
+    representative: "Synthetic customer representative",
+    evidenceRef: "synthetic:explicit-browser-customer-acceptance",
+    disclosures: providers.map((provider) => ({
+      provider,
+      disclosureId: disclosures.find((d: any) => d.provider === provider).id,
+    })),
+  };
+}
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 test("browser: refund notices page safely, retain personal reads after a lost response, and reopen after a verified failure", async ({
   page,
@@ -1373,6 +1387,12 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
       exact: true,
     })
     .check();
+  await page
+    .getByLabel("Authorized customer representative", { exact: true })
+    .fill("Synthetic buyer representative");
+  await page
+    .getByLabel("External customer acceptance evidence", { exact: true })
+    .fill("synthetic:stripe-customer-acceptance");
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Billing");
@@ -4667,6 +4687,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     providers: ["quickbooks"],
     version: 1,
     acknowledgment: "Synthetic named QuickBooks exception",
+    acceptance: await recordedProviderAcceptance(page, ["quickbooks"]),
   });
   const invoiceKeys: string[] = [];
   let lostInvoice = false;
@@ -5670,6 +5691,7 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
     providers: ["quickbooks"],
     version: 1,
     acknowledgment: "Synthetic named QuickBooks processing exception",
+    acceptance: await recordedProviderAcceptance(page, ["quickbooks"]),
   });
   const reconcileSetup = async (id: string) => {
     const csrf = (await (await page.request.get("/api/session")).json()).csrf;
@@ -7870,4 +7892,206 @@ test("browser: event diagnostics preserve pages and exact reviewed retries witho
   for (const key of ["stock", "orders", "invoices"])
     expect(after[key]).toEqual(before[key]);
   expect(errors).toEqual([]);
+});
+
+test("browser: customers review immutable provider terms, stale consent stops, and withdrawal retains acceptance history", async ({
+  page,
+  browser,
+}) => {
+  const errors: string[] = [];
+  const login = async (p: Page, email: string) => {
+    p.on("pageerror", (e) => errors.push(e.message));
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    await nav(p, "Customers");
+  };
+  await login(page, "admin@example.test");
+  const before = await (await page.request.get("/api/dashboard")).json();
+  const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+    }),
+    buyerPage = await context.newPage();
+  try {
+    await login(buyerPage, "named-carriers@example.test");
+    const account = (
+      await (await buyerPage.request.get("/api/dashboard")).json()
+    ).accounts[0];
+    await buyerPage
+      .getByRole("button", { name: "Residency choice", exact: true })
+      .click();
+    await buyerPage
+      .getByLabel("Processor policy")
+      .selectOption("provider-exceptions");
+    await buyerPage
+      .getByLabel("Allow FedEx processing outside the storage region", {
+        exact: true,
+      })
+      .check();
+    await buyerPage
+      .getByLabel("Acknowledgment of reviewed processor terms")
+      .fill("Synthetic buyer reviewed original FedEx terms");
+    // Keep this original review open while staff replaces its immutable terms.
+    await page
+      .getByRole("button", { name: "Publish provider disclosure", exact: true })
+      .click();
+    await page
+      .getByLabel("Named provider", { exact: true })
+      .selectOption("fedex");
+    await page
+      .getByLabel("New disclosure version")
+      .fill("synthetic-browser-v2");
+    await page
+      .getByLabel("Processing purposes", { exact: true })
+      .fill("Synthetic shipment processing purpose");
+    await page
+      .getByLabel("Minimum data fields", { exact: true })
+      .fill("Synthetic consignee name\nSynthetic destination");
+    await page
+      .getByLabel("Processing countries", { exact: true })
+      .fill("CA, US");
+    await page
+      .getByLabel("Subprocessors", { exact: true })
+      .fill("Synthetic subprocessor only");
+    await page
+      .getByLabel("Retention and deletion", { exact: true })
+      .fill("Synthetic thirty-day retention; not actual provider policy");
+    await page
+      .getByLabel("Withdrawal consequences", { exact: true })
+      .fill("Synthetic withdrawal stops later transmissions");
+    await page
+      .getByLabel("Terms reference", { exact: true })
+      .fill("synthetic:browser-terms-v2");
+    await page
+      .getByLabel("Vendor and business qualification evidence", { exact: true })
+      .fill("Synthetic private business review only");
+    const keys: string[] = [];
+    let dropped = false;
+    await page.route(
+      "**/api/commands/provider.disclosure.publish",
+      async (route) => {
+        keys.push(route.request().headers()["idempotency-key"]!);
+        if (!dropped) {
+          dropped = true;
+          const r = await route.fetch();
+          expect(r.status()).toBe(200);
+          await route.abort("failed");
+        } else await route.continue();
+      },
+    );
+    await next(page);
+    await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+    await next(page);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    await next(buyerPage);
+    await expect(
+      buyerPage.getByRole("dialog").getByRole("alert"),
+    ).toContainText(/terms changed/);
+    let current = (await (await buyerPage.request.get("/api/dashboard")).json())
+      .accounts[0];
+    expect(current.residency_version).toBe(account.residency_version);
+    await buyerPage
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await buyerPage.reload();
+    await nav(buyerPage, "Customers");
+    await buyerPage
+      .getByRole("button", { name: "Residency choice", exact: true })
+      .click();
+    const dialog = buyerPage.getByRole("dialog");
+    await dialog
+      .locator("summary")
+      .filter({ hasText: "FedEx · synthetic-browser-v2" })
+      .click();
+    for (const content of [
+      "Synthetic shipment processing purpose",
+      "Synthetic consignee name, Synthetic destination",
+      "CA, US",
+      "Synthetic subprocessor only",
+      "Synthetic thirty-day retention",
+      "Synthetic withdrawal stops later transmissions",
+      "synthetic:browser-terms-v2",
+    ])
+      await expect(
+        dialog.getByText(content, {
+          exact:
+            content !== "Synthetic thirty-day retention" &&
+            content !== "Synthetic withdrawal stops later transmissions",
+        }),
+      ).toBeVisible();
+    await expect(
+      dialog.getByText("Synthetic private business review only"),
+    ).toHaveCount(0);
+    await expect(
+      buyerPage.getByLabel("Authorized customer representative"),
+    ).toHaveCount(0);
+    const permission = buyerPage.getByLabel(
+      "Allow FedEx processing outside the storage region",
+      { exact: true },
+    );
+    await expect(permission).not.toBeChecked();
+    await permission.check();
+    await buyerPage
+      .getByLabel("Processor policy")
+      .selectOption("provider-exceptions");
+    await buyerPage
+      .getByLabel("Acknowledgment of reviewed processor terms")
+      .fill("Synthetic authenticated buyer reviewed FedEx v2");
+    await next(buyerPage);
+    await expect(dialog).toHaveCount(0);
+    current = (await (await buyerPage.request.get("/api/dashboard")).json())
+      .accounts[0];
+    expect(current.residency_version).toBe(account.residency_version + 1);
+    const historyUrl = `/api/accounts/${account.id}/provider-acceptances?version=${current.residency_version}`;
+    const receipt = await (await buyerPage.request.get(historyUrl)).json();
+    expect(receipt).toHaveLength(1);
+    expect(receipt[0].basis).toBe("buyer");
+    expect(receipt[0].evidence_ref).toBeNull();
+    expect(receipt[0].representative).toBe("Named carrier buyer");
+    await page
+      .getByRole("button", { name: "Withdraw FedEx disclosure", exact: true })
+      .click();
+    await page
+      .getByLabel("Reason / evidence")
+      .fill("Synthetic reviewed withdrawal of provider terms");
+    await next(page);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await buyerPage.reload();
+    await nav(buyerPage, "Customers");
+    await expect(
+      buyerPage.getByText(/FedEx terms require review/),
+    ).toBeVisible();
+    await buyerPage
+      .getByRole("button", { name: "Residency choice", exact: true })
+      .click();
+    await expect(permission).toHaveCount(0);
+    await buyerPage.getByLabel("Processor policy").selectOption("strict");
+    await buyerPage
+      .getByLabel("Acknowledgment of reviewed processor terms")
+      .fill("Synthetic withdrawal of all exceptions");
+    await next(buyerPage);
+    await expect(buyerPage.getByRole("dialog")).toHaveCount(0);
+    expect(await (await buyerPage.request.get(historyUrl)).json()).toEqual(
+      receipt,
+    );
+    const after = await (await page.request.get("/api/dashboard")).json();
+    for (const key of ["stock", "orders", "invoices"])
+      expect(after[key]).toEqual(before[key]);
+    expect(
+      await buyerPage.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });

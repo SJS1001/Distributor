@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { QuickBooksAdapter } from "../src/server/providers.ts";
 import type {
@@ -14,7 +14,7 @@ import { createHttp } from "../src/server/http.ts";
 async function setup(t: Parameters<typeof fixture>[0], amount = 11300) {
   const f = fixture(t),
     invoiceId = ship(f, accept(f).id).invoiceId;
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -215,7 +215,7 @@ test("accounting cash requires completed invoice, bounded integer application an
     "UPDATE iam_user_security SET password_change_required=0 WHERE user_id=?",
     f.actor.id,
   );
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -227,7 +227,7 @@ test("accounting cash requires completed invoice, bounded integer application an
     () => f.app.integration.accountingPayment(f.actor, "queue", f.input),
     { code: "RESIDENCY_BLOCKED" },
   );
-  f.app.identity.residencyChoice(f.actor, "allow", {
+  chooseProviders(f, f.actor, "allow", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

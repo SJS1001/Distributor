@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
-import { fixture } from "./fixtures.ts";
+import { chooseProviders, fixture } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { createHttp } from "../src/server/http.ts";
 import { createBackup, restoreBackup } from "../src/server/recovery.ts";
@@ -216,7 +216,7 @@ test("customer and catalog dry runs are immutable; atomic creation preserves ind
 
 test("explicit exact matches preserve customer choice and catalog/tier prices; duplicate source and target mappings cannot be reassigned", (t) => {
   const f = fixture(t);
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -411,7 +411,7 @@ test("approval rechecks native creation, holds and residency revisions and rejec
     "preview-match",
     customerMatch(f),
   );
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

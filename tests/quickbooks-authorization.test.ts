@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fork, spawn } from "node:child_process";
-import { fixture } from "./fixtures.ts";
+import { chooseProviders, fixture } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { createBackup, restoreBackup } from "../src/server/recovery.ts";
 const key = "ac".repeat(32),
   config = { providerEncryptionKey: key };
 function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t, config);
-  f.app.identity.residencyChoice(f.actor, "consent", {
+  chooseProviders(f, f.actor, "consent", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -228,7 +228,7 @@ test("invalid configuration, key absence, revisions and strict customer choice p
   } finally {
     unkeyed.close();
   }
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -355,7 +355,7 @@ test("expired state and abandoned exchange become terminal without resending; ca
   );
   assert.equal(f.flow.status(f.binding, second.id).state, "unknown");
   const third = f.flow.begin(f.binding, 0);
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -387,7 +387,7 @@ test("current principal, password, customer permission and restore clearance pre
               new Date().toISOString(),
             );
         if (restriction === "consent")
-          f.app.identity.residencyChoice(f.actor, "withdraw", {
+          chooseProviders(f, f.actor, "withdraw", {
             accountId: f.buyer,
             region: "CA",
             mode: "strict",
@@ -465,7 +465,7 @@ test("changed consent revision, missing encryption key and changed credential re
   } finally {
     unkeyed.close();
   }
-  f.app.identity.residencyChoice(f.actor, "new-choice", {
+  chooseProviders(f, f.actor, "new-choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -620,7 +620,7 @@ test("late authority changes after sandbox company read and late audit failure r
       calls++;
       if (calls === 1) return response();
       if (late === "consent")
-        f.app.identity.residencyChoice(f.actor, "withdraw", {
+        chooseProviders(f, f.actor, "withdraw", {
           accountId: f.buyer,
           region: "CA",
           mode: "strict",

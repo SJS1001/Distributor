@@ -22,7 +22,7 @@ import { createBackup, restoreBackup } from "../src/server/recovery.ts";
 import { type Adapter } from "../src/server/integration.ts";
 import { ProviderRuntime } from "../src/server/provider-runtime.ts";
 import { createHttp } from "../src/server/http.ts";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 
 function paths(f: ReturnType<typeof fixture>) {
   return {
@@ -146,7 +146,7 @@ test("restored pending/completed effects and callbacks stay unchanged while ever
   const f = fixture(t),
     p = paths(f),
     shipped = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "consent", {
+  chooseProviders(f, f.actor, "consent", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -407,7 +407,7 @@ test("recovered HTTP sessions require fresh login and authenticated dashboard di
     p = paths(f),
     shipped = ship(f, accept(f).id),
     origin = "http://127.0.0.1:3000";
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

@@ -103,12 +103,15 @@ test("audit cursors use actual organization and current role, active and passwor
   assert.equal(
     f.app.platform.auditPage({ ...f.actor, role: "buyer" }, cursor).items
       .length,
-    Number(
-      p.get(
-        "SELECT COUNT(*) AS count FROM platform_audit WHERE org_id=?",
-        f.actor.orgId,
-      )!.count,
-    ) - 20,
+    Math.min(
+      20,
+      Number(
+        p.get(
+          "SELECT COUNT(*) AS count FROM platform_audit WHERE org_id=?",
+          f.actor.orgId,
+        )!.count,
+      ) - 20,
+    ),
   );
   iam.run(
     "UPDATE iam_user_security SET password_change_required=1 WHERE user_id=?",

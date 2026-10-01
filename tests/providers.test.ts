@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { StripeAdapter, QuickBooksAdapter } from "../src/server/providers.ts";
 
 function intents(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "providers", {
+  chooseProviders(f, f.actor, "providers", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

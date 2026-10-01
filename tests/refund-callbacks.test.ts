@@ -1,7 +1,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { StripeAdapter } from "../src/server/providers.ts";
 import { ProviderRuntime } from "../src/server/provider-runtime.ts";
@@ -11,7 +11,7 @@ import type { Adapter, Effect } from "../src/server/integration.ts";
 function setup(t: TestContext) {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "consent", {
+  chooseProviders(f, f.actor, "consent", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -381,7 +381,7 @@ test("provider mismatches fail for finance review; transient failure redacts and
 test("permission and consent changes prevent callback reads; passive signed receipt survives withdrawal", async (t) => {
   const f = setup(t);
   await f.runtime.execute(f.actor, f.effect.id);
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -395,7 +395,7 @@ test("permission and consent changes prevent callback reads; passive signed rece
   assert.equal(f.app.integration.callbacks(f.actor)[0]!.state, "blocked");
   assert.equal(f.reads.mock.calls.length, 0);
   assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 11300);
-  f.app.identity.residencyChoice(f.actor, "allow", {
+  chooseProviders(f, f.actor, "allow", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

@@ -1,4 +1,5 @@
 import { MultiFactor } from "./iam-mfa.ts";
+import { ProviderResidency, type ProviderAcceptance } from "./iam-residency.ts";
 import {
   isProviderName,
   type ProviderName,
@@ -60,6 +61,7 @@ function passwordHash(password: string, salt: string) {
 export class Identity {
   private store: Store;
   readonly mfa: MultiFactor;
+  readonly residency: ProviderResidency;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -76,6 +78,13 @@ export class Identity {
       CREATE TABLE IF NOT EXISTS iam_attempts(email TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS iam_user_security(user_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>0),password_change_required INTEGER NOT NULL CHECK(password_change_required IN(0,1)),updated_at TEXT NOT NULL) STRICT;
     `);
+    this.residency = new ProviderResidency(
+      database,
+      platform,
+      region,
+      (actor) => this.residencyActor(actor),
+      (actor, accountId) => this.customer(actor, accountId),
+    );
     this.mfa = new MultiFactor(
       database,
       platform,
@@ -996,6 +1005,7 @@ export class Identity {
       providers: string[];
       version: number;
       acknowledgment: string;
+      acceptance?: ProviderAcceptance;
     },
   ) {
     return this.platform.command(
@@ -1038,6 +1048,13 @@ export class Identity {
           400,
         );
         text(input.acknowledgment, "reviewed residency acknowledgment", 2000);
+        this.residency.record(
+          current,
+          customer.id,
+          customer.residency_version + 1,
+          input.providers,
+          input.acceptance,
+        );
         this.store.run(
           "UPDATE iam_accounts SET residency_mode=?,provider_exceptions=?,residency_version=residency_version+1 WHERE org_id=? AND id=?",
           input.mode,
@@ -1074,6 +1091,7 @@ export class Identity {
       "RESIDENCY_BLOCKED",
       `Customer has not accepted ${provider} processing outside the application's storage region.`,
     );
+    this.residency.assertCurrent(current, customer, provider);
     return customer.residency_version;
   }
   private residencyActor(actor: Actor) {

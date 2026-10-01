@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import type { Adapter, EffectResult } from "../src/server/integration.ts";
 
@@ -9,7 +9,7 @@ function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
   function choice(mode: "strict" | "provider-exceptions", version = 1) {
-    return f.app.identity.residencyChoice(f.actor, "choice" + version, {
+    return chooseProviders(f, f.actor, "choice" + version, {
       accountId: f.buyer,
       region: "CA",
       mode,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { createHttp } from "../src/server/http.ts";
 import { createBackup, restoreBackup } from "../src/server/recovery.ts";
@@ -315,7 +315,7 @@ test("imported debt participates in credit exposure, native numbering skips pres
     () => f.app.integration.checkout(f.actor, "strict", { invoiceId }),
     { code: "RESIDENCY_BLOCKED" },
   );
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

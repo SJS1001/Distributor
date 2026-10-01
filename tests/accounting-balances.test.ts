@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { QuickBooksAdapter } from "../src/server/providers.ts";
 import { ProviderRuntime } from "../src/server/provider-runtime.ts";
@@ -11,7 +11,7 @@ import type { Adapter, Effect } from "../src/server/integration.ts";
 async function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t),
     invoiceId = ship(f, accept(f).id).invoiceId;
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -224,7 +224,7 @@ test("current finance, password, consent and restore clearance precede cached ob
     "UPDATE iam_user_security SET password_change_required=0 WHERE user_id=?",
     f.actor.id,
   );
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -240,7 +240,7 @@ test("current finance, password, consent and restore clearance precede cached ob
     f.app.integration.balances.history(f.actor, f.parent.id).items.length,
     1,
   );
-  f.app.identity.residencyChoice(f.actor, "restore-choice", {
+  chooseProviders(f, f.actor, "restore-choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -411,7 +411,7 @@ test("completion rechecks consent, credential status and restore isolation, and 
     const a = adapter();
     a.readInvoiceBalance = async (e) => {
       if (restriction === "consent")
-        f.app.identity.residencyChoice(f.actor, "withdraw-during", {
+        chooseProviders(f, f.actor, "withdraw-during", {
           accountId: f.buyer,
           region: "CA",
           mode: "strict",

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type Stripe from "stripe";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { StripeAdapter } from "../src/server/providers.ts";
 import type { Adapter, Effect } from "../src/server/integration.ts";
 import { Application } from "../src/server/application.ts";
@@ -14,7 +14,7 @@ import {
 function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t),
     shipment = ship(f, accept(f).id);
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -203,7 +203,7 @@ test("refund reference, intent, money and status mismatches cannot write native 
 
 test("refund queue retries require current consent, recovery clearance and finance grants before cache access", async (t) => {
   const f = setup(t);
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -228,7 +228,7 @@ test("refund queue retries require current consent, recovery clearance and finan
   );
   assert.equal(sent, 0);
   assert.equal(f.app.billing.refunds.list(f.actor)[0]!.state, "pending");
-  f.app.identity.residencyChoice(f.actor, "restore", {
+  chooseProviders(f, f.actor, "restore", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

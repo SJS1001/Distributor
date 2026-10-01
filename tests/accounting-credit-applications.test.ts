@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { QuickBooksAdapter } from "../src/server/providers.ts";
 import { createHttp } from "../src/server/http.ts";
@@ -13,7 +13,7 @@ import type {
 async function setup(t: Parameters<typeof fixture>[0]) {
   const f = fixture(t),
     invoiceId = ship(f, accept(f, 2).id).invoiceId;
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -266,7 +266,7 @@ test("current finance/password/customer choice and restore guard cached applicat
     "UPDATE iam_user_security SET password_change_required=0 WHERE user_id=?",
     f.actor.id,
   );
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     accountId: f.buyer,
     region: "CA",
     mode: "strict",
@@ -279,7 +279,7 @@ test("current finance/password/customer choice and restore guard cached applicat
       f.app.integration.accountingCreditApplication(f.actor, "apply", input),
     { code: "RESIDENCY_BLOCKED" },
   );
-  f.app.identity.residencyChoice(f.actor, "restore-choice", {
+  chooseProviders(f, f.actor, "restore-choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",

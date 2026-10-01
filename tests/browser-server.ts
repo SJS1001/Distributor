@@ -1,4 +1,4 @@
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { createHttp } from "../src/server/http.ts";
 import {
   ProviderRuntime,
@@ -294,7 +294,7 @@ const noticeInvoice = ship(
   noticeFixture,
   accept(noticeFixture, 1, "notice-order").id,
 ).invoiceId;
-f.app.identity.residencyChoice(f.actor, "notice-permission", {
+chooseProviders(f, f.actor, "notice-permission", {
   accountId: noticeBuyer,
   region: "CA",
   mode: "provider-exceptions",

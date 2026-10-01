@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import {
+  fixture,
+  accept,
+  ship,
+  chooseProviders,
+  reviewedChoiceInput,
+  seedDisclosures,
+} from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { createHttp } from "../src/server/http.ts";
 import {
@@ -36,12 +43,9 @@ test("each of the eight named providers is independent; withdrawal preserves ver
   let version = 1;
   for (const selected of providerNames) {
     const input = payload(f.buyer, [selected], version);
-    const receipt = f.app.identity.residencyChoice(f.actor, selected, input);
+    const receipt = chooseProviders(f, f.actor, selected, input);
     assert.equal(receipt.version, ++version);
-    assert.deepEqual(
-      f.app.identity.residencyChoice(f.actor, selected, input),
-      receipt,
-    );
+    assert.deepEqual(chooseProviders(f, f.actor, selected, input), receipt);
     for (const provider of providerNames) {
       if (provider === selected)
         assert.equal(
@@ -64,7 +68,7 @@ test("each of the eight named providers is independent; withdrawal preserves ver
     f.app.identity.providerAllowed(f.actor, f.buyer, "dhl-express"),
     version,
   );
-  f.app.identity.residencyChoice(f.actor, "withdraw", {
+  chooseProviders(f, f.actor, "withdraw", {
     ...payload(f.buyer, [], version),
     mode: "strict",
   });
@@ -75,8 +79,7 @@ test("each of the eight named providers is independent; withdrawal preserves ver
     );
   // Historical cached choices remain receipts, never a rewrite of current choice.
   assert.equal(
-    f.app.identity.residencyChoice(f.actor, "ups", payload(f.buyer, ["ups"], 3))
-      .version,
+    chooseProviders(f, f.actor, "ups", payload(f.buyer, ["ups"], 3)).version,
     4,
   );
   assert.equal(
@@ -135,7 +138,10 @@ test("legacy umbrella and cached receipts survive restart without granting any n
     f.app.identity.residencyChoice(f.actor, "legacy", input).providers,
     input.providers,
   );
-  assert.equal(f.app.identity.providerAllowed(f.actor, f.buyer, "stripe"), 2);
+  assert.throws(
+    () => f.app.identity.providerAllowed(f.actor, f.buyer, "stripe"),
+    { code: "DISCLOSURE_REVIEW_REQUIRED" },
+  );
   for (const provider of [
     ...providerNames.filter((p) => p !== "stripe"),
     "carrier" as ProviderName,
@@ -144,7 +150,8 @@ test("legacy umbrella and cached receipts survive restart without granting any n
       () => f.app.identity.providerAllowed(f.actor, f.buyer, provider),
       { code: "RESIDENCY_BLOCKED" },
     );
-  f.app.identity.residencyChoice(
+  chooseProviders(
+    f,
     f.actor,
     "review",
     payload(f.buyer, ["ups", "canada-post"], 2),
@@ -176,7 +183,8 @@ test("invalid carrier families, duplicates and strict exceptions leave no choice
   ].entries())
     assert.throws(
       () =>
-        f.app.identity.residencyChoice(
+        chooseProviders(
+          f,
           f.actor,
           `invalid-${i}`,
           payload(f.buyer, providers),
@@ -185,7 +193,8 @@ test("invalid carrier families, duplicates and strict exceptions leave no choice
     );
   assert.throws(
     () =>
-      f.app.identity.residencyChoice(
+      chooseProviders(
+        f,
         f.actor,
         "sparse-invalid",
         payload(f.buyer, Array<string>(1)),
@@ -194,7 +203,7 @@ test("invalid carrier families, duplicates and strict exceptions leave no choice
   );
   assert.throws(
     () =>
-      f.app.identity.residencyChoice(f.actor, "strict-invalid", {
+      chooseProviders(f, f.actor, "strict-invalid", {
         ...payload(f.buyer, ["ups"]),
         mode: "strict",
       }),
@@ -227,14 +236,12 @@ test("US choices keep USD and require reviewed migration for Canada without chan
       tier: "standard",
       creditLimit: 10000,
     }).id;
+    seedDisclosures(app, actor);
     const input = {
       ...payload(accountId, ["usps", "fedex"]),
       region: "US" as const,
     };
-    assert.equal(
-      app.identity.residencyChoice(actor, "choice", input).version,
-      2,
-    );
+    assert.equal(chooseProviders({ app }, actor, "choice", input).version, 2);
     assert.equal(app.identity.providerAllowed(actor, accountId, "usps"), 2);
     assert.throws(
       () => app.identity.providerAllowed(actor, accountId, "canada-post"),
@@ -277,14 +284,13 @@ test("current actual account, role, active and password grants precede cached ch
     "long-test-only-password",
   ).actor;
   const input = payload(f.buyer, ["ups"]);
-  f.app.identity.residencyChoice(actor, "choice", input);
+  chooseProviders(f, actor, "choice", input);
   const store = f.app.database.owned("iam");
   store.run("UPDATE iam_users SET account_id=? WHERE id=?", other, uid);
   for (const supplied of [actor, { ...actor, role: "admin" as const }]) {
-    assert.throws(
-      () => f.app.identity.residencyChoice(supplied, "choice", input),
-      { code: "FORBIDDEN" },
-    );
+    assert.throws(() => chooseProviders(f, supplied, "choice", input), {
+      code: "FORBIDDEN",
+    });
     assert.throws(
       () => f.app.identity.providerAllowed(supplied, f.buyer, "ups"),
       { code: "FORBIDDEN" },
@@ -295,11 +301,11 @@ test("current actual account, role, active and password grants precede cached ch
     f.buyer,
     uid,
   );
-  assert.throws(() => f.app.identity.residencyChoice(actor, "choice", input), {
+  assert.throws(() => chooseProviders(f, actor, "choice", input), {
     code: "FORBIDDEN",
   });
   store.run("UPDATE iam_users SET role='buyer',active=0 WHERE id=?", uid);
-  assert.throws(() => f.app.identity.residencyChoice(actor, "choice", input), {
+  assert.throws(() => chooseProviders(f, actor, "choice", input), {
     code: "FORBIDDEN",
   });
   assert.throws(() => f.app.identity.providerAllowed(actor, f.buyer, "ups"), {
@@ -310,7 +316,7 @@ test("current actual account, role, active and password grants precede cached ch
     "UPDATE iam_user_security SET password_change_required=1 WHERE user_id=?",
     uid,
   );
-  assert.throws(() => f.app.identity.residencyChoice(actor, "choice", input), {
+  assert.throws(() => chooseProviders(f, actor, "choice", input), {
     code: "PASSWORD_CHANGE_REQUIRED",
   });
   assert.throws(() => f.app.identity.providerAllowed(actor, f.buyer, "ups"), {
@@ -338,7 +344,7 @@ test("late choice audit failure rolls back account version, exception list, audi
       throw new Error("Synthetic final choice audit fault");
   };
   assert.throws(
-    () => f.app.identity.residencyChoice(f.actor, "choice", input),
+    () => chooseProviders(f, f.actor, "choice", input),
     /Synthetic final choice audit fault/,
   );
   assert.equal(f.app.identity.customer(f.actor, f.buyer).residency_version, 1);
@@ -356,10 +362,7 @@ test("late choice audit failure rolls back account version, exception list, audi
     0,
   );
   f.app.platform.audit = original;
-  assert.equal(
-    f.app.identity.residencyChoice(f.actor, "choice", input).version,
-    2,
-  );
+  assert.equal(chooseProviders(f, f.actor, "choice", input).version, 2);
 });
 
 test("HTTP accepts named choices and rejects umbrella, duplicates, unknown and extra fields before mutation", async (t) => {
@@ -414,7 +417,11 @@ test("HTTP accepts named choices and rejects umbrella, duplicates, unknown and e
     403,
   );
   assert.equal(f.app.identity.customer(f.actor, f.buyer).residency_version, 1);
-  const input = payload(f.buyer, providerNames);
+  const input = reviewedChoiceInput(
+    f.app,
+    f.actor,
+    payload(f.buyer, providerNames),
+  );
   assert.equal((await send(input)).statusCode, 200);
   assert.deepEqual((await send(input)).json().providers, providerNames);
   assert.equal(choices(f).length, 1);
@@ -466,7 +473,11 @@ test(
           path: f.path,
           actor: f.actor,
           key: `choice-${i}`,
-          payload: payload(f.buyer, [provider]),
+          payload: reviewedChoiceInput(
+            f.app,
+            f.actor,
+            payload(f.buyer, [provider]),
+          ),
         },
       });
       return { child, ready, result };

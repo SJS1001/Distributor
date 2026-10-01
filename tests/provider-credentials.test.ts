@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fork, spawn } from "node:child_process";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { configuredProviders } from "../src/server/provider-runtime.ts";
 import { type Effect } from "../src/server/integration.ts";
@@ -20,7 +20,7 @@ function setup(t: Parameters<typeof fixture>[0]) {
     realm: "1234",
     clientId: "synthetic-client",
   };
-  f.app.identity.residencyChoice(f.actor, "choice", {
+  chooseProviders(f, f.actor, "choice", {
     accountId: f.buyer,
     region: "CA",
     mode: "provider-exceptions",
@@ -463,7 +463,7 @@ test("grant, forced password change, customer consent and restore hold prevent c
               new Date().toISOString(),
             );
         if (restriction === "consent")
-          f.app.identity.residencyChoice(f.actor, "withdraw", {
+          chooseProviders(f, f.actor, "withdraw", {
             accountId: f.buyer,
             region: "CA",
             mode: "strict",
