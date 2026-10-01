@@ -453,8 +453,18 @@ test("current grants and recovery are checked after I/O and failed completion ro
     await f.app.integration.refundCallbacks.run(f.actor, c.id, a);
     assert.equal(reads, 1);
     assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 11300);
+    if (change === "password")
+      assert.throws(() => f.app.billing.refunds.list(f.actor), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
     assert.equal(
-      f.app.billing.refunds.list(f.actor)[0]!.observations.length,
+      f.app.database
+        .owned("billing")
+        .get<{ count: number }>(
+          "SELECT count(*) count FROM billing_refund_observations WHERE org_id=? AND refund_id=?",
+          f.actor.orgId,
+          f.refundId,
+        )!.count,
       1,
     );
     const row = f.app.database

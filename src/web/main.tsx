@@ -14,6 +14,7 @@ import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
+import { CashRefunds } from "./cash-refunds.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
 import { DisclosureReview } from "./provider-disclosures.tsx";
@@ -99,6 +100,7 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setExtra((current) => ({ ...current, refunds: undefined }));
     setCarrierShipmentId(null);
     carrierOpener.current = null;
     setReservationOrderId(null);
@@ -138,7 +140,8 @@ function App() {
       e.callbacks = await request("/api/provider-callbacks");
     if (["admin", "finance", "support"].includes(actor?.role ?? "")) {
       e.payments = await request("/api/billing/payments");
-      e.refunds = await request("/api/billing/refunds");
+      e.refunds = await request("/api/billing/refunds/page");
+      e.refundRefresh = crypto.randomUUID();
     }
     if (["admin", "finance", "support", "buyer"].includes(actor?.role ?? "")) {
       e.refundNotices = await request("/api/billing/refund-notices");
@@ -3239,183 +3242,156 @@ function App() {
                 )}
               </>
             )}
-            {extra.refunds?.length > 0 && (
-              <>
-                <h2>Cash refunds</h2>
-                {table(
-                  [
-                    "Reference",
-                    "Amount",
-                    "Status",
-                    "Provider history",
-                    "Actions",
-                  ],
-                  extra.refunds,
-                  (r: Item) => [
-                    r.reference,
-                    money(
-                      r.amount,
-                      data.invoices.find((i: Item) => i.id === r.invoice_id)
-                        ?.currency ?? "CAD",
-                    ),
-                    `${r.state}${r.provider_status ? ` · ${r.provider_status}` : ""}`,
-                    <>
-                      {r.provider_reference}
-                      <small>
-                        {r.observations
-                          .map(
-                            (o: Item) =>
-                              `${o.status}${o.applied ? "" : " (retained, not applied)"}`,
+            {extra.refunds && (
+              <CashRefunds
+                key={extra.refundRefresh}
+                initial={extra.refunds}
+                renderActions={(r) => (
+                  <div className="actions">
+                    {can("finance") &&
+                      r.state === "pending" &&
+                      (r.provider === "manual"
+                        ? button("Verify manual refund", () =>
+                            simple(
+                              "Verify bank refund",
+                              [
+                                {
+                                  name: "reference",
+                                  label: "Bank refund reference",
+                                },
+                                reason,
+                              ],
+                              "billing.refund.manual",
+                              (v) => ({ ...v, refundId: r.id }),
+                            ),
                           )
-                          .join(" → ")}
-                      </small>
-                    </>,
-                    <div className="actions">
-                      {can("finance") &&
-                        r.state === "pending" &&
-                        (r.provider === "manual"
-                          ? button("Verify manual refund", () =>
-                              simple(
-                                "Verify bank refund",
-                                [
-                                  {
-                                    name: "reference",
-                                    label: "Bank refund reference",
-                                  },
-                                  reason,
-                                ],
-                                "billing.refund.manual",
-                                (v) => ({ ...v, refundId: r.id }),
+                        : !extra.effects?.some(
+                            (e: Item) =>
+                              e.kind === "refund" && e.reference === r.id,
+                          ) &&
+                          button("Queue Stripe refund", () => {
+                            void run(() =>
+                              command("stripe.refund", { refundId: r.id }),
+                            ).catch(() => {});
+                          }))}
+                    {can("finance") &&
+                      (() => {
+                        const expense = extra.effects?.find(
+                            (e: Item) =>
+                              e.provider === "quickbooks" &&
+                              e.kind === "refund-expense" &&
+                              e.reference === r.id,
+                          ),
+                          application = extra.effects?.find(
+                            (e: Item) =>
+                              e.provider === "quickbooks" &&
+                              e.kind === "refund-application" &&
+                              e.reference === r.id,
+                          ),
+                          credits =
+                            extra.credits?.filter(
+                              (c: Item) =>
+                                c.invoice_id === r.invoice_id &&
+                                extra.effects?.some(
+                                  (e: Item) =>
+                                    e.provider === "quickbooks" &&
+                                    e.kind === "credit" &&
+                                    e.reference === c.id &&
+                                    e.state === "completed" &&
+                                    e.creditApplication?.availableCredit >=
+                                      r.amount,
+                                ),
+                            ) ?? [],
+                          payment = extra.effects?.some(
+                            (e: Item) =>
+                              e.provider === "quickbooks" &&
+                              e.kind === "payment" &&
+                              e.reference === r.payment_id &&
+                              e.state === "completed",
+                          );
+                        if (expense && r.state !== "completed")
+                          return (
+                            <strong role="status">
+                              Accounting refund requires review: native cash is{" "}
+                              {r.state}. Reconcile the existing provider
+                              outcome.
+                            </strong>
+                          );
+                        if (application)
+                          return (
+                            <span>
+                              QuickBooks refund link: {application.state}
+                            </span>
+                          );
+                        if (expense)
+                          return expense.state === "completed" ? (
+                            button("Link refund expense to credit", () =>
+                              open(
+                                "Link refund expense to credit",
+                                [],
+                                () =>
+                                  command("quickbooks.refund.apply", {
+                                    refundId: r.id,
+                                  }),
+                                "Link the reconciled expense and its reserved original credit through a zero-cash accounting payment. Review the bank, receivable account and accounting date already saved on the expense. This records the earlier cash refund.",
+                                "Queue refund link",
                               ),
                             )
-                          : !extra.effects?.some(
-                              (e: Item) =>
-                                e.kind === "refund" && e.reference === r.id,
-                            ) &&
-                            button("Queue Stripe refund", () => {
-                              void run(() =>
-                                command("stripe.refund", { refundId: r.id }),
-                              ).catch(() => {});
-                            }))}
-                      {can("finance") &&
-                        (() => {
-                          const expense = extra.effects?.find(
-                              (e: Item) =>
-                                e.provider === "quickbooks" &&
-                                e.kind === "refund-expense" &&
-                                e.reference === r.id,
-                            ),
-                            application = extra.effects?.find(
-                              (e: Item) =>
-                                e.provider === "quickbooks" &&
-                                e.kind === "refund-application" &&
-                                e.reference === r.id,
-                            ),
-                            credits =
-                              extra.credits?.filter(
-                                (c: Item) =>
-                                  c.invoice_id === r.invoice_id &&
-                                  extra.effects?.some(
-                                    (e: Item) =>
-                                      e.provider === "quickbooks" &&
-                                      e.kind === "credit" &&
-                                      e.reference === c.id &&
-                                      e.state === "completed" &&
-                                      e.creditApplication?.availableCredit >=
-                                        r.amount,
-                                  ),
-                              ) ?? [],
-                            payment = extra.effects?.some(
-                              (e: Item) =>
-                                e.provider === "quickbooks" &&
-                                e.kind === "payment" &&
-                                e.reference === r.payment_id &&
-                                e.state === "completed",
-                            );
-                          if (expense && r.state !== "completed")
-                            return (
-                              <strong role="status">
-                                Accounting refund requires review: native cash
-                                is {r.state}. Reconcile the existing provider
-                                outcome.
-                              </strong>
-                            );
-                          if (application)
-                            return (
-                              <span>
-                                QuickBooks refund link: {application.state}
-                              </span>
-                            );
-                          if (expense)
-                            return expense.state === "completed" ? (
-                              button("Link refund expense to credit", () =>
-                                open(
-                                  "Link refund expense to credit",
-                                  [],
-                                  () =>
-                                    command("quickbooks.refund.apply", {
-                                      refundId: r.id,
-                                    }),
-                                  "Link the reconciled expense and its reserved original credit through a zero-cash accounting payment. Review the bank, receivable account and accounting date already saved on the expense. This records the earlier cash refund.",
-                                  "Queue refund link",
-                                ),
-                              )
-                            ) : (
-                              <span>
-                                QuickBooks refund expense: {expense.state}
-                              </span>
-                            );
-                          if (r.state !== "completed") return null;
-                          if (!payment || !credits.length)
-                            return (
-                              <span>
-                                Reconcile the original QuickBooks payment and an
-                                available credit first.
-                              </span>
-                            );
-                          return button("Queue QuickBooks refund expense", () =>
-                            open(
-                              "Queue QuickBooks refund expense",
-                              [
-                                select(
-                                  "creditId",
-                                  "Original QuickBooks credit",
-                                  credits,
-                                  (c: Item) => c.number,
-                                ),
-                                {
-                                  name: "bankAccountRef",
-                                  label: "QuickBooks refund bank account ID",
-                                },
-                                {
-                                  name: "receivableAccountRef",
-                                  label: "QuickBooks accounts receivable ID",
-                                },
-                                {
-                                  name: "nonTaxCodeRef",
-                                  label: "QuickBooks non-tax expense code ID",
-                                },
-                                {
-                                  name: "expenseDate",
-                                  label: "Refund accounting date",
-                                  type: "date",
-                                  value: new Date().toISOString().slice(0, 10),
-                                },
-                              ],
-                              (v) =>
-                                command("quickbooks.refund", {
-                                  ...v,
-                                  refundId: r.id,
-                                }),
-                              `Record ${money(r.amount, data.invoices.find((i: Item) => i.id === r.invoice_id)?.currency ?? "CAD")} already returned to the customer. Choose the original credit and verify the bank, receivable account, non-tax code and open accounting period. Existing credit records the sales tax; this expense records cash once. After reconciliation, link the expense to its credit.`,
-                              "Queue refund expense",
-                            ),
+                          ) : (
+                            <span>
+                              QuickBooks refund expense: {expense.state}
+                            </span>
                           );
-                        })()}
-                    </div>,
-                  ],
+                        if (r.state !== "completed") return null;
+                        if (!payment || !credits.length)
+                          return (
+                            <span>
+                              Reconcile the original QuickBooks payment and an
+                              available credit first.
+                            </span>
+                          );
+                        return button("Queue QuickBooks refund expense", () =>
+                          open(
+                            "Queue QuickBooks refund expense",
+                            [
+                              select(
+                                "creditId",
+                                "Original QuickBooks credit",
+                                credits,
+                                (c: Item) => c.number,
+                              ),
+                              {
+                                name: "bankAccountRef",
+                                label: "QuickBooks refund bank account ID",
+                              },
+                              {
+                                name: "receivableAccountRef",
+                                label: "QuickBooks accounts receivable ID",
+                              },
+                              {
+                                name: "nonTaxCodeRef",
+                                label: "QuickBooks non-tax expense code ID",
+                              },
+                              {
+                                name: "expenseDate",
+                                label: "Refund accounting date",
+                                type: "date",
+                                value: new Date().toISOString().slice(0, 10),
+                              },
+                            ],
+                            (v) =>
+                              command("quickbooks.refund", {
+                                ...v,
+                                refundId: r.id,
+                              }),
+                            `Record ${money(r.amount, r.currency)} already returned to the customer. Choose the original credit and verify the bank, receivable account, non-tax code and open accounting period. Existing credit records the sales tax; this expense records cash once. After reconciliation, link the expense to its credit.`,
+                            "Queue refund expense",
+                          ),
+                        );
+                      })()}
+                  </div>
                 )}
-              </>
+              />
             )}
             {extra.effects && (
               <>

@@ -1510,6 +1510,41 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/billing/refunds", async (request) =>
     app.billing.refunds.list(actor(request)),
   );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/billing/refunds/page",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.billing.refunds.history.page(actor(request), request.query.after),
+  );
+  http.get<{ Params: { refundId: string }; Querystring: { after?: string } }>(
+    "/api/billing/refunds/:refundId/observations",
+    {
+      schema: {
+        params: obj({
+          refundId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,15}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.billing.refunds.history.observations(
+        actor(request),
+        request.params.refundId,
+        request.query.after === undefined
+          ? undefined
+          : Number(request.query.after),
+      ),
+  );
   const noticeQuery = obj(
     {
       after: { type: "string", pattern: "^[1-9][0-9]{0,15}$" },

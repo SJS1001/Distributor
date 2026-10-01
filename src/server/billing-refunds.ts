@@ -4,6 +4,7 @@ import type { Platform } from "./platform.ts";
 import type { Billing } from "./billing.ts";
 import type { Identity } from "./iam.ts";
 import { BillingRefundAlerts } from "./billing-refund-alerts.ts";
+import { BillingRefundHistory } from "./billing-refund-history.ts";
 
 export type RefundStatus =
   "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
@@ -46,8 +47,9 @@ type RefundRow = {
 };
 export class BillingRefunds {
   readonly alerts: BillingRefundAlerts;
+  readonly history: BillingRefundHistory;
   constructor(
-    database: Database,
+    private database: Database,
     identity: Identity,
     private store: Store,
     private platform: Platform,
@@ -58,6 +60,7 @@ export class BillingRefunds {
       CREATE TABLE IF NOT EXISTS billing_refund_observations(id INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,applied INTEGER NOT NULL CHECK(applied IN(0,1)),created_at TEXT NOT NULL) STRICT;
     `);
     this.alerts = new BillingRefundAlerts(database, store, identity, platform);
+    this.history = new BillingRefundHistory(database, store, identity, this);
   }
   get(actor: Actor, refundId: string) {
     const row = this.store.get(
@@ -247,23 +250,25 @@ export class BillingRefunds {
     )!.status as RefundStatus;
   }
   list(actor: Actor) {
-    permit(actor, ["finance", "support"]);
-    return this.store
-      .all<RefundRow>(
-        "SELECT r.*,p.provider,b.external_ref AS provider_reference,b.status AS provider_status FROM billing_refunds r JOIN billing_payments p ON p.id=r.payment_id AND p.org_id=r.org_id LEFT JOIN billing_refund_provider b ON b.refund_id=r.id WHERE r.org_id=? ORDER BY r.created_at DESC,r.id",
-        actor.orgId,
-      )
-      .map((row) => {
-        this.get(actor, String(row.id));
-        return {
-          ...row,
-          observations: this.store.all(
-            "SELECT status,applied,created_at FROM billing_refund_observations WHERE org_id=? AND refund_id=? ORDER BY id",
-            actor.orgId,
-            String(row.id),
-          ),
-        };
-      });
+    return this.database.transaction(() => {
+      actor = this.history.reader(actor);
+      return this.store
+        .all<RefundRow>(
+          "SELECT r.*,p.provider,b.external_ref AS provider_reference,b.status AS provider_status FROM billing_refunds r JOIN billing_payments p ON p.id=r.payment_id AND p.org_id=r.org_id LEFT JOIN billing_refund_provider b ON b.refund_id=r.id WHERE r.org_id=? ORDER BY r.created_at DESC,r.id",
+          actor.orgId,
+        )
+        .map((row) => {
+          this.get(actor, String(row.id));
+          return {
+            ...row,
+            observations: this.store.all(
+              "SELECT status,applied,created_at FROM billing_refund_observations WHERE org_id=? AND refund_id=? ORDER BY id",
+              actor.orgId,
+              String(row.id),
+            ),
+          };
+        });
+    });
   }
   payments(actor: Actor) {
     permit(actor, ["finance", "support"]);

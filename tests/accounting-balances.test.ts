@@ -52,7 +52,14 @@ function facts(f: Awaited<ReturnType<typeof setup>>) {
     invoices: f.app.billing.invoices(f.actor),
     credits: f.app.billing.credits(f.actor),
     payments: f.app.billing.refunds.payments(f.actor),
-    refunds: f.app.billing.refunds.list(f.actor),
+    // Independent native-state oracle remains readable after the test revokes
+    // the captured actor's password authority; the public read must deny it.
+    refunds: f.app.database
+      .owned("billing")
+      .all(
+        "SELECT * FROM billing_refunds WHERE org_id=? ORDER BY id",
+        f.actor.orgId,
+      ),
     effect: f.app.integration.effect(f.actor, f.parent.id),
   };
 }
@@ -466,6 +473,10 @@ test("completion rechecks consent, credential status and restore isolation, and 
         )!.count,
       0,
     );
+    if (restriction === "password")
+      assert.throws(() => f.app.billing.refunds.list(f.actor), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
     assert.deepEqual(facts(f), before);
   }
   const f = await setup(t),

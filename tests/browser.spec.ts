@@ -10431,3 +10431,235 @@ test("browser: phone checkout history pages frozen observations, preserves retri
   }
   expect(errors).toEqual([]);
 });
+
+test("browser: cash refund pages and on-demand history retain failed pages and cancel closed, refreshed or signed-out reads", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [],
+    historyReads: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("request", (r) => {
+    if (/\/api\/billing\/refunds\/[^/]+\/observations/.test(r.url()))
+      historyReads.push(r.url());
+  });
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Billing");
+  const refunds = page.getByRole("region", {
+    name: "Cash refunds",
+    exact: true,
+  });
+  await expect(refunds.getByRole("status").first()).toHaveText(
+    "20 refunds loaded",
+  );
+  expect(historyReads).toHaveLength(0);
+  const initial = await (
+    await page.request.get("/api/billing/refunds/page")
+  ).json();
+  let pageFailure = true;
+  await page.route("**/api/billing/refunds/page?after=*", async (route) => {
+    if (pageFailure) {
+      pageFailure = false;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Synthetic older refund read failed" }),
+      });
+    } else await route.continue();
+  });
+  await refunds
+    .getByRole("button", { name: "Load older refunds", exact: true })
+    .click();
+  await expect(refunds.getByRole("alert")).toContainText(
+    "Synthetic older refund read failed",
+  );
+  await expect(refunds.getByRole("status").first()).toHaveText(
+    "20 refunds loaded",
+  );
+  await refunds
+    .getByRole("button", { name: "Retry older refunds", exact: true })
+    .click();
+  const next = await (
+    await page.request.get(`/api/billing/refunds/page?after=${initial.next}`)
+  ).json();
+  await expect(refunds.getByRole("status").first()).toHaveText(
+    `${20 + next.items.length} refunds loaded`,
+  );
+  while (
+    await refunds
+      .getByRole("button", { name: "Load older refunds", exact: true })
+      .count()
+  )
+    await refunds
+      .getByRole("button", { name: "Load older refunds", exact: true })
+      .click();
+  const target = refunds.getByRole("row").filter({
+    has: page.getByRole("cell", { name: "NOTICE-REF-26", exact: true }),
+  });
+  const opener = target.getByRole("button", {
+    name: "View refund history",
+    exact: true,
+  });
+  const allRefunds = await (
+    await page.request.get("/api/billing/refunds")
+  ).json();
+  const observationCount = allRefunds.find(
+    (r: any) => r.reference === "NOTICE-REF-26",
+  ).observations.length;
+  expect(observationCount).toBeGreaterThanOrEqual(27);
+  let failure = true;
+  await page.route(
+    "**/api/billing/refunds/*/observations?after=*",
+    async (route) => {
+      if (failure) {
+        failure = false;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            message: "Synthetic older observation read failed",
+          }),
+        });
+      } else await route.continue();
+    },
+  );
+  await page.route(
+    "**/api/billing/refunds/*/observations",
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          message: "Synthetic initial history read failed",
+        }),
+      }),
+    { times: 1 },
+  );
+  await opener.click();
+  const history = page.getByRole("region", {
+    name: "Refund provider history",
+    exact: true,
+  });
+  await expect(history.getByRole("heading")).toBeFocused();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic initial history read failed",
+  );
+  await expect(history.getByRole("status")).toHaveText("0 observations loaded");
+  await history
+    .getByRole("button", { name: "Retry refund observations", exact: true })
+    .click();
+  await expect(history.getByRole("status")).toHaveText(
+    "20 observations loaded",
+  );
+  await history
+    .getByRole("button", {
+      name: "Load older refund observations",
+      exact: true,
+    })
+    .click();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic older observation read failed",
+  );
+  await expect(history.getByRole("status")).toHaveText(
+    "20 observations loaded",
+  );
+  await history
+    .getByRole("button", { name: "Retry refund observations", exact: true })
+    .click();
+  await expect(history.getByRole("status")).toHaveText(
+    `${observationCount} observations loaded`,
+  );
+  await expect(history.getByRole("heading")).toBeFocused();
+  await expect(
+    history.getByRole("button", {
+      name: "Load older refund observations",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await history
+    .getByRole("button", { name: "Close refund history", exact: true })
+    .click();
+  await expect(opener).toBeFocused();
+  await expect(history).toHaveCount(0);
+  const firstRefund = refunds
+    .getByRole("button", { name: "View refund history", exact: true })
+    .first();
+  // Await an intercepted actual read before closing; release only after the UI unmount.
+  for (const action of ["close", "navigate", "refresh", "signout"] as const) {
+    let entered!: () => void, release!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/billing/refunds/*/observations", async (route) => {
+      const response = await route.fetch();
+      entered();
+      await paused;
+      try {
+        await route.fulfill({ response });
+      } catch {
+        /* Cancellation is expected after unmount. */
+      }
+    });
+    const aborted = page.waitForEvent("requestfailed", {
+      predicate: (request) =>
+        /\/api\/billing\/refunds\/[^/]+\/observations$/.test(request.url()),
+    });
+    await firstRefund.click();
+    await reading;
+    await expect(history.getByRole("status")).toHaveText(
+      "0 observations loaded · Loading…",
+    );
+    if (action === "close")
+      await history
+        .getByRole("button", { name: "Close refund history", exact: true })
+        .click();
+    if (action === "navigate") await nav(page, "Overview");
+    if (action === "refresh")
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    if (action === "signout")
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(history).toHaveCount(0);
+    await aborted;
+    release();
+    await page.unroute("**/api/billing/refunds/*/observations");
+    if (action === "navigate") await nav(page, "Billing");
+    if (action !== "signout") await expect(refunds).toBeVisible();
+  }
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  await expect(history).toHaveCount(0);
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("refund-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-notice-test-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const ownRefundId = initial.items[0].id;
+  expect((await page.request.get("/api/billing/refunds/page")).status()).toBe(
+    403,
+  );
+  expect(
+    (
+      await page.request.get(`/api/billing/refunds/${ownRefundId}/observations`)
+    ).status(),
+  ).toBe(403);
+  await nav(page, "Billing");
+  await expect(refunds).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
