@@ -8,6 +8,7 @@ import {
   site,
   text,
   type Actor,
+  type Role,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
@@ -75,7 +76,7 @@ export class Warranty {
   private store: Store;
   readonly evidence: WarrantyEvidence;
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private identity: Identity,
     private inventory: Inventory,
@@ -112,10 +113,32 @@ export class Warranty {
       platform,
       identity,
       inventory,
-      (actor, claimId) => this.claim(actor, claimId),
+      (actor, claimId) => this.claimRecord(actor, claimId),
     );
   }
+  private authority(actor: Actor, roles: Role[]): Actor {
+    const current = this.identity.currentActor(actor);
+    permit(current, roles);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing warranty records.",
+      403,
+    );
+    return current;
+  }
   claim(actor: Actor, claimId: string): Claim {
+    return this.database.transaction(() => this.claimRecord(actor, claimId));
+  }
+  private claimRecord(actor: Actor, claimId: string): Claim {
+    actor = this.authority(actor, [
+      "warranty",
+      "warehouse",
+      "finance",
+      "commercial",
+      "buyer",
+    ]);
+    claimId = text(claimId, "Claim ID");
     const row = this.store.get<Claim>(
       "SELECT * FROM warranty_claims WHERE org_id=? AND id=?",
       actor.orgId,
@@ -128,30 +151,50 @@ export class Warranty {
     return row;
   }
   list(actor: Actor) {
-    permit(actor, ["warranty", "warehouse", "finance", "commercial", "buyer"]);
-    return this.store
-      .all<Claim>(
-        "SELECT * FROM warranty_claims WHERE org_id=? ORDER BY created_at DESC",
-        actor.orgId,
-      )
-      .filter(
-        (c) =>
-          (actor.role !== "buyer" || c.account_id === actor.accountId) &&
-          (actor.role !== "warehouse" ||
-            actor.sites.includes(
-              this.inventory.unit(actor, c.unit_id).warehouse_id,
-            )),
-      )
-      .map((c) => ({
-        ...c,
-        replacements: this.replacements(actor, c.id),
-        manufacturerCases:
-          actor.role === "buyer" ? [] : this.manufacturerCases(actor, c.id),
-      }));
+    return this.database.transaction(() => {
+      actor = this.authority(actor, [
+        "warranty",
+        "warehouse",
+        "finance",
+        "commercial",
+        "buyer",
+      ]);
+      return this.store
+        .all<Claim>(
+          "SELECT * FROM warranty_claims WHERE org_id=? ORDER BY created_at DESC",
+          actor.orgId,
+        )
+        .filter(
+          (c) =>
+            (actor.role !== "buyer" || c.account_id === actor.accountId) &&
+            (actor.role !== "warehouse" ||
+              actor.sites.includes(
+                this.inventory.unit(actor, c.unit_id).warehouse_id,
+              )),
+        )
+        .map((c) => ({
+          ...c,
+          replacements: this.replacementRecords(actor, c.id),
+          manufacturerCases:
+            actor.role === "buyer" ? [] : this.manufacturerRecords(actor, c.id),
+        }));
+    });
   }
   replacements(actor: Actor, claimId: string) {
-    permit(actor, ["warranty", "warehouse", "finance", "commercial", "buyer"]);
-    const c = this.claim(actor, claimId);
+    return this.database.transaction(() =>
+      this.replacementRecords(actor, claimId),
+    );
+  }
+  private replacementRecords(actor: Actor, claimId: string) {
+    actor = this.authority(actor, [
+      "warranty",
+      "warehouse",
+      "finance",
+      "commercial",
+      "buyer",
+    ]);
+    claimId = text(claimId, "Claim ID");
+    const c = this.claimRecord(actor, claimId);
     return this.store
       .all<Replacement>(
         "SELECT * FROM warranty_replacements WHERE org_id=? AND claim_id=? ORDER BY rowid",
@@ -160,6 +203,7 @@ export class Warranty {
       )
       .filter((r) => {
         if (
+          actor.role !== "warehouse" &&
           !this.store.get(
             "SELECT replacement_id FROM warranty_replacement_shipping WHERE replacement_id=? AND org_id=?",
             r.id,
@@ -167,7 +211,7 @@ export class Warranty {
           )
         )
           return true;
-        const viewer = this.identity.currentActor(actor);
+        const viewer = actor;
         if (!["warehouse", "warranty"].includes(viewer.role)) return true;
         return [c.unit_id, r.new_unit_id].every((unitId) =>
           viewer.sites.includes(
@@ -213,7 +257,7 @@ export class Warranty {
       replacementId,
     );
     check(r, "NOT_FOUND", "Replacement not found.", 404);
-    const c = this.claim(actor, r.claim_id);
+    const c = this.claimRecord(actor, r.claim_id);
     site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
     site(actor, this.inventory.unit(actor, r.new_unit_id).warehouse_id);
     return { r, c };
@@ -256,13 +300,13 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty"]);
-        const c = this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["warranty"]);
+        const c = this.claimRecord(actor, input.claimId);
         site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
         site(actor, this.inventory.unit(actor, input.newUnitId).warehouse_id);
       },
       () => {
-        const c = this.claim(actor, input.claimId),
+        const c = this.claimRecord(actor, input.claimId),
           old = this.inventory.unit(actor, c.unit_id);
         check(
           ["inspected", "repair"].includes(c.state),
@@ -328,7 +372,7 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty"]);
+        actor = this.authority(actor, ["warranty"]);
         this.replacement(actor, input.replacementId);
       },
       () => {
@@ -375,7 +419,7 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warehouse"]);
+        actor = this.authority(actor, ["warehouse"]);
         this.replacement(actor, input.replacementId);
       },
       () => {
@@ -453,18 +497,11 @@ export class Warranty {
     replacementId: string,
     write = false,
   ) {
-    actor = this.identity.currentActor(actor);
-    permit(
+    actor = this.authority(
       actor,
       write
         ? ["warehouse"]
         : ["warranty", "warehouse", "finance", "commercial", "buyer"],
-    );
-    check(
-      !this.identity.security(actor).passwordChangeRequired,
-      "PASSWORD_CHANGE_REQUIRED",
-      "Change your password before accessing replacement shipping.",
-      403,
     );
     replacementId = text(replacementId, "Replacement ID");
     const r = this.store.get<Replacement>(
@@ -473,7 +510,7 @@ export class Warranty {
       replacementId,
     );
     check(r, "NOT_FOUND", "Replacement not found.", 404);
-    const c = this.claim(actor, r.claim_id);
+    const c = this.claimRecord(actor, r.claim_id);
     if (write || ["warranty", "warehouse"].includes(actor.role)) {
       site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
       site(actor, this.inventory.unit(actor, r.new_unit_id).warehouse_id);
@@ -718,40 +755,42 @@ export class Warranty {
     replacementId: string,
     after?: number,
   ) {
-    actor = this.shippingAuthority(actor, replacementId).actor;
-    const row = this.shippingRow(actor, replacementId);
-    const cursor =
-      after === undefined
-        ? 0
-        : integer(after, "shipping history cursor", 1, row.revision);
-    const rows = this.store.all<{
-      revision: number;
-      state: string;
-      reference: string;
-      evidence: string;
-      observed_at: string;
-      actor_id: string;
-      created_at: string;
-    }>(
-      "SELECT revision,state,reference,evidence,observed_at,actor_id,created_at FROM warranty_replacement_shipping_history WHERE org_id=? AND replacement_id=? AND revision>? ORDER BY revision LIMIT 21",
-      actor.orgId,
-      replacementId,
-      cursor,
-    );
-    const items = rows.slice(0, 20).map((h) => ({
-      revision: h.revision,
-      state: h.state,
-      observedAt: h.observed_at,
-      createdAt: h.created_at,
-      ...(actor.role === "buyer"
-        ? {}
-        : {
-            reference: h.reference,
-            evidence: h.evidence,
-            actorId: h.actor_id,
-          }),
-    }));
-    return { items, next: rows.length > 20 ? items.at(-1)!.revision : null };
+    return this.database.transaction(() => {
+      actor = this.shippingAuthority(actor, replacementId).actor;
+      const row = this.shippingRow(actor, replacementId);
+      const cursor =
+        after === undefined
+          ? 0
+          : integer(after, "shipping history cursor", 1, row.revision);
+      const rows = this.store.all<{
+        revision: number;
+        state: string;
+        reference: string;
+        evidence: string;
+        observed_at: string;
+        actor_id: string;
+        created_at: string;
+      }>(
+        "SELECT revision,state,reference,evidence,observed_at,actor_id,created_at FROM warranty_replacement_shipping_history WHERE org_id=? AND replacement_id=? AND revision>? ORDER BY revision LIMIT 21",
+        actor.orgId,
+        replacementId,
+        cursor,
+      );
+      const items = rows.slice(0, 20).map((h) => ({
+        revision: h.revision,
+        state: h.state,
+        observedAt: h.observed_at,
+        createdAt: h.created_at,
+        ...(actor.role === "buyer"
+          ? {}
+          : {
+              reference: h.reference,
+              evidence: h.evidence,
+              actorId: h.actor_id,
+            }),
+      }));
+      return { items, next: rows.length > 20 ? items.at(-1)!.revision : null };
+    });
   }
   private entitlement(actor: Actor, unitId: string, accountId: string) {
     this.identity.customer(actor, accountId);
@@ -764,7 +803,7 @@ export class Warranty {
         unitId,
       );
       check(r, "NOT_FOUND", "Replacement ownership evidence is missing.", 404);
-      const c = this.claim(actor, r.claim_id);
+      const c = this.claimRecord(actor, r.claim_id);
       check(
         c.account_id === accountId,
         "NOT_FOUND",
@@ -789,62 +828,78 @@ export class Warranty {
     };
   }
   soldUnits(actor: Actor) {
-    actor = this.identity.currentActor(actor);
-    permit(actor, ["warranty", "commercial", "buyer"]);
-    const candidates = new Map<
-      string,
-      { id: string; productId: string; serial: string; accountId: string }
-    >();
-    for (const s of this.fulfillment
-      .shipments(actor)
-      .filter((s) => s.state === "shipped"))
-      for (const u of s.units as {
-        unitId: string;
-        productId: string;
-        serial: string | null;
-      }[]) {
-        if (!u.serial || this.inventory.unit(actor, u.unitId).state !== "sold")
+    return this.database.transaction(() => {
+      actor = this.authority(actor, ["warranty", "commercial", "buyer"]);
+      const candidates = new Map<
+        string,
+        { id: string; productId: string; serial: string; accountId: string }
+      >();
+      for (const s of this.fulfillment
+        .shipments(actor)
+        .filter((s) => s.state === "shipped"))
+        for (const u of s.units as {
+          unitId: string;
+          productId: string;
+          serial: string | null;
+        }[]) {
+          if (
+            !u.serial ||
+            this.inventory.unit(actor, u.unitId).state !== "sold"
+          )
+            continue;
+          const custody = this.inventory.soldCustody(actor, u.unitId);
+          if (custody.type === "shipment" && custody.reference === s.id)
+            candidates.set(u.unitId, {
+              id: u.unitId,
+              productId: u.productId,
+              serial: u.serial,
+              accountId: s.account_id,
+            });
+        }
+      for (const r of this.store.all<Replacement>(
+        "SELECT * FROM warranty_replacements WHERE org_id=? AND state='handed_over' ORDER BY rowid",
+        actor.orgId,
+      )) {
+        const c = this.store.get<Claim>(
+          "SELECT * FROM warranty_claims WHERE org_id=? AND id=?",
+          actor.orgId,
+          r.claim_id,
+        )!;
+        if (actor.role === "buyer" && c.account_id !== actor.accountId)
           continue;
-        const custody = this.inventory.soldCustody(actor, u.unitId);
-        if (custody.type === "shipment" && custody.reference === s.id)
-          candidates.set(u.unitId, {
-            id: u.unitId,
-            productId: u.productId,
-            serial: u.serial,
-            accountId: s.account_id,
+        const u = this.inventory.unit(actor, r.new_unit_id),
+          custody =
+            u.state === "sold" ? this.inventory.soldCustody(actor, u.id) : null;
+        if (
+          custody?.type === "replacement.handover" &&
+          custody.reference === r.id
+        )
+          candidates.set(u.id, {
+            id: u.id,
+            productId: u.product_id,
+            serial: u.serial!,
+            accountId: c.account_id,
           });
       }
-    for (const r of this.store.all<Replacement>(
-      "SELECT * FROM warranty_replacements WHERE org_id=? AND state='handed_over' ORDER BY rowid",
-      actor.orgId,
-    )) {
-      const c = this.store.get<Claim>(
-        "SELECT * FROM warranty_claims WHERE org_id=? AND id=?",
-        actor.orgId,
-        r.claim_id,
-      )!;
-      if (actor.role === "buyer" && c.account_id !== actor.accountId) continue;
-      const u = this.inventory.unit(actor, r.new_unit_id),
-        custody =
-          u.state === "sold" ? this.inventory.soldCustody(actor, u.id) : null;
-      if (
-        custody?.type === "replacement.handover" &&
-        custody.reference === r.id
-      )
-        candidates.set(u.id, {
-          id: u.id,
-          productId: u.product_id,
-          serial: u.serial!,
-          accountId: c.account_id,
-        });
-    }
-    return [...candidates.values()].filter(
-      (u) => this.inventory.unit(actor, u.id).state === "sold",
-    );
+      return [...candidates.values()].filter(
+        (u) => this.inventory.unit(actor, u.id).state === "sold",
+      );
+    });
   }
   manufacturerCases(actor: Actor, claimId: string) {
-    permit(actor, ["warranty", "warehouse", "finance", "commercial"]);
-    this.claim(actor, claimId);
+    return this.database.transaction(() =>
+      this.manufacturerRecords(actor, claimId),
+    );
+  }
+  private manufacturerRecords(actor: Actor, claimId: string) {
+    actor = this.authority(actor, [
+      "warranty",
+      "warehouse",
+      "finance",
+      "commercial",
+    ]);
+    claimId = text(claimId, "Claim ID");
+    this.claimRecord(actor, claimId);
     return this.store
       .all<ManufacturerCase>(
         "SELECT * FROM warranty_manufacturer_cases WHERE org_id=? AND claim_id=? ORDER BY created_at DESC,id DESC",
@@ -883,12 +938,12 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty"]);
-        const c = this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["warranty"]);
+        const c = this.claimRecord(actor, input.claimId);
         site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
       },
       () => {
-        const c = this.claim(actor, input.claimId);
+        const c = this.claimRecord(actor, input.claimId);
         check(
           c.type === "warranty" &&
             ["approved", "received", "inspected", "repair"].includes(c.state),
@@ -950,7 +1005,7 @@ export class Warranty {
       caseId,
     );
     check(c, "NOT_FOUND", "Manufacturer case not found.", 404);
-    const claim = this.claim(actor, c.claim_id);
+    const claim = this.claimRecord(actor, c.claim_id);
     site(actor, this.inventory.unit(actor, claim.unit_id).warehouse_id);
     return c;
   }
@@ -992,7 +1047,7 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty"]);
+        actor = this.authority(actor, ["warranty"]);
         this.manufacturerCase(actor, input.caseId);
       },
       () => {
@@ -1059,7 +1114,7 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty", "commercial", "buyer"]);
+        actor = this.authority(actor, ["warranty", "commercial", "buyer"]);
         this.identity.customer(actor, input.accountId);
       },
       () => {
@@ -1139,11 +1194,11 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty"]);
-        this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["warranty"]);
+        this.claimRecord(actor, input.claimId);
       },
       () => {
-        const claim = this.claim(actor, input.claimId);
+        const claim = this.claimRecord(actor, input.claimId);
         check(
           claim.state === "submitted",
           "STATE",
@@ -1189,8 +1244,8 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warehouse"]);
-        const claim = this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["warehouse"]);
+        const claim = this.claimRecord(actor, input.claimId);
         site(actor, input.warehouseId);
         check(
           this.inventory.unit(actor, claim.unit_id).serial === input.serial,
@@ -1199,7 +1254,7 @@ export class Warranty {
         );
       },
       () => {
-        const claim = this.claim(actor, input.claimId);
+        const claim = this.claimRecord(actor, input.claimId);
         check(
           claim.state === "approved",
           "STATE",
@@ -1231,12 +1286,12 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warehouse", "warranty"]);
-        const c = this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["warehouse", "warranty"]);
+        const c = this.claimRecord(actor, input.claimId);
         site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
       },
       () => {
-        const claim = this.claim(actor, input.claimId);
+        const claim = this.claimRecord(actor, input.claimId);
         check(
           claim.state === "received",
           "STATE",
@@ -1266,12 +1321,12 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["warranty"]);
-        const claim = this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["warranty"]);
+        const claim = this.claimRecord(actor, input.claimId);
         site(actor, this.inventory.unit(actor, claim.unit_id).warehouse_id);
       },
       () => {
-        const claim = this.claim(actor, input.claimId);
+        const claim = this.claimRecord(actor, input.claimId);
         check(
           !this.hasReplacement(actor, claim.id),
           "REMEDY",
@@ -1326,11 +1381,11 @@ export class Warranty {
       key,
       input,
       () => {
-        permit(actor, ["finance"]);
-        this.claim(actor, input.claimId);
+        actor = this.authority(actor, ["finance"]);
+        this.claimRecord(actor, input.claimId);
       },
       () => {
-        const claim = this.claim(actor, input.claimId);
+        const claim = this.claimRecord(actor, input.claimId);
         check(
           claim.state === "disposed" &&
             !claim.credit_id &&

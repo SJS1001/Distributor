@@ -4,6 +4,7 @@ import { fork, type ChildProcess } from "node:child_process";
 import { fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { createHttp } from "../src/server/http.ts";
+import { warrantyUser, warrantyGrants } from "./warranty-authority-fixtures.ts";
 import type { Actor } from "../src/server/core.ts";
 function inspected(f: ReturnType<typeof fixture>, key = "one") {
   const shipment = ship(f, accept(f, 1, key).id);
@@ -277,28 +278,20 @@ test("replacement authority, strict stock/inspection/remedy inputs and cached gr
   const f = fixture(t),
     c = inspected(f),
     input = reservation(f, c.id);
-  const reviewer: Actor = {
-    ...f.actor,
-    id: "reviewer",
-    role: "warranty",
-    sites: [f.w1],
-  };
+  const reviewer = warrantyUser(f, "warranty");
   for (const role of [
     "warehouse",
     "commercial",
     "buyer",
     "finance",
     "support",
-  ] as const)
+  ] as const) {
+    const otherRole = warrantyUser(f, role);
     assert.throws(
-      () =>
-        f.app.warranty.reserveReplacement(
-          { ...reviewer, role },
-          "reserve",
-          input,
-        ),
+      () => f.app.warranty.reserveReplacement(otherRole, "reserve", input),
       { code: "FORBIDDEN" },
     );
+  }
   for (const payload of [
     { ...input, coveragePolicy: "reset" },
     { ...input, oldDisposition: "repair" },
@@ -318,13 +311,9 @@ test("replacement authority, strict stock/inspection/remedy inputs and cached gr
     { code: "REPLACEMENT_STOCK" },
   );
   const r = f.app.warranty.reserveReplacement(reviewer, "reserve", input);
+  warrantyGrants(f, reviewer, { sites: [f.w2] });
   assert.throws(
-    () =>
-      f.app.warranty.reserveReplacement(
-        { ...reviewer, sites: [f.w2] },
-        "reserve",
-        input,
-      ),
+    () => f.app.warranty.reserveReplacement(reviewer, "reserve", input),
     { code: "FORBIDDEN" },
   );
   assert.throws(
@@ -334,28 +323,22 @@ test("replacement authority, strict stock/inspection/remedy inputs and cached gr
         "reserve",
         input,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
+  warrantyGrants(f, reviewer, { sites: [f.w1] });
   assert.throws(
     () =>
       f.app.warranty.handoverReplacement(reviewer, "handover", handover(r.id)),
     { code: "FORBIDDEN" },
   );
-  const warehouse: Actor = {
-    ...f.actor,
-    id: "warehouse",
-    role: "warehouse",
-    sites: [f.w1],
-  };
+  const warehouse = warrantyUser(f, "warehouse");
+  warrantyGrants(f, warehouse, { sites: [f.w2] });
   assert.throws(
     () =>
-      f.app.warranty.handoverReplacement(
-        { ...warehouse, sites: [f.w2] },
-        "handover",
-        handover(r.id),
-      ),
+      f.app.warranty.handoverReplacement(warehouse, "handover", handover(r.id)),
     { code: "FORBIDDEN" },
   );
+  warrantyGrants(f, warehouse, { sites: [f.w1] });
   for (const payload of [
     { ...handover(r.id), serial: "wrong" },
     { ...handover(r.id), revision: 1.5 },
@@ -367,25 +350,27 @@ test("replacement authority, strict stock/inspection/remedy inputs and cached gr
       { code: payload.serial === "wrong" ? "SERIAL" : "VALIDATION" },
     );
   f.app.warranty.handoverReplacement(warehouse, "handover", handover(r.id));
+  warrantyGrants(f, warehouse, { sites: [] });
   assert.throws(
     () =>
-      f.app.warranty.handoverReplacement(
-        { ...warehouse, sites: [] },
-        "handover",
-        handover(r.id),
-      ),
+      f.app.warranty.handoverReplacement(warehouse, "handover", handover(r.id)),
     { code: "FORBIDDEN" },
   );
-  const buyer: Actor = { ...f.actor, role: "buyer", accountId: f.buyer };
+  const buyer = warrantyUser(f, "buyer");
   const own = f.app.warranty.replacements(buyer, c.id)[0]!;
   assert.equal(own.newSerial, "S2");
   assert.equal(own.evidence, undefined);
   assert.equal(own.history, undefined);
   assert.equal(own.recipient, undefined);
-  assert.throws(
-    () => f.app.warranty.replacements({ ...buyer, accountId: "other" }, c.id),
-    { code: "FORBIDDEN" },
-  );
+  const other = f.app.identity.createCustomer(f.actor, "other", {
+    name: "Other buyer",
+    tier: "standard",
+    creditLimit: 10000,
+  }).id;
+  warrantyGrants(f, buyer, { accountId: other });
+  assert.throws(() => f.app.warranty.replacements(buyer, c.id), {
+    code: "FORBIDDEN",
+  });
 });
 test("late replacement failures roll back inventory holds/custody, claim history, receipts and audit together", (t) => {
   const f = fixture(t),

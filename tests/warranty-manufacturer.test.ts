@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { fork, type ChildProcess } from "node:child_process";
 import { fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
+import { warrantyUser, warrantyGrants } from "./warranty-authority-fixtures.ts";
 import type { Actor } from "../src/server/core.ts";
 import { createHttp } from "../src/server/http.ts";
 
@@ -109,12 +110,7 @@ test("manufacturer mutations and cached retries require current role and warehou
   const f = fixture(t),
     claim = approved(f),
     input = referral(claim.id);
-  const warranty: Actor = {
-    ...f.actor,
-    id: "warranty",
-    role: "warranty",
-    sites: [f.w1],
-  };
+  const warranty = warrantyUser(f, "warranty");
   const c = f.app.warranty.referManufacturer(warranty, "refer", input);
   for (const role of [
     "buyer",
@@ -123,11 +119,7 @@ test("manufacturer mutations and cached retries require current role and warehou
     "finance",
     "support",
   ] as const) {
-    const a = {
-      ...warranty,
-      role,
-      accountId: role === "buyer" ? f.buyer : null,
-    };
+    const a = warrantyUser(f, role);
     assert.throws(() => f.app.warranty.referManufacturer(a, "refer", input), {
       code: "FORBIDDEN",
     });
@@ -136,7 +128,8 @@ test("manufacturer mutations and cached retries require current role and warehou
       { code: "FORBIDDEN" },
     );
   }
-  const movedGrant = { ...warranty, sites: [f.w2] };
+  warrantyGrants(f, warranty, { sites: [f.w2] });
+  const movedGrant = warranty;
   assert.throws(
     () => f.app.warranty.referManufacturer(movedGrant, "refer", input),
     { code: "FORBIDDEN" },
@@ -146,17 +139,17 @@ test("manufacturer mutations and cached retries require current role and warehou
       f.app.warranty.decideManufacturer(movedGrant, "decide", decision(c.id)),
     { code: "FORBIDDEN" },
   );
-  const buyer: Actor = {
-    ...f.actor,
-    id: "buyer",
-    role: "buyer",
-    accountId: f.buyer,
-  };
+  const buyer = warrantyUser(f, "buyer");
   assert.deepEqual(f.app.warranty.list(buyer)[0]!.manufacturerCases, []);
   assert.throws(() => f.app.warranty.manufacturerCases(buyer, claim.id), {
     code: "FORBIDDEN",
   });
-  const foreign = { ...buyer, accountId: "foreign" };
+  const other = f.app.identity.createCustomer(f.actor, "other", {
+    name: "Other buyer",
+    tier: "standard",
+    creditLimit: 10000,
+  }).id;
+  const foreign = warrantyUser(f, "buyer", other);
   assert.equal(f.app.warranty.list(foreign).length, 0);
   assert.throws(
     () =>
@@ -164,15 +157,16 @@ test("manufacturer mutations and cached retries require current role and warehou
         { ...f.actor, orgId: "foreign" },
         claim.id,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   assert.equal(
-    f.app.warranty.list({ ...f.actor, role: "warehouse", sites: [f.w2] })
-      .length,
+    f.app.warranty.list(warrantyUser(f, "warehouse", f.buyer, [f.w2])).length,
     0,
   );
+  warrantyGrants(f, warranty, { sites: [f.w1] });
   const response = decision(c.id);
   f.app.warranty.decideManufacturer(warranty, "decide", response);
+  warrantyGrants(f, warranty, { sites: [f.w2] });
   assert.throws(
     () => f.app.warranty.decideManufacturer(movedGrant, "decide", response),
     { code: "FORBIDDEN" },
