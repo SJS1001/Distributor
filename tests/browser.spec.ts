@@ -2,6 +2,300 @@ import { test, expect, type Page } from "@playwright/test";
 import { totp } from "../src/server/totp.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+test("browser: supplier finance follows credit, received replacement, reviewed closure, correction and bounded history without changing stock or cash", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const login = async (admin: boolean) => {
+    await page
+      .getByLabel("Email", { exact: true })
+      .fill(admin ? "admin@example.test" : "source@example.test");
+    await page
+      .getByLabel("Password", { exact: true })
+      .fill(admin ? "long-test-only-password" : "long-warehouse-test-password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await page.goto("/");
+  await login(true);
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const purchases = async () =>
+    (await page.request.get("/api/purchases")).json();
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const product = await cmd("product.create", {
+    sku: "SUP-FUP-BROWSER",
+    name: "Supplier finance bulk fixture",
+    serialized: false,
+    unitPrice: 2000,
+    taxBasisPoints: 0,
+  });
+  const initial = await dashboard();
+  const supplierId = (await purchases()).suppliers[0].id;
+  const warehouseId = initial.warehouses.find(
+    (w: any) => w.name === "Toronto",
+  ).id;
+  const receive = async (
+    deliveryRef: string,
+    quantity: number,
+    unitCost: number,
+  ) => {
+    const po = await cmd("purchase.create", {
+      supplierId,
+      warehouseId,
+      lines: [{ productId: product.id, quantity, unitCost }],
+    });
+    const line = (await purchases()).orders.find((p: any) => p.id === po.id)
+      .lines[0];
+    return cmd("purchase.receive", {
+      poId: po.id,
+      lineId: line.id,
+      deliveryRef,
+      quantity,
+      serials: [],
+      bin: "SUP-FUP",
+      quarantine: true,
+    });
+  };
+  const original = await receive("SUP-FUP-ORIGINAL", 4, 1000);
+  const unit = (await dashboard()).stock.find(
+    (u: any) => u.product_id === product.id,
+  );
+  const returned = await cmd("purchase.return", {
+    receiptId: original.id,
+    unitId: unit.id,
+    revision: unit.revision,
+    quantity: 2,
+    serial: null,
+    returnRef: "SUP-FUP-RETURN",
+    reason: "Synthetic faulty cartons",
+    handoverEvidence: "Synthetic supplier courier receipt",
+  });
+  const replacement = await receive("SUP-FUP-REPLACEMENT", 1, 1200);
+  const before = await dashboard(),
+    ordersBefore = (await purchases()).orders;
+  await page.reload();
+  await nav(page, "Purchasing");
+  const row = page.getByRole("row").filter({ hasText: "SUP-FUP-RETURN" });
+  const evidence = async (reference: string, text: string) => {
+    await page
+      .getByLabel("Supplier follow-up reference (unique)", { exact: true })
+      .fill(reference);
+    await page
+      .getByLabel("Supplier outcome / review evidence", { exact: true })
+      .fill(text);
+  };
+  await row
+    .getByRole("button", { name: "Record supplier credit", exact: true })
+    .click();
+  await page
+    .getByLabel("Supplier credit amount (cents)", { exact: true })
+    .fill("2500");
+  await evidence(
+    "SUP-FUP-CREDIT",
+    "Synthetic credit note exceeds original cost by CAD 5.00; reviewed separately",
+  );
+  let discarded = false;
+  const keys: string[] = [];
+  await page.route("**/api/commands/purchase.return.credit", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!discarded) {
+      discarded = true;
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await next(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await expect(row).toContainText("$25.00 supplier credit recorded");
+  await expect(row).toContainText("Supplier outcomes recorded");
+  await row
+    .getByRole("button", { name: "Link replacement receipt", exact: true })
+    .click();
+  await page
+    .getByLabel("Received replacement delivery", { exact: true })
+    .selectOption(replacement.id);
+  await evidence(
+    "SUP-FUP-LINK",
+    "Synthetic new receipt checked; stock was already received",
+  );
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row).toContainText("1 replacement units linked · v2");
+  await row
+    .getByRole("button", { name: "Close supplier follow-up", exact: true })
+    .click();
+  await page
+    .getByLabel("Reviewed resolution", { exact: true })
+    .selectOption("no-remedy");
+  await evidence(
+    "SUP-FUP-CLOSE",
+    "Synthetic finance review of credit and replacement allocation; no ledger posting",
+  );
+  await next(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "requires none",
+  );
+  await page
+    .getByLabel("Reviewed resolution", { exact: true })
+    .selectOption("reconciled");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row).toContainText("Follow-up closed · reconciled");
+  await expect(
+    row.getByRole("button", { name: "Record supplier credit", exact: true }),
+  ).toHaveCount(0);
+  await row
+    .getByRole("button", { name: "Reopen supplier follow-up", exact: true })
+    .click();
+  await evidence(
+    "SUP-FUP-REOPEN",
+    "Synthetic supplier rescinded the note; review correction",
+  );
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await row
+    .getByRole("button", { name: "Supplier history", exact: true })
+    .click();
+  let history = page.getByRole("region", {
+    name: "Supplier follow-up history",
+    exact: true,
+  });
+  await expect(history.getByRole("heading")).toBeFocused();
+  await history
+    .getByRole("button", {
+      name: "Void supplier observation SUP-FUP-CREDIT",
+      exact: true,
+    })
+    .click();
+  await evidence(
+    "SUP-FUP-VOID",
+    "Synthetic credit rescinded; permanent original evidence retained",
+  );
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row).toContainText(
+    "$0.00 supplier credit recorded · 1 replacement units linked · v5",
+  );
+  await expect(
+    history.getByText(
+      "Supplier credit recorded: CA$25.00 · Voided by later evidence",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  const observations = (
+    await (
+      await page.request.get(`/api/purchases/returns/${returned.id}/history`)
+    ).json()
+  ).items;
+  expect(observations).toHaveLength(5);
+  for (let i = 1; i <= 21; i++)
+    await cmd("purchase.return.credit", {
+      returnId: returned.id,
+      revision: 4 + i,
+      reference: `SUP-FUP-EXTRA-${i}`,
+      evidence: "Synthetic additional note for history pagination",
+      amount: 1,
+      currency: "CAD",
+    });
+  await page.reload();
+  await nav(page, "Purchasing");
+  await row
+    .getByRole("button", { name: "Supplier history", exact: true })
+    .click();
+  history = page.getByRole("region", {
+    name: "Supplier follow-up history",
+    exact: true,
+  });
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  let failed = false;
+  await page.route(
+    `**/api/purchases/returns/${returned.id}/history?after=*`,
+    async (route) => {
+      if (!failed) {
+        failed = true;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "Synthetic history unavailable" }),
+        });
+      } else await route.continue();
+    },
+  );
+  await history
+    .getByRole("button", {
+      name: "Load older supplier observations",
+      exact: true,
+    })
+    .click();
+  await expect(history.getByRole("alert")).toBeVisible();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await history
+    .getByRole("button", { name: "Retry supplier history", exact: true })
+    .click();
+  await expect(history.getByRole("listitem")).toHaveCount(26);
+  await expect(
+    history.getByText(
+      "Supplier credit recorded: CA$25.00 · Voided by later evidence",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await history
+    .getByRole("button", { name: "Close supplier history", exact: true })
+    .click();
+  await expect(
+    row.getByRole("button", { name: "Supplier history", exact: true }),
+  ).toBeFocused();
+  const after = await dashboard();
+  expect(after.stock).toEqual(before.stock);
+  expect(after.invoices).toEqual(before.invoices);
+  expect(after.credits).toEqual(before.credits);
+  expect((await purchases()).orders).toEqual(ordersBefore);
+  const followup = (await purchases()).returns.find(
+    (r: any) => r.id === returned.id,
+  ).followup;
+  expect(followup).toMatchObject({
+    originalCost: 2000,
+    creditAmount: 21,
+    replacementQuantity: 1,
+    revision: 26,
+    state: "open",
+  });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await login(false);
+  await nav(page, "Purchasing");
+  await expect(
+    row.getByRole("button", { name: "Record supplier credit", exact: true }),
+  ).toHaveCount(0);
+  await row
+    .getByRole("button", { name: "Supplier history", exact: true })
+    .click();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await expect(
+    history.getByRole("button", { name: /^Void supplier observation/ }),
+  ).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
 test("browser: named carrier choices preserve legacy warning, retry once, reload and withdraw on phone", async ({
   page,
 }) => {

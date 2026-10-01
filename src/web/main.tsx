@@ -16,6 +16,7 @@ import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
 import { DisclosureReview } from "./provider-disclosures.tsx";
 import { ProviderHistory } from "./provider-history.tsx";
+import { SupplierReturnHistory } from "./supplier-return-history.tsx";
 import { AuditHistory } from "./audit-history.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
@@ -76,6 +77,10 @@ function App() {
     string | null
   >(null);
   const providerHistoryOpener = useRef<HTMLElement | null>(null);
+  const [supplierHistoryId, setSupplierHistoryId] = useState<string | null>(
+    null,
+  );
+  const supplierHistoryOpener = useRef<HTMLElement | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
@@ -217,6 +222,8 @@ function App() {
     setShipmentsLoading(false);
     setEvidenceClaim(null);
     setProviderHistoryAccount(null);
+    setSupplierHistoryId(null);
+    supplierHistoryOpener.current = null;
     providerHistoryOpener.current = null;
     evidenceOpener.current = null;
     setActor(null);
@@ -288,6 +295,28 @@ function App() {
     name: string,
     transform: (v: Item) => unknown = (v) => v,
   ) => open(title, fields, (v) => command(name, transform(v)));
+  const supplierFields: Field[] = [
+    { name: "reference", label: "Supplier follow-up reference (unique)" },
+    {
+      name: "evidence",
+      label: "Supplier outcome / review evidence",
+      type: "textarea",
+      help: "Record the supplier document or physical receipt evidence and any reviewed differences.",
+    },
+  ];
+  const supplierCommand = (
+    r: Item,
+    title: string,
+    fields: Field[],
+    name: string,
+    details: Item = {},
+  ) =>
+    simple(title, [...fields, ...supplierFields], name, (v) => ({
+      ...v,
+      ...details,
+      returnId: r.id,
+      revision: r.followup.revision,
+    }));
   const showShipmentDelivery = async (
     shipmentId: string,
     loaded: Item[] = [],
@@ -787,6 +816,7 @@ function App() {
               onClick={() => {
                 setPage(p);
                 setProviderHistoryAccount(null);
+                setSupplierHistoryId(null);
                 setError("");
               }}
             >
@@ -2028,9 +2058,10 @@ function App() {
             )}
             <h2>Purchase receipts and supplier returns</h2>
             <p>
-              Confirm a physical handover at original stock cost. Supplier
-              credit and accounting reconciliation remain pending; a return does
-              not reopen the purchase order.
+              Confirm physical handover at original stock cost. Record supplier
+              credit evidence or link a separately received replacement, then
+              review the outcome. Accounting reconciliation remains separate;
+              the original purchase order stays received.
             </p>
             {table(
               ["Delivery", "Purchased / returned", "Held stock", "Actions"],
@@ -2105,6 +2136,7 @@ function App() {
                   "Quantity / original cost",
                   "Evidence",
                   "Financial status",
+                  "Follow-up actions",
                 ],
                 extra.purchases.returns,
                 (r: Item) => [
@@ -2112,9 +2144,149 @@ function App() {
                   `${warehouseName(r.warehouse_id)} · ${r.serial ?? "bulk"}`,
                   `${r.quantity} units · ${money(r.quantity * r.unit_cost, data.currency)} cost`,
                   `${r.reason} · ${r.handover_evidence}`,
-                  "Supplier credit pending",
+                  <div>
+                    {r.followup.state === "open"
+                      ? r.followup.activeCount > 0
+                        ? "Supplier outcomes recorded · follow-up open"
+                        : "Supplier credit pending · follow-up open"
+                      : `Follow-up closed · ${r.followup.resolution}`}
+                    <p>
+                      {money(r.followup.creditAmount, currency)} supplier credit
+                      recorded · {r.followup.replacementQuantity} replacement
+                      units linked · v{r.followup.revision}
+                    </p>
+                    <p>External accounting reconciliation required.</p>
+                  </div>,
+                  <div className="actions">
+                    {button("Supplier history", () => {
+                      supplierHistoryOpener.current =
+                        document.activeElement as HTMLElement;
+                      setSupplierHistoryId(r.id);
+                    })}
+                    {can("finance") && r.followup.state === "open" && (
+                      <>
+                        {button("Record supplier credit", () =>
+                          supplierCommand(
+                            r,
+                            "Record supplier credit",
+                            [
+                              {
+                                name: "amount",
+                                label: "Supplier credit amount (cents)",
+                                type: "number",
+                                min: 1,
+                                help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
+                              },
+                            ],
+                            "purchase.return.credit",
+                            { currency },
+                          ),
+                        )}
+                        {button("Link replacement receipt", () =>
+                          supplierCommand(
+                            r,
+                            "Link received supplier replacement",
+                            [
+                              select(
+                                "receiptId",
+                                "Received replacement delivery",
+                                extra.purchases.receipts.filter(
+                                  (p: Item) =>
+                                    p.po_id !== r.po_id &&
+                                    p.supplier_id === r.supplier_id &&
+                                    extra.purchases.orders
+                                      .find((o: Item) => o.id === p.po_id)
+                                      ?.lines.some(
+                                        (l: Item) =>
+                                          l.id === p.line_id &&
+                                          l.product_id === r.result.productId,
+                                      ),
+                                ),
+                                (p) =>
+                                  `${p.delivery_ref} · ${p.quantity} received`,
+                              ),
+                              {
+                                name: "quantity",
+                                label: "Replacement units linked",
+                                type: "number",
+                                min: 1,
+                                max: r.quantity,
+                                value: 1,
+                              },
+                            ],
+                            "purchase.return.replacement",
+                          ),
+                        )}
+                        {button("Close supplier follow-up", () =>
+                          supplierCommand(
+                            r,
+                            "Review supplier return outcome",
+                            [
+                              {
+                                name: "resolution",
+                                label: "Reviewed resolution",
+                                options: [
+                                  {
+                                    value: "reconciled",
+                                    label: "Recorded outcomes reconciled",
+                                  },
+                                  {
+                                    value: "no-remedy",
+                                    label: "No credit or replacement accepted",
+                                  },
+                                ],
+                                help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
+                              },
+                            ],
+                            "purchase.return.review",
+                            { state: "closed" },
+                          ),
+                        )}
+                      </>
+                    )}
+                    {can("finance") &&
+                      r.followup.state === "closed" &&
+                      button("Reopen supplier follow-up", () =>
+                        supplierCommand(
+                          r,
+                          "Reopen supplier return follow-up",
+                          [],
+                          "purchase.return.review",
+                          { state: "open", resolution: null },
+                        ),
+                      )}
+                  </div>,
                 ],
               )}
+            {supplierHistoryId &&
+              (() => {
+                const r = extra.purchases?.returns?.find(
+                  (row: Item) => row.id === supplierHistoryId,
+                );
+                return (
+                  r && (
+                    <SupplierReturnHistory
+                      key={`${r.id}:${eventViewEpoch}`}
+                      returnId={r.id}
+                      currency={currency}
+                      canCorrect={can("finance") && r.followup.state === "open"}
+                      onCorrect={(observationId) =>
+                        supplierCommand(
+                          r,
+                          "Void supplier observation",
+                          [],
+                          "purchase.return.void",
+                          { observationId },
+                        )
+                      }
+                      onClose={() => {
+                        setSupplierHistoryId(null);
+                        supplierHistoryOpener.current?.focus();
+                      }}
+                    />
+                  )
+                );
+              })()}
           </>
         )}
         {page === "Catalog" && (

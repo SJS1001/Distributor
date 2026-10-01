@@ -17,6 +17,16 @@ function serialReturn(f: ReturnType<typeof fixture>, serial = "S3") {
     handoverEvidence: "Synthetic courier custody receipt",
   };
 }
+function warehouseReader(f: ReturnType<typeof fixture>, warehouseId: string) {
+  const user = f.app.identity.createUser(f.actor, "return-reader", {
+    email: "warehouse@return.example.test",
+    name: "Synthetic warehouse reader",
+    password: "long-test-only-password",
+    role: "warehouse",
+    sites: [warehouseId],
+  });
+  return f.app.identity.currentActor({ ...f.actor, id: user.id });
+}
 function bulk(f: ReturnType<typeof fixture>) {
   const product = f.app.catalog.create(f.actor, "bulk", {
     sku: "RETURN-BULK",
@@ -144,11 +154,7 @@ test("supplier serial return preserves purchase and external custody evidence th
       }),
     { code: "STOCK" },
   );
-  assert.equal(
-    f.app.procurement.returns({ ...f.actor, role: "warehouse", sites: [f.w2] })
-      .length,
-    0,
-  );
+  assert.equal(f.app.procurement.returns(warehouseReader(f, f.w2)).length, 0);
 });
 
 test("bulk supplier returns follow original purchase lineage through split dispatch, partial arrival and recovered loss at original cost", (t) => {
@@ -227,7 +233,7 @@ test("bulk supplier returns follow original purchase lineage through split dispa
     2000,
   );
   assert.equal(6000 - 2000, 4000);
-  const destination = { ...f.actor, role: "warehouse" as const, sites: [f.w2] };
+  const destination = warehouseReader(f, f.w2);
   assert.equal(f.app.procurement.returns(destination).length, 2);
   const history = f.app.procurement
     .receipts(f.actor)

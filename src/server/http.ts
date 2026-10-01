@@ -462,6 +462,51 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.procurement.returnStock(a, k, p),
     },
+    "purchase.return.credit": {
+      schema: obj({
+        returnId: str,
+        revision: num,
+        reference: str,
+        evidence: str,
+        amount: num,
+        currency: choice("CAD", "USD"),
+      }),
+      run: (a, k, p) => app.procurement.followups.credit(a, k, p),
+    },
+    "purchase.return.replacement": {
+      schema: obj({
+        returnId: str,
+        revision: num,
+        reference: str,
+        evidence: str,
+        receiptId: str,
+        quantity: num,
+      }),
+      run: (a, k, p) => app.procurement.followups.replacement(a, k, p),
+    },
+    "purchase.return.void": {
+      schema: obj({
+        returnId: str,
+        revision: num,
+        reference: str,
+        evidence: str,
+        observationId: str,
+      }),
+      run: (a, k, p) => app.procurement.followups.void(a, k, p),
+    },
+    "purchase.return.review": {
+      schema: obj({
+        returnId: str,
+        revision: num,
+        reference: str,
+        evidence: str,
+        state: choice("open", "closed"),
+        resolution: {
+          anyOf: [choice("reconciled", "no-remedy"), { type: "null" }],
+        },
+      }),
+      run: (a, k, p) => app.procurement.followups.review(a, k, p),
+    },
     "stock.inspect": {
       schema: obj({
         unitId: str,
@@ -1102,6 +1147,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
     returns: app.procurement.returns(actor(request)),
     drafts: app.procurement.drafts.list(actor(request)),
   }));
+  http.get<{ Params: { returnId: string }; Querystring: { after?: string } }>(
+    "/api/purchases/returns/:returnId/history",
+    {
+      schema: {
+        params: obj({ returnId: str }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,8}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.procurement.followups.history(
+        actor(request),
+        request.params.returnId,
+        request.query.after === undefined
+          ? undefined
+          : Number(request.query.after),
+      ),
+  );
   http.get<{ Params: { draftId: string } }>(
     "/api/purchases/drafts/:draftId/history",
     { schema: { params: obj({ draftId: str }) } },

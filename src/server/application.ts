@@ -93,6 +93,7 @@ export class Application {
       this.platform,
       this.catalog,
       this.inventory,
+      this.identity,
     );
     this.billing = new Billing(
       this.database,

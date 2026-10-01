@@ -14,6 +14,8 @@ import { Database, type Store } from "./database.ts";
 import { Catalog } from "./catalog.ts";
 import { Inventory } from "./inventory.ts";
 import { Platform } from "./platform.ts";
+import { Identity } from "./iam.ts";
+import { SupplierFollowups } from "./supplier-followups.ts";
 import {
   ReceiptDrafts,
   type DraftInput,
@@ -72,11 +74,13 @@ type SupplierReturn = {
 export class Procurement {
   private store: Store;
   readonly drafts: ReceiptDrafts;
+  readonly followups: SupplierFollowups;
   constructor(
     database: Database,
     private platform: Platform,
     private catalog: Catalog,
     private inventory: Inventory,
+    identity: Identity,
   ) {
     this.store = database.owned("procurement");
     this.store.migrate(`
@@ -86,6 +90,7 @@ export class Procurement {
     CREATE TABLE IF NOT EXISTS procurement_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,quantity INTEGER NOT NULL,unit_ids TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,po_id,delivery_ref,line_id)) STRICT;
     CREATE TABLE IF NOT EXISTS procurement_returns(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,receipt_id TEXT NOT NULL,po_id TEXT NOT NULL,supplier_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),serial TEXT,return_ref TEXT NOT NULL,reason TEXT NOT NULL,handover_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,return_ref)) STRICT;
   `);
+    this.followups = new SupplierFollowups(database, platform, identity);
     this.drafts = new ReceiptDrafts(database, platform, {
       authorize: (actor, poId) => {
         this.receiptOrder(actor, poId);
@@ -405,6 +410,7 @@ export class Procurement {
       }));
   }
   returns(actor: Actor) {
+    actor = this.followups.authorize(actor);
     permit(actor, ["warehouse", "commercial", "finance"]);
     return this.store
       .all<SupplierReturn>(
@@ -418,6 +424,7 @@ export class Procurement {
       .map(({ input_hash, result, ...r }) => ({
         ...r,
         result: JSON.parse(result) as SupplierReturnResult,
+        followup: this.followups.summary(actor, r.id),
       }));
   }
   returnStock(
