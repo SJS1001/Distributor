@@ -1164,6 +1164,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
       code: factorCode,
       revision: num,
     }),
+    "recovery/prepare": obj({
+      currentPassword: factorPassword,
+      revision: num,
+      key: { type: "string", minLength: 1, maxLength: 128 },
+    }),
+    "recovery/confirm": obj({
+      currentPassword: factorPassword,
+      renewalId: str,
+      code: factorCode,
+      recoverySaved: bool,
+    }),
   })) {
     http.post(
       `/api/security/mfa/${operation}`,
@@ -1175,7 +1186,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
             ? app.identity.mfa.begin(actor(request), p.key, p)
             : operation === "confirm"
               ? app.identity.mfa.confirm(actor(request), p)
-              : app.identity.mfa.disable(actor(request), p);
+              : operation === "recovery/prepare"
+                ? app.identity.mfa.prepareRecovery(actor(request), p.key, p)
+                : operation === "recovery/confirm"
+                  ? app.identity.mfa.confirmRecovery(actor(request), p)
+                  : app.identity.mfa.disable(actor(request), p);
         if ("sessionEnded" in result && result.sessionEnded)
           reply.clearCookie("distributor_session", { path: "/" });
         return result;

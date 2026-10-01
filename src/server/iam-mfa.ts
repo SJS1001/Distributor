@@ -12,6 +12,7 @@ type Access = {
   failed: (actor: Actor) => void;
 };
 type Bundle = { secret: string; recoveryCodes: string[] };
+type RecoveryBundle = { recoveryCodes: string[] };
 export class MultiFactor {
   private store: Store;
   private cipher: FactorCipher;
@@ -335,6 +336,147 @@ export class MultiFactor {
         this.store.run("DELETE FROM iam_mfa_pending WHERE user_id=?", actor.id);
         const changed = this.access.changed(actor);
         this.platform.audit(actor, "user.mfa.disabled", actor.id, changed);
+        return { ...changed, sessionEnded: true };
+      }),
+    );
+  }
+  prepareRecovery(
+    actor: Actor,
+    key: string,
+    input: { currentPassword: string; revision: number },
+  ) {
+    text(key, "Idempotency key", 128);
+    this.access.authenticate(actor, input.currentPassword, true);
+    this.discardOwnExpired(actor);
+    this.cipher.require();
+    return this.database.transaction(() => {
+      this.access.authenticate(actor, input.currentPassword, false);
+      const revision = this.access.revision(actor);
+      check(
+        integer(input.revision, "security revision", 1) === revision,
+        "STALE_USER",
+        "Security changed. Refresh before replacing recovery codes.",
+        409,
+      );
+      check(
+        this.summary(actor).enabled,
+        "MFA_DISABLED",
+        "No authenticator is enabled.",
+        409,
+      );
+      let pending = this.store.get(
+        "SELECT * FROM iam_mfa_pending WHERE user_id=? AND org_id=?",
+        actor.id,
+        actor.orgId,
+      );
+      let bundle: RecoveryBundle;
+      if (pending?.key === key) {
+        check(
+          Number(pending.revision) === revision &&
+            pending.material !== "" &&
+            Number(pending.expires_at) > Date.now(),
+          "MFA_EXPIRED",
+          "Replacement expired or security changed. Prepare new recovery codes.",
+          409,
+        );
+        bundle = this.cipher.decrypt<RecoveryBundle>(
+          String(pending.material),
+          this.context(actor, "pending-recovery"),
+        );
+      } else {
+        bundle = {
+          recoveryCodes: Array.from({ length: 10 }, () =>
+            randomBytes(16).toString("hex").match(/.{8}/g)!.join("-"),
+          ),
+        };
+        const renewalId = randomBytes(24).toString("base64url"),
+          expiresAt = Date.now() + 10 * 60000;
+        this.store.run(
+          "INSERT INTO iam_mfa_pending VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET org_id=excluded.org_id,key=excluded.key,enrollment_id=excluded.enrollment_id,revision=excluded.revision,material=excluded.material,expires_at=excluded.expires_at",
+          actor.id,
+          actor.orgId,
+          key,
+          renewalId,
+          revision,
+          this.cipher.encrypt(bundle, this.context(actor, "pending-recovery")),
+          expiresAt,
+        );
+        pending = { enrollment_id: renewalId, expires_at: expiresAt };
+        this.platform.audit(actor, "user.mfa.recovery.prepared", actor.id, {});
+      }
+      return {
+        renewalId: String(pending.enrollment_id),
+        expiresAt: Number(pending.expires_at),
+        recoveryCodes: bundle.recoveryCodes,
+      };
+    });
+  }
+  confirmRecovery(
+    actor: Actor,
+    input: {
+      currentPassword: string;
+      renewalId: string;
+      code: string;
+      recoverySaved: boolean;
+    },
+  ) {
+    this.access.authenticate(actor, input.currentPassword, true);
+    this.discardOwnExpired(actor);
+    return this.attempt(actor, () =>
+      this.database.transaction(() => {
+        this.access.authenticate(actor, input.currentPassword, false);
+        this.cipher.require();
+        const pending = this.store.get(
+          "SELECT * FROM iam_mfa_pending WHERE user_id=? AND org_id=? AND enrollment_id=?",
+          actor.id,
+          actor.orgId,
+          text(input.renewalId, "renewal ID", 128),
+        );
+        check(
+          pending &&
+            pending.material !== "" &&
+            Number(pending.expires_at) > Date.now() &&
+            Number(pending.revision) === this.access.revision(actor),
+          "MFA_EXPIRED",
+          "Replacement expired or security changed. Prepare new recovery codes.",
+          409,
+        );
+        check(
+          input.recoverySaved === true,
+          "VALIDATION",
+          "Save your new recovery codes before replacing the current codes.",
+          400,
+        );
+        const factor = this.store.get(
+          "SELECT * FROM iam_mfa WHERE user_id=? AND org_id=?",
+          actor.id,
+          actor.orgId,
+        );
+        check(factor, "MFA_DISABLED", "No authenticator is enabled.", 409);
+        const bundle = this.cipher.decrypt<RecoveryBundle>(
+          String(pending.material),
+          this.context(actor, "pending-recovery"),
+        );
+        // Only an existing factor can authorize activation; inactive new codes cannot.
+        this.consume(actor, factor, input.code, Date.now());
+        this.store.run(
+          "DELETE FROM iam_mfa_recovery WHERE user_id=?",
+          actor.id,
+        );
+        for (const code of bundle.recoveryCodes)
+          this.store.run(
+            "INSERT INTO iam_mfa_recovery VALUES(?,?,NULL)",
+            actor.id,
+            this.recoveryHash(actor, code),
+          );
+        this.store.run("DELETE FROM iam_mfa_pending WHERE user_id=?", actor.id);
+        const changed = this.access.changed(actor);
+        this.platform.audit(
+          actor,
+          "user.mfa.recovery.replaced",
+          actor.id,
+          changed,
+        );
         return { ...changed, sessionEnded: true };
       }),
     );

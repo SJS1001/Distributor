@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
+import { RecoveryCodes } from "./recovery-codes.tsx";
 
 type Setup = {
   enrollmentId: string;
@@ -235,6 +236,12 @@ export function MfaSecurity({
             </p>
           )}
         </form>
+      )}
+      {security.mfa.enabled && security.mfa.available && (
+        <RecoveryCodes
+          revision={security.revision}
+          sessionEnded={sessionEnded}
+        />
       )}
     </section>
   );

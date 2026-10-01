@@ -10807,3 +10807,303 @@ test("browser: required role MFA blocks workspace, retries and cancels setup rea
   ).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("browser: required MFA recovery renewal keeps the factor, cancels stale responses, expires secrets and recovers lost responses on a phone", async ({
+  page,
+}) => {
+  const email = "renewal-mfa@example.test",
+    password = "long-renewal-mfa-password",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const login = async (code?: string) => {
+    await page.goto("/");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    if (code) {
+      await page
+        .getByLabel("Authenticator or recovery code", { exact: true })
+        .fill(code);
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    }
+  };
+  await login();
+  const panel = page.getByRole("region", { name: "Authenticator security" });
+  await expect(panel).toBeVisible();
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel
+    .getByRole("button", { name: "Set up authenticator", exact: true })
+    .click();
+  const secret = await panel.getByLabel("Authenticator setup key").inputValue(),
+    old = await panel
+      .getByRole("list", { name: "Recovery codes", exact: true })
+      .locator("code")
+      .allTextContents();
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel
+    .getByLabel("I saved my recovery codes securely", { exact: true })
+    .check();
+  await panel
+    .getByLabel("Authenticator or recovery code", { exact: true })
+    .fill(totp(secret, Math.floor(Date.now() / 30000)));
+  await panel
+    .getByRole("button", { name: "Enable authenticator", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Sign in to your workspace",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await login(old[0]);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  const renewal = page.getByRole("region", {
+      name: "Replace recovery codes",
+      exact: true,
+    }),
+    newCodes = renewal.getByRole("list", {
+      name: "New recovery codes",
+      exact: true,
+    }),
+    prepare = renewal.getByRole("button", {
+      name: "Prepare replacement codes",
+      exact: true,
+    });
+  await expect(renewal).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Remove authenticator", exact: true }),
+  ).toHaveCount(0);
+  // Cancel a response whose preparation already committed; it cannot resurrect secrets.
+  let entered!: () => void, release!: () => void;
+  const reading = new Promise<void>((r) => (entered = r)),
+    paused = new Promise<void>((r) => (release = r));
+  await page.route(
+    "**/api/security/mfa/recovery/prepare",
+    async (route) => {
+      const response = await route.fetch();
+      entered();
+      await paused;
+      try {
+        await route.fulfill({ response });
+      } catch {}
+    },
+    { times: 1 },
+  );
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await prepare.click();
+  await reading;
+  await renewal
+    .getByRole("button", { name: "Cancel replacement", exact: true })
+    .click();
+  release();
+  await expect(newCodes).toHaveCount(0);
+  await expect(prepare).toBeEnabled();
+  // Sign-out unmounts the renewal panel and fences a committed late response.
+  const signedOutRead = new Promise<void>((r) => (entered = r)),
+    signedOutPause = new Promise<void>((r) => (release = r));
+  await page.route(
+    "**/api/security/mfa/recovery/prepare",
+    async (route) => {
+      const response = await route.fetch();
+      entered();
+      await signedOutPause;
+      try {
+        await route.fulfill({ response });
+      } catch {}
+    },
+    { times: 1 },
+  );
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await prepare.click();
+  await signedOutRead;
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Sign in to your workspace",
+      exact: true,
+    }),
+  ).toBeVisible();
+  release();
+  await expect(newCodes).toHaveCount(0);
+  await login(old[1]);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  // Synthetic browser deadline verifies clearing; server expiry is independently checked in backend tests.
+  await page.route(
+    "**/api/security/mfa/recovery/prepare",
+    async (route) => {
+      const response = await route.fetch(),
+        result = await response.json();
+      await route.fulfill({
+        response,
+        json: { ...result, expiresAt: Date.now() + 150 },
+      });
+    },
+    { times: 1 },
+  );
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await prepare.click();
+  await expect(renewal.getByRole("alert")).toContainText("Replacement expired");
+  await expect(newCodes).toHaveCount(0);
+  await expect(
+    renewal.getByLabel("Current password for recovery codes"),
+  ).toHaveValue("");
+  // A response already expired at arrival is never displayed.
+  await page.route(
+    "**/api/security/mfa/recovery/prepare",
+    async (route) => {
+      const response = await route.fetch(),
+        result = await response.json();
+      await route.fulfill({
+        response,
+        json: { ...result, expiresAt: Date.now() - 1 },
+      });
+    },
+    { times: 1 },
+  );
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await prepare.click();
+  await expect(renewal.getByRole("alert")).toContainText("Replacement expired");
+  await expect(newCodes).toHaveCount(0);
+  await expect(
+    renewal.getByLabel("Current password for recovery codes"),
+  ).toHaveValue("");
+  let delivered: string[] = [],
+    retryKey = "";
+  await page.route(
+    "**/api/security/mfa/recovery/prepare",
+    async (route) => {
+      retryKey = route.request().postDataJSON().key;
+      const response = await route.fetch();
+      delivered = (await response.json()).recoveryCodes;
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await prepare.click();
+  await expect(renewal.getByRole("alert")).toBeVisible();
+  let retried = "";
+  await page.route(
+    "**/api/security/mfa/recovery/prepare",
+    async (route) => {
+      retried = route.request().postDataJSON().key;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  await prepare.click();
+  await expect(newCodes).toBeVisible();
+  const codes = await newCodes.locator("code").allTextContents();
+  expect(codes).toEqual(delivered);
+  expect(retried).toBe(retryKey);
+  expect(codes).toHaveLength(10);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  const stored = await page.evaluate(() =>
+    JSON.stringify({
+      local: { ...localStorage },
+      session: { ...sessionStorage },
+    }),
+  );
+  for (const value of [password, secret, ...codes])
+    expect(stored).not.toContain(value);
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await renewal
+    .getByLabel("Existing authenticator or recovery code")
+    .fill(old[2]!);
+  // The native required checkbox prevents an unacknowledged activation.
+  let confirms = 0;
+  page.on("request", (r) => {
+    if (r.url().endsWith("/api/security/mfa/recovery/confirm")) confirms++;
+  });
+  await renewal
+    .getByRole("button", { name: "Confirm replacement codes", exact: true })
+    .click();
+  expect(confirms).toBe(0);
+  await expect(newCodes).toBeVisible();
+  await renewal
+    .getByLabel("I saved my new recovery codes securely", { exact: true })
+    .check();
+  await page.route(
+    "**/api/security/mfa/recovery/confirm",
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  await renewal
+    .getByRole("button", { name: "Confirm replacement codes", exact: true })
+    .click();
+  await expect(renewal.getByRole("alert")).toBeVisible();
+  expect((await page.request.get("/api/security")).status()).toBe(401);
+  await login(codes[0]);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  await expect(panel).toContainText("9 unused recovery codes");
+  await expect(
+    panel.getByRole("button", { name: "Remove authenticator", exact: true }),
+  ).toHaveCount(0);
+  await expect(newCodes).toHaveCount(0);
+  // A delivered confirmation clears every secret and returns to sign-in.
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await prepare.click();
+  await expect(newCodes).toBeVisible();
+  const finalCodes = await newCodes.locator("code").allTextContents();
+  await renewal
+    .getByLabel("Current password for recovery codes")
+    .fill(password);
+  await renewal
+    .getByLabel("Existing authenticator or recovery code")
+    .fill(codes[1]!);
+  await renewal
+    .getByLabel("I saved my new recovery codes securely", { exact: true })
+    .check();
+  await renewal
+    .getByRole("button", { name: "Confirm replacement codes", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Sign in to your workspace",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Recovery codes replaced.", { exact: false }),
+  ).toBeVisible();
+  await expect(newCodes).toHaveCount(0);
+  await login(finalCodes[0]);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  await expect(panel).toContainText("9 unused recovery codes");
+  expect(errors).toEqual([]);
+});
