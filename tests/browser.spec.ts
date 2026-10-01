@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import "./quickbooks-browser-journey.ts";
 import "./canada-post-browser-journey.ts";
 import "./carrier-claim-browser-journey.ts";
+import "./carrier-configuration-browser-journey.ts";
 test("browser: checkout rechecks stale balance, refreshes expiry, cancels navigation reads and opens only after a fresh scoped request", async ({
   page,
   context,

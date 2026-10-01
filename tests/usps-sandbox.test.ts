@@ -16,7 +16,10 @@ const doc = await PDFDocument.create();
 doc.addPage([288, 432]).drawText("Original synthetic USPS TEM fixture");
 const pdf = Buffer.from(await doc.save()),
   tracking = "9405500000000000000001";
-function setup(t: Parameters<typeof fixture>[0]) {
+function setup(
+  t: Parameters<typeof fixture>[0],
+  configure?: (config: UspsSandboxConfig) => void,
+) {
   const f = fixture(t, {}, "US"),
     orderId = accept(f).id;
   chooseProviders(f, f.actor, "usps-choice", {
@@ -67,15 +70,6 @@ function setup(t: Parameters<typeof fixture>[0]) {
     reviewedDestination: address,
     acknowledgment: "Synthetic ordinary parcel and address review",
   };
-  const prepared = f.app.carriers.prepare(f.actor, "usps-prepare", input);
-  const intent = JSON.parse(
-    f.app.database
-      .owned("integration")
-      .get<{ intent: string }>(
-        "SELECT intent FROM integration_carrier_bookings WHERE id=?",
-        prepared.id,
-      )!.intent,
-  ) as CarrierIntent;
   const config: UspsSandboxConfig = {
     orgId: f.actor.orgId,
     clientId: "synthetic-usps-client",
@@ -93,6 +87,23 @@ function setup(t: Parameters<typeof fixture>[0]) {
       },
     ],
   };
+  configure?.(config);
+  const configuration = new UspsSandbox(config).configuration;
+  input.configurationHash = configuration.hash;
+  const prepared = f.app.carriers.prepare(
+    f.actor,
+    "usps-prepare",
+    input,
+    configuration,
+  );
+  const intent = JSON.parse(
+    f.app.database
+      .owned("integration")
+      .get<{ intent: string }>(
+        "SELECT intent FROM integration_carrier_bookings WHERE id=?",
+        prepared.id,
+      )!.intent,
+  ) as CarrierIntent;
   return Object.assign(f, {
     orderId,
     shipmentId,
@@ -400,7 +411,7 @@ test("USPS TEM lost response stays unknown; neither send replay nor lookup repur
   );
   assert.throws(
     () =>
-      f.app.carriers.prepare(f.actor, "usps-replace-unknown", {
+      restarted.prepare(f.actor, "usps-replace-unknown", {
         ...f.input,
         previousId: f.prepared.id,
       }),
@@ -619,9 +630,10 @@ for (const name of [
   });
 
 test("USPS accepts documented extra payment parties, mapped priority and folded form-data PDF", async (t) => {
-  const f = setup(t);
-  f.config.services[0]!.code = "PRIORITY_MAIL";
-  f.config.services[0]!.processingCategory = "MACHINABLE";
+  const f = setup(t, (config) => {
+    config.services[0]!.code = "PRIORITY_MAIL";
+    config.services[0]!.processingCategory = "MACHINABLE";
+  });
   const sim = simulator((call) => {
     if (call.url.endsWith("/payment-authorization"))
       return Response.json({

@@ -1,11 +1,17 @@
 import { check, permit, site, type Actor } from "./core.ts";
+import { captureCarrierConfiguration } from "./carrier-configuration.ts";
 import type { Application } from "./application.ts";
 import type {
   CarrierAdapter,
   CanadaPostCreationClient,
   CanadaPostManifestClient,
 } from "./carrier-bookings.ts";
-import { carrierNames, type CarrierName } from "../shared/carrier-booking.ts";
+import {
+  carrierNames,
+  type CarrierName,
+  type CarrierPrepare,
+  type CarrierConfiguration,
+} from "../shared/carrier-booking.ts";
 
 export type CarrierBinding = { orgId: string; adapter: CarrierAdapter };
 export type CanadaPostBinding = {
@@ -67,6 +73,14 @@ export class CarrierRuntime {
             sandbox: true as const,
             book: binding.adapter.book.bind(binding.adapter),
             lookup: binding.adapter.lookup.bind(binding.adapter),
+            ...(binding.adapter.configuration !== undefined
+              ? {
+                  configuration: captureCarrierConfiguration(
+                    binding.adapter.configuration,
+                    binding.adapter.provider,
+                  ),
+                }
+              : {}),
           }),
         });
       }),
@@ -148,6 +162,30 @@ export class CarrierRuntime {
     return this.bindings.some(
       (binding) =>
         binding.orgId === actor.orgId && binding.adapter.provider === provider,
+    );
+  }
+  configurations(actor: Actor): readonly CarrierConfiguration[] {
+    actor = this.principal(actor);
+    return this.bindings
+      .filter(
+        (b) => b.orgId === actor.orgId && b.adapter.provider !== "canada-post",
+      )
+      .flatMap((b) =>
+        b.adapter.configuration
+          ? [structuredClone(b.adapter.configuration)]
+          : [],
+      );
+  }
+  prepare(actor: Actor, key: string, input: CarrierPrepare) {
+    actor = this.principal(actor);
+    const binding = this.bindings.find(
+      (b) => b.orgId === actor.orgId && b.adapter.provider === input.provider,
+    );
+    return this.app.carriers.prepare(
+      actor,
+      key,
+      input,
+      binding?.adapter.configuration,
     );
   }
   private binding(actor: Actor, bookingId: string) {

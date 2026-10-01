@@ -116,23 +116,28 @@ export function commands(
       run: (a, k, p) => app.carriers.releaseClaim(a, k, p),
     },
     "carrier.prepare": {
-      schema: obj({
-        shipmentId: str,
-        previousId: { anyOf: [str, { type: "null" }] },
-        provider: choice(...carrierNames),
-        service: str,
-        origin: carrierAddress,
-        destination: carrierAddress,
-        parcel: obj({
-          weightGrams: { type: "integer", minimum: 1, maximum: 2000000 },
-          lengthMm: { type: "integer", minimum: 1, maximum: 10000 },
-          widthMm: { type: "integer", minimum: 1, maximum: 10000 },
-          heightMm: { type: "integer", minimum: 1, maximum: 10000 },
-        }),
-        reviewedDestination: str,
-        acknowledgment: str,
-      }),
-      run: (a, k, p) => app.carriers.prepare(a, k, p),
+      schema: obj(
+        {
+          configurationHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          shipmentId: str,
+          previousId: { anyOf: [str, { type: "null" }] },
+          provider: choice(...carrierNames),
+          service: str,
+          origin: carrierAddress,
+          destination: carrierAddress,
+          parcel: obj({
+            weightGrams: { type: "integer", minimum: 1, maximum: 2000000 },
+            lengthMm: { type: "integer", minimum: 1, maximum: 10000 },
+            widthMm: { type: "integer", minimum: 1, maximum: 10000 },
+            heightMm: { type: "integer", minimum: 1, maximum: 10000 },
+          }),
+          reviewedDestination: str,
+          acknowledgment: str,
+        },
+        ["configurationHash"],
+      ),
+      run: (a, k, p) =>
+        carriers ? carriers.prepare(a, k, p) : app.carriers.prepare(a, k, p),
     },
     "carrier.cancel": {
       schema: obj({ bookingId: str, reviewHash: str, reason: str }),
@@ -1784,6 +1789,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
       );
       return {
         ...current,
+        configurations: options.carriers?.configurations(actor(request)) ?? [],
         enabled: current.booking
           ? (options.carriers?.enabled(
               actor(request),

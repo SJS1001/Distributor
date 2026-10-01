@@ -121,15 +121,6 @@ function setup(
     reviewedDestination: address,
     acknowledgment: "Synthetic actual origin and packed destination review",
   };
-  const prepared = f.app.carriers.prepare(f.actor, "fedex-prepare", input);
-  const intent = JSON.parse(
-    f.app.database
-      .owned("integration")
-      .get<{ intent: string }>(
-        "SELECT intent FROM integration_carrier_bookings WHERE id=?",
-        prepared.id,
-      )!.intent,
-  ) as CarrierIntent;
   const config: FedexSandboxConfig = {
     orgId: f.actor.orgId,
     clientId: "synthetic-fedex-client",
@@ -141,6 +132,22 @@ function setup(
       { service: "Reviewed ground", code: "FEDEX_GROUND", residential: false },
     ],
   };
+  const configuration = new FedexSandbox(config).configuration;
+  input.configurationHash = configuration.hash;
+  const prepared = f.app.carriers.prepare(
+    f.actor,
+    "fedex-prepare",
+    input,
+    configuration,
+  );
+  const intent = JSON.parse(
+    f.app.database
+      .owned("integration")
+      .get<{ intent: string }>(
+        "SELECT intent FROM integration_carrier_bookings WHERE id=?",
+        prepared.id,
+      )!.intent,
+  ) as CarrierIntent;
   return Object.assign(f, {
     orderId,
     shipmentId,
@@ -278,6 +285,7 @@ for (const country of ["CA", "US"] as const)
       let guards = 0;
       const result = await f.app.carriers.execute(f.actor, f.prepared.id, {
         provider: "fedex",
+        configuration: client.configuration,
         sandbox: true,
         book: (intent, beforeWrite) =>
           client.book(intent, () => {
@@ -381,7 +389,12 @@ test("FedEx requires explicit residential US Home Delivery and permits configure
       residential: true,
     };
     f.config.pickupType = "USE_SCHEDULED_PICKUP";
-    await new FedexSandbox(f.config, sim.transport).book(f.intent, () => {});
+    const client = new FedexSandbox(f.config, sim.transport);
+    const reviewed = revise(f.intent, {
+      configurationHash: client.configuration.hash,
+      configuration: client.configuration,
+    });
+    await client.book(reviewed, () => {});
     const shipment = (sim.calls[1]!.body as Json).requestedShipment;
     assert.equal(shipment.recipients[0].address.residential, true);
     assert.equal(shipment.pickupType, "USE_SCHEDULED_PICKUP");
@@ -530,8 +543,12 @@ test("FedEx opaque correlation changes with organization/account/booking/review 
   ];
   for (const entry of cases) {
     const sim = simulator(),
-      result = await new FedexSandbox(entry.config, sim.transport).book(
-        entry.intent,
+      client = new FedexSandbox(entry.config, sim.transport),
+      result = await client.book(
+        revise(entry.intent, {
+          configurationHash: client.configuration.hash,
+          configuration: client.configuration,
+        }),
         () => {},
       );
     references.push(result.reference);
@@ -935,7 +952,7 @@ test("FedEx a lost response stays unknown across restart and unsupported reconci
   );
   assert.throws(
     () =>
-      f.app.carriers.prepare(f.actor, "fedex-replace-unknown", {
+      client.prepare(f.actor, "fedex-replace-unknown", {
         ...f.input,
         previousId: f.prepared.id,
       }),

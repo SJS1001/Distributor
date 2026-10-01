@@ -123,15 +123,6 @@ function setup(
     reviewedDestination: address,
     acknowledgment: "Synthetic actual origin and packed destination review",
   };
-  const prepared = f.app.carriers.prepare(f.actor, "ups-prepare", input);
-  const intent = JSON.parse(
-    f.app.database
-      .owned("integration")
-      .get<{ intent: string }>(
-        "SELECT intent FROM integration_carrier_bookings WHERE id=?",
-        prepared.id,
-      )!.intent,
-  ) as CarrierIntent;
   const config: UpsSandboxConfig = {
     orgId: f.actor.orgId,
     clientId: "synthetic-ups-client",
@@ -140,6 +131,22 @@ function setup(
     shipper: { ...origin, line1: "3 Registered Account Street" },
     services: [{ service: "Reviewed ground", code: "03" }],
   };
+  const configuration = new UpsSandbox(config).configuration;
+  input.configurationHash = configuration.hash;
+  const prepared = f.app.carriers.prepare(
+    f.actor,
+    "ups-prepare",
+    input,
+    configuration,
+  );
+  const intent = JSON.parse(
+    f.app.database
+      .owned("integration")
+      .get<{ intent: string }>(
+        "SELECT intent FROM integration_carrier_bookings WHERE id=?",
+        prepared.id,
+      )!.intent,
+  ) as CarrierIntent;
   return Object.assign(f, {
     orderId,
     shipmentId,
@@ -504,8 +511,12 @@ test("UPS recovery queries account/reference, verifies tracking and never purcha
   ] as const) {
     const sim = simulator(),
       client = new UpsSandbox(config, sim.transport);
-    const bought = await client.book(intent, () => {}),
-      recovered = await client.lookup(intent);
+    const reviewed = revise(intent, {
+      configurationHash: client.configuration.hash,
+      configuration: client.configuration,
+    });
+    const bought = await client.book(reviewed, () => {}),
+      recovered = await client.lookup(reviewed);
     references.push(bought.reference);
     assert.deepEqual(recovered, bought);
     const query = sim.calls[3]!.url;

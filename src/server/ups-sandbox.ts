@@ -1,3 +1,8 @@
+import {
+  carrierConfiguration,
+  assertCarrierConfiguration,
+} from "./carrier-configuration.ts";
+import type { CarrierConfiguration } from "../shared/carrier-booking.ts";
 import { canonical, check, digest } from "./core.ts";
 import {
   validateCarrierLabel,
@@ -25,6 +30,7 @@ const maximumResponse = 2_097_152;
 export class UpsSandbox implements CarrierAdapter {
   readonly provider = "ups" as const;
   readonly sandbox = true as const;
+  readonly configuration: CarrierConfiguration;
   private readonly config: UpsSandboxConfig;
   constructor(
     config: UpsSandboxConfig,
@@ -64,6 +70,27 @@ export class UpsSandbox implements CarrierAdapter {
     };
     Object.freeze(this.config.services);
     Object.freeze(this.config);
+    this.configuration = carrierConfiguration(
+      this.provider,
+      {
+        orgId: this.config.orgId,
+        endpoint: base,
+        clientId: this.config.clientId,
+        shipperNumber: this.config.shipperNumber,
+        shipper: this.config.shipper,
+        services: this.config.services,
+      },
+      `UPS account ending ${this.config.shipperNumber.slice(-4)}`,
+      [
+        "UPS sandbox",
+        `Registered shipper: ${this.config.shipper.name}, ${this.config.shipper.line1}${this.config.shipper.line2 ? `, ${this.config.shipper.line2}` : ""}, ${this.config.shipper.city}, ${this.config.shipper.province} ${this.config.shipper.postalCode}, ${this.config.shipper.country}`,
+        `Registered shipper phone: ${this.config.shipper.phone}`,
+      ],
+      this.config.services.map((entry) => ({
+        service: entry.service,
+        description: `UPS service ${entry.code}`,
+      })),
+    );
   }
   private review(intent: CarrierIntent) {
     check(
@@ -81,6 +108,7 @@ export class UpsSandbox implements CarrierAdapter {
       "CARRIER_MISMATCH",
       "UPS sandbox intent does not match its review hash.",
     );
+    assertCarrierConfiguration(intent, this.configuration);
     const service = this.config.services.find(
       (entry) => entry.service === intent.service,
     );

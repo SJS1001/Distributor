@@ -7,6 +7,7 @@ import {
   type CarrierBookingView,
   type CarrierPrepare,
   type CarrierReview,
+  type CarrierConfiguration,
   type CanadaPostGroupView,
 } from "../shared/carrier-booking.ts";
 import { providerChoices } from "../shared/provider-choices.ts";
@@ -67,6 +68,33 @@ function AddressDetail({ address }: { address: CarrierAddress }) {
     </p>
   );
 }
+function ConfigurationDetail({
+  configuration,
+  service,
+}: {
+  configuration: CarrierConfiguration;
+  service?: string;
+}) {
+  return (
+    <div>
+      <p>Reviewed carrier account: {configuration.accountHint}</p>
+      <ul>
+        {configuration.details.map((detail, i) => (
+          <li key={i}>{detail}</li>
+        ))}
+      </ul>
+      <ul>
+        {configuration.services
+          .filter((entry) => !service || entry.service === service)
+          .map((entry) => (
+            <li key={entry.service}>
+              {entry.service} · {entry.description}
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+}
 function BookingMetadata({ booking }: { booking: CarrierBookingView }) {
   return (
     <div style={{ overflowWrap: "anywhere" }}>
@@ -74,6 +102,12 @@ function BookingMetadata({ booking }: { booking: CarrierBookingView }) {
         {label(booking.provider)} · {booking.service} · {booking.state} ·{" "}
         {booking.createdAt}
       </p>
+      {booking.configuration && (
+        <ConfigurationDetail
+          configuration={booking.configuration}
+          service={booking.service}
+        />
+      )}
       <p>Booking ID: {booking.id}</p>
       <p>Carrier handover identifier: {booking.provider}</p>
       {booking.reference && (
@@ -104,6 +138,7 @@ export function CarrierBooking({
   const currentRead = useRef<AbortController | null>(null);
   const historyRead = useRef<AbortController | null>(null);
   const writing = useRef(false);
+  const [provider, setProvider] = useState("");
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -247,7 +282,12 @@ export function CarrierBooking({
       phone: value(`${kind}.phone`),
     });
     if (form.get("addressConfirmed") !== "on" || !review) return;
+    const configuration = review.configurations?.find(
+      (entry) => entry.provider === value("provider"),
+    );
+    if (configuration && form.get("configurationConfirmed") !== "on") return;
     const input: CarrierPrepare = {
+      ...(configuration ? { configurationHash: configuration.hash } : {}),
       shipmentId,
       previousId: review.booking?.id ?? null,
       provider: value("provider") as CarrierPrepare["provider"],
@@ -266,6 +306,20 @@ export function CarrierBooking({
     void perform(() => command("carrier.prepare", input));
   };
   const booking = review?.booking;
+  const configuration = review?.configurations?.find(
+    (entry) => entry.provider === provider,
+  );
+  const configurationChanged =
+    !!booking &&
+    (booking.configuration
+      ? !review?.configurations?.some(
+          (entry) =>
+            entry.provider === booking.provider &&
+            entry.hash === booking.configuration?.hash,
+        )
+      : !!review?.configurations?.some(
+          (entry) => entry.provider === booking.provider,
+        ));
   return (
     <section
       aria-label="Carrier booking review"
@@ -420,42 +474,56 @@ export function CarrierBooking({
               workflow.
             </p>
           )}
-          {review.enabled === true && packed && booking.state === "pending" && (
-            <button
-              type="button"
-              disabled={busy || loading}
-              onClick={() =>
-                void perform(
-                  () =>
-                    request(
-                      `/api/carrier/${encodeURIComponent(booking.id)}/send`,
-                      { method: "POST", body: "{}" },
-                    ),
-                  true,
-                )
-              }
-            >
-              Send reviewed carrier booking
-            </button>
-          )}
-          {review.enabled === true && booking.state === "unknown" && (
-            <button
-              type="button"
-              disabled={busy || loading}
-              onClick={() =>
-                void perform(
-                  () =>
-                    request(
-                      `/api/carrier/${encodeURIComponent(booking.id)}/reconcile`,
-                      { method: "POST", body: "{}" },
-                    ),
-                  true,
-                )
-              }
-            >
-              Reconcile existing carrier booking
-            </button>
-          )}
+          {configurationChanged &&
+            ["pending", "running", "unknown"].includes(booking.state) && (
+              <p role="alert">
+                Current carrier settings differ from this booking's retained
+                review. Cancel an unsent pending booking and prepare a new
+                review. An uncertain booking requires its original configuration
+                and investigation; never replace or resend it.
+              </p>
+            )}
+          {review.enabled === true &&
+            !configurationChanged &&
+            packed &&
+            booking.state === "pending" && (
+              <button
+                type="button"
+                disabled={busy || loading}
+                onClick={() =>
+                  void perform(
+                    () =>
+                      request(
+                        `/api/carrier/${encodeURIComponent(booking.id)}/send`,
+                        { method: "POST", body: "{}" },
+                      ),
+                    true,
+                  )
+                }
+              >
+                Send reviewed carrier booking
+              </button>
+            )}
+          {review.enabled === true &&
+            !configurationChanged &&
+            booking.state === "unknown" && (
+              <button
+                type="button"
+                disabled={busy || loading}
+                onClick={() =>
+                  void perform(
+                    () =>
+                      request(
+                        `/api/carrier/${encodeURIComponent(booking.id)}/reconcile`,
+                        { method: "POST", body: "{}" },
+                      ),
+                    true,
+                  )
+                }
+              >
+                Reconcile existing carrier booking
+              </button>
+            )}
         </>
       )}
       {review && packed && (!booking || booking.state === "canceled") && (
@@ -472,7 +540,12 @@ export function CarrierBooking({
             <legend>Carrier and service</legend>
             <label>
               Carrier provider
-              <select name="provider" required defaultValue="">
+              <select
+                name="provider"
+                required
+                value={provider}
+                onChange={(event) => setProvider(event.target.value)}
+              >
                 <option value="" disabled>
                   Choose carrier provider
                 </option>
@@ -487,8 +560,41 @@ export function CarrierBooking({
             </label>
             <label>
               Service
-              <input name="service" required />
+              {configuration ? (
+                <select
+                  key={configuration.hash}
+                  name="service"
+                  required
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Choose reviewed service
+                  </option>
+                  {configuration.services.map((entry) => (
+                    <option value={entry.service} key={entry.service}>
+                      {entry.service} · {entry.description}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input name="service" required />
+              )}
             </label>
+            {configuration && (
+              <div key={configuration.hash}>
+                <ConfigurationDetail configuration={configuration} />
+                <label>
+                  <input
+                    name="configurationConfirmed"
+                    type="checkbox"
+                    required
+                    style={{ width: "auto" }}
+                  />
+                  I reviewed this carrier account, service settings and any
+                  mailing date.
+                </label>
+              </div>
+            )}
             <div
               style={{
                 display: "grid",

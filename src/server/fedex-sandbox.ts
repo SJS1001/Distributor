@@ -1,3 +1,8 @@
+import {
+  carrierConfiguration,
+  assertCarrierConfiguration,
+} from "./carrier-configuration.ts";
+import type { CarrierConfiguration } from "../shared/carrier-booking.ts";
 import { canonical, check, digest } from "./core.ts";
 import {
   validateCarrierLabel,
@@ -30,6 +35,7 @@ const maximumLabel = 1_048_576;
 export class FedexSandbox implements CarrierAdapter {
   readonly provider = "fedex" as const;
   readonly sandbox = true as const;
+  readonly configuration: CarrierConfiguration;
   private readonly config: Readonly<
     Omit<FedexSandboxConfig, "services"> & {
       services: readonly Readonly<FedexSandboxConfig["services"][number]>[];
@@ -78,6 +84,30 @@ export class FedexSandbox implements CarrierAdapter {
         config.services.map((entry) => Object.freeze({ ...entry })),
       ),
     });
+    this.configuration = carrierConfiguration(
+      this.provider,
+      {
+        orgId: this.config.orgId,
+        endpoint: base,
+        clientId: this.config.clientId,
+        accountNumber: this.config.accountNumber,
+        country: this.config.country,
+        pickupType: this.config.pickupType,
+        services: this.config.services,
+      },
+      `FedEx account ending ${this.config.accountNumber.slice(-4)}`,
+      [
+        "FedEx sandbox",
+        `Domestic country: ${this.config.country}`,
+        this.config.pickupType === "DROPOFF_AT_FEDEX_LOCATION"
+          ? "Drop off at FedEx location"
+          : "Use scheduled pickup",
+      ],
+      this.config.services.map((entry) => ({
+        service: entry.service,
+        description: `${entry.code} · ${entry.residential ? "Residential" : "Nonresidential"}`,
+      })),
+    );
   }
   private review(intent: CarrierIntent) {
     check(
@@ -96,6 +126,7 @@ export class FedexSandbox implements CarrierAdapter {
       "CARRIER_MISMATCH",
       "FedEx sandbox intent does not match its review hash.",
     );
+    assertCarrierConfiguration(intent, this.configuration);
     const service = this.config.services.find(
       (entry) => entry.service === intent.service,
     );

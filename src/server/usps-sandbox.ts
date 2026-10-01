@@ -1,3 +1,8 @@
+import {
+  carrierConfiguration,
+  assertCarrierConfiguration,
+} from "./carrier-configuration.ts";
+import type { CarrierConfiguration } from "../shared/carrier-booking.ts";
 import { canonical, check, digest } from "./core.ts";
 import {
   validateCarrierLabel,
@@ -37,6 +42,7 @@ const states = new Set(
 export class UspsSandbox implements CarrierAdapter {
   readonly provider = "usps" as const;
   readonly sandbox = true as const;
+  readonly configuration: CarrierConfiguration;
   private readonly config: Readonly<
     Omit<UspsSandboxConfig, "services"> & {
       services: readonly Readonly<UspsSandboxConfig["services"][number]>[];
@@ -87,6 +93,31 @@ export class UspsSandbox implements CarrierAdapter {
         config.services.map((entry) => Object.freeze({ ...entry })),
       ),
     });
+    this.configuration = carrierConfiguration(
+      this.provider,
+      {
+        orgId: this.config.orgId,
+        endpoint: base,
+        clientId: this.config.clientId,
+        crid: this.config.crid,
+        mid: this.config.mid,
+        manifestMid: this.config.manifestMid,
+        epsAccount: this.config.epsAccount,
+        mailingDate: this.config.mailingDate,
+        services: this.config.services,
+      },
+      `USPS EPS account ending ${this.config.epsAccount.slice(-4)}`,
+      [
+        "USPS TEM",
+        `Mailing date: ${this.config.mailingDate}`,
+        `Label-owner MID ending ${this.config.mid.slice(-4)}`,
+        `Manifest MID ending ${this.config.manifestMid.slice(-4)}`,
+      ],
+      this.config.services.map((entry) => ({
+        service: entry.service,
+        description: `${entry.code} · ${entry.processingCategory}`,
+      })),
+    );
   }
   private review(intent: CarrierIntent) {
     check(
@@ -108,6 +139,7 @@ export class UspsSandbox implements CarrierAdapter {
       "CARRIER_MISMATCH",
       "USPS TEM intent does not match its review hash.",
     );
+    assertCarrierConfiguration(intent, this.configuration);
     const service = this.config.services.find(
       (entry) => entry.service === intent.service,
     );

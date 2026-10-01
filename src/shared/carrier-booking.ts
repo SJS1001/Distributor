@@ -23,7 +23,18 @@ export type CarrierParcel = {
   widthMm: number;
   heightMm: number;
 };
+export type CarrierConfiguration = {
+  readonly hash: string;
+  readonly provider: CarrierName;
+  readonly accountHint: string;
+  readonly details: readonly string[];
+  readonly services: readonly {
+    readonly service: string;
+    readonly description: string;
+  }[];
+};
 export type CarrierPrepare = {
+  configurationHash?: string;
   shipmentId: string;
   previousId: string | null;
   provider: CarrierName;
@@ -35,6 +46,7 @@ export type CarrierPrepare = {
   acknowledgment: string;
 };
 export type CarrierBookingView = {
+  configuration?: CarrierConfiguration;
   id: string;
   shipmentId: string;
   provider: CarrierName;
@@ -51,6 +63,7 @@ export type CarrierBookingView = {
   createdAt: string;
 };
 export type CarrierReview = {
+  configurations?: readonly CarrierConfiguration[];
   shipmentId: string;
   booking: CarrierBookingView | null;
 };

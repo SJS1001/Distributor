@@ -1,0 +1,30 @@
+# Reviewed carrier configuration binding — 2026-10-01
+
+**PASS within captured local regression scope. Full system incomplete; all 44 tasks/10 gates NOT VERIFIED.** Partial D-027/D-036, REQ-03/REQ-16/REQ-19 and CH-05/CH-07/CH-08/CH-09.
+
+Candidate captured 2026-10-01T23:36:22.478594+00:00 on `codex/local-distributor-checkpoint`, parent `6e8e98d33ed95b889965b0ad670423222546c76c`. Companion JSON retains SHA-256 for 270 application/configuration/test inputs, 187 unchanged historical evidence files, 170 unchanged dependency notices, commands/logs and preserved browser failure artifacts. No schema/dependency change or vendor code reuse. See [the carrier procedure](../CARRIER-BOOKINGS.md#reviewed-ordinary-carrier-configuration).
+
+Environment: direct macOS arm64 workstation, Node v24.16.0/npm 11.13.0, disposable native SQLite and injected synthetic HTTP transports. Chromium journeys use synthetic data. No live carrier/provider request, credentials provisioned, purchase or physical label/device qualification.
+
+| Captured final check | Observed result |
+| --- | --- |
+| `npm test` | PASS 1305/1305, exit 0; 22 new backend tests |
+| `npm run test:e2e` | PASS 60/60 plus production build, exit 0; one new phone journey |
+| `npm run typecheck` | PASS, exit 0 |
+| `npm run format:check` | PASS, exit 0 |
+| `python3 scripts/verify_plan.py` | PASS, exit 0; task/gate/link structure only |
+| `git diff --check` | PASS, exit 0 |
+
+Expected and observed: each real UPS/FedEx/USPS client publishes a bounded deep-frozen non-secret review summary and fingerprint of its organization, endpoint, client/account identity and exact mappings. UPS also binds registered shipper/contact; FedEx country/pickup/residential mappings; USPS CRID/MIDs/EPS/mailing date/class/category. Masked account descriptions and human settings are displayed, while credentials/client IDs are not retained or returned. Secret rotation within the same identity keeps the fingerprint. Service ordering and the full mapping are deliberately bound; any mapping change requires another review.
+
+Fresh scoped warehouse reads expose only the current organization's profiles. HTTP preparation accepts the fingerprint and exact service, and the server supplies the retained summary. Missing/stale fingerprints, unmapped services and browser-supplied summaries fail. Current principal and shipment authority plus configuration checks precede cached command recovery. Runtime captures bounded metadata rather than retaining mutable registration display objects. Explicit null, wrong provider/hash, oversized/extra/empty/duplicate metadata is refused.
+
+Sixteen changed-setting cases close and reopen the real application database before checking pending execution, cached preparation and direct protocol book/lookup refusal. They exercise UPS identity/contact/services; FedEx identity/country/pickup/residential mapping; USPS identities/date/class/category. Refusal occurs before claim, current-write guard or provider I/O. Original immutable intent/receipt/history and native stock/order/shipment/invoices stay unchanged. Restoring the original registration permits exact cached recovery; canceling an unsent pending booking permits a newly reviewed successor. A separate actual restart retains an unknown USPS booking and refuses changed-date reconciliation without I/O. Unknown outcomes cannot be canceled, replaced or resent. Historical unbound reviews remain readable; real clients require cancellation/new review for unsent records and refuse unbound uncertainty. Bound reviews cannot be executed or reconciled by an unconfigured synthetic adapter.
+
+The new 390 × 844 phone journey requires configuration acknowledgment, displays the masked account/mailing date/class/category and uses an exact configured service. A deliberately lost preparation reply retries the identical payload/key and recovers one retained booking. A UI-only intercepted changed review hides send/reconcile and retains original details; actual backend restart tests separately prove enforcement. Synthetic guarded transport loss yields unknown state; a fresh read exposes recovery without cancellation/new preparation. Native snapshots remain equal and no browser errors are observed. Existing 59 journeys remain regression coverage, not new provider qualification.
+
+Preserved initial failures: positive carrier fixtures changed settings without reviewing the new profile, and a wrapped adapter omitted its profile; repaired by explicitly reviewing the actual client/configured runtime. Expanded assertions encountered SQLite null-prototype row comparisons, invalid explicit-undefined JSON fixture keys and the HTTP error `code` field; corrected fixture/observation shapes. Strengthened focused coverage passed 254/254. Initial phone selectors used a label lookup that timed out; switched to the observed accessible combobox. A generic synthetic transport Error produced the sanitized INTERNAL response; changed the fixture to the actual domain transport error. Both failed browser logs/traces remain private and hashed. No assertion or safeguard was removed to obtain a pass.
+
+Self-review inspected server-owned exact preparation, current access before cached results, canonical original intent, captured/deep-frozen metadata, independent client checks before auth/I/O, claim/write/unknown fences, original history and secret exclusion. UI acknowledgment resets with the configuration hash; drift and failed reads remove stale controls. Historical evidence/notices match. This is local engineering review, not independent security or operator acceptance.
+
+Remaining: actual accounts, credentials, protocols, service/rate/fee/residency proof, mailing-date horizon and origin clock policy, provider unknown-outcome adjudication, international/other major-carrier coverage, physical printed labels/devices, operating/security/load/retention/recovery and human acceptance. Private temporary logs have no archival guarantee. No CI/cloud/delegation/push/PR/publication/deployment/live data/purchase or OPUS/UB integration. Full system remains incomplete.

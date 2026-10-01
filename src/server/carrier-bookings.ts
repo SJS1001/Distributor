@@ -1,3 +1,4 @@
+import { assertCarrierConfiguration } from "./carrier-configuration.ts";
 import {
   canonical,
   check,
@@ -28,6 +29,7 @@ import {
   type CarrierParcel,
   type CarrierPrepare,
   type CarrierReview,
+  type CarrierConfiguration,
   type CanadaPostGroupView,
   type CanadaPostManifestIdentity,
   type CarrierClaimTarget,
@@ -38,6 +40,7 @@ export type CarrierIntent = CarrierPrepare & {
   bookingId: string;
   reviewHash: string;
   nativeSnapshot: Shipment;
+  configuration?: CarrierConfiguration;
 };
 export type CarrierResult = {
   bookingId: string;
@@ -52,6 +55,7 @@ export type CarrierResult = {
 // Trusted adapters must call beforeWrite immediately before their only provider write.
 // A lookup is read-only. No adapter may retry a write after an uncertain response.
 export interface CarrierAdapter {
+  readonly configuration?: CarrierConfiguration;
   provider: CarrierName;
   sandbox: true;
   book(intent: CarrierIntent, beforeWrite: () => void): Promise<CarrierResult>;
@@ -263,6 +267,7 @@ export class CarrierBookings {
       state: booking.state,
       reviewHash: booking.review_hash,
       service: intent.service,
+      ...(intent.configuration ? { configuration: intent.configuration } : {}),
       origin: intent.origin,
       destination: intent.destination,
       parcel: intent.parcel,
@@ -1716,6 +1721,7 @@ export class CarrierBookings {
     actor: Actor,
     key: string,
     input: CarrierPrepare,
+    configuration?: CarrierConfiguration,
   ): { id: string; reviewHash: string } {
     return this.platform.command(
       actor,
@@ -1725,6 +1731,18 @@ export class CarrierBookings {
       () => {
         actor = this.principal(actor);
         this.shipment(actor, input.shipmentId);
+        check(
+          configuration
+            ? configuration.provider === input.provider &&
+                /^[a-f0-9]{64}$/.test(configuration.hash) &&
+                input.configurationHash === configuration.hash &&
+                configuration.services.some(
+                  (entry) => entry.service === input.service,
+                )
+            : input.configurationHash === undefined,
+          "CARRIER_CONFIG_CHANGED",
+          "Refresh and review the configured carrier account and exact service before preparation.",
+        );
       },
       () => {
         const shipment = this.shipment(actor, input.shipmentId);
@@ -1762,6 +1780,14 @@ export class CarrierBookings {
             1000,
           ),
           nativeSnapshot: shipment,
+          ...(configuration
+            ? {
+                configurationHash: configuration.hash,
+                configuration: JSON.parse(
+                  canonical(configuration),
+                ) as CarrierConfiguration,
+              }
+            : {}),
         };
         const bookingId = id(),
           reviewHash = digest(canonical(review));
@@ -1856,6 +1882,7 @@ export class CarrierBookings {
         "A matching explicitly enabled sandbox carrier adapter is required.",
         503,
       );
+      assertCarrierConfiguration(intent, adapter.configuration);
       check(
         booking.state === (send ? "pending" : "unknown") && !booking.token,
         "STATE",
