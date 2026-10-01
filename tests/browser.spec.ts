@@ -6794,3 +6794,295 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("browser: shipment delivery retries, stale conflicts, paged history and buyer privacy preserve stock and billing", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Delivery browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "DSH-BROWSER",
+    name: "Shipping browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await dashboard();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 3, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "DSH-DELIVERY",
+    quantity: 3,
+    serials: ["DSH-OLD", "DSH-NEW", "DSH-SPARE"],
+    bin: "REP",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await dashboard();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "carrier",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    carrier: "Synthetic delivery carrier",
+    tracking: "DSH-TRACK-1",
+    handoverEvidence: "Synthetic carrier handover",
+  });
+  const before = await dashboard();
+  const facts = (d: any) => ({
+    stock: d.stock,
+    orders: d.orders,
+    invoices: d.invoices,
+    shipments: d.shipments.map(({ delivery, ...s }: any) => s),
+  });
+  await page.reload();
+  await nav(page, "Orders");
+  const row = page
+    .locator("tbody tr")
+    .filter({ hasText: packed.id.slice(0, 8) });
+  await expect(row).toContainText("Delivery: handed_over · v0");
+  const openOutcome = async (
+    state: string,
+    reference: string,
+    evidence: string,
+  ) => {
+    await row
+      .getByRole("button", { name: "Record delivery outcome", exact: true })
+      .click();
+    await page
+      .getByLabel("Delivery outcome", { exact: true })
+      .selectOption(state);
+    await page
+      .getByLabel("Delivery evidence reference", { exact: true })
+      .fill(reference);
+    await page
+      .getByLabel("Delivery observation", { exact: true })
+      .fill(evidence);
+  };
+  await openOutcome(
+    "delayed",
+    "DSH-DELAY",
+    "Private carrier delay observation",
+  );
+  let lost = false;
+  const keys: string[] = [];
+  await page.route(
+    "**/api/commands/fulfillment.delivery.update",
+    async (route) => {
+      keys.push(route.request().headers()["idempotency-key"]!);
+      if (!lost) {
+        lost = true;
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await page.unroute("**/api/commands/fulfillment.delivery.update");
+  await expect(row).toContainText("Delivery: delayed · v1");
+  await openOutcome("delivered", "DSH-STALE", "Private stale observation");
+  await cmd("fulfillment.delivery.update", {
+    shipmentId: packed.id,
+    revision: 1,
+    state: "lost",
+    reference: "DSH-LOST",
+    evidence: "Private lost carrier observation",
+    observedAt: new Date().toISOString(),
+  });
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Shipment delivery changed",
+  );
+  await page.keyboard.press("Escape");
+  for (let revision = 2; revision < 23; revision++)
+    await cmd("fulfillment.delivery.update", {
+      shipmentId: packed.id,
+      revision,
+      state: "in_transit",
+      reference: `DSH-${revision}`,
+      evidence: "Private transit observation",
+      observedAt: new Date().toISOString(),
+    });
+  await page.reload();
+  await nav(page, "Orders");
+  await expect(row).toContainText("Delivery: in_transit · v23");
+  const opener = row.getByRole("button", {
+    name: "View delivery history",
+    exact: true,
+  });
+  await opener.click();
+  const dialog = page.getByRole("dialog", {
+    name: "Shipment delivery history",
+    exact: true,
+  });
+  await expect(dialog).toContainText("v1 · delayed");
+  await expect(dialog).toContainText("v20 · in_transit");
+  await expect(dialog).not.toContainText("v21 · in_transit");
+  let failedPage = false;
+  await page.route(
+    `**/api/shipments/${packed.id}/delivery/history?after=*`,
+    async (route) => {
+      if (!failedPage) {
+        failedPage = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await dialog
+    .getByRole("button", {
+      name: "Load more delivery observations",
+      exact: true,
+    })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog).toContainText("v1 · delayed");
+  await dialog
+    .getByRole("button", {
+      name: "Load more delivery observations",
+      exact: true,
+    })
+    .click();
+  await expect(dialog).toContainText("v23 · in_transit");
+  await expect(dialog).toContainText("Private lost carrier observation");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await dialog.getByRole("button", { name: "Close", exact: true }).focus();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openOutcome("delivered", "DSH-POD", "Private carrier proof");
+  await page
+    .getByRole("button", { name: "Record outcome", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row).toContainText("Delivery: delivered · v24");
+  await expect(
+    row.getByRole("button", { name: "Record delivery outcome", exact: true }),
+  ).toHaveCount(0);
+  expect(facts(await dashboard())).toEqual(facts(before));
+  await cmd("user.create", {
+    name: "Delivery buyer",
+    email: "delivery-browser-buyer@example.test",
+    password: "long-delivery-password",
+    role: "buyer",
+    accountId: account.id,
+    sites: [],
+    requirePasswordChange: false,
+    currentPassword: "long-test-only-password",
+  });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("delivery-browser-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-delivery-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await nav(page, "Orders");
+  await expect(row).toContainText("Delivery: delivered · v24");
+  await expect(
+    row.getByRole("button", { name: "Record delivery outcome", exact: true }),
+  ).toHaveCount(0);
+  await opener.click();
+  await expect(dialog).toContainText("v2 · lost");
+  await expect(dialog).not.toContainText("Private");
+  await expect(dialog).not.toContainText("DSH-LOST");
+  const publicHistory = await (
+    await page.request.get(`/api/shipments/${packed.id}/delivery/history`)
+  ).json();
+  expect(
+    publicHistory.items.every(
+      (h: any) =>
+        !Object.hasOwn(h, "reference") &&
+        !Object.hasOwn(h, "evidence") &&
+        !Object.hasOwn(h, "actorId"),
+    ),
+  ).toBe(true);
+  const buyerData = await dashboard();
+  expect(
+    buyerData.shipments.every((s: any) => s.account_id === account.id),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});

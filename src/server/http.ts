@@ -567,6 +567,17 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ shipmentId: str, reason: str }),
       run: (a, k, p) => app.fulfillment.void(a, k, p),
     },
+    "fulfillment.delivery.update": {
+      schema: obj({
+        shipmentId: str,
+        revision: num,
+        state: choice("in_transit", "delayed", "lost", "returned", "delivered"),
+        reference: str,
+        evidence: str,
+        observedAt: str,
+      }),
+      run: (a, k, p) => app.fulfillment.updateDelivery(a, k, p),
+    },
     "fulfillment.delivery": {
       schema: obj({ shipmentId: str, reference: str, deliveredAt: str }),
       run: (a, k, p) => app.fulfillment.confirmDelivery(a, k, p),
@@ -1214,6 +1225,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
     after: query.after === undefined ? undefined : Number(query.after),
     limit: query.limit === undefined ? undefined : Number(query.limit),
   });
+  http.get<{ Params: { shipmentId: string }; Querystring: { after?: string } }>(
+    "/api/shipments/:shipmentId/delivery/history",
+    {
+      schema: {
+        params: obj({ shipmentId: str }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,8}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.fulfillment.deliveryHistory(
+        actor(request),
+        request.params.shipmentId,
+        request.query.after === undefined
+          ? undefined
+          : Number(request.query.after),
+      ),
+  );
   http.get<{
     Params: { replacementId: string };
     Querystring: { after?: string };

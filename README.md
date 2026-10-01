@@ -23,7 +23,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
-| [Fulfillment and short picks](docs/FULFILLMENT.md) | Packed commitments, shortage holds, backorders and separate count review |
+| [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |
 | [Warranty and replacements](docs/WARRANTY.md) | Native returns, replacement collection/dispatch, manufacturer evidence and remaining qualification |
 | [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets, optional MFA and session revocation |
 | [Providers, residency and devices](docs/PROVIDERS.md) | Customer choice, major-provider candidates and local provider operations |

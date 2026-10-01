@@ -1,8 +1,26 @@
-# Fulfillment and short-pick review
+# Fulfillment, delivery and short-pick review
 
 Local implementation, 2026-10-01. All tasks and product gates remain NOT VERIFIED. This workflow uses synthetic provisional policies pending warehouse/finance acceptance.
 
 Warehouse staff at a granted site can pick serial/bulk allocations, pack selected quantities, void packing, and record collection or shipment handover. Handover consumes allocated stock and creates the original invoice; packing alone does neither. Actual carriers, labels, devices and physical handover remain to be qualified.
+
+## Ordinary carrier delivery observations
+
+After shipment handover, the Orders shipment row shows **Delivery: handed_over · v0**. Warehouse or commercial staff at a currently granted site, and administrators under the existing administrator policy, can choose **Record delivery outcome**. Enter in_transit, delayed, lost, returned or delivered, an evidence reference, observation text and canonical UTC ISO time (for example `2026-10-01T10:00:00.000Z`). The time must be no earlier than handover or the previous observation, and no later than the server clock. Unique evidence references are permanent per shipment after trim/NFKC/case normalization. These are manual observations; the application does not contact or qualify a carrier.
+
+Every new observation requires the current delivery revision. Refresh and review after a stale revision; never reinterpret a saved request as a new observation. In-transit, delayed and lost observations may be followed by later evidence. Delivered and returned are terminal. A returned observation records a carrier outcome and does not prove warehouse receipt or authorize a return disposition. Delivery observations preserve the original shipped state, serialized sale/coverage link, stock, order quantities, invoice, cash and exposure. Loss, delay or return requires a separate reviewed replacement, physical return, credit or refund remedy; none is automatic.
+
+**View delivery history** loads immutable observations in revision order, 20 at a time. A failed next-page request preserves loaded records and the cursor. Staff receive reference/evidence/actor metadata. Current buyers see only their account's states, times, revisions and source, without those private fields. Warehouse readers require the shipment's current granted site. Commercial, finance, warranty and support readers retain the existing organization-wide shipment-read policy; this is provisional and requires operating acceptance. All writes require current warehouse-site authority. Current real identity, active status, role, account/site and password-change requirements are reread before history and cached mutation results.
+
+`POST /api/commands/fulfillment.delivery.update` accepts only `shipmentId`, `revision`, `state`, `reference`, `evidence` and `observedAt`. Authenticated session, origin/CSRF and durable idempotency key are required. Exact authorized retries return the original result, including after restart or a later terminal observation; changed payloads conflict. New-key evidence-reference reuse is refused. History, compatibility delivery fact, event, audit and command receipt commit atomically. `GET /api/shipments/:shipmentId/delivery/history?after=…` accepts a positive revision up to that shipment's latest revision; it rejects unknown query fields and invalid/out-of-range values. Collection rows start at collected and have no carrier-outcome control.
+
+## Existing delivery records and upgrade
+
+Stop older application processes before upgrading; do not run older writers alongside this schema. Existing `fulfillment_delivery` rows and original cached `fulfillment.delivery` results remain intact. Startup imports each shipment's existing delivered fact once into history, retaining its original ID, reference, observed time and actor with source legacy. The migration creation time identifies import time; no new operator observation or carrier event is asserted. A legacy delivered fact remains terminal. Startup currently scans legacy facts synchronously; production scale, interrupted-upgrade/concurrent-startup behavior, older-writer exclusion and rollback procedures still require qualification.
+
+The compatibility `fulfillment.delivery` command still accepts `shipmentId`, `reference` and `deliveredAt`, returns the original `{id}` shape and can record a terminal collection receipt. New successful commands also save history with source operator. The compatibility command retains Date.parse-compatible timestamp normalization to UTC; the new carrier command requires canonical UTC input. Its payload has no expected revision; new callers should use the revision-checked carrier command. Both commands enforce current authority and preserve exact saved receipts; neither changes stock or money. A new attempt after terminal delivery or return is refused.
+
+See [the delivery receipt](evidence/LOCAL-SHIPMENT-DELIVERY-2026-10-01.md) for synthetic workstation checks, including separate-process revision contention, late-write rollback, buyer isolation and encrypted restore. Actual carrier proof, returned-stock receipt/remedies, corrections, customer wording, attachments, clock synchronization, regional hosting, retention and production migration/load/recovery/security/human acceptance remain unqualified.
 
 ## Reporting unavailable allocated stock
 
@@ -36,4 +54,4 @@ Authenticated `serial.missing.report`, `serial.missing.decide` and `serial.missi
 
 See [the local short-pick receipt](evidence/LOCAL-SHORT-PICKS-2026-10-01.md) for the tested candidate, failures, final checks and limitations. Workstation tests cover split/original serial identities, packed commitments, another order's reservation, restarts/retries, real grants/password requirements, tied-timestamp pagination, rollback and separate-process packing/report contention. Browser evidence uses synthetic stock and simulated lost responses; it does not establish physical shortage, operator acceptance or production capacity.
 
-Actual bin/lot procedures, physical serial custody/writeoff/recovery, approval duties, evidence attachments, corrections/disputes, carrier exception handling, clock/retention/archive/load/security/upgrade/recovery and production residency remain unqualified. No CI, external provider request or remote publication is authorized for this checkpoint.
+Actual bin/lot procedures, physical serial custody/writeoff/recovery, approval duties, evidence attachments, corrections/disputes, actual carrier exception/remedy qualification, clock/retention/archive/load/security/upgrade/recovery and production residency remain unqualified. No CI, external provider request or remote publication is authorized for this checkpoint.

@@ -236,8 +236,20 @@ test("cancel releases reservation, retains evidence, allows a new serial or nati
   }).id;
   const foreign = { ...f, buyer: other };
   ship(f, accept(foreign, 2, "resale").id);
-  const a: Actor = { ...f.actor, role: "buyer", accountId: f.buyer };
+  const buyer = f.app.identity.createUser(f.actor, "original-buyer", {
+    name: "Original buyer",
+    email: "original-buyer@example.test",
+    password: "long-buyer-test-password",
+    role: "buyer",
+    accountId: f.buyer,
+    sites: [],
+  });
+  const a = f.app.identity.currentActor({ ...f.actor, id: buyer.id });
   assert.deepEqual(f.app.warranty.soldUnits(a), []);
+  assert.deepEqual(
+    f.app.warranty.soldUnits({ ...a, role: "admin", accountId: other }),
+    [],
+  );
   assert.throws(
     () =>
       f.app.warranty.submit(a, "wrong", {

@@ -789,6 +789,7 @@ export class Warranty {
     };
   }
   soldUnits(actor: Actor) {
+    actor = this.identity.currentActor(actor);
     permit(actor, ["warranty", "commercial", "buyer"]);
     const candidates = new Map<
       string,

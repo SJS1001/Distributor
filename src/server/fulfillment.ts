@@ -32,6 +32,22 @@ export type Shipment = {
   created_at: string;
   shipped_at: string | null;
 };
+type DeliveryState =
+  "in_transit" | "delayed" | "lost" | "returned" | "delivered";
+type DeliveryObservation = {
+  id: string;
+  org_id: string;
+  shipment_id: string;
+  revision: number;
+  state: DeliveryState;
+  reference: string;
+  reference_key: string;
+  evidence: string;
+  observed_at: string;
+  actor_id: string;
+  created_at: string;
+  source: string;
+};
 type PackedLine = { allocationId: string; quantity: number };
 type ShortPick = {
   id: string;
@@ -58,9 +74,36 @@ export class Fulfillment {
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS fulfillment_shipments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('packed','shipped','void')),mode TEXT NOT NULL CHECK(mode IN('carrier','collection')),address TEXT NOT NULL,tracking TEXT,carrier TEXT,lines TEXT NOT NULL,units TEXT NOT NULL DEFAULT '[]',invoice_id TEXT,created_at TEXT NOT NULL,shipped_at TEXT) STRICT;
     CREATE TABLE IF NOT EXISTS fulfillment_delivery(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,reference TEXT NOT NULL,delivered_at TEXT NOT NULL,actor_id TEXT NOT NULL,UNIQUE(org_id,shipment_id)) STRICT;
+    CREATE TABLE IF NOT EXISTS fulfillment_delivery_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','returned','delivered')),reference TEXT NOT NULL,reference_key TEXT NOT NULL,evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('operator','legacy')),UNIQUE(org_id,shipment_id,revision),UNIQUE(org_id,shipment_id,reference_key)) STRICT;
     CREATE TABLE IF NOT EXISTS fulfillment_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,allocation_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
     CREATE INDEX IF NOT EXISTS fulfillment_short_pick_history ON fulfillment_short_picks(org_id,order_id,created_at,id);
   `);
+    // Keep the compatibility receipt, importing its recorded fact only once.
+    for (const legacy of this.store.all<{
+      id: string;
+      org_id: string;
+      shipment_id: string;
+      reference: string;
+      delivered_at: string;
+      actor_id: string;
+    }>(
+      "SELECT d.* FROM fulfillment_delivery d WHERE NOT EXISTS(SELECT 1 FROM fulfillment_delivery_history h WHERE h.org_id=d.org_id AND h.shipment_id=d.shipment_id)",
+    ))
+      this.store.run(
+        "INSERT OR IGNORE INTO fulfillment_delivery_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        legacy.id,
+        legacy.org_id,
+        legacy.shipment_id,
+        1,
+        "delivered",
+        legacy.reference,
+        legacy.reference.trim().normalize("NFKC").toLowerCase(),
+        "Imported legacy delivery reference",
+        legacy.delivered_at,
+        legacy.actor_id,
+        now(),
+        "legacy",
+      );
   }
   shipment(actor: Actor, shipmentId: string): Shipment {
     const row = this.store.get<Shipment>(
@@ -74,6 +117,7 @@ export class Fulfillment {
     return row;
   }
   shipments(actor: Actor) {
+    actor = this.identity.currentActor(actor);
     return this.store
       .all<Shipment>(
         "SELECT * FROM fulfillment_shipments WHERE org_id=? ORDER BY created_at DESC",
@@ -88,6 +132,7 @@ export class Fulfillment {
         ...s,
         lines: JSON.parse(s.lines),
         units: JSON.parse(s.units),
+        delivery: this.deliverySummary(s),
       }));
   }
   picks(actor: Actor, orderId: string) {
@@ -379,7 +424,14 @@ export class Fulfillment {
       key,
       input,
       () => {
+        actor = this.identity.currentActor(actor);
         permit(actor, ["warehouse"]);
+        check(
+          !this.identity.security(actor).passwordChangeRequired,
+          "PASSWORD_CHANGE_REQUIRED",
+          "Change your password before handover.",
+          403,
+        );
         site(actor, this.shipment(actor, input.shipmentId).warehouse_id);
       },
       () => {
@@ -484,46 +536,246 @@ export class Fulfillment {
       },
     );
   }
+  private deliverySummary(s: Shipment) {
+    if (s.state !== "shipped") return null;
+    const row = this.latestDelivery(s.org_id, s.id);
+    return {
+      revision: row?.revision ?? 0,
+      state: row?.state ?? (s.mode === "carrier" ? "handed_over" : "collected"),
+      observedAt: row?.observed_at ?? s.shipped_at,
+    };
+  }
+  private latestDelivery(orgId: string, shipmentId: string) {
+    return this.store.get<DeliveryObservation>(
+      "SELECT * FROM fulfillment_delivery_history WHERE org_id=? AND shipment_id=? ORDER BY revision DESC LIMIT 1",
+      orgId,
+      shipmentId,
+    );
+  }
+  private deliveryAuthority(actor: Actor, shipmentId: string, write = false) {
+    actor = this.identity.currentActor(actor);
+    permit(
+      actor,
+      write
+        ? ["warehouse", "commercial"]
+        : [
+            "warehouse",
+            "commercial",
+            "finance",
+            "warranty",
+            "support",
+            "buyer",
+          ],
+    );
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing delivery.",
+      403,
+    );
+    const shipment = this.shipment(actor, shipmentId);
+    if (write) site(actor, shipment.warehouse_id);
+    return { actor, shipment };
+  }
+  deliveryHistory(actor: Actor, shipmentId: string, after?: number) {
+    const authorized = this.deliveryAuthority(actor, shipmentId);
+    actor = authorized.actor;
+    check(
+      authorized.shipment.state === "shipped",
+      "STATE",
+      "Only committed shipments have delivery history.",
+    );
+    const last = this.latestDelivery(actor.orgId, shipmentId);
+    const cursor =
+      after === undefined
+        ? 0
+        : integer(after, "delivery cursor", 1, last?.revision ?? 0);
+    const rows = this.store.all<DeliveryObservation>(
+      "SELECT * FROM fulfillment_delivery_history WHERE org_id=? AND shipment_id=? AND revision>? ORDER BY revision LIMIT 21",
+      actor.orgId,
+      shipmentId,
+      cursor,
+    );
+    const items = rows.slice(0, 20).map((h) => ({
+      revision: h.revision,
+      state: h.state,
+      observedAt: h.observed_at,
+      createdAt: h.created_at,
+      source: h.source,
+      ...(actor.role === "buyer"
+        ? {}
+        : {
+            reference: h.reference,
+            evidence: h.evidence,
+            actorId: h.actor_id,
+          }),
+    }));
+    return { items, next: rows.length > 20 ? items.at(-1)!.revision : null };
+  }
+  updateDelivery(
+    actor: Actor,
+    key: string,
+    input: {
+      shipmentId: string;
+      revision: number;
+      state: DeliveryState;
+      reference: string;
+      evidence: string;
+      observedAt: string;
+    },
+  ) {
+    let current: Actor, shipment: Shipment;
+    return this.platform.command(
+      actor,
+      "fulfillment.delivery.update",
+      key,
+      input,
+      () => {
+        ({ actor: current, shipment } = this.deliveryAuthority(
+          actor,
+          input.shipmentId,
+          true,
+        ));
+      },
+      () => {
+        check(
+          shipment.mode === "carrier",
+          "MODE",
+          "Carrier outcomes require a carrier shipment.",
+        );
+        return this.recordDelivery(current, shipment, input);
+      },
+    );
+  }
+  private recordDelivery(
+    actor: Actor,
+    shipment: Shipment,
+    input: {
+      revision: number;
+      state: DeliveryState;
+      reference: string;
+      evidence: string;
+      observedAt: string;
+    },
+  ) {
+    check(
+      shipment.state === "shipped",
+      "STATE",
+      "Only committed shipments can have delivery observations.",
+    );
+    const last = this.latestDelivery(actor.orgId, shipment.id);
+    check(
+      integer(input.revision, "delivery revision", 0, 999999998) ===
+        (last?.revision ?? 0),
+      "STALE_DELIVERY",
+      "Shipment delivery changed; refresh and review the current observation.",
+    );
+    check(
+      !last || !["delivered", "returned"].includes(last.state),
+      "STATE",
+      "Delivered or returned shipment observations are terminal; use a separately approved remedy.",
+    );
+    check(
+      ["in_transit", "delayed", "lost", "returned", "delivered"].includes(
+        input.state,
+      ),
+      "VALIDATION",
+      "Select a supported delivery outcome.",
+      400,
+    );
+    const reference = text(input.reference, "delivery evidence reference", 160),
+      evidence = text(input.evidence, "delivery evidence", 2000),
+      observedAt = text(input.observedAt, "observed time", 24);
+    const date = new Date(observedAt);
+    check(
+      Number.isFinite(date.getTime()) &&
+        date.toISOString() === observedAt &&
+        observedAt >= (last?.observed_at ?? shipment.shipped_at!) &&
+        observedAt <= now(),
+      "VALIDATION",
+      "Observed time must be an ISO UTC time after handover and the previous observation, and not in the future.",
+      400,
+    );
+    const referenceKey = reference.normalize("NFKC").toLowerCase();
+    check(
+      !this.store.get(
+        "SELECT id FROM fulfillment_delivery_history WHERE org_id=? AND shipment_id=? AND reference_key=?",
+        actor.orgId,
+        shipment.id,
+        referenceKey,
+      ),
+      "DELIVERY_REFERENCE",
+      "Delivery reference is already recorded; review the original observation.",
+    );
+    const observationId = id(),
+      revision = input.revision + 1;
+    this.store.run(
+      "INSERT INTO fulfillment_delivery_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      observationId,
+      actor.orgId,
+      shipment.id,
+      revision,
+      input.state,
+      reference,
+      referenceKey,
+      evidence,
+      observedAt,
+      actor.id,
+      now(),
+      "operator",
+    );
+    if (input.state === "delivered")
+      this.store.run(
+        "INSERT INTO fulfillment_delivery VALUES(?,?,?,?,?,?)",
+        observationId,
+        actor.orgId,
+        shipment.id,
+        reference,
+        observedAt,
+        actor.id,
+      );
+    this.platform.event(actor, "fulfillment.delivery.observed", shipment.id, {
+      revision,
+      state: input.state,
+      observedAt,
+    });
+    return { id: shipment.id, revision, state: input.state };
+  }
   confirmDelivery(
     actor: Actor,
     key: string,
     input: { shipmentId: string; reference: string; deliveredAt: string },
   ) {
+    let current: Actor, shipment: Shipment;
     return this.platform.command(
       actor,
       "fulfillment.delivery",
       key,
       input,
       () => {
-        permit(actor, ["warehouse", "commercial"]);
-        this.shipment(actor, input.shipmentId);
+        ({ actor: current, shipment } = this.deliveryAuthority(
+          actor,
+          input.shipmentId,
+          true,
+        ));
       },
       () => {
-        const s = this.shipment(actor, input.shipmentId);
-        check(
-          s.state === "shipped",
-          "STATE",
-          "Only committed shipments can be delivered.",
-        );
         const timestamp = Date.parse(input.deliveredAt);
         check(
-          Number.isFinite(timestamp) &&
-            timestamp <= Date.now() &&
-            timestamp >= Date.parse(s.shipped_at!),
+          Number.isFinite(timestamp),
           "VALIDATION",
-          "Delivery time must follow shipment and not be in the future.",
+          "Delivery time must be a valid timestamp.",
           400,
         );
-        this.store.run(
-          "INSERT INTO fulfillment_delivery VALUES(?,?,?,?,?,?)",
-          id(),
-          actor.orgId,
-          s.id,
-          text(input.reference, "proof of delivery"),
-          new Date(timestamp).toISOString(),
-          actor.id,
-        );
-        return { id: s.id };
+        const result = this.recordDelivery(current, shipment, {
+          revision:
+            this.latestDelivery(current.orgId, shipment.id)?.revision ?? 0,
+          state: "delivered",
+          reference: input.reference,
+          evidence: input.reference,
+          observedAt: new Date(timestamp).toISOString(),
+        });
+        return { id: result.id };
       },
     );
   }
