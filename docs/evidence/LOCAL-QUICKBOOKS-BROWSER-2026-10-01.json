@@ -281,7 +281,7 @@
   "documentsSha256": {
     "docs/PROVIDERS.md": "a661411b799b64d8e55b8549141f26c651a0d7101e2131ad7f804c8aebb5c390",
     "docs/IMPLEMENTATION.md": "bdad965d8748e3295cff553ee312d34f992edb7a5f40d81f5479286b5a297c2b",
-    "docs/HANDOFF.md": "1528ec34732545f5673baa378b02f1e426fa5ea55abe2c8259e8e986b6006d9c"
+    "docs/HANDOFF.md": "5a2f8240ac5dc793e4628073924e6f26da0f3bf37741a5668f6e045cde6cc1f0"
   },
   "receiptMarkdownSha256": "96d2f074c3910a318eb1a891b49d99ec6cc0277c796010e8593863336300e771",
   "historicalEvidenceSha256": {
