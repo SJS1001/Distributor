@@ -50,6 +50,15 @@ export type Invoice = InvoiceRow & {
   origin?: "native" | "opening";
   opening?: ReturnType<BillingOpening["snapshot"]>;
 };
+export type RecordedPayment = {
+  id: string;
+  org_id: string;
+  invoice_id: string;
+  provider: string;
+  external_ref: string;
+  amount: number;
+  created_at: string;
+};
 export class Billing {
   private store: Store;
   readonly opening: BillingOpening;
@@ -316,6 +325,17 @@ export class Billing {
         ...this.totals(actor, i.id),
         lines: this.lines(actor, i.id),
       }));
+  }
+  recordedPayment(actor: Actor, paymentId: string): RecordedPayment {
+    permit(actor, ["finance", "support"]);
+    const payment = this.store.get<RecordedPayment>(
+      "SELECT * FROM billing_payments WHERE org_id=? AND id=?",
+      actor.orgId,
+      paymentId,
+    );
+    check(payment, "NOT_FOUND", "Recorded payment not found.", 404);
+    this.invoice(actor, payment.invoice_id);
+    return payment;
   }
   credit(
     actor: Actor,

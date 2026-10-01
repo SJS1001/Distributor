@@ -601,6 +601,14 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.integration.accounting(a, k, p),
     },
+    "quickbooks.payment": {
+      schema: obj({
+        paymentId: str,
+        appliedAmount: num,
+        depositAccountRef: str,
+      }),
+      run: (a, k, p) => app.integration.accountingPayment(a, k, p),
+    },
   };
 }
 export type HttpOptions = {

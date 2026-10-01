@@ -4002,3 +4002,260 @@ test("browser: credited cash refund request and bank verification retry one rese
   expect(after.shipments).toEqual(before.shipments);
   expect(errors).toEqual([]);
 });
+
+test("browser: accounting invoice and cash queues retry lost responses and reconcile uncertain sends without changing native facts", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const account = await cmd("account.create", {
+    name: "Accounting browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "QBO-BROWSER",
+    name: "Accounting browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await (await page.request.get("/api/dashboard")).json(),
+    warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 1, unitCost: 6000 }],
+  });
+  const received = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: received.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "QBO-BROWSER-DEL",
+    quantity: 1,
+    serials: ["QBO-BROWSER-UNIT"],
+    bin: "QBO",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const pick of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: pick.id,
+      serial: pick.serial,
+    });
+  const picked = await (await page.request.get("/api/dashboard")).json();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic accounting counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  const shipped = await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic accounting handover",
+  });
+  const payment = await cmd("billing.payment.manual", {
+    invoiceId: shipped.invoiceId,
+    amount: 11300,
+    reference: "QBO-BROWSER-CASH",
+    reason: "Synthetic verified bank receipt",
+  });
+  const before = await (await page.request.get("/api/dashboard")).json(),
+    invoice = before.invoices.find((i: any) => i.id === shipped.invoiceId);
+  await page.reload();
+  await nav(page, "Billing");
+  const invoiceRow = page
+    .getByRole("row")
+    .filter({ has: page.locator("strong", { hasText: invoice.number }) });
+  const cashRow = page.getByRole("row").filter({ hasText: "QBO-BROWSER-CASH" });
+  await expect(cashRow).toContainText("Reconcile QuickBooks invoice first");
+  await invoiceRow
+    .getByRole("button", { name: "Queue QuickBooks invoice", exact: true })
+    .click();
+  let dialog = page.getByRole("dialog", {
+    name: "Queue QuickBooks invoice",
+    exact: true,
+  });
+  await dialog
+    .getByLabel("QuickBooks customer ID", { exact: true })
+    .fill("customer-1");
+  await dialog
+    .getByLabel("QuickBooks item ID · Accounting browser equipment", {
+      exact: true,
+    })
+    .fill("item-1");
+  await dialog
+    .getByLabel("QuickBooks tax code ID", { exact: true })
+    .fill("tax-1");
+  await dialog
+    .getByLabel("QuickBooks tax rate ID", { exact: true })
+    .fill("rate-1");
+  await dialog
+    .getByRole("button", { name: "Queue invoice", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText("RESIDENCY_BLOCKED");
+  await cmd("account.residency", {
+    accountId: account.id,
+    region: "CA",
+    mode: "provider-exceptions",
+    providers: ["quickbooks"],
+    version: 1,
+    acknowledgment: "Synthetic named QuickBooks exception",
+  });
+  const invoiceKeys: string[] = [];
+  let lostInvoice = false;
+  await page.route("**/api/commands/quickbooks.invoice", async (route) => {
+    invoiceKeys.push(route.request().headers()["idempotency-key"]!);
+    if (!lostInvoice) {
+      lostInvoice = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await dialog
+    .getByRole("button", { name: "Queue invoice", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Queue invoice", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(invoiceKeys).toHaveLength(2);
+  expect(invoiceKeys[0]).toBe(invoiceKeys[1]);
+  const effects = () => page.request.get("/api/effects").then((r) => r.json());
+  let rows = await effects();
+  const invoiceEffect = rows.find(
+    (e: any) =>
+      e.provider === "quickbooks" &&
+      e.kind === "invoice" &&
+      e.reference === invoice.id,
+  );
+  expect(rows.filter((e: any) => e.id === invoiceEffect.id)).toHaveLength(1);
+  await expect(
+    cashRow.getByRole("button", { name: "Queue QuickBooks payment" }),
+  ).toHaveCount(0);
+  const operation = (kind: string) =>
+    page.getByRole("row").filter({
+      has: page.getByRole("cell", {
+        name: `quickbooks · ${kind}`,
+        exact: true,
+      }),
+    });
+  await operation("invoice")
+    .getByRole("button", { name: "Send to provider", exact: true })
+    .click();
+  await expect(operation("invoice")).toContainText("unknown");
+  await expect(
+    operation("invoice").getByRole("button", {
+      name: "Send to provider",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await operation("invoice")
+    .getByRole("button", { name: "Check provider outcome", exact: true })
+    .click();
+  await expect(operation("invoice")).toContainText("completed");
+  await cashRow
+    .getByRole("button", { name: "Queue QuickBooks payment", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Queue QuickBooks payment",
+    exact: true,
+  });
+  await expect(dialog).toContainText("without charging the customer");
+  await expect(dialog.getByLabel("Apply to invoice (cents)")).toHaveValue("0");
+  await dialog.getByLabel("Apply to invoice (cents)").fill("11300");
+  await dialog.getByLabel("QuickBooks deposit account ID").fill("bank-1");
+  const paymentKeys: string[] = [];
+  let lostPayment = false;
+  await page.route("**/api/commands/quickbooks.payment", async (route) => {
+    paymentKeys.push(route.request().headers()["idempotency-key"]!);
+    if (!lostPayment) {
+      lostPayment = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await dialog
+    .getByRole("button", { name: "Queue payment", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Queue payment", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(paymentKeys).toHaveLength(2);
+  expect(paymentKeys[0]).toBe(paymentKeys[1]);
+  rows = await effects();
+  expect(
+    rows.filter((e: any) => e.kind === "payment" && e.reference === payment.id),
+  ).toHaveLength(1);
+  await operation("payment")
+    .getByRole("button", { name: "Send to provider", exact: true })
+    .click();
+  await expect(operation("payment")).toContainText("unknown");
+  await operation("payment")
+    .getByRole("button", { name: "Check provider outcome", exact: true })
+    .click();
+  await expect(operation("payment")).toContainText("completed");
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(cashRow).toContainText("completed");
+  await expect(
+    cashRow.getByRole("button", {
+      name: "Queue QuickBooks payment",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const after = await (await page.request.get("/api/dashboard")).json();
+  expect(after.stock).toEqual(before.stock);
+  expect(after.orders).toEqual(before.orders);
+  expect(after.invoices).toEqual(before.invoices);
+  expect(errors).toEqual([]);
+});

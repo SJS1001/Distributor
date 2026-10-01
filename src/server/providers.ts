@@ -1,7 +1,12 @@
 import Stripe from "stripe";
 import { refundStatuses, type RefundIntent } from "./billing-refunds.ts";
 import { check, integer } from "./core.ts";
-import { type Adapter, type Effect, type EffectResult } from "./integration.ts";
+import {
+  type AccountingPaymentIntent,
+  type Adapter,
+  type Effect,
+  type EffectResult,
+} from "./integration.ts";
 import { type CommercialLine, type Invoice } from "./billing.ts";
 
 export class StripeAdapter implements Adapter {
@@ -272,6 +277,21 @@ type QboInvoice = {
   CurrencyRef?: { value: string };
   SyncToken: string;
   PrivateNote?: string;
+  CustomerRef?: { value: string };
+  Balance?: number;
+};
+type QboPayment = {
+  Id: string;
+  TotalAmt: number;
+  UnappliedAmt: number;
+  CustomerRef?: { value: string };
+  CurrencyRef?: { value: string };
+  DepositToAccountRef?: { value: string };
+  PaymentRefNum?: string;
+  PrivateNote?: string;
+  TxnDate?: string;
+  ProcessPayment?: boolean;
+  Line?: { Amount: number; LinkedTxn?: { TxnId: string; TxnType: string }[] }[];
 };
 const amount = (cents: number) =>
   Number(`${Math.trunc(cents / 100)}.${String(cents % 100).padStart(2, "0")}`);
@@ -313,7 +333,8 @@ export class QuickBooksAdapter implements Adapter {
     );
     return (await response.json()) as {
       Invoice?: QboInvoice;
-      QueryResponse?: { Invoice?: QboInvoice[] };
+      Payment?: QboPayment;
+      QueryResponse?: { Invoice?: QboInvoice[]; Payment?: QboPayment[] };
     };
   }
   private result(
@@ -322,9 +343,12 @@ export class QuickBooksAdapter implements Adapter {
     effectId: string,
   ): EffectResult {
     check(
-      invoice.PrivateNote === `Distributor effect ${effectId}` &&
+      typeof invoice.Id === "string" &&
+        invoice.Id.trim().length > 0 &&
+        invoice.PrivateNote === `Distributor effect ${effectId}` &&
         invoice.DocNumber === payload.invoice.number &&
-        Math.round(invoice.TotalAmt * 100) === payload.invoice.total &&
+        invoice.TotalAmt === amount(payload.invoice.total) &&
+        invoice.CustomerRef?.value === payload.customerRef &&
         invoice.CurrencyRef?.value === payload.invoice.currency,
       "ACCOUNTING_MISMATCH",
       "QuickBooks totals/currency differ; reconcile before marking delivered.",
@@ -339,7 +363,104 @@ export class QuickBooksAdapter implements Adapter {
       },
     };
   }
+  private paymentResult(effect: Effect, payment: QboPayment): EffectResult {
+    const p = JSON.parse(effect.payload) as AccountingPaymentIntent,
+      lines = payment.Line ?? [];
+    check(
+      typeof payment.Id === "string" &&
+        payment.Id.trim().length > 0 &&
+        payment.PrivateNote === `Distributor effect ${effect.id}` &&
+        payment.PaymentRefNum === p.paymentRef &&
+        payment.TotalAmt === amount(p.payment.amount) &&
+        payment.UnappliedAmt === amount(p.payment.amount - p.appliedAmount) &&
+        payment.CustomerRef?.value === p.customerRef &&
+        payment.CurrencyRef?.value === p.invoice.currency &&
+        payment.DepositToAccountRef?.value === p.depositAccountRef &&
+        payment.TxnDate === p.payment.created_at.slice(0, 10) &&
+        (payment.ProcessPayment === undefined ||
+          payment.ProcessPayment === false) &&
+        (p.appliedAmount === 0
+          ? lines.length === 0
+          : lines.length === 1 &&
+            lines[0]!.Amount === amount(p.appliedAmount) &&
+            lines[0]!.LinkedTxn?.length === 1 &&
+            lines[0]!.LinkedTxn[0]!.TxnId === p.externalInvoiceRef &&
+            lines[0]!.LinkedTxn[0]!.TxnType === "Invoice"),
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks payment identity, money or application differs; reconcile before marking delivered.",
+    );
+    // Entity-qualified identity avoids collisions with QuickBooks invoice IDs.
+    return {
+      reference: `payment:${payment.Id}`,
+      result: {
+        providerId: payment.Id,
+        paymentId: p.payment.id,
+        invoiceId: p.invoice.id,
+        amount: p.payment.amount,
+        appliedAmount: p.appliedAmount,
+        unappliedAmount: p.payment.amount - p.appliedAmount,
+        currency: p.invoice.currency,
+        customerRef: p.customerRef,
+        depositAccountRef: p.depositAccountRef,
+        paymentRef: p.paymentRef,
+      },
+    };
+  }
+  private async sendPayment(effect: Effect) {
+    const p = JSON.parse(effect.payload) as AccountingPaymentIntent;
+    const response = await this.request(
+      `/invoice/${encodeURIComponent(p.externalInvoiceRef)}`,
+    );
+    const invoice = response.Invoice;
+    check(
+      invoice &&
+        invoice.Id === p.externalInvoiceRef &&
+        invoice.PrivateNote === `Distributor effect ${p.invoiceEffectId}` &&
+        invoice.DocNumber === p.invoice.number &&
+        invoice.CustomerRef?.value === p.customerRef &&
+        invoice.CurrencyRef?.value === p.invoice.currency &&
+        invoice.TotalAmt === amount(p.invoice.total) &&
+        typeof invoice.Balance === "number" &&
+        Number.isFinite(invoice.Balance) &&
+        invoice.Balance >= amount(p.appliedAmount) &&
+        invoice.Balance <= invoice.TotalAmt &&
+        invoice.Balance === amount(Math.round(invoice.Balance * 100)),
+      "ACCOUNTING_INVOICE_MISMATCH",
+      "QuickBooks invoice identity or available balance differs. Reconcile external edits before posting cash.",
+    );
+    const posted = await this.request(
+      `/payment?requestid=${encodeURIComponent(effect.id)}`,
+      {
+        TotalAmt: amount(p.payment.amount),
+        CustomerRef: { value: p.customerRef },
+        CurrencyRef: { value: p.invoice.currency },
+        DepositToAccountRef: { value: p.depositAccountRef },
+        PaymentRefNum: p.paymentRef,
+        PrivateNote: `Distributor effect ${effect.id}`,
+        TxnDate: p.payment.created_at.slice(0, 10),
+        ProcessPayment: false,
+        Line:
+          p.appliedAmount === 0
+            ? []
+            : [
+                {
+                  Amount: amount(p.appliedAmount),
+                  LinkedTxn: [
+                    { TxnId: p.externalInvoiceRef, TxnType: "Invoice" },
+                  ],
+                },
+              ],
+      },
+    );
+    check(
+      posted.Payment,
+      "PROVIDER_RESPONSE",
+      "QuickBooks omitted the payment.",
+    );
+    return this.paymentResult(effect, posted.Payment);
+  }
   async execute(effect: Effect) {
+    if (effect.kind === "payment") return this.sendPayment(effect);
     check(
       effect.kind === "invoice",
       "PROVIDER_OPERATION",
@@ -388,6 +509,29 @@ export class QuickBooksAdapter implements Adapter {
     return this.result(response.Invoice, p, effect.id);
   }
   async lookup(effect: Effect) {
+    if (effect.kind === "payment") {
+      const p = JSON.parse(effect.payload) as AccountingPaymentIntent;
+      check(
+        /^DP-[a-f0-9]{18}$/.test(p.paymentRef),
+        "PROVIDER_QUERY",
+        "Invalid payment reference.",
+      );
+      const response = await this.request(
+        `/query?query=${encodeURIComponent(`select * from Payment where PaymentRefNum = '${p.paymentRef}' maxresults 2`)}`,
+      );
+      const rows = response.QueryResponse?.Payment ?? [];
+      check(
+        rows.length <= 1,
+        "ACCOUNTING_DUPLICATE",
+        "Multiple QuickBooks payments require finance review.",
+      );
+      return rows[0] ? this.paymentResult(effect, rows[0]) : null;
+    }
+    check(
+      effect.kind === "invoice",
+      "PROVIDER_OPERATION",
+      "Unsupported QuickBooks operation.",
+    );
     const p = JSON.parse(effect.payload) as QboPayload;
     check(
       /^[A-Z0-9-]+$/.test(p.invoice.number),

@@ -1,5 +1,7 @@
 import { fixture } from "./fixtures.ts";
 import { createHttp } from "../src/server/http.ts";
+import { ProviderRuntime } from "../src/server/provider-runtime.ts";
+import type { Adapter, EffectResult } from "../src/server/integration.ts";
 const cleanup: (() => void)[] = [];
 const f = fixture({ after: (fn) => cleanup.push(fn) });
 for (const [sku, serialized] of [
@@ -145,7 +147,46 @@ for (const [name, warehouseId] of [
     sites: [warehouseId],
   });
 }
-const http = await createHttp(f.app, { origin: "http://127.0.0.1:3117" });
+// Browser-only accounting fixture: store a synthetic external result, then lose
+// the send response. No provider SDK, token or network call is used.
+const accountingResults = new Map<string, EffectResult>();
+const syntheticAccounting: Adapter = {
+  execute: async (effect) => {
+    const p = JSON.parse(effect.payload);
+    accountingResults.set(effect.id, {
+      reference:
+        effect.kind === "payment"
+          ? `payment:${effect.id}`
+          : `synthetic-invoice-${effect.id}`,
+      result:
+        effect.kind === "payment"
+          ? {
+              paymentId: p.payment.id,
+              amount: p.payment.amount,
+              appliedAmount: p.appliedAmount,
+              currency: p.invoice.currency,
+            }
+          : {
+              number: p.invoice.number,
+              total: p.invoice.total,
+              currency: p.invoice.currency,
+            },
+    });
+    throw Error("Synthetic lost accounting send response");
+  },
+  lookup: async (effect) => accountingResults.get(effect.id) ?? null,
+};
+const http = await createHttp(f.app, {
+  origin: "http://127.0.0.1:3117",
+  providers: new ProviderRuntime(f.app, [
+    {
+      id: "browser-synthetic-accounting",
+      orgId: f.actor.orgId,
+      workerUserId: f.actor.id,
+      quickbooks: syntheticAccounting,
+    },
+  ]),
+});
 await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
   await http.close();

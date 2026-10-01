@@ -200,6 +200,34 @@ function App() {
     name: string,
     transform: (v: Item) => unknown = (v) => v,
   ) => open(title, fields, (v) => command(name, transform(v)));
+  const queueAccountingInvoice = (invoice: Item) =>
+    open(
+      "Queue QuickBooks invoice",
+      [
+        { name: "customerRef", label: "QuickBooks customer ID" },
+        ...invoice.lines.map((l: Item) => ({
+          name: `item-${l.product_id}`,
+          label: `QuickBooks item ID · ${l.description}`,
+        })),
+        { name: "taxCodeRef", label: "QuickBooks tax code ID" },
+        { name: "taxRateRef", label: "QuickBooks tax rate ID" },
+      ],
+      (v) =>
+        command("quickbooks.invoice", {
+          invoiceId: invoice.id,
+          customerRef: v.customerRef,
+          itemRefs: Object.fromEntries(
+            invoice.lines.map((l: Item) => [
+              l.product_id,
+              v[`item-${l.product_id}`],
+            ]),
+          ),
+          taxCodeRef: v.taxCodeRef,
+          taxRateRef: v.taxRateRef,
+        }),
+      `Queue ${invoice.number} for ${money(invoice.total, invoice.currency)} using verified company mappings. Customer permission is required. Sending is a separate action; uncertain outcomes require reconciliation.`,
+      "Queue invoice",
+    );
   const receiptDraft = (po: Item, draft?: Item) => {
     const saved = draft?.input;
     open(
@@ -1778,6 +1806,17 @@ function App() {
                       ).catch(() => {});
                     })}
                   {can("finance") &&
+                    !i.opening &&
+                    !extra.effects?.some(
+                      (e: Item) =>
+                        e.provider === "quickbooks" &&
+                        e.kind === "invoice" &&
+                        e.reference === i.id,
+                    ) &&
+                    button("Queue QuickBooks invoice", () =>
+                      queueAccountingInvoice(i),
+                    )}
+                  {can("finance") &&
                     i.balance < 0 &&
                     button("Request refund", () =>
                       simple(
@@ -2092,6 +2131,68 @@ function App() {
                     <code>{d.content_hash}</code>,
                     d.state,
                   ],
+                )}
+              </>
+            )}
+            {extra.payments?.length > 0 && (
+              <>
+                <h2>Recorded cash payments</h2>
+                {table(
+                  ["Invoice", "Cash", "Source", "QuickBooks handoff"],
+                  extra.payments,
+                  (p: Item) => {
+                    const invoice = data.invoices.find(
+                        (i: Item) => i.id === p.invoice_id,
+                      ),
+                      posted = extra.effects?.find(
+                        (e: Item) =>
+                          e.provider === "quickbooks" &&
+                          e.kind === "payment" &&
+                          e.reference === p.id,
+                      ),
+                      parent = extra.effects?.find(
+                        (e: Item) =>
+                          e.provider === "quickbooks" &&
+                          e.kind === "invoice" &&
+                          e.reference === p.invoice_id &&
+                          e.state === "completed",
+                      );
+                    return [
+                      invoice?.number ?? p.invoice_id,
+                      money(p.amount, invoice?.currency ?? "CAD"),
+                      `${p.provider} · ${p.external_ref}`,
+                      posted
+                        ? posted.state
+                        : can("finance") && parent
+                          ? button("Queue QuickBooks payment", () =>
+                              open(
+                                "Queue QuickBooks payment",
+                                [
+                                  {
+                                    name: "appliedAmount",
+                                    label: "Apply to invoice (cents)",
+                                    type: "number",
+                                    value: 0,
+                                    min: 0,
+                                    max: p.amount,
+                                  },
+                                  {
+                                    name: "depositAccountRef",
+                                    label: "QuickBooks deposit account ID",
+                                  },
+                                ],
+                                (v) =>
+                                  command("quickbooks.payment", {
+                                    ...v,
+                                    paymentId: p.id,
+                                  }),
+                                `Record ${money(p.amount, invoice?.currency ?? "CAD")} already received. Choose the amount to apply to ${invoice?.number}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
+                                "Queue payment",
+                              ),
+                            )
+                          : "Reconcile QuickBooks invoice first",
+                    ];
+                  },
                 )}
               </>
             )}

@@ -159,6 +159,7 @@ test("QuickBooks reconciliation needs the bound effect identity, exact money and
       TotalAmt: 113,
       CurrencyRef: { value: "CAD" },
       SyncToken: "0",
+      CustomerRef: { value: "customer-1" },
       PrivateNote: `Distributor effect ${f.accounting.id}`,
     };
   let rows = [valid];
@@ -181,6 +182,9 @@ test("QuickBooks reconciliation needs the bound effect identity, exact money and
   for (const change of [
     { PrivateNote: "Unrelated invoice with same number" },
     { TotalAmt: 113.01 },
+    { TotalAmt: 113.001 },
+    { Id: "" },
+    { CustomerRef: { value: "other" } },
     { CurrencyRef: { value: "USD" } },
     { DocNumber: "DIFFERENT" },
   ]) {

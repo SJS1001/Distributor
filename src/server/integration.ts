@@ -15,7 +15,7 @@ import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
 import { IntegrationRefunds } from "./integration-refunds.ts";
-import { Billing } from "./billing.ts";
+import { Billing, type RecordedPayment } from "./billing.ts";
 export type Effect = {
   id: string;
   org_id: string;
@@ -39,6 +39,16 @@ export type EffectResult = {
 export type Adapter = {
   execute(effect: Effect): Promise<EffectResult>;
   lookup(effect: Effect): Promise<EffectResult | null>;
+};
+export type AccountingPaymentIntent = {
+  payment: RecordedPayment;
+  invoice: { id: string; number: string; total: number; currency: string };
+  invoiceEffectId: string;
+  externalInvoiceRef: string;
+  customerRef: string;
+  depositAccountRef: string;
+  appliedAmount: number;
+  paymentRef: string;
 };
 export type Callback = {
   id: string;
@@ -71,6 +81,8 @@ export class Integration {
     CREATE TABLE IF NOT EXISTS integration_inbox(provider TEXT NOT NULL,event_id TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(provider,event_id)) STRICT;
     CREATE TABLE IF NOT EXISTS integration_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,session_id TEXT NOT NULL,effect_id TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS integration_payment_allocations(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,applied_amount INTEGER NOT NULL CHECK(applied_amount>=0),UNIQUE(org_id,payment_id)) STRICT;
+    CREATE INDEX IF NOT EXISTS integration_payment_invoice ON integration_payment_allocations(org_id,invoice_id);
   `);
     this.operations = new IntegrationOperations(
       database,
@@ -108,7 +120,7 @@ export class Integration {
       .filter(
         (e) =>
           (actor.role !== "buyer" || e.account_id === actor.accountId) &&
-          (e.kind !== "refund" ||
+          (!["refund", "payment"].includes(e.kind) ||
             ["admin", "finance", "support"].includes(actor.role)),
       )
       .map((e) => ({
@@ -448,6 +460,109 @@ export class Integration {
             taxRateRef: input.taxRateRef,
           },
         );
+      },
+    );
+  }
+  accountingPayment(
+    actor: Actor,
+    key: string,
+    input: {
+      paymentId: string;
+      appliedAmount: number;
+      depositAccountRef: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "quickbooks.payment",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        const payment = this.billing.recordedPayment(actor, input.paymentId),
+          invoice = this.billing.invoice(actor, payment.invoice_id);
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "quickbooks");
+      },
+      () => {
+        const payment = this.billing.recordedPayment(actor, input.paymentId),
+          invoice = this.billing.invoice(actor, payment.invoice_id),
+          parent = this.store.get<Effect>(
+            "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='invoice' AND reference=? AND state='completed'",
+            actor.orgId,
+            invoice.id,
+          );
+        check(
+          parent?.external_ref,
+          "ACCOUNTING_INVOICE_REQUIRED",
+          "Reconcile the QuickBooks invoice before queuing its payment.",
+        );
+        const original = JSON.parse(parent.payload) as { customerRef: string };
+        const payload: AccountingPaymentIntent = {
+          payment,
+          invoice: {
+            id: invoice.id,
+            number: invoice.number,
+            total: invoice.total,
+            currency: invoice.currency,
+          },
+          invoiceEffectId: parent.id,
+          externalInvoiceRef: parent.external_ref,
+          customerRef: original.customerRef,
+          depositAccountRef: text(
+            input.depositAccountRef,
+            "QuickBooks deposit account",
+          ),
+          appliedAmount: integer(
+            input.appliedAmount,
+            "Applied amount",
+            0,
+            payment.amount,
+          ),
+          paymentRef: `DP-${digest(payment.id).slice(0, 18)}`,
+        };
+        const old = this.store.get<Effect>(
+          "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='payment' AND reference=?",
+          actor.orgId,
+          payment.id,
+        );
+        if (old)
+          return this.queue(
+            actor,
+            invoice.account_id,
+            "quickbooks",
+            "payment",
+            payment.id,
+            payload,
+          );
+        const allocated = this.store.get<{ amount: number }>(
+          "SELECT COALESCE(SUM(applied_amount),0) AS amount FROM integration_payment_allocations WHERE org_id=? AND invoice_id=?",
+          actor.orgId,
+          invoice.id,
+        )!.amount;
+        check(
+          allocated + payload.appliedAmount <= invoice.total,
+          "ACCOUNTING_ALLOCATION",
+          "Queued and delivered applications exceed the original invoice. Leave excess cash unapplied and reconcile credits/refunds separately.",
+        );
+        const effect = this.queue(
+          actor,
+          invoice.account_id,
+          "quickbooks",
+          "payment",
+          payment.id,
+          payload,
+        );
+        this.store.run(
+          "INSERT INTO integration_payment_allocations VALUES(?,?,?,?,?)",
+          effect.id,
+          actor.orgId,
+          invoice.id,
+          payment.id,
+          payload.appliedAmount,
+        );
+        return effect;
       },
     );
   }
