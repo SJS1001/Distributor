@@ -246,6 +246,46 @@ export class StripeAdapter implements Adapter {
     }
     return null;
   }
+  async expireCheckout(
+    effect: Effect,
+    beforeWrite: () => void,
+  ): Promise<EffectResult> {
+    this.allow();
+    check(
+      effect.provider === "stripe" &&
+        effect.kind === "checkout" &&
+        effect.external_ref,
+      "STATE",
+      "Only a bound checkout can be closed.",
+    );
+    const session = await this.client.checkout.sessions.retrieve(
+      effect.external_ref,
+    );
+    const observed = this.checkoutResult(effect, session);
+    check(
+      session.payment_status === "unpaid" &&
+        ["open", "expired"].includes(session.status ?? ""),
+      "CHECKOUT_REVIEW_REQUIRED",
+      "Checkout completed; reconcile payment before replacement.",
+    );
+    if (session.status === "expired") return observed;
+    beforeWrite();
+    const result = this.checkoutResult(
+      effect,
+      await this.client.checkout.sessions.expire(
+        effect.external_ref,
+        {},
+        { idempotencyKey: `distributor:expire:${effect.id}` },
+      ),
+    );
+    check(
+      result.result.status === "expired" &&
+        result.result.paymentStatus === "unpaid",
+      "CHECKOUT_REVIEW_REQUIRED",
+      "Provider did not confirm an expired unpaid checkout.",
+    );
+    return result;
+  }
   verifyWebhook(raw: Buffer, signature: string, secret: string) {
     return this.client.webhooks.constructEvent(raw, signature, secret, 300);
   }

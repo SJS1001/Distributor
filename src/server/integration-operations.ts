@@ -86,6 +86,7 @@ export class IntegrationOperations {
     adapter: Adapter,
     send: boolean,
     refreshCheckout = false,
+    closeCheckout = false,
   ) {
     const token = id();
     const effect = this.database.transaction(() => {
@@ -114,6 +115,15 @@ export class IntegrationOperations {
             : "Only unknown outcomes need reconciliation.",
       );
       this.identity.providerAllowed(actor, e.account_id, e.provider);
+      if (closeCheckout) {
+        this.integration.checkouts.assertClosable(actor, e);
+        check(
+          adapter.expireCheckout,
+          "PROVIDER_DISABLED",
+          "This provider cannot close checkout.",
+          503,
+        );
+      }
       if (send) {
         this.integration.assertAccountingRefundReady(actor, e);
         this.integration.checkouts.assertReadyToSend(actor, e);
@@ -154,30 +164,42 @@ export class IntegrationOperations {
       return e;
     });
     let result: EffectResult | null;
+    const beforeWrite = () => {
+      actor = this.principal(actor);
+      if (closeCheckout) permit(actor, ["finance"]);
+      this.platform.assertProviderAccess();
+      this.identity.providerAllowed(actor, effect.account_id, effect.provider);
+      const lease = this.store.get(
+          "SELECT token FROM integration_operation_leases WHERE org_id=? AND effect_id=?",
+          actor.orgId,
+          effectId,
+        ),
+        current = this.integration.effect(actor, effectId);
+      check(
+        lease?.token === token &&
+          current.state === (closeCheckout ? "completed" : "running") &&
+          current.external_ref === effect.external_ref &&
+          current.payload === effect.payload,
+        "STATE",
+        "Provider write claim is no longer active.",
+      );
+      if (closeCheckout) {
+        // The read claim deliberately blocks opening while the provider is checked.
+        this.integration.checkouts.assertClosable(actor, {
+          ...current,
+          error: effect.error,
+        });
+      } else {
+        this.integration.assertAccountingRefundReady(actor, effect);
+        this.integration.checkouts.assertReadyToSend(actor, effect);
+      }
+    };
     try {
-      result = send
-        ? await adapter.execute(effect, () => {
-            actor = this.principal(actor);
-            this.platform.assertProviderAccess();
-            this.identity.providerAllowed(
-              actor,
-              effect.account_id,
-              effect.provider,
-            );
-            const lease = this.store.get(
-              "SELECT token FROM integration_operation_leases WHERE org_id=? AND effect_id=?",
-              actor.orgId,
-              effectId,
-            );
-            check(
-              lease?.token === token,
-              "STATE",
-              "Provider write claim is no longer active.",
-            );
-            this.integration.assertAccountingRefundReady(actor, effect);
-            this.integration.checkouts.assertReadyToSend(actor, effect);
-          })
-        : await adapter.lookup(effect);
+      result = closeCheckout
+        ? await adapter.expireCheckout!(effect, beforeWrite)
+        : send
+          ? await adapter.execute(effect, beforeWrite)
+          : await adapter.lookup(effect);
     } catch (error) {
       this.release(actor, effect, token);
       if (!send) throw error;
@@ -189,6 +211,7 @@ export class IntegrationOperations {
     try {
       return this.database.transaction(() => {
         actor = this.principal(actor);
+        if (closeCheckout) permit(actor, ["finance"]);
         this.platform.assertProviderAccess();
         const lease = this.store.get(
           "SELECT token FROM integration_operation_leases WHERE org_id=? AND effect_id=?",
@@ -226,9 +249,11 @@ export class IntegrationOperations {
           );
           this.platform.event(
             actor,
-            refreshCheckout
-              ? "integration.checkout-refreshed"
-              : "integration.completed",
+            closeCheckout
+              ? "integration.checkout-closed"
+              : refreshCheckout
+                ? "integration.checkout-refreshed"
+                : "integration.completed",
             effectId,
             {
               provider: effect.provider,

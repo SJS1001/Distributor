@@ -9602,3 +9602,208 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   await expect(history).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("browser: phone checkout replacement reviews partial balance and retries a lost committed response exactly", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const login = async (p: Page, email: string) => {
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await login(page, "admin@example.test");
+  const session = await (await page.request.get("/api/session")).json();
+  const headers = {
+    origin: "http://127.0.0.1:3117",
+    "x-csrf-token": session.csrf,
+  };
+  const effects = () => page.request.get("/api/effects").then((r) => r.json());
+  const original = (await effects()).find(
+    (e: any) =>
+      e.kind === "checkout" &&
+      e.state === "completed" &&
+      e.checkout?.currentBalance === 11300,
+  );
+  expect(original).toBeTruthy();
+  // This isolated synthetic account is seeded by the existing native browser fixture.
+  // Refresh observes expired/unpaid through its local adapter; no provider call occurs.
+  const refreshed = await page.request.post(
+    `/api/effects/${original.id}/refresh-checkout`,
+    { headers },
+  );
+  expect(refreshed.ok(), await refreshed.text()).toBeTruthy();
+  const paid = await page.request.post("/api/commands/billing.payment.manual", {
+    headers: { ...headers, "idempotency-key": "phone-checkout-partial-bank" },
+    data: {
+      invoiceId: original.checkout.invoiceId,
+      amount: 1300,
+      reference: "PHONE-CHECKOUT-PARTIAL-BANK",
+      reason: "Synthetic partial bank payment",
+    },
+  });
+  expect(paid.ok(), await paid.text()).toBeTruthy();
+  await nav(page, "Billing");
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  const originalRow = page
+    .getByRole("row")
+    .filter({ hasText: "stripe · checkout" })
+    .filter({ hasText: original.checkout.invoiceNumber });
+  await expect(originalRow).toContainText("Current invoice balance: CA$100.00");
+  await originalRow
+    .getByRole("button", { name: "Close checkout link", exact: true })
+    .click();
+  let dialog = page.getByRole("dialog", {
+    name: "Close checkout link",
+    exact: true,
+  });
+  await expect(dialog).toContainText(
+    "buyer will no longer be able to use the old link",
+  );
+  await dialog.press("Escape");
+  await expect(
+    originalRow.getByRole("button", {
+      name: "Close checkout link",
+      exact: true,
+    }),
+  ).toBeFocused();
+  const review = originalRow.getByRole("button", {
+    name: "Review checkout replacement",
+    exact: true,
+  });
+  await review.click();
+  dialog = page.getByRole("dialog", {
+    name: "Review checkout replacement",
+    exact: true,
+  });
+  const reason = dialog.getByLabel(
+    "Buyer-visible reason for checkout replacement",
+    { exact: true },
+  );
+  await expect(reason).toBeFocused();
+  await expect(dialog).toContainText("Original frozen amount: CA$113.00");
+  await expect(dialog).toContainText("current invoice balance): CA$100.00");
+  await expect(reason).toHaveAttribute("maxlength", "1000");
+  await dialog.press("Escape");
+  await expect(review).toBeFocused();
+  await review.click();
+  await reason.fill(
+    "Synthetic partial payment: replace expired link for remaining balance",
+  );
+  const attempts: { key: string | undefined; payload: any }[] = [];
+  let receipt: any;
+  const path = "**/api/commands/stripe.checkout.renew";
+  await page.route(path, async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"],
+      payload: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.ok(), await response.text()).toBeTruthy();
+    const result = await response.json();
+    if (attempts.length === 1) {
+      receipt = result;
+      await route.abort("failed");
+    } else {
+      expect(result).toEqual(receipt);
+      await route.fulfill({ response });
+    }
+  });
+  await dialog
+    .getByRole("button", { name: "Prepare replacement checkout", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(reason).toHaveValue(
+    "Synthetic partial payment: replace expired link for remaining balance",
+  );
+  await dialog
+    .getByRole("button", { name: "Prepare replacement checkout", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect(attempts[0]!.payload).toMatchObject({
+    effectId: original.id,
+    amount: 10000,
+  });
+  const retained = await effects();
+  const predecessor = retained.find((e: any) => e.id === original.id);
+  const successor = retained.find(
+    (e: any) => e.reference === `renewal:${original.id}`,
+  );
+  expect(predecessor.checkout.state).toBe("superseded");
+  expect(predecessor.checkout.amount).toBe(11300);
+  expect(successor.id).not.toBe(original.id);
+  expect(successor.state).toBe("pending");
+  expect(successor.checkout.amount).toBe(10000);
+  expect(successor.checkout.currentBalance).toBe(10000);
+  expect(successor.checkout.replacementReason).toBe(
+    attempts[0]!.payload.reason,
+  );
+  expect(
+    retained.filter((e: any) => e.reference === `renewal:${original.id}`),
+  ).toHaveLength(1);
+  const rows = page
+    .getByRole("row")
+    .filter({ hasText: "stripe · checkout" })
+    .filter({ hasText: original.checkout.invoiceNumber });
+  const oldRow = rows.filter({ hasText: "Superseded checkout" });
+  await expect(
+    oldRow.getByRole("button", { name: "Send to provider", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    oldRow.getByRole("button", { name: "Open secure checkout", exact: true }),
+  ).toHaveCount(0);
+  const newRow = rows.filter({ hasText: "Current checkout" });
+  await expect(newRow).toContainText("Awaiting explicit provider send");
+  await newRow
+    .getByRole("button", { name: "Send to provider", exact: true })
+    .click();
+  await expect(
+    newRow.getByRole("button", { name: "Open secure checkout", exact: true }),
+  ).toBeVisible();
+  await page.unroute(path);
+  const buyerContext = await context.browser()!.newContext({
+    baseURL: "http://127.0.0.1:3117",
+    viewport: { width: 390, height: 844 },
+  });
+  try {
+    const buyer = await buyerContext.newPage();
+    await login(buyer, "checkout-buyer@example.test");
+    await nav(buyer, "Billing");
+    const buyerRows = buyer
+      .getByRole("row")
+      .filter({ hasText: "stripe · checkout" })
+      .filter({ hasText: original.checkout.invoiceNumber });
+    await expect(
+      buyerRows
+        .filter({ hasText: "Current checkout" })
+        .getByRole("button", { name: "Open secure checkout", exact: true }),
+    ).toBeVisible();
+    await expect(buyerRows).toHaveCount(2);
+    for (const name of [
+      "Review checkout replacement",
+      "Close checkout link",
+      "Send to provider",
+      "Refresh checkout status",
+    ])
+      await expect(
+        buyerRows.getByRole("button", { name, exact: true }),
+      ).toHaveCount(0);
+    await expect(
+      buyerRows.filter({ hasText: "Current checkout" }),
+    ).toContainText(attempts[0]!.payload.reason);
+  } finally {
+    await buyerContext.close();
+  }
+  expect(errors).toEqual([]);
+});

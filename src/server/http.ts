@@ -871,6 +871,15 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ invoiceId: str }),
       run: (a, k, p) => app.integration.checkout(a, k, p),
     },
+    "stripe.checkout.renew": {
+      schema: obj({
+        effectId: str,
+        reviewVersion: str,
+        amount: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.renewCheckout(a, k, p),
+    },
     "quickbooks.invoice": {
       schema: obj({
         invoiceId: str,
@@ -1579,6 +1588,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
       async (request) =>
         providers()[operation](actor(request), request.params.effectId),
     );
+  http.post<{ Params: { effectId: string } }>(
+    "/api/effects/:effectId/close-checkout",
+    {
+      preValidation: async (request) => {
+        check(
+          request.body === undefined ||
+            (request.body !== null &&
+              typeof request.body === "object" &&
+              !Array.isArray(request.body) &&
+              Object.keys(request.body).length === 0),
+          "VALIDATION",
+          "Checkout closing accepts no request fields.",
+          400,
+        );
+      },
+      schema: { params: obj({ effectId: str }) },
+    },
+    async (request) =>
+      providers().closeCheckout(actor(request), request.params.effectId),
+  );
   http.post<{ Params: { effectId: string } }>(
     "/api/effects/:effectId/refresh-checkout",
     {

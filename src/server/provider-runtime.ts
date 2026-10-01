@@ -125,6 +125,13 @@ export class ProviderRuntime {
       this.adapter(actor, "stripe"),
     );
   }
+  async closeCheckout(actor: Actor, effectId: string) {
+    return this.app.integration.closeCheckout(
+      actor,
+      effectId,
+      this.adapter(actor, "stripe"),
+    );
+  }
   async refreshRefund(actor: Actor, effectId: string) {
     const effect = this.app.integration.effect(actor, effectId);
     return this.app.integration.refunds.run(

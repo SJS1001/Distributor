@@ -43,6 +43,7 @@ type Field = {
   optional?: boolean;
   help?: string;
   max?: number;
+  maxLength?: number;
   min?: number;
   scan?: "single" | "lines";
 };
@@ -3387,11 +3388,38 @@ function App() {
                       )}
                     </>,
                     e.checkout ? (
-                      <CheckoutAction
-                        key={e.id}
-                        effectId={e.id}
-                        checkout={e.checkout}
-                      />
+                      <div>
+                        <CheckoutAction
+                          key={e.id}
+                          effectId={e.id}
+                          checkout={e.checkout}
+                        />
+                        <small>
+                          {e.checkout.state === "superseded"
+                            ? "Superseded checkout"
+                            : "Current checkout"}
+                          {" · Current invoice balance: "}
+                          {money(
+                            e.checkout.currentBalance,
+                            e.checkout.currency,
+                          )}
+                        </small>
+                        {e.checkout.replacementReason && (
+                          <small>
+                            Replacement reason: {e.checkout.replacementReason}
+                          </small>
+                        )}
+                        {e.error && <small role="alert">{e.error}</small>}
+                        {["pending", "running", "unknown"].includes(
+                          e.state,
+                        ) && (
+                          <small>
+                            {e.state === "pending"
+                              ? "Awaiting explicit provider send. No new payment has been recorded."
+                              : "Reconciliation required. Verify the existing provider outcome before replacing checkout."}
+                          </small>
+                        )}
+                      </div>
                     ) : (
                       (e.error ??
                       e.external_ref ??
@@ -3417,6 +3445,75 @@ function App() {
                           )}
 
                         {can("finance") &&
+                          !actor.accountId &&
+                          e.checkout?.canClose &&
+                          button("Close checkout link", () =>
+                            open(
+                              "Close checkout link",
+                              [],
+                              () =>
+                                request(
+                                  `/api/effects/${encodeURIComponent(e.id)}/close-checkout`,
+                                  { method: "POST" },
+                                ),
+                              `Close the ${e.checkout.invoiceNumber} checkout for ${money(e.checkout.amount, e.checkout.currency)}. The buyer will no longer be able to use the old link. This does not record a payment or prepare a replacement. If the outcome is uncertain, refresh and reconcile before continuing.`,
+                              "Confirm close checkout",
+                            ),
+                          )}
+                        {can("finance") &&
+                          !actor.accountId &&
+                          e.checkout?.canRenew &&
+                          Number.isSafeInteger(e.checkout.currentBalance) &&
+                          e.checkout.currentBalance > 0 &&
+                          button("Review checkout replacement", () => {
+                            const reviewed = {
+                              effectId: e.id,
+                              reviewVersion: e.checkout.reviewVersion,
+                              amount: e.checkout.currentBalance,
+                            };
+                            open(
+                              "Review checkout replacement",
+                              [
+                                {
+                                  name: "reason",
+                                  label:
+                                    "Buyer-visible reason for checkout replacement",
+                                  type: "textarea",
+                                  maxLength: 1000,
+                                },
+                              ],
+                              (values) =>
+                                command("stripe.checkout.renew", {
+                                  ...reviewed,
+                                  reason: values.reason,
+                                }),
+                              <>
+                                <p>Invoice {e.checkout.invoiceNumber}</p>
+                                <p>
+                                  Original frozen amount:{" "}
+                                  {money(
+                                    e.checkout.amount,
+                                    e.checkout.currency,
+                                  )}
+                                </p>
+                                <p>
+                                  Reviewed replacement amount (current invoice
+                                  balance):{" "}
+                                  {money(reviewed.amount, e.checkout.currency)}
+                                </p>
+                                <p>
+                                  The old checkout will be superseded. The
+                                  replacement remains pending until finance
+                                  explicitly sends it. This records no payment.
+                                  If the balance or checkout changes, refresh
+                                  and review again.
+                                </p>
+                              </>,
+                              "Prepare replacement checkout",
+                            );
+                          })}
+
+                        {can("finance") &&
                           e.provider === "quickbooks" &&
                           e.kind === "invoice" &&
                           e.state === "completed" && (
@@ -3429,6 +3526,7 @@ function App() {
                         <div className="actions">
                           {(e.kind !== "refund" || can("finance")) &&
                             e.state === "pending" &&
+                            e.checkout?.state !== "superseded" &&
                             button("Send to provider", () => {
                               void run(() =>
                                 request(`/api/effects/${e.id}/execute`, {
@@ -5428,6 +5526,7 @@ function Modal({
                   name={f.name}
                   aria-labelledby={`field-label-${f.name}`}
                   required={!f.optional}
+                  maxLength={f.maxLength}
                   defaultValue={String(f.value ?? "")}
                 />
               ) : (

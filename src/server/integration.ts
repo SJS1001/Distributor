@@ -52,6 +52,10 @@ export type EffectResult = {
 export type Adapter = {
   execute(effect: Effect, beforeWrite?: () => void): Promise<EffectResult>;
   lookup(effect: Effect): Promise<EffectResult | null>;
+  expireCheckout?(
+    effect: Effect,
+    beforeWrite: () => void,
+  ): Promise<EffectResult>;
   readInvoiceBalance?(effect: Effect): Promise<AccountingBalance>;
 };
 export type AccountingPaymentIntent = {
@@ -150,6 +154,7 @@ export class Integration {
     CREATE INDEX IF NOT EXISTS integration_credit_application_credit ON integration_credit_applications(org_id,credit_id);
   `);
     this.checkouts = new IntegrationCheckouts(
+      database,
       identity,
       billing,
       platform,
@@ -490,8 +495,10 @@ export class Integration {
         this.identity.providerAllowed(actor, invoice.account_id, "stripe");
       },
       () => {
-        const invoice = this.billing.invoice(actor, input.invoiceId),
-          balance = this.billing.totals(actor, invoice.id).balance;
+        const invoice = this.billing.invoice(actor, input.invoiceId);
+        const existing = this.checkouts.current(actor, invoice.id);
+        if (existing) return { id: existing.id, state: existing.state };
+        const balance = this.billing.totals(actor, invoice.id).balance;
         check(balance > 0, "BALANCE", "Invoice has no open balance.");
         return this.queue(
           actor,
@@ -506,6 +513,94 @@ export class Integration {
             number: invoice.number,
           },
         );
+      },
+    );
+  }
+  renewCheckout(
+    actor: Actor,
+    key: string,
+    input: {
+      effectId: string;
+      reviewVersion: string;
+      amount: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "stripe.checkout.renew",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        const effect = this.effect(actor, input.effectId);
+        this.billing.invoice(actor, this.checkouts.invoiceId(effect));
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, effect.account_id, "stripe");
+      },
+      () => {
+        const effect = this.effect(actor, input.effectId),
+          invoiceId = this.checkouts.invoiceId(effect),
+          invoice = this.billing.invoice(actor, invoiceId);
+        check(
+          this.checkouts.reviewVersion(effect) === input.reviewVersion,
+          "STALE",
+          "Checkout changed; refresh before reviewing a replacement.",
+        );
+        this.checkouts.assertReplaceable(actor, effect);
+        check(
+          this.checkouts.current(actor, invoiceId)?.id === effect.id,
+          "CHECKOUT_SUPERSEDED",
+          "Review the current invoice checkout.",
+        );
+        const amount = integer(input.amount, "Reviewed checkout amount", 1),
+          reason = text(input.reason, "Buyer-visible replacement reason", 1000);
+        check(
+          amount === this.billing.totals(actor, invoiceId).balance,
+          "CHECKOUT_BALANCE_CHANGED",
+          "Invoice balance changed; review the current amount before replacement.",
+        );
+        const successor = this.queue(
+          actor,
+          invoice.account_id,
+          "stripe",
+          "checkout",
+          `renewal:${effect.id}`,
+          {
+            invoiceId,
+            amount,
+            currency: invoice.currency.toLowerCase(),
+            number: invoice.number,
+          },
+        );
+        if (effect.state === "pending")
+          this.store.run(
+            "UPDATE integration_effects SET state='blocked',error='Replaced by a reviewed checkout before sending.' WHERE id=?",
+            effect.id,
+          );
+        this.store.run(
+          "INSERT INTO integration_checkout_renewals VALUES(?,?,?,?,?,?,?)",
+          successor.id,
+          actor.orgId,
+          invoiceId,
+          effect.id,
+          reason,
+          input.reviewVersion,
+          now(),
+        );
+        this.platform.audit(actor, "stripe.checkout.renew", invoiceId, {
+          predecessorId: effect.id,
+          successorId: successor.id,
+          amount,
+          reason,
+        });
+        this.platform.event(actor, "integration.checkout-renewed", invoiceId, {
+          predecessorId: effect.id,
+          successorId: successor.id,
+          amount,
+        });
+        return { ...successor, predecessorId: effect.id, invoiceId, amount };
       },
     );
   }
@@ -1239,6 +1334,9 @@ export class Integration {
   }
   async refreshCheckout(actor: Actor, effectId: string, adapter: Adapter) {
     return this.operations.run(actor, effectId, adapter, false, true);
+  }
+  async closeCheckout(actor: Actor, effectId: string, adapter: Adapter) {
+    return this.operations.run(actor, effectId, adapter, false, true, true);
   }
   async reconcile(actor: Actor, effectId: string, adapter: Adapter) {
     if (this.effect(actor, effectId).kind === "refund")
