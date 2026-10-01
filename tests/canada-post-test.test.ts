@@ -2261,3 +2261,106 @@ for (const lost of [false, true])
       code: "STATE",
     });
   });
+
+for (const lost of [false, true])
+  test(`native manifest and fulfillment handover use actual protocol client with synthetic transport, lost reply=${lost}`, async (t) => {
+    const f = setup(t),
+      before = native(f),
+      binding = new CanadaPostTestClient(f.config, async () => {
+        throw new Error("No binding I/O");
+      });
+    const prepared = f.app.carriers.prepareCanadaPostGroup(
+      f.actor,
+      "manifest-native-group",
+      {
+        configurationHash: binding.configurationHash,
+        entries: [
+          { bookingId: f.prepared.id, reviewHash: f.prepared.reviewHash },
+        ],
+      },
+    );
+    const providerGroupId = f.app.carriers.reviewCanadaPostGroup(
+      f.actor,
+      prepared.id,
+    ).providerGroupId;
+    const createSim = simulator(f, { groupId: providerGroupId });
+    await f.app.carriers.createCanadaPostMember(
+      f.actor,
+      prepared.id,
+      f.prepared.id,
+      new CanadaPostTestClient(f.config, createSim.transport),
+    );
+    const batch: CanadaPostManifestReview = {
+      manifestId: prepared.id,
+      groupId: providerGroupId,
+      entries: [{ intent: f.intent, shipmentId: id, tracking }],
+    };
+    const sim = manifestSimulator(f, batch, { lostReply: lost }),
+      client = new CanadaPostTestClient(f.config, sim.transport),
+      review = f.app.carriers.reviewCanadaPostManifest(
+        f.actor,
+        prepared.id,
+        client,
+      );
+    assert.deepEqual(review, client.manifestIdentity(batch));
+    assert.equal(sim.calls.length, 0);
+    const transmit = f.app.carriers.transmitCanadaPostManifest(
+      f.actor,
+      prepared.id,
+      review.reviewHash,
+      client,
+    );
+    if (lost) {
+      await assert.rejects(transmit);
+      assert.equal(
+        f.app.carriers.reviewCanadaPostGroup(f.actor, prepared.id).state,
+        "unknown",
+      );
+      assert.equal(
+        (
+          await f.app.carriers.reconcileCanadaPostManifest(
+            f.actor,
+            prepared.id,
+            review.reviewHash,
+            client,
+          )
+        ).state,
+        "transmitted",
+      );
+    } else assert.equal((await transmit).state, "transmitted");
+    assert.equal(sim.writes, 1);
+    assert.equal(writes(createSim.calls).length, 1);
+    const { booking: priorBooking, ...priorNative } = before;
+    const { booking: confirmedBooking, ...confirmedNative } = native(f);
+    assert.deepEqual(confirmedNative, priorNative);
+    assert.equal(priorBooking.booking!.state, "pending");
+    assert.equal(confirmedBooking.booking!.state, "booked");
+    assert.equal(
+      f.app.carriers.review(f.actor, f.shipmentId).booking!.tracking,
+      tracking,
+    );
+    assert.deepEqual(
+      f.app.carriers.canadaPostManifestDocument(f.actor, prepared.id).bytes,
+      pdf,
+    );
+    f.app.fulfillment.commit(f.actor, "native-manifest-handover", {
+      shipmentId: f.shipmentId,
+      carrier: "canada-post",
+      tracking,
+      handoverEvidence: "Synthetic actual-protocol handover",
+    });
+    assert.equal(
+      f.app.fulfillment.shipment(f.actor, f.shipmentId).state,
+      "shipped",
+    );
+    assert.equal(sim.writes, 1);
+    await assert.rejects(
+      f.app.carriers.transmitCanadaPostManifest(
+        f.actor,
+        prepared.id,
+        review.reviewHash,
+        client,
+      ),
+      { code: "STATE" },
+    );
+  });

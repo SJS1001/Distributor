@@ -14,7 +14,11 @@ import { Database, type Store } from "./database.ts";
 import type { Platform } from "./platform.ts";
 import type { Identity } from "./iam.ts";
 import type { Fulfillment, Shipment } from "./fulfillment.ts";
-import type { CanadaPostShipmentObservation } from "./canada-post-test.ts";
+import type {
+  CanadaPostShipmentObservation,
+  CanadaPostManifestReview,
+  CanadaPostManifestObservation,
+} from "./canada-post-test.ts";
 import { CANADA_POST_INITIALIZE_DDL } from "./canada-post-schema.ts";
 import {
   carrierNames,
@@ -64,6 +68,40 @@ export interface CanadaPostCreationClient {
     groupId: string,
   ): Promise<CanadaPostShipmentObservation | null>;
 }
+export type CanadaPostManifestIdentity = Pick<
+  CanadaPostManifestObservation,
+  | "manifestId"
+  | "groupId"
+  | "reviewHash"
+  | "configurationHash"
+  | "customerReference"
+  | "shipmentIds"
+>;
+// Application code must honor one guarded transmission and read-only recovery.
+// Identity is computed synchronously without provider I/O by the captured client.
+export interface CanadaPostManifestClient {
+  readonly testApplication: true;
+  readonly configurationHash: string;
+  manifestIdentity(input: CanadaPostManifestReview): CanadaPostManifestIdentity;
+  transmitManifest(
+    input: CanadaPostManifestReview,
+    beforeWrite: () => void,
+  ): Promise<CanadaPostManifestObservation>;
+  recoverManifest(
+    input: CanadaPostManifestReview,
+  ): Promise<CanadaPostManifestObservation | null>;
+}
+type ManifestClaim = {
+  kind: "manifest-claim";
+  groupReviewHash: string;
+  memberHash: string;
+  identity: CanadaPostManifestIdentity;
+};
+type ManifestConfirmation = Omit<ManifestClaim, "kind"> & {
+  kind: "manifest-confirmed";
+  result: Omit<CanadaPostManifestObservation, "document">;
+  documentHash: string;
+};
 type Booking = {
   sequence: number;
   id: string;
@@ -161,6 +199,8 @@ export class CarrierBookings {
         "Booked packing cannot be voided until carrier voiding is qualified.",
       );
       const intent = this.intent(booking);
+      if (intent.provider === "canada-post")
+        this.assertCanadaPostHandover(actor, booking);
       check(
         canonical(shipment) === canonical(intent.nativeSnapshot),
         "CARRIER_MISMATCH",
@@ -855,6 +895,497 @@ export class CarrierBookings {
       return expired.length;
     });
   }
+  private manifestClient(client: CanadaPostManifestClient) {
+    check(
+      client &&
+        client.testApplication === true &&
+        typeof client.configurationHash === "string" &&
+        /^[a-f0-9]{64}$/.test(client.configurationHash) &&
+        typeof client.manifestIdentity === "function" &&
+        typeof client.transmitManifest === "function" &&
+        typeof client.recoverManifest === "function",
+      "CARRIER_DISABLED",
+      "An explicitly injected Canada Post test manifest client is required.",
+      503,
+    );
+    return {
+      configurationHash: client.configurationHash,
+      identity: client.manifestIdentity.bind(client),
+      transmit: client.transmitManifest.bind(client),
+      recover: client.recoverManifest.bind(client),
+    };
+  }
+  private manifestInput(
+    actor: Actor,
+    group: CanadaPostGroup,
+    members: CanadaPostMember[],
+    ready: boolean,
+  ) {
+    const entries = members.map((member) => {
+      check(
+        member.state === "created" &&
+          member.token === null &&
+          member.started_at === null &&
+          typeof member.provider_shipment_id === "string" &&
+          /^[A-Za-z0-9_-]{1,32}$/.test(member.provider_shipment_id) &&
+          typeof member.tracking === "string" &&
+          /^\d{11,16}$/.test(member.tracking) &&
+          member.label_bytes !== null &&
+          member.label_hash === digest(Buffer.from(member.label_bytes)),
+        "CARRIER_MISMATCH",
+        "Manifest requires every exact created member and retained label without an active claim.",
+      );
+      validateCarrierLabel({
+        mediaType: "application/pdf",
+        bytes: Buffer.from(member.label_bytes!),
+      });
+      const booking = this.booking(actor, member.booking_id);
+      check(
+        booking.state === "pending" &&
+          booking.token === null &&
+          booking.started_at === null &&
+          booking.reference === null &&
+          booking.tracking === null &&
+          booking.label_bytes === null &&
+          booking.label_type === null &&
+          booking.label_hash === null &&
+          booking.error === null,
+        "CARRIER_MISMATCH",
+        "Manifest requires unchanged pending native bookings without another effect.",
+      );
+      if (ready) this.assertNative(actor, booking);
+      return {
+        intent: this.intent(booking),
+        shipmentId: member.provider_shipment_id!,
+        tracking: member.tracking!,
+      };
+    });
+    for (const field of ["shipmentId", "tracking"] as const)
+      check(
+        new Set(entries.map((entry) => entry[field])).size === entries.length,
+        "CARRIER_MISMATCH",
+        "Manifest provider shipment and tracking identities must be unique.",
+      );
+    return {
+      input: immutable({
+        manifestId: group.id,
+        groupId: group.provider_group_id,
+        entries,
+      }),
+      memberHash: digest(
+        canonical(
+          members.map((member) => ({
+            bookingId: member.booking_id,
+            reviewHash: member.review_hash,
+            shipmentId: member.provider_shipment_id,
+            tracking: member.tracking,
+            labelHash: member.label_hash,
+          })),
+        ),
+      ),
+    };
+  }
+  reviewCanadaPostManifest(
+    actor: Actor,
+    groupId: string,
+    client: CanadaPostManifestClient,
+  ): CanadaPostManifestIdentity {
+    actor = this.principal(actor);
+    const binding = this.manifestClient(client),
+      { group, members } = this.canadaPostGroup(actor, groupId);
+    check(
+      ["closed", "transmitting", "unknown"].includes(group.state),
+      "STATE",
+      "Review a closed group or retained manifest uncertainty.",
+    );
+    check(
+      group.configuration_hash === binding.configurationHash,
+      "CARRIER_CONFIG",
+      "The reviewed configuration changed.",
+    );
+    const snapshot = this.manifestInput(actor, group, members, false),
+      identity = validateManifestIdentity(
+        binding.identity(snapshot.input),
+        snapshot.input,
+        group.configuration_hash,
+      );
+    if (group.state !== "closed")
+      this.manifestClaim(group, snapshot.memberHash, identity);
+    return identity;
+  }
+  transmitCanadaPostManifest(
+    actor: Actor,
+    groupId: string,
+    reviewHash: string,
+    client: CanadaPostManifestClient,
+  ) {
+    return this.runCanadaPostManifest(actor, groupId, reviewHash, client, true);
+  }
+  reconcileCanadaPostManifest(
+    actor: Actor,
+    groupId: string,
+    reviewHash: string,
+    client: CanadaPostManifestClient,
+  ) {
+    return this.runCanadaPostManifest(
+      actor,
+      groupId,
+      reviewHash,
+      client,
+      false,
+    );
+  }
+  private manifestClaim(
+    group: CanadaPostGroup,
+    memberHash: string,
+    identity: CanadaPostManifestIdentity,
+  ): ManifestClaim {
+    check(
+      group.observation !== null &&
+        group.manifest_bytes === null &&
+        group.manifest_hash === null,
+      "CARRIER_MISMATCH",
+      "Manifest uncertainty must retain its exact claimed identity without confirmation.",
+    );
+    const claim = JSON.parse(group.observation!) as ManifestClaim;
+    exactFields(claim, ["kind", "groupReviewHash", "memberHash", "identity"]);
+    check(
+      claim.kind === "manifest-claim" &&
+        claim.groupReviewHash === group.review_hash &&
+        claim.memberHash === memberHash &&
+        canonical(claim.identity) === canonical(identity),
+      "CARRIER_MISMATCH",
+      "Manifest claim identity or created membership changed.",
+    );
+    return claim;
+  }
+  private async runCanadaPostManifest(
+    actor: Actor,
+    groupId: string,
+    reviewHash: string,
+    client: CanadaPostManifestClient,
+    send: boolean,
+  ): Promise<CanadaPostGroupView> {
+    actor = this.principal(actor);
+    const binding = this.manifestClient(client),
+      token = id();
+    const original = this.database.transaction(() => {
+      actor = this.principal(actor);
+      const { group, members } = this.canadaPostGroup(actor, groupId);
+      check(
+        group.configuration_hash === binding.configurationHash,
+        "CARRIER_CONFIG",
+        "The reviewed configuration changed.",
+      );
+      check(
+        group.state === (send ? "closed" : "unknown") &&
+          group.token === null &&
+          group.started_at === null &&
+          group.manifest_bytes === null &&
+          group.manifest_hash === null &&
+          (!send || group.observation === null),
+        "STATE",
+        "Transmit a closed unclaimed group once; uncertain outcomes require read-only recovery.",
+      );
+      const snapshot = this.manifestInput(actor, group, members, true),
+        identity = validateManifestIdentity(
+          binding.identity(snapshot.input),
+          snapshot.input,
+          group.configuration_hash,
+        );
+      check(
+        identity.reviewHash === reviewHash,
+        "CARRIER_MISMATCH",
+        "Review the exact manifest before claiming transmission or recovery.",
+      );
+      const claim: ManifestClaim = send
+        ? {
+            kind: "manifest-claim",
+            groupReviewHash: group.review_hash,
+            memberHash: snapshot.memberHash,
+            identity,
+          }
+        : this.manifestClaim(group, snapshot.memberHash, identity);
+      this.store.run(
+        "UPDATE integration_canada_post_groups SET state=?,token=?,started_at=?,observation=? WHERE id=?",
+        send ? "transmitting" : "unknown",
+        token,
+        Date.now(),
+        canonical(claim),
+        group.id,
+      );
+      this.platform.audit(
+        actor,
+        "carrier.canada-post.manifest.claimed",
+        group.id,
+        { reviewHash, send, memberHash: snapshot.memberHash },
+      );
+      return { group, snapshot, identity, claim };
+    });
+    let guarded = false;
+    const owned = (ready: boolean) => {
+      actor = this.principal(actor);
+      const { group, members } = this.canadaPostGroup(actor, groupId);
+      check(
+        group.state === (send ? "transmitting" : "unknown") &&
+          group.token === token &&
+          group.started_at !== null &&
+          group.review_hash === original.group.review_hash &&
+          group.configuration_hash === original.group.configuration_hash &&
+          group.provider_group_id === original.group.provider_group_id,
+        "STATE",
+        "Manifest claim ownership changed; recover without retransmitting.",
+      );
+      const snapshot = this.manifestInput(actor, group, members, ready);
+      check(
+        canonical(snapshot) === canonical(original.snapshot),
+        "CARRIER_MISMATCH",
+        "Claimed manifest members changed.",
+      );
+      this.manifestClaim(group, snapshot.memberHash, original.identity);
+      return { group, members };
+    };
+    try {
+      const result = send
+        ? await binding.transmit(original.snapshot.input, () => {
+            this.database.transaction(() => {
+              check(
+                !guarded,
+                "STATE",
+                "The manifest guard authorizes exactly one transmission.",
+              );
+              owned(true);
+              guarded = true;
+            });
+          })
+        : await binding.recover(original.snapshot.input);
+      check(
+        !send || guarded,
+        "CARRIER_RESULT",
+        "Manifest client did not invoke the write guard.",
+      );
+      const qualified =
+        result === null && !send
+          ? null
+          : validateManifestObservation(result, original.identity);
+      return this.database.transaction(() => {
+        const { group, members } = owned(false);
+        if (qualified) {
+          check(
+            !this.store.get(
+              "SELECT 1 FROM integration_canada_post_groups WHERE org_id=? AND configuration_hash=? AND id!=? AND state='transmitted' AND json_extract(observation,'$.result.poNumber')=?",
+              group.org_id,
+              group.configuration_hash,
+              group.id,
+              qualified.poNumber,
+            ),
+            "CARRIER_RESULT",
+            "Manifest purchase order is already bound to another group.",
+          );
+          const { document, ...metadata } = qualified,
+            documentHash = digest(document.bytes);
+          const confirmation: ManifestConfirmation = {
+            ...original.claim,
+            kind: "manifest-confirmed",
+            result: metadata,
+            documentHash,
+          };
+          this.store.run(
+            "UPDATE integration_canada_post_groups SET state='transmitted',token=NULL,started_at=NULL,observation=?,manifest_bytes=?,manifest_hash=? WHERE id=?",
+            canonical(confirmation),
+            document.bytes,
+            documentHash,
+            group.id,
+          );
+          for (const member of members) {
+            this.store.run(
+              "UPDATE integration_carrier_bookings SET state='booked',reference=?,tracking=?,label_bytes=?,label_type='application/pdf',label_hash=? WHERE id=?",
+              member.provider_shipment_id,
+              member.tracking,
+              member.label_bytes,
+              member.label_hash,
+              member.booking_id,
+            );
+            this.platform.event(
+              actor,
+              "carrier.booking.booked",
+              member.booking_id,
+              {
+                shipmentId: this.booking(actor, member.booking_id).shipment_id,
+                provider: "canada-post",
+                manifestId: group.id,
+                reviewHash: member.review_hash,
+              },
+            );
+          }
+          this.platform.event(
+            actor,
+            "carrier.canada-post.manifest.transmitted",
+            group.id,
+            { reviewHash, poNumber: qualified.poNumber, documentHash },
+          );
+        } else
+          this.store.run(
+            "UPDATE integration_canada_post_groups SET token=NULL,started_at=NULL WHERE id=?",
+            group.id,
+          );
+        this.platform.audit(
+          actor,
+          qualified
+            ? "carrier.canada-post.manifest.transmitted"
+            : "carrier.canada-post.manifest.unconfirmed",
+          group.id,
+          {
+            reviewHash,
+            reconciled: !send,
+            ...(qualified
+              ? {
+                  documentHash: digest(qualified.document.bytes),
+                  poNumber: qualified.poNumber,
+                }
+              : {}),
+          },
+        );
+        return this.reviewCanadaPostGroup(actor, group.id);
+      });
+    } catch (error) {
+      this.database.transaction(() => {
+        const changed = this.store.run(
+          "UPDATE integration_canada_post_groups SET state='unknown',token=NULL,started_at=NULL WHERE org_id=? AND id=? AND token=?",
+          original.group.org_id,
+          groupId,
+          token,
+        );
+        if (changed.changes)
+          this.platform.audit(
+            actor,
+            "carrier.canada-post.manifest.unknown",
+            groupId,
+            { reviewHash },
+          );
+      });
+      throw error;
+    }
+  }
+  recoverStaleCanadaPostManifests(ageMs = 120000, orgId?: string) {
+    integer(ageMs, "Canada Post manifest claim age", 0, 86_400_000);
+    if (orgId !== undefined) text(orgId, "Organization", 128);
+    return this.database.transaction(
+      () =>
+        this.store.run(
+          "UPDATE integration_canada_post_groups SET state='unknown',token=NULL,started_at=NULL WHERE state IN('transmitting','unknown') AND token IS NOT NULL AND started_at<=? AND (? IS NULL OR org_id=?)",
+          Date.now() - ageMs,
+          orgId ?? null,
+          orgId ?? null,
+        ).changes,
+    );
+  }
+  private confirmedManifest(actor: Actor, groupId: string) {
+    const { group, members } = this.canadaPostGroup(actor, groupId);
+    check(
+      group.state === "transmitted" &&
+        group.token === null &&
+        group.started_at === null &&
+        group.observation !== null &&
+        group.manifest_bytes !== null &&
+        group.manifest_hash === digest(Buffer.from(group.manifest_bytes)),
+      "CARRIER_MISMATCH",
+      "Manifest confirmation and retained document integrity are required.",
+    );
+    const confirmation = JSON.parse(group.observation!) as ManifestConfirmation;
+    exactFields(confirmation, [
+      "kind",
+      "groupReviewHash",
+      "memberHash",
+      "identity",
+      "result",
+      "documentHash",
+    ]);
+    const input = {
+      manifestId: group.id,
+      groupId: group.provider_group_id,
+      entries: members.map((member) => ({
+        intent: this.intent(this.booking(actor, member.booking_id)),
+        shipmentId: member.provider_shipment_id!,
+        tracking: member.tracking!,
+      })),
+    };
+    validateManifestIdentity(
+      confirmation.identity,
+      input,
+      group.configuration_hash,
+    );
+    check(
+      confirmation.kind === "manifest-confirmed" &&
+        confirmation.groupReviewHash === group.review_hash &&
+        confirmation.documentHash === group.manifest_hash &&
+        confirmation.memberHash ===
+          digest(
+            canonical(
+              members.map((member) => ({
+                bookingId: member.booking_id,
+                reviewHash: member.review_hash,
+                shipmentId: member.provider_shipment_id,
+                tracking: member.tracking,
+                labelHash: member.label_hash,
+              })),
+            ),
+          ) &&
+        members.every(
+          (member) =>
+            member.state === "created" &&
+            member.token === null &&
+            member.started_at === null &&
+            member.label_bytes !== null &&
+            member.label_hash === digest(Buffer.from(member.label_bytes)),
+        ),
+      "CARRIER_MISMATCH",
+      "Confirmed manifest identity or created observations changed.",
+    );
+    const result = validateManifestObservation(
+      {
+        ...confirmation.result,
+        document: {
+          mediaType: "application/pdf",
+          bytes: Buffer.from(group.manifest_bytes!),
+        },
+      },
+      confirmation.identity,
+    );
+    return { group, members, result };
+  }
+  canadaPostManifestDocument(actor: Actor, groupId: string) {
+    actor = this.principal(actor);
+    const { group, result } = this.confirmedManifest(actor, groupId);
+    return {
+      mediaType: "application/pdf" as const,
+      bytes: result.document.bytes,
+      hash: group.manifest_hash!,
+      poNumber: result.poNumber,
+    };
+  }
+  private assertCanadaPostHandover(actor: Actor, booking: Booking) {
+    const member = this.store.get<CanadaPostMember>(
+      "SELECT * FROM integration_canada_post_members WHERE booking_id=? AND active=1",
+      booking.id,
+    );
+    check(
+      member,
+      "CARRIER_MISMATCH",
+      "Canada Post handover requires retained confirmed manifest membership.",
+    );
+    this.confirmedManifest(actor, member.group_id);
+    check(
+      booking.reference === member.provider_shipment_id &&
+        booking.tracking === member.tracking &&
+        booking.label_type === "application/pdf" &&
+        booking.label_bytes !== null &&
+        booking.label_hash === member.label_hash &&
+        digest(Buffer.from(booking.label_bytes)) === member.label_hash,
+      "CARRIER_MISMATCH",
+      "Native booking differs from the confirmed Canada Post member.",
+    );
+  }
   private assertNoCanadaPostGroup(bookingId: string) {
     check(
       !this.store.get(
@@ -1356,6 +1887,86 @@ export function validateCarrierLabel(label: {
     "CARRIER_RESULT",
     "Carrier label type and file signature must agree.",
   );
+}
+function validateManifestIdentity(
+  value: CanadaPostManifestIdentity,
+  input: CanadaPostManifestReview,
+  configurationHash: string,
+): CanadaPostManifestIdentity {
+  exactFields(value, [
+    "manifestId",
+    "groupId",
+    "reviewHash",
+    "configurationHash",
+    "customerReference",
+    "shipmentIds",
+  ]);
+  const shipmentIds = input.entries.map((entry) => entry.shipmentId).sort();
+  check(
+    value.manifestId === input.manifestId &&
+      value.groupId === input.groupId &&
+      value.configurationHash === configurationHash &&
+      typeof value.reviewHash === "string" &&
+      /^[a-f0-9]{64}$/.test(value.reviewHash) &&
+      value.customerReference ===
+        "D" + value.reviewHash.slice(0, 11).toUpperCase() &&
+      Array.isArray(value.shipmentIds) &&
+      canonical(value.shipmentIds) === canonical(shipmentIds) &&
+      new Set(shipmentIds).size === shipmentIds.length &&
+      shipmentIds.every(
+        (id) => typeof id === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(id),
+      ),
+    "CARRIER_RESULT",
+    "Manifest identity must bind the exact configuration, native group and sorted created shipments.",
+  );
+  return immutable({ ...value, shipmentIds: [...value.shipmentIds] });
+}
+function validateManifestObservation(
+  value: CanadaPostManifestObservation | null,
+  identity: CanadaPostManifestIdentity,
+): CanadaPostManifestObservation {
+  exactFields(value, [
+    "manifestId",
+    "groupId",
+    "reviewHash",
+    "configurationHash",
+    "customerReference",
+    "shipmentIds",
+    "poNumber",
+    "manifestDate",
+    "totalCents",
+    "document",
+  ]);
+  check(
+    value &&
+      Object.entries(identity).every(
+        ([key, expected]) =>
+          canonical(value[key as keyof CanadaPostManifestIdentity]) ===
+          canonical(expected),
+      ) &&
+      typeof value.poNumber === "string" &&
+      /^[A-Za-z0-9]{1,10}$/.test(value.poNumber) &&
+      typeof value.manifestDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(value.manifestDate) &&
+      Number.isFinite(Date.parse(value.manifestDate)) &&
+      new Date(value.manifestDate).toISOString().slice(0, 10) ===
+        value.manifestDate &&
+      Number.isSafeInteger(value.totalCents) &&
+      value.totalCents >= 0 &&
+      value.totalCents <= 100_000_000 &&
+      value.document?.mediaType === "application/pdf",
+    "CARRIER_RESULT",
+    "Manifest observation must match its claimed identity, purchase order, bounded date/pricing and private PDF.",
+  );
+  validateCarrierLabel(value.document);
+  return {
+    ...value,
+    shipmentIds: [...value.shipmentIds],
+    document: {
+      mediaType: "application/pdf",
+      bytes: Buffer.from(value.document.bytes),
+    },
+  };
 }
 function validateCanadaPostCreation(
   result: CanadaPostShipmentObservation | null,
