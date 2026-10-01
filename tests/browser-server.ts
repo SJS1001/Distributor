@@ -1,7 +1,11 @@
-import { fixture } from "./fixtures.ts";
+import { fixture, accept, ship } from "./fixtures.ts";
 import { createHttp } from "../src/server/http.ts";
-import { ProviderRuntime } from "../src/server/provider-runtime.ts";
+import {
+  ProviderRuntime,
+  type StripeGateway,
+} from "../src/server/provider-runtime.ts";
 import type { Adapter, EffectResult } from "../src/server/integration.ts";
+import { check, type Actor } from "../src/server/core.ts";
 const cleanup: (() => void)[] = [];
 const f = fixture({ after: (fn) => cleanup.push(fn) });
 for (const [sku, serialized] of [
@@ -178,14 +182,162 @@ const syntheticAccounting: Adapter = {
   },
   lookup: async (effect) => accountingResults.get(effect.id) ?? null,
 };
+// Independent browser-only refund fixture. No SDK, token or provider network is used.
+const noticeBuyer = f.app.identity.createCustomer(f.actor, "notice-account", {
+  name: "Synthetic refund account",
+  tier: "standard",
+  creditLimit: 1000000,
+}).id;
+const noticeProduct = f.app.catalog.create(f.actor, "notice-product", {
+  sku: "NOTICE-1",
+  name: "Synthetic notice item",
+  serialized: false,
+  unitPrice: 10000,
+  taxBasisPoints: 1300,
+}).id;
+const noticePo = f.app.procurement.create(f.actor, "notice-po", {
+  supplierId: f.supplier,
+  warehouseId: f.w1,
+  lines: [{ productId: noticeProduct, quantity: 1, unitCost: 6000 }],
+}).id;
+f.app.procurement.receive(f.actor, "notice-stock", {
+  poId: noticePo,
+  lineId: String(
+    f.app.procurement.orders(f.actor).find((p) => p.id === noticePo)!.lines[0]!
+      .id,
+  ),
+  deliveryRef: "NOTICE-STOCK",
+  quantity: 1,
+  serials: [],
+  bin: "N-1",
+  quarantine: false,
+});
+const noticeFixture = { ...f, buyer: noticeBuyer, product: noticeProduct };
+const noticeInvoice = ship(
+  noticeFixture,
+  accept(noticeFixture, 1, "notice-order").id,
+).invoiceId;
+f.app.identity.residencyChoice(f.actor, "notice-permission", {
+  accountId: noticeBuyer,
+  region: "CA",
+  mode: "provider-exceptions",
+  providers: ["stripe"],
+  version: 1,
+  acknowledgment: "Synthetic browser permission",
+});
+const noticePayment = f.app.database.transaction(() =>
+  f.app.billing.verifiedPayment(
+    f.actor,
+    noticeInvoice,
+    11300,
+    "stripe",
+    "pi_browser_synthetic",
+  ),
+);
+f.app.billing.issueCredit(f.actor, "notice-credit", {
+  invoiceId: noticeInvoice,
+  reference: "NOTICE-CR",
+  reason: "Private browser credit",
+  lines: [
+    {
+      lineId: String(f.app.billing.lines(f.actor, noticeInvoice)[0]!.id),
+      quantity: 1,
+    },
+  ],
+});
+for (const [email, accountId] of [
+  ["refund-buyer@example.test", noticeBuyer],
+  ["refund-other@example.test", f.buyer],
+]) {
+  f.app.identity.createUser(f.actor, email!, {
+    name: email!,
+    email: email!,
+    password: "long-notice-test-password",
+    role: "buyer",
+    accountId: accountId!,
+    sites: [],
+  });
+}
+const refundReads = new Map<string, number>();
+const refundResult = (
+  effect: import("../src/server/integration.ts").Effect,
+  status: string,
+) => ({
+  reference: `re_${effect.reference.replaceAll("-", "")}`,
+  result: { ...JSON.parse(effect.payload), effectId: effect.id, status },
+});
+const syntheticRefunds: StripeGateway = {
+  execute: async (effect) => refundResult(effect, "requires_action"),
+  lookup: async (effect) => {
+    const reads = (refundReads.get(effect.id) ?? 0) + 1;
+    refundReads.set(effect.id, reads);
+    return refundResult(effect, reads === 1 ? "succeeded" : "failed");
+  },
+  verifyWebhook: () => {
+    throw Error("Browser fixture has no webhook path");
+  },
+  verifySettlement: async () => {
+    throw Error("Browser fixture has no checkout path");
+  },
+};
+for (let i = 0; i < 27; i++) {
+  const refund = f.app.billing.refundRequest(f.actor, `notice-refund-${i}`, {
+    invoiceId: noticeInvoice,
+    paymentId: noticePayment.id,
+    amount: 400,
+    reference: `NOTICE-REF-${i}`,
+    reason: "Private browser refund",
+  });
+  const effectId = f.app.integration.refund(f.actor, `notice-queue-${i}`, {
+    refundId: refund.id,
+  }).id;
+  await f.app.integration.execute(f.actor, effectId, syntheticRefunds);
+  if (i === 26) {
+    // More than one bounded history page, all verified through the owning transaction.
+    for (let j = 0; j < 26; j++) {
+      const effect = f.app.integration.effect(f.actor, effectId);
+      const intent = f.app.billing.refunds.intent(f.actor, refund.id);
+      const result = refundResult(
+        effect,
+        j % 2 === 0 ? "pending" : "requires_action",
+      );
+      f.app.database.transaction(() =>
+        f.app.billing.refunds.observe(
+          f.actor,
+          intent,
+          result.reference,
+          result.result,
+        ),
+      );
+    }
+  }
+}
+class BrowserProviders extends ProviderRuntime {
+  override async execute(actor: Actor, effectId: string) {
+    const effect = f.app.integration.effect(actor, effectId);
+    // The new refund-read fixture must not enable checkout sends for the
+    // existing disabled-provider journey. Reject before acquiring its claim.
+    check(
+      effect.provider !== "stripe" || effect.kind === "refund",
+      "PROVIDER_DISABLED",
+      "Stripe checkout is disabled in this browser fixture.",
+      503,
+    );
+    return super.execute(actor, effectId);
+  }
+}
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
-  providers: new ProviderRuntime(f.app, [
+  providers: new BrowserProviders(f.app, [
     {
       id: "browser-synthetic-accounting",
       orgId: f.actor.orgId,
       workerUserId: f.actor.id,
       quickbooks: syntheticAccounting,
+      stripe: {
+        adapter: syntheticRefunds,
+        webhookSecret: "whsec_browser_synthetic",
+      },
     },
   ]),
 });

@@ -501,6 +501,10 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.billing.refundRequest(a, k, p),
     },
+    "billing.refund.notice.acknowledge": {
+      schema: obj({ noticeId: str, revision: num }),
+      run: (a, k, p) => app.billing.refunds.alerts.acknowledge(a, k, p),
+    },
     "billing.refund.manual": {
       schema: obj({ refundId: str, reference: str, reason: str }),
       run: (a, k, p) => app.billing.manualRefund(a, k, p),
@@ -998,6 +1002,39 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/billing/refunds", async (request) =>
     app.billing.refunds.list(actor(request)),
+  );
+  const noticeQuery = obj(
+    {
+      after: { type: "string", pattern: "^[1-9][0-9]{0,15}$" },
+      limit: { type: "string", pattern: "^(?:[1-9][0-9]?|100)$" },
+    },
+    ["after", "limit"],
+  );
+  const noticePage = (query: { after?: string; limit?: string }) => ({
+    after: query.after === undefined ? undefined : Number(query.after),
+    limit: query.limit === undefined ? undefined : Number(query.limit),
+  });
+  http.get<{ Querystring: { after?: string; limit?: string } }>(
+    "/api/billing/refund-notices",
+    { schema: { querystring: noticeQuery } },
+    async (request) =>
+      app.billing.refunds.alerts.page(
+        actor(request),
+        noticePage(request.query),
+      ),
+  );
+  http.get<{
+    Params: { noticeId: string };
+    Querystring: { after?: string; limit?: string };
+  }>(
+    "/api/billing/refund-notices/:noticeId/history",
+    { schema: { params: obj({ noticeId: str }), querystring: noticeQuery } },
+    async (request) =>
+      app.billing.refunds.alerts.history(
+        actor(request),
+        request.params.noticeId,
+        noticePage(request.query),
+      ),
   );
   http.get("/api/effects", async (request) =>
     app.integration.list(actor(request)),

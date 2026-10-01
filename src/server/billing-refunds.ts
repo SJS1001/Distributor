@@ -1,7 +1,9 @@
 import { account, canonical, check, now, permit, type Actor } from "./core.ts";
-import type { Store } from "./database.ts";
+import type { Database, Store } from "./database.ts";
 import type { Platform } from "./platform.ts";
 import type { Billing } from "./billing.ts";
+import type { Identity } from "./iam.ts";
+import { BillingRefundAlerts } from "./billing-refund-alerts.ts";
 
 export type RefundStatus =
   "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
@@ -34,7 +36,10 @@ type RefundRow = {
   provider_status: string | null;
 };
 export class BillingRefunds {
+  readonly alerts: BillingRefundAlerts;
   constructor(
+    database: Database,
+    identity: Identity,
     private store: Store,
     private platform: Platform,
     private billing: Billing,
@@ -43,6 +48,7 @@ export class BillingRefunds {
       CREATE TABLE IF NOT EXISTS billing_refund_provider(refund_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,UNIQUE(org_id,external_ref)) STRICT;
       CREATE TABLE IF NOT EXISTS billing_refund_observations(id INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,applied INTEGER NOT NULL CHECK(applied IN(0,1)),created_at TEXT NOT NULL) STRICT;
     `);
+    this.alerts = new BillingRefundAlerts(database, store, identity, platform);
   }
   get(actor: Actor, refundId: string) {
     const row = this.store.get(
@@ -174,6 +180,8 @@ export class BillingRefunds {
         intent.refundId,
       );
     }
+    if (applied)
+      this.alerts.observe(actor, intent.refundId, intent.invoiceId, status);
     this.platform.audit(actor, "billing.refund.observed", intent.refundId, {
       reference,
       status,

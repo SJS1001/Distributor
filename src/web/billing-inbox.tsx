@@ -2,12 +2,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 
 type Item = Record<string, any>;
-type Page = { items: Item[]; next: string | null };
+type Page<T extends Item = Item> = { items: T[]; next: string | number | null };
 
 // Each mounted list owns its continuation and cancels reads on refresh,
 // selection changes or sign-out. A failed read preserves its rows and cursor.
-function usePages(endpoint: string, initial?: Page) {
-  const [page, setPage] = useState<Page>(initial ?? { items: [], next: null });
+export function usePages<T extends Item = Item>(
+  endpoint: string,
+  initial?: Page<T>,
+) {
+  const [page, setPage] = useState<Page<T>>(
+    initial ?? { items: [], next: null },
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const current = useRef(initial);
@@ -21,7 +26,7 @@ function usePages(endpoint: string, initial?: Page) {
     setError("");
     const previous = current.current;
     try {
-      const result = await request<Page>(
+      const result = await request<Page<T>>(
         endpoint +
           (previous?.next ? `?after=${encodeURIComponent(previous.next)}` : ""),
         { signal: controller.signal },

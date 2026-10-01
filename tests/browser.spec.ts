@@ -2,6 +2,240 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+test("browser: refund notices page safely, retain personal reads after a lost response, and reopen after a verified failure", async ({
+  page,
+  browser,
+}) => {
+  const errors: string[] = [];
+  const login = async (p: Page, email: string, password: string) => {
+    p.on("pageerror", (e) => errors.push(e.message));
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p.getByLabel("Password", { exact: true }).fill(password);
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    await nav(p, "Billing");
+  };
+  const inbox = (p: Page) =>
+    p.getByRole("region", { name: "Refund notices", exact: true });
+  const notices = async (p: Page) =>
+    (await p.request.get("/api/billing/refund-notices")).json();
+  const snapshot = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  await login(page, "admin@example.test", "long-test-only-password");
+  const before = await snapshot();
+  const original = await notices(page);
+  expect(original.items).toHaveLength(25);
+  expect(original.unread).toBe(27);
+  const notice = original.items[0];
+  expect(notice.revision).toBe(27);
+  const panel = inbox(page),
+    row = panel.locator("tbody tr").first();
+  await expect(panel.getByRole("status")).toContainText(
+    "27 unread refund notices · 25 loaded",
+  );
+  let lostPage = false;
+  await page.route("**/api/billing/refund-notices?after=*", async (route) => {
+    if (!lostPage) {
+      lostPage = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Load older refund notices", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel.locator("tbody tr")).toHaveCount(25);
+  await panel
+    .getByRole("button", { name: "Retry refund notices", exact: true })
+    .click();
+  await expect(panel.locator("tbody tr")).toHaveCount(27);
+  await expect(
+    panel.getByRole("button", {
+      name: "Load older refund notices",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const opener = row.getByRole("button", {
+    name: "View refund history",
+    exact: true,
+  });
+  await opener.click();
+  const history = page.getByRole("region", {
+    name: "Refund notice history",
+    exact: true,
+  });
+  await expect(history.getByRole("heading")).toBeFocused();
+  await expect(history.locator("li")).toHaveCount(25);
+  let lostHistory = false;
+  await page.route(
+    `**/api/billing/refund-notices/${notice.id}/history?after=*`,
+    async (route) => {
+      if (!lostHistory) {
+        lostHistory = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await history
+    .getByRole("button", { name: "Load older refund updates", exact: true })
+    .click();
+  await expect(history.getByRole("alert")).toBeVisible();
+  await expect(history.locator("li")).toHaveCount(25);
+  await history
+    .getByRole("button", { name: "Retry refund history", exact: true })
+    .click();
+  await expect(history.locator("li")).toHaveCount(27);
+  const updates = await history.locator("li").allTextContents();
+  expect(new Set(updates).size).toBe(27);
+  await history
+    .getByRole("button", { name: "Close refund history", exact: true })
+    .click();
+  await expect(opener).toBeFocused();
+  const keys: string[] = [];
+  let lostAck = false;
+  await page.route(
+    "**/api/commands/billing.refund.notice.acknowledge",
+    async (route) => {
+      keys.push(route.request().headers()["idempotency-key"]!);
+      if (!lostAck) {
+        lostAck = true;
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await row
+    .getByRole("button", { name: "Mark notice read", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Review refund notice",
+    exact: true,
+  });
+  await expect(dialog).toContainText("It does not confirm repayment");
+  await dialog
+    .getByRole("button", { name: "Mark notice read", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Mark notice read", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await expect(row).toContainText("Read by you");
+  expect((await notices(page)).unread).toBe(26);
+  const afterRead = await snapshot();
+  expect(afterRead.stock).toEqual(before.stock);
+  expect(afterRead.orders).toEqual(before.orders);
+  expect(afterRead.invoices).toEqual(before.invoices);
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(row).toContainText("Read by you");
+  const buyerContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  const otherContext = await browser.newContext();
+  try {
+    const buyer = await buyerContext.newPage(),
+      other = await otherContext.newPage();
+    await login(
+      buyer,
+      "refund-buyer@example.test",
+      "long-notice-test-password",
+    );
+    const personal = await notices(buyer);
+    expect(personal.unread).toBe(27);
+    expect(personal.items[0].acknowledged).toBe(false);
+    expect(personal.items.every((n: any) => n.accountId === undefined)).toBe(
+      true,
+    );
+    expect(JSON.stringify(personal)).not.toMatch(
+      /Private browser|NOTICE-REF|re_|pi_browser|effectId|webhookSecret/,
+    );
+    await expect(
+      inbox(buyer).getByRole("columnheader", { name: "Customer", exact: true }),
+    ).toHaveCount(0);
+    await expect(inbox(buyer)).toContainText(
+      "Do not send bank details or payment credentials",
+    );
+    expect(
+      await buyer.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    const buyerRow = inbox(buyer).locator("tbody tr").first();
+    await buyerRow
+      .getByRole("button", { name: "Mark notice read", exact: true })
+      .click();
+    await buyer
+      .getByRole("dialog")
+      .getByRole("button", { name: "Mark notice read", exact: true })
+      .click();
+    await expect(buyerRow).toContainText("Read by you");
+    await buyer.reload();
+    await nav(buyer, "Billing");
+    await expect(buyerRow).toContainText("Read by you");
+    expect((await notices(buyer)).unread).toBe(26);
+    await login(
+      other,
+      "refund-other@example.test",
+      "long-notice-test-password",
+    );
+    expect((await notices(other)).items).toEqual([]);
+    expect(
+      (
+        await other.request.get(
+          `/api/billing/refund-notices/${notice.id}/history`,
+        )
+      ).status(),
+    ).toBe(404);
+    // Synthetic provider reads exercise the same authenticated HTTP route as the staff control.
+    // Notice acknowledgment itself never makes a provider request or changes native money.
+    const effects = await (await page.request.get("/api/effects")).json();
+    const effect = effects.find(
+      (e: any) => e.kind === "refund" && e.reference === notice.id,
+    );
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const refresh = () =>
+      page.request.post(`/api/effects/${effect.id}/refresh-refund`, {
+        headers: { origin: "http://127.0.0.1:3117", "x-csrf-token": csrf },
+      });
+    expect((await refresh()).status()).toBe(200);
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(row).toContainText("earlier exception resolved");
+    await expect(row).toContainText("update 28");
+    await expect(
+      row.getByRole("button", { name: "Mark notice read", exact: true }),
+    ).toBeVisible();
+    const confirmed = await snapshot();
+    expect(
+      confirmed.invoices.find((i: any) => i.id === notice.invoiceId).refunded,
+    ).toBe(400);
+    expect((await refresh()).status()).toBe(200);
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(row).toContainText("failed · needs review");
+    await expect(row).toContainText("update 29");
+    await buyer.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(buyerRow).toContainText(
+      "previous refund confirmation may have been reversed",
+    );
+    await expect(
+      buyerRow.getByRole("button", { name: "Mark notice read", exact: true }),
+    ).toBeVisible();
+    expect((await notices(buyer)).unread).toBe(27);
+    const final = await snapshot();
+    expect(final.stock).toEqual(before.stock);
+    expect(final.orders).toEqual(before.orders);
+    expect(final.invoices).toEqual(before.invoices);
+    expect(errors).toEqual([]);
+  } finally {
+    await buyerContext.close();
+    await otherContext.close();
+  }
+});
 test("browser: reviewed stock QR downloads retain one receipt after a lost response and leave stock unchanged", async ({
   page,
 }) => {
@@ -737,6 +971,10 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
+  const beforeOrder = await page.request.get("/api/dashboard");
+  const priorOrderIds = new Set(
+    (await beforeOrder.json()).orders.map((order: { id: string }) => order.id),
+  );
   await nav(page, "Orders");
   await page
     .getByRole("button", { name: "Prepare order", exact: true })
@@ -769,7 +1007,11 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const dashboard = await page.request.get("/api/dashboard");
-  expect((await dashboard.json()).orders).toHaveLength(1);
+  const newOrders = (await dashboard.json()).orders.filter(
+    (order: { id: string }) => !priorOrderIds.has(order.id),
+  );
+  expect(newOrders).toHaveLength(1);
+  const orderId = newOrders[0].id;
   for (const label of ["EQ-1", "SUP-1"]) {
     await page
       .getByRole("button", { name: "Pick / pack", exact: true })
@@ -810,6 +1052,11 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Billing");
+  const billed = await page.request.get("/api/dashboard");
+  const invoice = (await billed.json()).invoices.find(
+    (i: { order_id: string }) => i.order_id === orderId,
+  );
+  expect(invoice).toBeDefined();
   await expect(
     page
       .getByRole("row")
@@ -938,6 +1185,9 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
           name: "Download invoice PDF",
           exact: true,
         }),
+      })
+      .filter({
+        hasText: invoice.number,
       })
       .getByRole("cell", { name: "-CA$113.00", exact: true }),
   ).toBeVisible();

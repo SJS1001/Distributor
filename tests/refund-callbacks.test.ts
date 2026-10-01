@@ -272,6 +272,9 @@ test("late failure after success and delayed events read current status without 
   f.status("failed");
   f.receive(f.event("evt_failed", "refund.failed"));
   await f.runtime.tick();
+  const notice = f.app.billing.refunds.alerts.page(f.actor).items[0]!;
+  assert.equal(notice.status, "failed");
+  assert.equal(notice.revision, 1);
   assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 0);
   f.app.close();
   f.app = new Application(f.path);
@@ -299,6 +302,10 @@ test("late failure after success and delayed events read current status without 
     2,
   );
   assert.equal(f.creates.mock.calls.length, 1);
+  assert.equal(
+    f.app.billing.refunds.alerts.page(f.actor).items[0]!.revision,
+    1,
+  );
 });
 
 test("unknown lost send is bound by exact signed refund identity and absence never authorizes a resend", async (t) => {

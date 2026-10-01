@@ -9,6 +9,7 @@ import {
   downloadInboxDocument,
 } from "./api.ts";
 import { BillingInbox } from "./billing-inbox.tsx";
+import { RefundNotices } from "./refund-notices.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -91,6 +92,10 @@ function App() {
     if (["admin", "finance", "support"].includes(actor?.role ?? "")) {
       e.payments = await request("/api/billing/payments");
       e.refunds = await request("/api/billing/refunds");
+    }
+    if (["admin", "finance", "support", "buyer"].includes(actor?.role ?? "")) {
+      e.refundNotices = await request("/api/billing/refund-notices");
+      e.refundNoticeRefresh = crypto.randomUUID();
     }
     if (actor?.role === "admin") {
       e.users = await request("/api/users");
@@ -1980,6 +1985,31 @@ function App() {
                   },
                 )}
               </>
+            )}
+            {extra.refundNotices && (
+              <RefundNotices
+                key={extra.refundNoticeRefresh}
+                initial={extra.refundNotices}
+                personal={actor.role === "buyer"}
+                accountName={accountName}
+                renderActions={(n) =>
+                  n.acknowledged
+                    ? "Read by you"
+                    : button("Mark notice read", () =>
+                        open(
+                          "Review refund notice",
+                          [],
+                          () =>
+                            command("billing.refund.notice.acknowledge", {
+                              noticeId: n.id,
+                              revision: n.revision,
+                            }),
+                          `${n.number}: ${n.message} Marking this notice read records only your acknowledgment. It does not confirm repayment, close the refund case or send another refund. Refresh to see later status changes.`,
+                          "Mark notice read",
+                        ),
+                      )
+                }
+              />
             )}
             {extra.inbox && (
               <BillingInbox
