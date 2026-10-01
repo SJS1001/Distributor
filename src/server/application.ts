@@ -27,7 +27,11 @@ export class Application {
   warranty: Warranty;
   integration: Integration;
   migration: Migration;
-  constructor(path: string, region: Region = "CA") {
+  constructor(
+    path: string,
+    region: Region = "CA",
+    security: { mfaEncryptionKey?: string } = {},
+  ) {
     check(
       ["CA", "US"].includes(region),
       "REGION",
@@ -43,6 +47,7 @@ export class Application {
       (actor, sites) => {
         for (const siteId of sites) this.inventory.warehouse(actor, siteId);
       },
+      security.mfaEncryptionKey,
     );
     this.catalog = new Catalog(this.database, this.platform, this.identity);
     this.inventory = new Inventory(this.database, this.platform, this.catalog);

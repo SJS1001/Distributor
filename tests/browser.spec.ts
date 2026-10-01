@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { totp } from "../src/server/totp.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -4588,4 +4589,167 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     creditFacts,
   );
   expect(errors).toEqual([]);
+});
+
+test("browser: authenticator setup retries, required second factor, recovery reuse refusal and all-session removal", async ({
+  page,
+  browser,
+}) => {
+  const email = "mfa-browser@example.test",
+    password = "long-mfa-browser-password",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const enterPassword = async (p: Page) => {
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p.getByLabel("Password", { exact: true }).fill(password);
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+  };
+  await enterPassword(page);
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  const panel = page.getByRole("region", { name: "Authenticator security" });
+  let lostSetup = false;
+  let firstSetup:
+    | { enrollmentId: string; secret: string; recoveryCodes: string[] }
+    | undefined;
+  const keys: string[] = [];
+  await page.route("**/api/security/mfa/setup", async (route) => {
+    keys.push(route.request().postDataJSON().key);
+    if (!lostSetup) {
+      lostSetup = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      firstSetup = await response.json();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel
+    .getByRole("button", { name: "Set up authenticator", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText("Failed to fetch");
+  await panel
+    .getByRole("button", { name: "Set up authenticator", exact: true })
+    .click();
+  await expect(panel.getByLabel("Authenticator setup key")).toHaveValue(
+    firstSetup!.secret,
+  );
+  const codes = await panel
+    .getByRole("list", { name: "Recovery codes" })
+    .locator("code")
+    .allTextContents();
+  expect(codes).toEqual(firstSetup!.recoveryCodes);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  await page.unroute("**/api/security/mfa/setup");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  const stored = await page.evaluate(() =>
+    JSON.stringify({
+      local: { ...localStorage },
+      session: { ...sessionStorage },
+    }),
+  );
+  for (const secret of [password, firstSetup!.secret, ...codes])
+    expect(stored).not.toContain(secret);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await expect(panel.getByLabel("Authenticator setup key")).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel.getByLabel("I saved my recovery codes securely").check();
+  await panel.getByLabel("Authenticator or recovery code").fill("invalid");
+  await panel
+    .getByRole("button", { name: "Enable authenticator", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText("MFA_INVALID");
+  expect((await page.request.get("/api/session")).status()).toBe(200);
+  await panel
+    .getByLabel("Authenticator or recovery code")
+    .fill(totp(firstSetup!.secret, Math.floor(Date.now() / 30000)));
+  let lostConfirm = false;
+  await page.route("**/api/security/mfa/confirm", async (route) => {
+    lostConfirm = true;
+    expect((await route.fetch()).status()).toBe(200);
+    await route.abort("failed");
+  });
+  await panel
+    .getByRole("button", { name: "Enable authenticator", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText("Failed to fetch");
+  expect(lostConfirm).toBe(true);
+  expect((await page.request.get("/api/session")).status()).toBe(401);
+  await page.unroute("**/api/security/mfa/confirm");
+  // Reload recovers the actual server state after the committed response was lost.
+  await enterPassword(page);
+  const signInCode = page.getByLabel("Authenticator or recovery code", {
+    exact: true,
+  });
+  await expect(signInCode).toBeVisible();
+  expect((await page.request.get("/api/dashboard")).status()).toBe(401);
+  await signInCode.fill(codes[0]!);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Security");
+  await expect(panel).toContainText("9 unused recovery codes");
+  await page.reload();
+  await nav(page, "Security");
+  await expect(panel).toContainText("9 unused recovery codes");
+  const secondContext = await browser.newContext();
+  try {
+    const second = await secondContext.newPage();
+    second.on("pageerror", (e) => errors.push(e.message));
+    await enterPassword(second);
+    await second.getByLabel("Authenticator or recovery code").fill(codes[0]!);
+    await second.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(second.getByRole("alert")).toContainText("MFA_INVALID");
+    expect((await second.request.get("/api/dashboard")).status()).toBe(401);
+    await second.getByLabel("Authenticator or recovery code").fill(codes[1]!);
+    await second.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      second.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(panel).toContainText("8 unused recovery codes");
+    await panel.getByLabel("Current password for authenticator").fill(password);
+    await panel.getByLabel("Authenticator or recovery code").fill(codes[2]!);
+    await panel
+      .getByRole("button", { name: "Remove authenticator", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", {
+        name: "Sign in to your workspace",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect((await second.request.get("/api/session")).status()).toBe(401);
+    expect((await page.request.get("/api/session")).status()).toBe(401);
+    await enterPassword(page);
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    await nav(page, "Security");
+    await expect(
+      panel.getByRole("button", { name: "Set up authenticator", exact: true }),
+    ).toBeVisible();
+    expect(
+      (await (await page.request.get("/api/security")).json()).revision,
+    ).toBe(3);
+    expect(errors).toEqual([]);
+  } finally {
+    await secondContext.close();
+  }
 });

@@ -7,7 +7,10 @@ import {
 import type { Adapter, EffectResult } from "../src/server/integration.ts";
 import { check, type Actor } from "../src/server/core.ts";
 const cleanup: (() => void)[] = [];
-const f = fixture({ after: (fn) => cleanup.push(fn) });
+const f = fixture(
+  { after: (fn) => cleanup.push(fn) },
+  { mfaEncryptionKey: "a1".repeat(32) },
+);
 for (const [sku, serialized] of [
   ["OPEN-S", true],
   ["OPEN-B", false],
@@ -138,6 +141,13 @@ f.app.procurement.receive(f.actor, "return-receipt", {
   serials: [],
   bin: "RET-1",
   quarantine: false,
+});
+f.app.identity.createUser(f.actor, "mfa-browser-user", {
+  name: "Synthetic authenticator operator",
+  email: "mfa-browser@example.test",
+  password: "long-mfa-browser-password",
+  role: "warehouse",
+  sites: [f.w1],
 });
 for (const [name, warehouseId] of [
   ["source", f.w1],

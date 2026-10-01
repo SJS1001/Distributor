@@ -1,3 +1,4 @@
+import { MultiFactor } from "./iam-mfa.ts";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import {
   account,
@@ -54,11 +55,13 @@ function passwordHash(password: string, salt: string) {
 }
 export class Identity {
   private store: Store;
+  readonly mfa: MultiFactor;
   constructor(
     private database: Database,
     private platform: Platform,
     public region: Region,
     private validateSites: (actor: Actor, sites: string[]) => void,
+    mfaEncryptionKey?: string,
   ) {
     this.store = database.owned("iam");
     this.store.migrate(`
@@ -69,6 +72,39 @@ export class Identity {
       CREATE TABLE IF NOT EXISTS iam_attempts(email TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS iam_user_security(user_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>0),password_change_required INTEGER NOT NULL CHECK(password_change_required IN(0,1)),updated_at TEXT NOT NULL) STRICT;
     `);
+    this.mfa = new MultiFactor(
+      database,
+      platform,
+      {
+        authenticate: (actor, password, throttle) => {
+          const current = this.reauthenticate(
+            actor,
+            password,
+            false,
+            throttle,
+            false,
+          );
+          check(
+            !this.passwordChangeRequired(current.id),
+            "PASSWORD_CHANGE_REQUIRED",
+            "Change your password before configuring an authenticator.",
+            403,
+          );
+          return current;
+        },
+        revision: (actor) => Number(this.user(actor, actor.id).revision),
+        changed: (actor) => ({
+          revision: this.advance(this.user(actor, actor.id)),
+          sessionsEnded: this.endSessions(actor.id),
+        }),
+        failed: (actor) =>
+          this.recordAuthenticationFailure(
+            String(this.user(actor, actor.id).email),
+            Date.now(),
+          ),
+      },
+      mfaEncryptionKey,
+    );
   }
   bootstrap(
     name: string,
@@ -163,7 +199,7 @@ export class Identity {
       timestamp,
     );
   }
-  login(email: string, password: string) {
+  login(email: string, password: string, code?: string) {
     email = text(email, "email", 254).toLowerCase();
     check(
       typeof password === "string" && password.length <= 256,
@@ -200,41 +236,64 @@ export class Identity {
       this.recordAuthenticationFailure(email, timestamp);
       check(false, "LOGIN", "Invalid credentials.", 401);
     }
-    return this.database.transaction(() => {
-      // A reset/deactivation may have committed while password hashing ran.
-      const current = this.store.get(
-        "SELECT * FROM iam_users WHERE id=? AND email=?",
-        String(user!.id),
-        email,
-      );
-      check(
-        current?.active === 1 &&
-          current.salt === user!.salt &&
-          current.password_hash === user!.password_hash,
-        "LOGIN",
-        "Invalid credentials.",
-        401,
-      );
-      const actor = this.actor(current);
-      this.organization(actor);
-      this.store.run("DELETE FROM iam_attempts WHERE email=?", email);
-      const token = randomBytes(32).toString("base64url"),
-        csrf = randomBytes(32).toString("base64url");
-      this.store.run(
-        "INSERT INTO iam_sessions VALUES(?,?,?,?)",
-        digest(token),
-        actor.id,
-        csrf,
-        timestamp + 8 * 3600000,
-      );
-      this.platform.audit(actor, "session.login", actor.id, {});
-      return {
-        token,
-        csrf,
-        actor,
-        passwordChangeRequired: this.passwordChangeRequired(actor.id),
-      };
-    });
+    try {
+      return this.database.transaction(() => {
+        // A reset/deactivation may have committed while password hashing ran.
+        const current = this.store.get(
+          "SELECT * FROM iam_users WHERE id=? AND email=?",
+          String(user!.id),
+          email,
+        );
+        check(
+          current?.active === 1 &&
+            current.salt === user!.salt &&
+            current.password_hash === user!.password_hash,
+          "LOGIN",
+          "Invalid credentials.",
+          401,
+        );
+        const actor = this.actor(current);
+        this.organization(actor);
+        const attempts = this.store.get(
+          "SELECT * FROM iam_attempts WHERE email=?",
+          email,
+        );
+        check(
+          !attempts ||
+            Number(attempts.reset_at) <= Date.now() ||
+            Number(attempts.count) < 8,
+          "RATE_LIMIT",
+          "Too many authentication attempts. Try again later.",
+          429,
+        );
+        this.mfa.verifyLogin(actor, code, Date.now());
+        this.store.run("DELETE FROM iam_attempts WHERE email=?", email);
+        const token = randomBytes(32).toString("base64url"),
+          csrf = randomBytes(32).toString("base64url");
+        this.store.run(
+          "INSERT INTO iam_sessions VALUES(?,?,?,?)",
+          digest(token),
+          actor.id,
+          csrf,
+          timestamp + 8 * 3600000,
+        );
+        this.platform.audit(actor, "session.login", actor.id, {});
+        return {
+          token,
+          csrf,
+          actor,
+          passwordChangeRequired: this.passwordChangeRequired(actor.id),
+        };
+      });
+    } catch (error) {
+      if (
+        ["MFA_INVALID", "LOGIN"].includes(
+          (error as { code?: string }).code ?? "",
+        )
+      )
+        this.recordAuthenticationFailure(email, Date.now());
+      throw error;
+    }
   }
   session(token: string | undefined) {
     check(token, "UNAUTHENTICATED", "Sign in to continue.", 401);
@@ -257,6 +316,7 @@ export class Identity {
   }
   // Filesystem-authorized recovery invalidates copied sessions across this regional store.
   invalidateRestoredSessions() {
+    this.mfa.invalidateRestoredFactors();
     return Number(this.store.run("DELETE FROM iam_sessions").changes);
   }
   // A worker uses a configured principal, never grants copied from an old session.
@@ -331,6 +391,7 @@ export class Identity {
       email: String(row.email),
       revision: Number(row.revision),
       passwordChangeRequired: row.password_change_required === 1,
+      mfa: this.mfa.summary(current),
       sessions: Number(
         this.store.get(
           "SELECT COUNT(*) AS total FROM iam_sessions WHERE user_id=? AND expires_at>?",
@@ -391,6 +452,7 @@ export class Identity {
     password: string,
     administrator: boolean,
     throttle = false,
+    clearFailures = true,
   ) {
     const current = this.currentActor(actor);
     if (administrator) {
@@ -427,7 +489,7 @@ export class Identity {
       if (throttle) this.recordAuthenticationFailure(email, timestamp);
       check(false, "REAUTHENTICATE", "Current password is incorrect.", 403);
     }
-    if (throttle)
+    if (throttle && clearFailures)
       this.store.run("DELETE FROM iam_attempts WHERE email=?", email);
     return current;
   }

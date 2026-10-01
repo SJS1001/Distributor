@@ -23,7 +23,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Warranty and replacements](docs/WARRANTY.md) | Native returns, replacement collection, manufacturer evidence and remaining qualification |
-| [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets and session revocation |
+| [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets, optional MFA and session revocation |
 | [Providers, residency and devices](docs/PROVIDERS.md) | Customer choice, major-provider candidates and local provider operations |
 | [Evidence instructions](docs/evidence/README.md) | Receipt template for future verification |
 | [Handoff](docs/HANDOFF.md) | Historical setup and current implementation continuation |

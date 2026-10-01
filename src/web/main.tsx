@@ -10,6 +10,7 @@ import {
 } from "./api.ts";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
+import { MfaSecurity } from "./mfa-security.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -61,7 +62,9 @@ function App() {
     [extra, setExtra] = useState<Item>({});
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [email, setEmail] = useState(""),
-    [password, setPassword] = useState("");
+    [password, setPassword] = useState(""),
+    [loginCode, setLoginCode] = useState(""),
+    [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
     const d = await request("/api/dashboard");
     setData(d);
@@ -145,6 +148,8 @@ function App() {
     setPage("Overview");
     setPasswordChangeRequired(false);
     setPassword("");
+    setLoginCode("");
+    setMfaRequired(false);
     setNotice(message);
     setError("");
     setCsrf("");
@@ -491,14 +496,22 @@ function App() {
             try {
               const s = await request("/api/login", {
                 method: "POST",
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({
+                  email,
+                  password,
+                  ...(mfaRequired ? { code: loginCode } : {}),
+                }),
               });
               setCsrf(s.csrf);
               setPasswordChangeRequired(s.passwordChangeRequired);
               setActor(s.actor);
               setPassword("");
+              setLoginCode("");
+              setMfaRequired(false);
             } catch (e) {
-              setError((e as Error).message);
+              if ((e as Error).message.includes("(MFA_REQUIRED)"))
+                setMfaRequired(true);
+              else setError((e as Error).message);
             } finally {
               setBusy(false);
             }
@@ -524,6 +537,26 @@ function App() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          {mfaRequired && (
+            <label>
+              Authenticator or recovery code
+              <input
+                autoComplete="one-time-code"
+                spellCheck={false}
+                value={loginCode}
+                onChange={(e) => setLoginCode(e.target.value)}
+                maxLength={64}
+                required
+                autoFocus
+              />
+            </label>
+          )}
+          {mfaRequired && (
+            <p>
+              Enter the six-digit code from your authenticator app, or an unused
+              saved recovery code.
+            </p>
+          )}
           {notice && (
             <p role="status" className="notice">
               {notice}
@@ -3586,6 +3619,13 @@ function App() {
               {extra.security?.email} · {extra.security?.sessions ?? 0} active
               sessions. Password changes end every session.
             </p>
+            {extra.security?.mfa && (
+              <MfaSecurity
+                security={extra.security}
+                sessionEnded={clearSession}
+              />
+            )}
+            <hr />
             <PasswordChangeForm
               busy={busy}
               submit={(values) =>

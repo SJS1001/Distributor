@@ -2,10 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Application } from "../src/server/application.ts";
-export function fixture(t: { after: (fn: () => void) => void }) {
+export function fixture(
+  t: { after: (fn: () => void) => void },
+  security: { mfaEncryptionKey?: string } = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), "distributor-"));
   const path = join(directory, "app.db");
-  const app = new Application(path);
+  const app = new Application(path, "CA", security);
   let current: { app: Application } = { app };
   t.after(() => {
     current.app.close();

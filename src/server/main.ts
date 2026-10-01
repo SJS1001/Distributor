@@ -23,6 +23,7 @@ check(
 const app = new Application(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
+  { mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY },
 );
 const http = await createHttp(app, {
   origin,

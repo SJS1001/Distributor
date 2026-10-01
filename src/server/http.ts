@@ -750,12 +750,23 @@ export async function createHttp(app: Application, options: HttpOptions) {
     "/api/login",
     {
       schema: {
-        body: obj({ email: str, password: { type: "string", maxLength: 256 } }),
+        body: obj(
+          {
+            email: str,
+            password: { type: "string", maxLength: 256 },
+            code: { type: "string", minLength: 1, maxLength: 64 },
+          },
+          ["code"],
+        ),
       },
     },
     async (request, reply) => {
-      const p = request.body as { email: string; password: string },
-        session = app.identity.login(p.email, p.password);
+      const p = request.body as {
+          email: string;
+          password: string;
+          code?: string;
+        },
+        session = app.identity.login(p.email, p.password, p.code);
       reply.setCookie("distributor_session", session.token, cookieOptions);
       return {
         actor: session.actor,
@@ -773,6 +784,43 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/security", async (request) =>
     app.identity.security(actor(request)),
   );
+  const factorPassword = { type: "string", maxLength: 256 };
+  const factorCode = { type: "string", minLength: 1, maxLength: 64 };
+  for (const [operation, schema] of Object.entries({
+    setup: obj({
+      currentPassword: factorPassword,
+      revision: num,
+      key: { type: "string", minLength: 1, maxLength: 128 },
+    }),
+    confirm: obj({
+      currentPassword: factorPassword,
+      enrollmentId: str,
+      code: factorCode,
+      recoverySaved: bool,
+    }),
+    disable: obj({
+      currentPassword: factorPassword,
+      code: factorCode,
+      revision: num,
+    }),
+  })) {
+    http.post(
+      `/api/security/mfa/${operation}`,
+      { schema: { body: schema } },
+      async (request, reply) => {
+        const p = request.body as any;
+        const result =
+          operation === "setup"
+            ? app.identity.mfa.begin(actor(request), p.key, p)
+            : operation === "confirm"
+              ? app.identity.mfa.confirm(actor(request), p)
+              : app.identity.mfa.disable(actor(request), p);
+        if ("sessionEnded" in result && result.sessionEnded)
+          reply.clearCookie("distributor_session", { path: "/" });
+        return result;
+      },
+    );
+  }
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));

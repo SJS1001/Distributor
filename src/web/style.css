@@ -413,3 +413,8 @@ a {
 .scan-controls p {
   overflow-wrap: anywhere;
 }
+
+/* Recovery codes remain readable at narrow warehouse-phone widths. */
+.mfa-recovery-codes code {
+  overflow-wrap: anywhere;
+}
