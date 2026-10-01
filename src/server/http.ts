@@ -7,6 +7,11 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { check, DomainError, type Actor } from "./core.ts";
 import { Application } from "./application.ts";
+import {
+  evidenceMaxBytes,
+  evidenceMediaTypes,
+  type EvidenceUpload,
+} from "../shared/warranty-evidence.ts";
 import { type ProviderRuntime } from "./provider-runtime.ts";
 
 type Schema = Record<string, unknown>;
@@ -1369,6 +1374,98 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .header("x-document-sha256", file.hash)
         .header("Cache-Control", "no-store")
         .send(file.bytes);
+    },
+  );
+  const evidenceParams = obj({ claimId: str, evidenceId: str });
+  http.get<{ Params: { claimId: string }; Querystring: { after?: string } }>(
+    "/api/warranty/claims/:claimId/evidence",
+    {
+      schema: {
+        params: obj({ claimId: str }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.warranty.evidence.list(
+        actor(request),
+        request.params.claimId,
+        request.query.after,
+      ),
+  );
+  http.post<{ Params: { claimId: string }; Body: EvidenceUpload }>(
+    "/api/warranty/claims/:claimId/evidence",
+    {
+      bodyLimit: 4 * Math.ceil(evidenceMaxBytes / 3) + 16 * 1024,
+      schema: {
+        params: obj({ claimId: str }),
+        body: obj({
+          filename: { type: "string", minLength: 1, maxLength: 120 },
+          mediaType: choice(...Object.keys(evidenceMediaTypes)),
+          audience: choice("customer", "staff"),
+          description: { type: "string", minLength: 1, maxLength: 1000 },
+          contentBase64: {
+            type: "string",
+            minLength: 1,
+            maxLength: 4 * Math.ceil(evidenceMaxBytes / 3),
+          },
+        }),
+        headers: {
+          type: "object",
+          properties: {
+            "idempotency-key": { type: "string", minLength: 1, maxLength: 128 },
+          },
+          required: ["idempotency-key"],
+        },
+      },
+    },
+    async (request) =>
+      app.warranty.evidence.upload(
+        actor(request),
+        String(request.headers["idempotency-key"]),
+        request.params.claimId,
+        request.body,
+      ),
+  );
+  http.post<{
+    Params: { claimId: string; evidenceId: string };
+    Body: Record<string, never>;
+  }>(
+    "/api/warranty/claims/:claimId/evidence/:evidenceId/download",
+    {
+      schema: {
+        params: evidenceParams,
+        body: obj({}),
+        headers: {
+          type: "object",
+          properties: {
+            "idempotency-key": { type: "string", minLength: 1, maxLength: 128 },
+          },
+          required: ["idempotency-key"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = app.warranty.evidence.download(
+        actor(request),
+        String(request.headers["idempotency-key"]),
+        request.params.claimId,
+        request.params.evidenceId,
+      );
+      return reply
+        .type("application/octet-stream")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${result.filename}"`,
+        )
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Security-Policy", "sandbox; default-src 'none'")
+        .header("x-evidence-media-type", result.receipt.file.mediaType)
+        .header("x-document-sha256", result.receipt.file.contentHash)
+        .header("x-download-receipt", result.receipt.id)
+        .send(result.bytes);
     },
   );
   for (const [name, spec] of Object.entries(commands(app)))

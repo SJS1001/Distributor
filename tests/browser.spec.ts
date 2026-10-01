@@ -6047,3 +6047,333 @@ test("browser: short picks retry once, retain paged history after failure, and i
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("browser: claim evidence retries across reload, verifies downloads and keeps staff files private", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Evidence browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "EVD-BROWSER",
+    name: "Evidence browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await dashboard();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 1, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "EVD-DELIVERY",
+    quantity: 1,
+    serials: ["EVD-SERIAL"],
+    bin: "EVD",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await dashboard();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic manufacturer fixture handover",
+  });
+  const sold = await dashboard();
+  const claim = await cmd("warranty.submit", {
+    accountId: account.id,
+    unitId: sold.stock.find((u: any) => u.serial === "EVD-SERIAL").id,
+    type: "warranty",
+    issue: "Synthetic failure",
+    evidence: "evidence-issue",
+  });
+
+  const before = await dashboard();
+  const nativeFacts = (d: any) => ({
+    stock: d.stock,
+    orders: d.orders,
+    shipments: d.shipments,
+    invoices: d.invoices,
+    claims: d.claims,
+  });
+  const path = `/api/warranty/claims/${claim.id}/evidence`;
+  const keys: string[] = [];
+  let lost = false;
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!lost) {
+      lost = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  const open = async () => {
+    await page.reload();
+    await nav(page, "Returns");
+    await page
+      .getByRole("row")
+      .filter({ hasText: claim.id.slice(0, 8) })
+      .filter({
+        has: page.getByRole("button", { name: "Evidence files", exact: true }),
+      })
+      .getByRole("button", { name: "Evidence files", exact: true })
+      .click();
+  };
+  const panel = page.getByRole("region", {
+    name: "Claim evidence files",
+    exact: true,
+  });
+  const bytes = Buffer.from("Synthetic browser photo description\n");
+  const attach = async () => {
+    await panel.getByLabel("Evidence file", { exact: true }).setInputFiles({
+      name: "inspection.txt",
+      mimeType: "text/plain",
+      buffer: bytes,
+    });
+    await panel
+      .getByLabel("Evidence description", { exact: true })
+      .fill("Private inspection");
+    await panel
+      .getByRole("button", { name: "Attach evidence", exact: true })
+      .click();
+  };
+  await open();
+  await expect(panel.getByRole("heading")).toBeFocused();
+  await attach();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  expect((await (await page.request.get(path)).json()).items).toHaveLength(1);
+  await open();
+  await attach();
+  await expect(panel).toContainText("Attached inspection.txt");
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  const first = (await (await page.request.get(path)).json()).items[0];
+  expect(first.contentHash).toBe(
+    createHash("sha256").update(bytes).digest("hex"),
+  );
+  expect(
+    await page.evaluate(() =>
+      Object.keys(sessionStorage).filter((k) =>
+        k.startsWith("distributor-evidence-upload:"),
+      ),
+    ),
+  ).toEqual([]);
+  const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+  for (let i = 0; i < 11; i++) {
+    const response = await page.request.post(path, {
+      headers: {
+        origin: "http://127.0.0.1:3117",
+        "x-csrf-token": csrf,
+        "idempotency-key": `evidence-page-${i}`,
+      },
+      data: {
+        filename: `customer-${i}.txt`,
+        mediaType: "text/plain",
+        audience: "customer",
+        description: `Customer inspection ${i}`,
+        contentBase64: Buffer.from(`Customer evidence ${i}`).toString("base64"),
+      },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+  }
+  await panel
+    .getByRole("button", { name: "Refresh evidence files", exact: true })
+    .click();
+  await expect(panel).toContainText("10 files loaded");
+  let failedPage = false;
+  await page.route(`**${path}?after=*`, async (route) => {
+    if (!failedPage) {
+      failedPage = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Load more evidence files", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel).toContainText("10 files loaded");
+  await panel
+    .getByRole("button", { name: "Retry evidence files", exact: true })
+    .click();
+  await expect(panel).toContainText("12 files loaded");
+  expect(
+    await panel
+      .getByRole("button", { name: "Download evidence", exact: true })
+      .count(),
+  ).toBe(12);
+  let corrupt = true;
+  const downloadKeys: string[] = [];
+  await page.route(`**${path}/${first.id}/download`, async (route) => {
+    downloadKeys.push(route.request().headers()["idempotency-key"]!);
+    if (corrupt) {
+      corrupt = false;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.fulfill({
+        response,
+        body: Buffer.from("corrupted response bytes"),
+      });
+    } else await route.continue();
+  });
+  const fileRow = panel.getByRole("row").filter({ hasText: "inspection.txt" });
+  let downloaded = 0;
+  page.on("download", () => downloaded++);
+  await fileRow
+    .getByRole("button", { name: "Download evidence", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "integrity check failed",
+  );
+  expect(downloaded).toBe(0);
+  const event = page.waitForEvent("download");
+  await fileRow
+    .getByRole("button", { name: "Download evidence", exact: true })
+    .click();
+  const download = await event;
+  expect(download.suggestedFilename()).toBe(
+    `warranty-evidence-${first.id}.txt`,
+  );
+  expect(await readFile((await download.path())!)).toEqual(bytes);
+  expect(downloadKeys).toHaveLength(2);
+  expect(downloadKeys[0]).toBe(downloadKeys[1]);
+  await expect(panel).toContainText("Verified inspection.txt");
+  expect(nativeFacts(await dashboard())).toEqual(nativeFacts(before));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await panel
+    .getByRole("button", { name: "Close evidence files", exact: true })
+    .focus();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(
+    page
+      .getByRole("row")
+      .filter({ hasText: claim.id.slice(0, 8) })
+      .filter({
+        has: page.getByRole("button", { name: "Evidence files", exact: true }),
+      })
+      .getByRole("button", { name: "Evidence files", exact: true }),
+  ).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await cmd("user.create", {
+    name: "Evidence buyer",
+    email: "evidence-buyer@example.test",
+    password: "long-evidence-password",
+    role: "buyer",
+    accountId: account.id,
+    sites: [],
+    requirePasswordChange: false,
+    currentPassword: "long-test-only-password",
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("evidence-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-evidence-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await nav(page, "Returns");
+  await page
+    .getByRole("row")
+    .filter({ hasText: claim.id.slice(0, 8) })
+    .filter({
+      has: page.getByRole("button", { name: "Evidence files", exact: true }),
+    })
+    .getByRole("button", { name: "Evidence files", exact: true })
+    .click();
+  await expect(panel).toContainText("10 files loaded");
+  await expect(
+    panel.getByLabel("Evidence visibility", { exact: true }),
+  ).toHaveCount(0);
+  await panel
+    .getByRole("button", { name: "Load more evidence files", exact: true })
+    .click();
+  await expect(panel).toContainText("11 files loaded");
+  await expect(panel).not.toContainText("Private inspection");
+  await expect(panel).not.toContainText("inspection.txt");
+  const buyerCsrf = (await (await page.request.get("/api/session")).json())
+    .csrf;
+  const denied = await page.request.post(`${path}/${first.id}/download`, {
+    headers: {
+      origin: "http://127.0.0.1:3117",
+      "x-csrf-token": buyerCsrf,
+      "idempotency-key": "buyer-private",
+    },
+    data: {},
+  });
+  expect(denied.status()).toBe(404);
+  expect(errors).toEqual([]);
+});

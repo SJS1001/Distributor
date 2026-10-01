@@ -1,3 +1,9 @@
+import {
+  evidenceMaxBytes,
+  evidenceMediaTypes,
+  type EvidenceFile,
+  type EvidenceUpload,
+} from "../shared/warranty-evidence.ts";
 let csrf = "";
 export function setCsrf(value: string) {
   csrf = value;
@@ -40,6 +46,84 @@ export async function command(name: string, payload: unknown) {
   });
   sessionStorage.removeItem(storageKey);
   return result;
+}
+
+export async function uploadEvidence(claimId: string, payload: EvidenceUpload) {
+  const signature = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify({ claimId, payload })),
+  );
+  const storageKey = `distributor-evidence-upload:${Array.from(new Uint8Array(signature), (v) => v.toString(16).padStart(2, "0")).join("")}`;
+  const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
+  sessionStorage.setItem(storageKey, key);
+  const result = await request<EvidenceFile>(
+    `/api/warranty/claims/${encodeURIComponent(claimId)}/evidence`,
+    {
+      method: "POST",
+      headers: { "idempotency-key": key },
+      body: JSON.stringify(payload),
+    },
+  );
+  sessionStorage.removeItem(storageKey);
+  return result;
+}
+
+export async function downloadEvidence(file: EvidenceFile) {
+  const storageKey = `distributor-evidence-download:${file.claimId}:${file.id}`;
+  const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
+  sessionStorage.setItem(storageKey, key);
+  const response = await fetch(
+    `/api/warranty/claims/${encodeURIComponent(file.claimId)}/evidence/${encodeURIComponent(file.id)}/download`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      body: "{}",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrf,
+        "idempotency-key": key,
+      },
+    },
+  );
+  if (!response.ok) {
+    const error = await response.json();
+    throw Error(
+      `${error.message ?? "Evidence download failed"} (${error.code ?? response.status})`,
+    );
+  }
+  const bytes = await response.arrayBuffer();
+  const hash = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    (v) => v.toString(16).padStart(2, "0"),
+  ).join("");
+  const receipt = response.headers.get("x-download-receipt");
+  const filename = `warranty-evidence-${file.id}.${evidenceMediaTypes[file.mediaType]}`;
+  if (
+    bytes.byteLength !== file.bytes ||
+    bytes.byteLength > evidenceMaxBytes ||
+    hash !== file.contentHash ||
+    hash !== response.headers.get("x-document-sha256") ||
+    response.headers.get("x-evidence-media-type") !== file.mediaType ||
+    !response.headers
+      .get("content-type")
+      ?.startsWith("application/octet-stream") ||
+    response.headers.get("content-disposition") !==
+      `attachment; filename="${filename}"` ||
+    !receipt?.trim()
+  )
+    throw Error("Evidence integrity check failed. Retry the download.");
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: "application/octet-stream" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  sessionStorage.removeItem(storageKey);
+  return receipt;
 }
 
 export async function downloadDocument(

@@ -14,6 +14,7 @@ import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
+import { WarrantyEvidence } from "./warranty-evidence.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -65,6 +66,8 @@ function App() {
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({});
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
+  const evidenceOpener = useRef<HTMLElement | null>(null);
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [loginCode, setLoginCode] = useState(""),
@@ -151,6 +154,8 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired]);
   const clearSession = (message = "") => {
+    setEvidenceClaim(null);
+    evidenceOpener.current = null;
     setActor(null);
     setData(null);
     setExtra({});
@@ -2883,6 +2888,15 @@ function App() {
                 c.issue,
                 c.state,
                 <div className="actions">
+                  <button
+                    className="secondary"
+                    onClick={(event) => {
+                      evidenceOpener.current = event.currentTarget;
+                      setEvidenceClaim(c.id);
+                    }}
+                  >
+                    Evidence files
+                  </button>
                   {c.state === "submitted" &&
                     can("warranty") &&
                     button("Review", () =>
@@ -3069,6 +3083,17 @@ function App() {
                     )}
                 </div>,
               ],
+            )}
+            {evidenceClaim && (
+              <WarrantyEvidence
+                key={evidenceClaim}
+                claimId={evidenceClaim}
+                role={actor.role}
+                onClose={() => {
+                  setEvidenceClaim(null);
+                  evidenceOpener.current?.focus();
+                }}
+              />
             )}
             <section aria-label="Replacement history">
               <h2>Replacement history</h2>

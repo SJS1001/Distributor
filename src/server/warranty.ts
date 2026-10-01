@@ -15,6 +15,7 @@ import { Identity } from "./iam.ts";
 import { Inventory } from "./inventory.ts";
 import { Fulfillment } from "./fulfillment.ts";
 import { Billing } from "./billing.ts";
+import { WarrantyEvidence } from "./warranty-evidence.ts";
 export type Claim = {
   id: string;
   org_id: string;
@@ -59,6 +60,7 @@ type Replacement = {
 };
 export class Warranty {
   private store: Store;
+  readonly evidence: WarrantyEvidence;
   constructor(
     database: Database,
     private platform: Platform,
@@ -78,6 +80,13 @@ export class Warranty {
     CREATE UNIQUE INDEX IF NOT EXISTS warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending';
     CREATE TABLE IF NOT EXISTS warranty_manufacturer_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,case_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(case_id,revision)) STRICT;
   `);
+    this.evidence = new WarrantyEvidence(
+      database,
+      platform,
+      identity,
+      inventory,
+      (actor, claimId) => this.claim(actor, claimId),
+    );
   }
   claim(actor: Actor, claimId: string): Claim {
     const row = this.store.get<Claim>(
