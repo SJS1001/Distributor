@@ -481,6 +481,170 @@ export class MultiFactor {
       }),
     );
   }
+  prepareReplacement(
+    actor: Actor,
+    key: string,
+    input: { currentPassword: string; revision: number },
+  ) {
+    text(key, "Idempotency key", 128);
+    this.access.authenticate(actor, input.currentPassword, true);
+    this.discardOwnExpired(actor);
+    this.cipher.require();
+    return this.database.transaction(() => {
+      this.access.authenticate(actor, input.currentPassword, false);
+      const revision = this.access.revision(actor);
+      check(
+        integer(input.revision, "security revision", 1) === revision,
+        "STALE_USER",
+        "Security changed. Refresh before replacing the authenticator.",
+        409,
+      );
+      check(
+        this.summary(actor).enabled,
+        "MFA_DISABLED",
+        "No authenticator is enabled.",
+        409,
+      );
+      let pending = this.store.get(
+        "SELECT * FROM iam_mfa_pending WHERE user_id=? AND org_id=?",
+        actor.id,
+        actor.orgId,
+      );
+      let bundle: Bundle;
+      if (pending?.key === key) {
+        check(
+          Number(pending.revision) === revision &&
+            pending.material !== "" &&
+            Number(pending.expires_at) > Date.now(),
+          "MFA_EXPIRED",
+          "Replacement expired or security changed. Prepare a new authenticator.",
+          409,
+        );
+        bundle = this.cipher.decrypt<Bundle>(
+          String(pending.material),
+          this.context(actor, "pending-factor"),
+        );
+      } else {
+        bundle = {
+          secret: encodeSecret(randomBytes(20)),
+          recoveryCodes: Array.from({ length: 10 }, () =>
+            randomBytes(16).toString("hex").match(/.{8}/g)!.join("-"),
+          ),
+        };
+        const replacementId = randomBytes(24).toString("base64url"),
+          expiresAt = Date.now() + 10 * 60000;
+        this.store.run(
+          "INSERT INTO iam_mfa_pending VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET org_id=excluded.org_id,key=excluded.key,enrollment_id=excluded.enrollment_id,revision=excluded.revision,material=excluded.material,expires_at=excluded.expires_at",
+          actor.id,
+          actor.orgId,
+          key,
+          replacementId,
+          revision,
+          this.cipher.encrypt(bundle, this.context(actor, "pending-factor")),
+          expiresAt,
+        );
+        pending = { enrollment_id: replacementId, expires_at: expiresAt };
+        this.platform.audit(
+          actor,
+          "user.mfa.replacement.prepared",
+          actor.id,
+          {},
+        );
+      }
+      return {
+        replacementId: String(pending.enrollment_id),
+        expiresAt: Number(pending.expires_at),
+        secret: bundle.secret,
+        recoveryCodes: bundle.recoveryCodes,
+      };
+    });
+  }
+  confirmReplacement(
+    actor: Actor,
+    input: {
+      currentPassword: string;
+      replacementId: string;
+      currentCode: string;
+      newCode: string;
+      recoverySaved: boolean;
+    },
+  ) {
+    this.access.authenticate(actor, input.currentPassword, true);
+    this.discardOwnExpired(actor);
+    return this.attempt(actor, () =>
+      this.database.transaction(() => {
+        this.access.authenticate(actor, input.currentPassword, false);
+        this.cipher.require();
+        const pending = this.store.get(
+          "SELECT * FROM iam_mfa_pending WHERE user_id=? AND org_id=? AND enrollment_id=?",
+          actor.id,
+          actor.orgId,
+          text(input.replacementId, "replacement ID", 128),
+        );
+        check(
+          pending &&
+            pending.material !== "" &&
+            Number(pending.expires_at) > Date.now() &&
+            Number(pending.revision) === this.access.revision(actor),
+          "MFA_EXPIRED",
+          "Replacement expired or security changed. Prepare a new authenticator.",
+          409,
+        );
+        check(
+          input.recoverySaved === true,
+          "VALIDATION",
+          "Save your new recovery codes before replacing the authenticator.",
+          400,
+        );
+        const factor = this.store.get(
+          "SELECT * FROM iam_mfa WHERE user_id=? AND org_id=?",
+          actor.id,
+          actor.orgId,
+        );
+        check(factor, "MFA_DISABLED", "No authenticator is enabled.", 409);
+        const bundle = this.cipher.decrypt<Bundle>(
+          String(pending.material),
+          this.context(actor, "pending-factor"),
+        );
+        const timestamp = Date.now();
+        const step = matchingStep(bundle.secret, input.newCode, timestamp);
+        check(
+          step !== null,
+          "MFA_INVALID",
+          "New authenticator code is invalid.",
+          401,
+        );
+        // Both proofs belong to this transaction; a failure cannot consume the old
+        // factor or install only part of the replacement. MFA never becomes disabled.
+        this.consume(actor, factor, input.currentCode, timestamp);
+        this.store.run(
+          "UPDATE iam_mfa SET secret=?,last_step=?,enabled_at=? WHERE user_id=? AND org_id=?",
+          this.cipher.encrypt(
+            { secret: bundle.secret },
+            this.context(actor, "factor"),
+          ),
+          step,
+          now(),
+          actor.id,
+          actor.orgId,
+        );
+        this.store.run(
+          "DELETE FROM iam_mfa_recovery WHERE user_id=?",
+          actor.id,
+        );
+        for (const code of bundle.recoveryCodes)
+          this.store.run(
+            "INSERT INTO iam_mfa_recovery VALUES(?,?,NULL)",
+            actor.id,
+            this.recoveryHash(actor, code),
+          );
+        this.store.run("DELETE FROM iam_mfa_pending WHERE user_id=?", actor.id);
+        const changed = this.access.changed(actor);
+        this.platform.audit(actor, "user.mfa.replaced", actor.id, changed);
+        return { ...changed, sessionEnded: true };
+      }),
+    );
+  }
   // Restore may otherwise resurrect already-used recovery codes from the snapshot.
   invalidateRestoredFactors() {
     this.store.run(

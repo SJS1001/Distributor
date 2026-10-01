@@ -1164,6 +1164,18 @@ export async function createHttp(app: Application, options: HttpOptions) {
       code: factorCode,
       revision: num,
     }),
+    "replacement/prepare": obj({
+      currentPassword: factorPassword,
+      revision: num,
+      key: { type: "string", minLength: 1, maxLength: 128 },
+    }),
+    "replacement/confirm": obj({
+      currentPassword: factorPassword,
+      replacementId: str,
+      currentCode: factorCode,
+      newCode: { type: "string", pattern: "^[0-9]{6}$" },
+      recoverySaved: bool,
+    }),
     "recovery/prepare": obj({
       currentPassword: factorPassword,
       revision: num,
@@ -1190,7 +1202,15 @@ export async function createHttp(app: Application, options: HttpOptions) {
                 ? app.identity.mfa.prepareRecovery(actor(request), p.key, p)
                 : operation === "recovery/confirm"
                   ? app.identity.mfa.confirmRecovery(actor(request), p)
-                  : app.identity.mfa.disable(actor(request), p);
+                  : operation === "replacement/prepare"
+                    ? app.identity.mfa.prepareReplacement(
+                        actor(request),
+                        p.key,
+                        p,
+                      )
+                    : operation === "replacement/confirm"
+                      ? app.identity.mfa.confirmReplacement(actor(request), p)
+                      : app.identity.mfa.disable(actor(request), p);
         if ("sessionEnded" in result && result.sessionEnded)
           reply.clearCookie("distributor_session", { path: "/" });
         return result;

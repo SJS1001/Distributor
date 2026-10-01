@@ -230,6 +230,13 @@ f.app.procurement.receive(f.actor, "return-receipt", {
   bin: "RET-1",
   quarantine: false,
 });
+f.app.identity.createUser(f.actor, "replacement-mfa-browser-user", {
+  name: "Synthetic authenticator replacement operator",
+  email: "replacement-mfa@example.test",
+  password: "long-replacement-mfa-password",
+  role: "warranty",
+  sites: [f.w1],
+});
 f.app.identity.createUser(f.actor, "renewal-mfa-browser-user", {
   name: "Synthetic recovery renewal operator",
   email: "renewal-mfa@example.test",
