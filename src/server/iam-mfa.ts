@@ -26,7 +26,40 @@ export class MultiFactor {
       CREATE TABLE IF NOT EXISTS iam_mfa (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,secret TEXT NOT NULL,last_step INTEGER NOT NULL,enabled_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS iam_mfa_recovery (user_id TEXT NOT NULL,hash TEXT NOT NULL,used_at TEXT,PRIMARY KEY(user_id,hash)) STRICT;
       CREATE TABLE IF NOT EXISTS iam_mfa_pending (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,key TEXT NOT NULL,enrollment_id TEXT NOT NULL,revision INTEGER NOT NULL,material TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT;
+      CREATE INDEX IF NOT EXISTS iam_mfa_pending_expiry ON iam_mfa_pending(expires_at,user_id) WHERE material<>'';
     `);
+    this.purgeExpiredEnrollments();
+  }
+  // Filesystem-authorized maintenance, never an HTTP operation. One atomic statement
+  // bounds each batch; no key/decryption or principal data is needed.
+  purgeExpiredEnrollments() {
+    return {
+      purged: Number(
+        this.store.run(
+          "UPDATE iam_mfa_pending SET material='' WHERE user_id IN (SELECT user_id FROM iam_mfa_pending WHERE expires_at<=? AND material<>'' ORDER BY expires_at,user_id LIMIT 100)",
+          Date.now(),
+        ).changes,
+      ),
+    };
+  }
+  // Called inside the identity security-change transaction; retain the retry
+  // identity so an old request cannot silently receive a fresh setup bundle.
+  invalidatePending(actor: Pick<Actor, "id" | "orgId">) {
+    this.store.run(
+      "UPDATE iam_mfa_pending SET material='' WHERE user_id=? AND org_id=? AND material<>''",
+      actor.id,
+      actor.orgId,
+    );
+  }
+  private discardOwnExpired(actor: Actor) {
+    // Commit before the setup transaction: its MFA_EXPIRED error must not bring
+    // erased secrets back. Confirmation still rechecks expiry under its lock.
+    this.store.run(
+      "UPDATE iam_mfa_pending SET material='' WHERE user_id=? AND org_id=? AND expires_at<=? AND material<>''",
+      actor.id,
+      actor.orgId,
+      Date.now(),
+    );
   }
   summary(actor: Actor) {
     const row = this.store.get(
@@ -121,6 +154,7 @@ export class MultiFactor {
   ) {
     text(key, "Idempotency key", 128);
     this.access.authenticate(actor, input.currentPassword, true);
+    this.discardOwnExpired(actor);
     this.cipher.require();
     return this.database.transaction(() => {
       this.access.authenticate(actor, input.currentPassword, false);
@@ -146,6 +180,7 @@ export class MultiFactor {
       if (pending?.key === key) {
         check(
           Number(pending.revision) === revision &&
+            pending.material !== "" &&
             Number(pending.expires_at) > Date.now(),
           "MFA_EXPIRED",
           "Setup expired or security changed. Start a new setup.",
@@ -195,6 +230,7 @@ export class MultiFactor {
     },
   ) {
     this.access.authenticate(actor, input.currentPassword, true);
+    this.discardOwnExpired(actor);
     return this.attempt(actor, () =>
       this.database.transaction(() => {
         this.access.authenticate(actor, input.currentPassword, false);
@@ -207,6 +243,7 @@ export class MultiFactor {
         );
         check(
           pending &&
+            pending.material !== "" &&
             Number(pending.expires_at) > Date.now() &&
             Number(pending.revision) === this.access.revision(actor),
           "MFA_EXPIRED",

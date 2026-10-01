@@ -4599,6 +4599,7 @@ test("browser: authenticator setup retries, required second factor, recovery reu
     password = "long-mfa-browser-password",
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await page.clock.install({ time: new Date() });
   const enterPassword = async (p: Page) => {
     await p.goto("/");
     await p.getByLabel("Email", { exact: true }).fill(email);
@@ -4611,9 +4612,42 @@ test("browser: authenticator setup retries, required second factor, recovery reu
   ).toBeVisible();
   await nav(page, "Security");
   const panel = page.getByRole("region", { name: "Authenticator security" });
+  // A response that arrives after its deadline must never display the bundle.
+  let staleKey = "",
+    staleSecret = "";
+  await page.route("**/api/security/mfa/setup", async (route) => {
+    staleKey = route.request().postDataJSON().key;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    staleSecret = body.secret;
+    await route.fulfill({
+      response,
+      json: { ...body, expiresAt: Date.now() - 60000 },
+    });
+  });
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel
+    .getByRole("button", { name: "Set up authenticator", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText("Setup expired");
+  await expect(panel.getByLabel("Authenticator setup key")).toHaveCount(0);
+  await expect(panel.getByRole("list", { name: "Recovery codes" })).toHaveCount(
+    0,
+  );
+  await expect(
+    panel.getByLabel("Current password for authenticator"),
+  ).toHaveValue("");
+  expect(await panel.textContent()).not.toContain(staleSecret);
+  await page.unroute("**/api/security/mfa/setup");
   let lostSetup = false;
   let firstSetup:
-    | { enrollmentId: string; secret: string; recoveryCodes: string[] }
+    | {
+        enrollmentId: string;
+        expiresAt: number;
+        secret: string;
+        recoveryCodes: string[];
+      }
     | undefined;
   const keys: string[] = [];
   await page.route("**/api/security/mfa/setup", async (route) => {
@@ -4624,7 +4658,12 @@ test("browser: authenticator setup retries, required second factor, recovery reu
       expect(response.status()).toBe(200);
       firstSetup = await response.json();
       await route.abort("failed");
-    } else await route.continue();
+    } else {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      firstSetup = await response.json();
+      await route.fulfill({ response });
+    }
   });
   await panel.getByLabel("Current password for authenticator").fill(password);
   await panel
@@ -4637,13 +4676,57 @@ test("browser: authenticator setup retries, required second factor, recovery reu
   await expect(panel.getByLabel("Authenticator setup key")).toHaveValue(
     firstSetup!.secret,
   );
-  const codes = await panel
+  let codes = await panel
     .getByRole("list", { name: "Recovery codes" })
     .locator("code")
     .allTextContents();
   expect(codes).toEqual(firstSetup!.recoveryCodes);
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
+  expect(keys[0]).not.toBe(staleKey);
+  // Only the browser clock advances. Server expiry is covered in Node/process tests.
+  const expiredSecret = firstSetup!.secret,
+    expiredCodes = [...codes];
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel.getByLabel("Authenticator or recovery code").fill("123456");
+  await panel.getByLabel("I saved my recovery codes securely").check();
+  await page.clock.fastForward(600001);
+  await expect(panel.getByRole("alert")).toContainText("Setup expired");
+  await expect(panel.getByLabel("Authenticator setup key")).toHaveCount(0);
+  await expect(panel.getByRole("list", { name: "Recovery codes" })).toHaveCount(
+    0,
+  );
+  await expect(panel.getByLabel("Authenticator or recovery code")).toHaveCount(
+    0,
+  );
+  await expect(
+    panel.getByLabel("Current password for authenticator"),
+  ).toHaveValue("");
+  for (const value of [expiredSecret, ...expiredCodes])
+    expect(await panel.textContent()).not.toContain(value);
+  await page.clock.setSystemTime(new Date());
+  await panel.getByLabel("Current password for authenticator").fill(password);
+  await panel
+    .getByRole("button", { name: "Set up authenticator", exact: true })
+    .click();
+  await expect(panel.getByLabel("Authenticator setup key")).toBeVisible();
+  await expect(panel.getByLabel("Authenticator setup key")).not.toHaveValue(
+    expiredSecret,
+  );
+  await expect(panel.getByLabel("Authenticator setup key")).toHaveValue(
+    firstSetup!.secret,
+  );
+  expect(keys).toHaveLength(3);
+  expect(keys[2]).not.toBe(keys[1]);
+  expect(firstSetup!.secret).not.toBe(expiredSecret);
+  await expect(
+    panel.getByLabel("I saved my recovery codes securely"),
+  ).not.toBeChecked();
+  codes = await panel
+    .getByRole("list", { name: "Recovery codes" })
+    .locator("code")
+    .allTextContents();
+  expect(codes).toEqual(firstSetup!.recoveryCodes);
   await page.unroute("**/api/security/mfa/setup");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(

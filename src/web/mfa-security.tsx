@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 
 type Setup = {
@@ -28,6 +28,21 @@ export function MfaSecurity({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const key = useRef(crypto.randomUUID());
+  useEffect(() => {
+    if (!setup) return;
+    const expiry = setTimeout(
+      () => {
+        setSetup(null);
+        setPassword("");
+        setCode("");
+        setSaved(false);
+        key.current = crypto.randomUUID();
+        setError("Setup expired. Start a new setup.");
+      },
+      Math.max(0, setup.expiresAt - Date.now()),
+    );
+    return () => clearTimeout(expiry);
+  }, [setup]);
   const submit = async () => {
     setBusy(true);
     setError("");
@@ -41,6 +56,16 @@ export function MfaSecurity({
             key: key.current,
           }),
         });
+        if (result.expiresAt <= Date.now()) {
+          setPassword("");
+          setCode("");
+          setSaved(false);
+          key.current = crypto.randomUUID();
+          setPassword("");
+          setCode("");
+          setSaved(false);
+          throw new Error("Setup expired. Start a new setup.");
+        }
         setSetup(result);
         setPassword("");
         setCode("");

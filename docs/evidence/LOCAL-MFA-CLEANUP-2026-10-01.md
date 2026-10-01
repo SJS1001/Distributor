@@ -1,0 +1,29 @@
+# Local expired authenticator enrollment cleanup — 2026-10-01
+
+Partial D-008/D-036/D-037/D-039 engineering evidence affecting G1/G7/G8. All 44 tasks and 10 gates remain NOT VERIFIED; full-system work remains incomplete. Reviewer: Codex automated synthetic checks, without human security/operator acceptance. Parent local commit `a16841e11beff5f1c61f9821a3d282c989720ad4`, branch `codex/local-distributor-checkpoint`. The [machine receipt](LOCAL-MFA-CLEANUP-2026-10-01.json) binds the tested source/test/configuration, documentation, captured workstation logs and unchanged historical evidence. See [user access](../USER-ACCESS.md). This supersedes the expired-material cleanup limitation in the [earlier MFA receipt](LOCAL-MFA-2026-10-01.md), which remains historical evidence.
+
+Identity maintenance clears encrypted expired pending bundles with one atomic SQLite statement per batch, at most 100 rows ordered by deadline/user, across organizations. A partial expiry index excludes erased material. Startup processes one batch without needing the runtime encryption key; the HTTP main process schedules another each minute and clears the interval on shutdown. Current-password own setup/confirmation requests discard expired material before their business transaction, so the expected expiry failure cannot roll it back. Password/access/reset/session revisions discard stale pending material within their existing atomic transaction.
+
+The latest request key/enrollment/revision/deadline remain as one metadata tombstone per user. Repeating that same key after expiry or erasure remains `MFA_EXPIRED`, including after a backward clock correction. A deliberately different key replaces it with fresh material. Activation/removal/restore still delete the pending row. Maintenance leaves enrolled factors, recovery-code use, sessions, grants and native stock/billing facts unchanged.
+
+The browser clears its displayed setup key, recovery codes, password, code and save acknowledgment at the setup deadline and rotates its next request key. A setup response already past its deadline is refused without displaying secrets. This is best-effort component clearing; the server remains authoritative for expiration and grants.
+
+- Final type/format checks: PASS.
+- Focused MFA cleanup/identity/recovery: 32/32 PASS, zero failures/cancellations/skips/todos, 4128.714292 ms.
+- Final full Node regression: 239/239 PASS, zero failures/cancellations/skips/todos, 9352.688292 ms.
+- Production build: PASS (58 ms in the final browser invocation). All 22 Chromium journeys PASS (37.5 seconds), including the expanded existing MFA journey (1.9 seconds); no extra journey count is claimed.
+- Final planning/link/whitespace/history checks are in the machine receipt; no product gate passes from these checks.
+
+Five new backend tests cover 205-row bounded batches, foreign organizations, missing-key restart, active factor/recovery/session/native-fact preservation, exact expiry boundary, terminal retries across restart/backward clock correction, authenticated own cleanup outside failed transactions, target-only security changes with late-audit rollback, and separate operating-system processes racing batches and replacement. The existing MFA browser journey adds a deliberately stale response, deadline clearing, explicit fresh key/material, reset save acknowledgment and retained interrupted-response/recovery/removal behavior. Its clock advances only in the browser; server/process tests independently exercise actual database expiry.
+
+## Preserved failures and self-review
+
+The first focused run passed 31/32: the new wrong-password assertion expected `LOGIN`, while the actual reauthentication contract returns `REAUTHENTICATE`. The assertion was corrected without changing production authentication. A direct Playwright executable invocation could not start its `tsx` web server because that invocation did not supply npm's dependency-bin PATH. The subsequent npm script provides the configured environment; focused and isolated full browser checks pass. Captured failed/superseded logs are retained in the machine receipt. Initial unsuccessful patch matches made no edits.
+
+Self-review checked atomic bounded selection/update against replacement races, per-user tombstone scope, current authentication before own cleanup, inner expiry/revision guards, cleanup persistence across denied commands, transactional identity-change rollback, unchanged active authentication/business facts, missing-key behavior and expiry display clearing. No dependencies/lockfile/license notices changed; no third-party code was copied.
+
+## Limits and continuation
+
+SQLite logical erasure does not prove secure deletion from WAL/free pages, filesystem snapshots or backups. JavaScript strings cannot be reliably zeroized; suspended browser timers and clock faults require production qualification. Minute scheduling is wired in HTTP main, but sustained elapsed scheduling, large-backlog drain/index/load, failure/termination behavior and production infrastructure/key/backup retention are not qualified here. Tombstone metadata remains until replacement/activation/removal/restore. MFA role enforcement, phishing resistance, actual authenticator applications, verified lost-device recovery, provider/security/residency and human acceptance remain open.
+
+Continue accounting credit application/refund/cost/import reconciliation, individual carriers, physical devices and business/source/vendor qualification. Direct workstation checks/local commits only: no local/self-hosted/cloud CI jobs, workflows/registrations, push/PR, deployment/purchase, actual provider accounts/requests, live data, publication, settings change or OPUS/UB integration. Future Distributor CI remains GitHub-hosted after separate authorization/qualification. No fresh remote-access claim. Full-system goal remains incomplete; all tasks/gates remain NOT VERIFIED.

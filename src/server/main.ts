@@ -33,8 +33,20 @@ const http = await createHttp(app, {
   secureCookies,
   providers: configuredProviders(app),
 });
+// Local application maintenance only. Startup also processes one batch; each
+// minute erases at most 100 expired enrollment bundles without provider I/O.
+const enrollmentCleanup = setInterval(() => {
+  try {
+    app.identity.mfa.purgeExpiredEnrollments();
+  } catch {
+    process.stderr.write(
+      "Authenticator setup cleanup did not complete; retrying next minute.\n",
+    );
+  }
+}, 60000).unref();
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => {
+    clearInterval(enrollmentCleanup);
     void http.close().finally(() => {
       app.close();
       process.exitCode = 0;

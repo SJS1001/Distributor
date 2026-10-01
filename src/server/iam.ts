@@ -552,6 +552,10 @@ export class Identity {
       required,
       now(),
     );
+    this.mfa.invalidatePending({
+      id: String(row.id),
+      orgId: String(row.org_id),
+    });
     return revision;
   }
   private endSessions(userId: string) {
