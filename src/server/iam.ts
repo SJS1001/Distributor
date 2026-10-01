@@ -1,4 +1,8 @@
 import { MultiFactor } from "./iam-mfa.ts";
+import {
+  isProviderName,
+  type ProviderName,
+} from "../shared/provider-choices.ts";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import {
   account,
@@ -1000,12 +1004,14 @@ export class Identity {
       key,
       input,
       () => {
-        permit(actor, ["commercial", "buyer"]);
-        this.customer(actor, input.accountId);
+        const current = this.residencyActor(actor);
+        permit(current, ["commercial", "buyer"]);
+        this.customer(current, input.accountId);
       },
       () => {
-        const customer = this.customer(actor, input.accountId),
-          org = this.organization(actor);
+        const current = this.residencyActor(actor),
+          customer = this.customer(current, input.accountId),
+          org = this.organization(current);
         check(
           input.region === org.region,
           "REGIONAL_MIGRATION_REQUIRED",
@@ -1019,9 +1025,7 @@ export class Identity {
         check(
           ["strict", "provider-exceptions"].includes(input.mode) &&
             Array.isArray(input.providers) &&
-            input.providers.every((p) =>
-              ["stripe", "quickbooks", "carrier"].includes(p),
-            ) &&
+            Array.from(input.providers).every(isProviderName) &&
             new Set(input.providers).size === input.providers.length,
           "VALIDATION",
           "Invalid residency mode or provider choices.",
@@ -1041,7 +1045,7 @@ export class Identity {
           actor.orgId,
           input.accountId,
         );
-        this.platform.audit(actor, "account.residency.choice", customer.id, {
+        this.platform.audit(current, "account.residency.choice", customer.id, {
           region: org.region,
           mode: input.mode,
           providers: input.providers,
@@ -1058,15 +1062,12 @@ export class Identity {
       },
     );
   }
-  providerAllowed(
-    actor: Actor,
-    accountId: string,
-    provider: "stripe" | "quickbooks" | "carrier",
-  ) {
-    this.organization(actor);
-    const customer = this.customer(actor, accountId);
+  providerAllowed(actor: Actor, accountId: string, provider: ProviderName) {
+    const current = this.residencyActor(actor),
+      customer = this.customer(current, accountId);
     check(
-      customer.residency_mode === "provider-exceptions" &&
+      isProviderName(provider) &&
+        customer.residency_mode === "provider-exceptions" &&
         (JSON.parse(customer.provider_exceptions) as string[]).includes(
           provider,
         ),
@@ -1074,6 +1075,16 @@ export class Identity {
       `Customer has not accepted ${provider} processing outside the application's storage region.`,
     );
     return customer.residency_version;
+  }
+  private residencyActor(actor: Actor) {
+    const current = this.currentActor(actor);
+    check(
+      !this.passwordChangeRequired(current.id),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing provider residency.",
+      403,
+    );
+    return current;
   }
   createUser(
     actor: Actor,

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { providerChoices, providerNames } from "../shared/provider-choices.ts";
 import { createRoot } from "react-dom/client";
 import {
   command,
@@ -3566,6 +3567,11 @@ function App() {
         )}
         {page === "Customers" && (
           <>
+            <p>
+              Each processor exception allows processing outside the application
+              storage region. Review the applicable terms before accepting.
+              Carrier services require separate setup and qualification.
+            </p>
             <div className="actions">
               {can("commercial") &&
                 button("Add customer", () =>
@@ -3599,7 +3605,7 @@ function App() {
                 a.tier,
                 money(a.credit_limit, a.currency),
                 a.held ? "On hold" : "Clear",
-                `${data.organization.region} · ${a.residency_mode}`,
+                `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}`,
                 <div className="actions">
                   {can("finance") &&
                     button(a.held ? "Clear hold" : "Apply hold", () =>
@@ -3638,33 +3644,14 @@ function App() {
                             ],
                             value: a.residency_mode,
                           },
-                          {
-                            name: "stripe",
-                            label:
-                              "Allow Stripe processing outside the storage region",
+                          ...providerChoices.map(({ id, label }): Field => ({
+                            name: id,
+                            label: `Allow ${label} processing outside the storage region`,
                             type: "checkbox",
                             value: JSON.parse(a.provider_exceptions).includes(
-                              "stripe",
+                              id,
                             ),
-                          },
-                          {
-                            name: "quickbooks",
-                            label:
-                              "Allow QuickBooks processing outside the storage region",
-                            type: "checkbox",
-                            value: JSON.parse(a.provider_exceptions).includes(
-                              "quickbooks",
-                            ),
-                          },
-                          {
-                            name: "carrier",
-                            label:
-                              "Allow selected carrier processing outside the storage region",
-                            type: "checkbox",
-                            value: JSON.parse(a.provider_exceptions).includes(
-                              "carrier",
-                            ),
-                          },
+                          })),
                           {
                             name: "acknowledgment",
                             label: "Acknowledgment of reviewed processor terms",
@@ -3676,9 +3663,7 @@ function App() {
                           accountId: a.id,
                           region: v.region,
                           mode: v.mode,
-                          providers: ["stripe", "quickbooks", "carrier"].filter(
-                            (p) => v[p],
-                          ),
+                          providers: providerNames.filter((p) => v[p]),
                           version: a.residency_version,
                           acknowledgment: v.acknowledgment,
                         }),

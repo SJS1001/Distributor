@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { providerNames } from "../shared/provider-choices.ts";
 import { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -228,7 +229,12 @@ export function commands(app: Application): Record<string, Spec> {
         accountId: str,
         region: choice("CA", "US"),
         mode: choice("strict", "provider-exceptions"),
-        providers: arr(choice("stripe", "quickbooks", "carrier")),
+        providers: {
+          type: "array",
+          items: choice(...providerNames),
+          maxItems: providerNames.length,
+          uniqueItems: true,
+        },
         version: num,
         acknowledgment: str,
       }),

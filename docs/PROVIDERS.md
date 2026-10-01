@@ -4,13 +4,19 @@
 
 ## Customer choice
 
-Organizations use their declared CA or US application region. Accounts start with strict regional processing. Customers may explicitly choose named Stripe/QuickBooks exceptions; acceptance is versioned and audited. Buyers may change their own choice; authorized staff may record it for an account. A staff acknowledgment alone is not independent evidence of customer consent.
+Organizations use their declared CA or US application region. Accounts start with strict regional processing. Customers may explicitly choose Stripe, QuickBooks, UPS, FedEx, USPS, Canada Post, Purolator and DHL Express independently; acceptance is versioned and audited. Buyers may change their own choice; authorized staff may record it for an account. A staff acknowledgment alone is not independent evidence of customer consent.
 
 The current choice is checked before intent creation, sends, reconciliation and payment retrieval. Withdrawal blocks subsequent requests; it cannot recall already transmitted data or in-flight requests. Native stock/orders/invoices and manual payment recording remain available. Changing the storage region requires an approved and verified migration.
 
 Final disclosures must identify purpose, minimum fields, reviewed processing countries, subprocessors, retention/deletion and withdrawal consequences. Retain the disclosure version with acceptance. [Stripe's DPA](https://stripe.com/en-ca/legal/dpa) permits US transfers and global processing. QuickBooks and carrier processing locations need applicable vendor evidence. Region flags do not prove infrastructure, backup/log/support or processor residency.
 
-Current carrier consent is a placeholder family `carrier`; no carrier adapter sends data. Replace it with individually named choices before enabling carriers. An umbrella exception must not silently authorize every vendor.
+Individual carrier choices now use stable identifiers `ups`, `fedex`, `usps`, `canada-post`, `purolator` and `dhl-express`. Stripe and QuickBooks identifiers remain unchanged. Selection records application permission; it does not enable a carrier adapter, establish service eligibility or qualify vendor terms. No carrier adapter sends data. These are the planning candidates, not a market ranking or a promise of availability.
+
+Existing `carrier` family entries and their original audit/command receipts remain historical bytes. They authorize no named carrier and are never expanded automatically. The Customers screen flags that old exception and leaves all carrier checkboxes unselected. A customer or authorized representative must review specific names and save a new version, or withdraw exceptions using strict mode. The exact HTTP schema rejects new/old-client family payloads, unknown names and duplicate entries before mutation. Historical command receipts remain stored; internal authorized replay returns the historical result without restoring that choice. Stop old application writers before upgrading; mixed versions are unqualified.
+
+Both new choices and cached command results re-read actual active identity, current account access and required password changes; editing also requires current administrator/commercial/buyer authority. Permission checks re-read current account access and reject the family even if stored. Choice, version, acknowledgment, audit and durable receipt commit atomically. Withdrawal blocks current application permission; it cannot erase a provider's previously received data. Reviewed disclosure versions, country/subprocessor/retention records and actual customer authority still require further implementation and vendor/business qualification.
+
+The [named-choice receipt](evidence/LOCAL-NAMED-CARRIERS-2026-10-01.md) covers local CA/US eligibility, independence, withdrawal/restart, old-family history, denied access and atomic rollback, separate-process contention and phone browser retries. No actual provider request or vendor qualification occurred.
 
 ## Major carrier candidates
 
@@ -74,7 +80,7 @@ Operators use “Provider operations” and “Payment confirmations,” reconci
 
 The [local claim receipt](evidence/LOCAL-PROVIDER-CLAIMS-2026-10-01.md) records synthetic checkout/accounting recovery, exclusive reconciliation across connections and separate processes, grant/consent/restore checks and late-write rollback. No actual provider request occurred. It does not qualify OAuth, actual accounting payment/credit acceptance, actual provider recovery, production lease/history load or business reconciliation. The later cash receipt below adds synthetic payment evidence.
 
-Next: OAuth/secret lifecycle, accounting credits/refunds/import reconciliation and actual payment qualification, actual Stripe refund qualification and notifications, buyer payment usability, individual carrier choices/adapters and physical devices. See [implementation status](IMPLEMENTATION.md), [tasks](TASKS.md), [checkpoints](CHECKPOINTS.md) and [local provider evidence](evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.md).
+Next: OAuth/secret lifecycle, accounting credits/refunds/import reconciliation and actual payment qualification, actual Stripe refund qualification and notifications, buyer payment usability, individual carrier adapters, reviewed disclosures and physical devices. See [implementation status](IMPLEMENTATION.md), [tasks](TASKS.md), [checkpoints](CHECKPOINTS.md) and [local provider evidence](evidence/LOCAL-PROVIDER-BOUNDARY-2026-09-30.md).
 
 
 ## Credited cash refunds

@@ -11,6 +11,30 @@ const f = fixture(
   { after: (fn) => cleanup.push(fn) },
   { mfaEncryptionKey: "a1".repeat(32) },
 );
+const residencyBuyer = f.app.identity.createCustomer(
+  f.actor,
+  "named-carrier-buyer",
+  {
+    name: "Synthetic named carrier buyer",
+    tier: "standard",
+    creditLimit: 10000,
+  },
+).id;
+f.app.identity.createUser(f.actor, "named-carrier-user", {
+  email: "named-carriers@example.test",
+  name: "Named carrier buyer",
+  password: "long-test-only-password",
+  role: "buyer",
+  accountId: residencyBuyer,
+  sites: [],
+});
+// Old family consent is historical data, never expanded into named exceptions.
+f.app.database
+  .owned("iam")
+  .run(
+    "UPDATE iam_accounts SET residency_mode='provider-exceptions',provider_exceptions='[\"carrier\"]',residency_version=2 WHERE id=?",
+    residencyBuyer,
+  );
 for (const [sku, serialized] of [
   ["OPEN-S", true],
   ["OPEN-B", false],

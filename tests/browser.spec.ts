@@ -2,6 +2,98 @@ import { test, expect, type Page } from "@playwright/test";
 import { totp } from "../src/server/totp.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+test("browser: named carrier choices preserve legacy warning, retry once, reload and withdraw on phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("named-carriers@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Customers");
+  await expect(
+    page.getByText(/Previous carrier exception needs review/),
+  ).toBeVisible();
+  const choose = () =>
+    page.getByRole("button", { name: "Residency choice", exact: true }).click();
+  const labels = [
+    "UPS",
+    "FedEx",
+    "USPS",
+    "Canada Post",
+    "Purolator",
+    "DHL Express",
+  ];
+  const permission = (name: string) =>
+    page.getByLabel(`Allow ${name} processing outside the storage region`, {
+      exact: true,
+    });
+  await choose();
+  for (const name of labels) await expect(permission(name)).not.toBeChecked();
+  await expect(
+    page.getByLabel(
+      "Allow selected carrier processing outside the storage region",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+  await permission("UPS").check();
+  await permission("Canada Post").check();
+  await page
+    .getByLabel("Acknowledgment of reviewed processor terms")
+    .fill("Synthetic buyer review of UPS and Canada Post exceptions");
+  let dropped = false;
+  const keys: string[] = [];
+  await page.route("**/api/commands/account.residency", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!dropped) {
+      dropped = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await next(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  let account = (await (await page.request.get("/api/dashboard")).json())
+    .accounts[0];
+  expect(account.residency_version).toBe(3);
+  expect(JSON.parse(account.provider_exceptions)).toEqual([
+    "ups",
+    "canada-post",
+  ]);
+  await page.reload();
+  await nav(page, "Customers");
+  await choose();
+  for (const name of labels) {
+    if (["UPS", "Canada Post"].includes(name))
+      await expect(permission(name)).toBeChecked();
+    else await expect(permission(name)).not.toBeChecked();
+  }
+  await permission("UPS").uncheck();
+  await permission("Canada Post").uncheck();
+  await page.getByLabel("Processor policy").selectOption("strict");
+  await page
+    .getByLabel("Acknowledgment of reviewed processor terms")
+    .fill("Synthetic buyer withdraws both exceptions");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  account = (await (await page.request.get("/api/dashboard")).json())
+    .accounts[0];
+  expect(account.residency_version).toBe(4);
+  expect(account.residency_mode).toBe("strict");
+  expect(JSON.parse(account.provider_exceptions)).toEqual([]);
+});
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 test("browser: refund notices page safely, retain personal reads after a lost response, and reopen after a verified failure", async ({
   page,

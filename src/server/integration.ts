@@ -27,11 +27,12 @@ import {
   type RecordedPayment,
   type RecordedCredit,
 } from "./billing.ts";
+import type { ProviderName } from "../shared/provider-choices.ts";
 export type Effect = {
   id: string;
   org_id: string;
   account_id: string;
-  provider: "stripe" | "quickbooks" | "carrier";
+  provider: ProviderName;
   kind: string;
   reference: string;
   payload: string;

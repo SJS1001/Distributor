@@ -12,7 +12,7 @@ Date: 2026-09-30. A proposal is not an approved business rule. Owner columns ide
 - The owner subsequently authorized building the full system on 2026-09-30. This supersedes the earlier planning-only scope without passing discovery or product gates.
 - Target countries: US (interpretation of “use”) and Canada, with data residency. Target payments: Stripe. Target accounting: QuickBooks (Online proposed; edition still to confirm). Major carrier/scanner/printer support requested; exact vendors, services and devices require qualification.
 - Residency is a customer choice, per the owner's follow-up. Default strict regional storage; named processor exceptions require an explicit customer choice. No claim that a provider exception keeps all processing in Canada. Actual regional hosting/migrations still require qualification.
-- The [provider/device qualification plan](PROVIDERS.md) translates major-provider coverage into a proposed candidate matrix. These are engineering candidates, not owner-selected contracts, purchased devices or qualified integrations. Individual carrier exceptions must replace the current placeholder before carrier activation.
+- The [provider/device qualification plan](PROVIDERS.md) translates major-provider coverage into a proposed candidate matrix. These are engineering candidates, not owner-selected contracts, purchased devices or qualified integrations. Independent named carrier choices now exist locally; vendor-specific disclosures, services and adapters still need qualification before activation.
 - Future CI uses GitHub-hosted runners, per the owner's instruction on 2026-09-30.
 
 ## CI runner decision
