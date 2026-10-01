@@ -1393,6 +1393,24 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     ["after", "limit"],
   );
+  http.get<{
+    Querystring: { query?: string; accountId?: string; after?: string };
+  }>(
+    "/api/warranty/sold-units/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            query: { type: "string", minLength: 1, maxLength: 100 },
+            accountId: { type: "string", minLength: 1, maxLength: 160 },
+            after: { type: "string", minLength: 1, maxLength: 128 },
+          },
+          ["query", "accountId", "after"],
+        ),
+      },
+    },
+    async (request) => app.warranty.soldUnitPage(actor(request), request.query),
+  );
   http.get<{ Params: { unitId: string }; Querystring: { accountId: string } }>(
     "/api/warranty/sold-units/:unitId/coverage",
     {

@@ -19,6 +19,7 @@ import { Billing } from "./billing.ts";
 import { WarrantyEvidence } from "./warranty-evidence.ts";
 import type { WarrantyDecisionPage } from "../shared/warranty-decisions.ts";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
+import type { SoldSerial, SoldSerialPage } from "../shared/sold-serials.ts";
 export type Claim = {
   id: string;
   org_id: string;
@@ -876,7 +877,12 @@ export class Warranty {
         provisionalDays: null,
       };
     }
-    const sale = this.fulfillment.soldUnit(actor, unitId, accountId);
+    const sale = this.fulfillment.soldUnit(
+      actor,
+      unitId,
+      accountId,
+      custody.reference,
+    );
     const days = JSON.parse(
       this.identity.organization(actor).policy,
     ).coverageDays;
@@ -943,62 +949,79 @@ export class Warranty {
     });
   }
   soldUnits(actor: Actor) {
+    return this.soldUnitPage(actor).items;
+  }
+  private soldSerialAccount(actor: Actor, unitId: string): string | null {
+    const custody = this.inventory.soldCustody(actor, unitId);
+    if (custody.type === "shipment")
+      return (
+        this.fulfillment.soldSerial(actor, custody.reference, unitId)?.shipment
+          .account_id ?? null
+      );
+    if (custody.type !== "replacement.handover") return null;
+    const row = this.store.get<{ accountId: string }>(
+      `SELECT c.account_id AS accountId FROM warranty_replacements r
+       JOIN warranty_claims c ON c.org_id=r.org_id AND c.id=r.claim_id
+       WHERE r.org_id=? AND r.id=? AND r.new_unit_id=? AND r.state='handed_over'
+       ${actor.role === "buyer" ? "AND c.account_id=?" : ""}`,
+      actor.orgId,
+      custody.reference,
+      unitId,
+      ...(actor.role === "buyer" ? [actor.accountId!] : []),
+    );
+    return row?.accountId ?? null;
+  }
+  soldUnitPage(
+    actor: Actor,
+    input: { query?: string; accountId?: string; after?: string } = {},
+  ): SoldSerialPage {
     return this.database.transaction(() => {
       actor = this.authority(actor, ["warranty", "commercial", "buyer"]);
-      const candidates = new Map<
-        string,
-        { id: string; productId: string; serial: string; accountId: string }
-      >();
-      for (const s of this.fulfillment
-        .shipments(actor)
-        .filter((s) => s.state === "shipped"))
-        for (const u of s.units as {
-          unitId: string;
-          productId: string;
-          serial: string | null;
-        }[]) {
-          if (
-            !u.serial ||
-            this.inventory.unit(actor, u.unitId).state !== "sold"
-          )
-            continue;
-          const custody = this.inventory.soldCustody(actor, u.unitId);
-          if (custody.type === "shipment" && custody.reference === s.id)
-            candidates.set(u.unitId, {
-              id: u.unitId,
-              productId: u.productId,
-              serial: u.serial,
-              accountId: s.account_id,
-            });
-        }
-      for (const r of this.store.all<Replacement>(
-        "SELECT * FROM warranty_replacements WHERE org_id=? AND state='handed_over' ORDER BY rowid",
-        actor.orgId,
-      )) {
-        const c = this.store.get<Claim>(
-          "SELECT * FROM warranty_claims WHERE org_id=? AND id=?",
-          actor.orgId,
-          r.claim_id,
-        )!;
-        if (actor.role === "buyer" && c.account_id !== actor.accountId)
-          continue;
-        const u = this.inventory.unit(actor, r.new_unit_id),
-          custody =
-            u.state === "sold" ? this.inventory.soldCustody(actor, u.id) : null;
-        if (
-          custody?.type === "replacement.handover" &&
-          custody.reference === r.id
-        )
-          candidates.set(u.id, {
-            id: u.id,
-            productId: u.product_id,
-            serial: u.serial!,
-            accountId: c.account_id,
-          });
+      const query =
+        input.query === undefined
+          ? ""
+          : text(input.query, "Serial search", 100);
+      const accountId =
+        input.accountId === undefined
+          ? actor.role === "buyer"
+            ? text(actor.accountId, "Buyer account ID")
+            : undefined
+          : text(input.accountId, "Customer account ID");
+      if (accountId !== undefined) this.identity.customer(actor, accountId);
+      let after =
+        input.after === undefined
+          ? undefined
+          : text(input.after, "Sold serial cursor", 128);
+      if (after !== undefined) {
+        // Validate the cursor's search and current sold state before resolving
+        // customer ownership. No continuation may expose another account.
+        this.inventory.soldSerialCandidates(actor, query, after);
+        const owner = this.soldSerialAccount(actor, after);
+        check(
+          owner && (accountId === undefined || owner === accountId),
+          "CURSOR",
+          "Sold serial cursor is unavailable in your current account scope.",
+          400,
+        );
       }
-      return [...candidates.values()].filter(
-        (u) => this.inventory.unit(actor, u.id).state === "sold",
-      );
+      const items: SoldSerial[] = [];
+      for (;;) {
+        const candidates = this.inventory.soldSerialCandidates(
+          actor,
+          query,
+          after,
+        );
+        for (const unit of candidates) {
+          const owner = this.soldSerialAccount(actor, unit.id);
+          if (!owner || (accountId !== undefined && owner !== accountId))
+            continue;
+          items.push({ ...unit, accountId: owner });
+          if (items.length === 21)
+            return { items: items.slice(0, 20), next: items[19]!.id };
+        }
+        if (candidates.length < 21) return { items, next: null };
+        after = candidates.at(-1)!.id;
+      }
     });
   }
   manufacturerCases(actor: Actor, claimId: string) {

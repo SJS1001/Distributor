@@ -882,30 +882,44 @@ export class Fulfillment {
       },
     );
   }
-  soldUnit(actor: Actor, unitId: string, accountId: string) {
-    this.identity.customer(actor, accountId);
-    const rows = this.store.all<Shipment>(
-      "SELECT * FROM fulfillment_shipments WHERE org_id=? AND state='shipped' ORDER BY shipped_at DESC,rowid DESC",
+  // Resolve a named custody receipt without walking the shipment collection.
+  soldSerial(actor: Actor, shipmentId: string, unitId: string) {
+    actor = this.shipmentReader(actor);
+    const shipment = this.store.get<Shipment>(
+      `SELECT * FROM fulfillment_shipments WHERE org_id=? AND id=? AND state='shipped'
+       ${actor.role === "buyer" ? "AND account_id=?" : ""}`,
       actor.orgId,
+      shipmentId,
+      ...(actor.role === "buyer" ? [actor.accountId!] : []),
     );
-    for (const s of rows) {
-      const u = (
-        JSON.parse(s.units) as {
-          unitId: string;
-          productId: string;
-          serial: string | null;
-        }[]
-      ).find((u) => u.unitId === unitId && u.serial);
-      if (u) {
-        check(
-          s.account_id === accountId,
-          "NOT_FOUND",
-          "No current serialized sale for this account.",
-          404,
-        );
-        return { shipment: s, unit: u };
-      }
-    }
-    check(false, "NOT_FOUND", "No serialized sale for this account.", 404);
+    if (!shipment) return null;
+    const unit = (
+      JSON.parse(shipment.units) as {
+        unitId: string;
+        productId: string;
+        serial: string | null;
+      }[]
+    ).find((u) => u.unitId === unitId && u.serial);
+    return unit ? { shipment, unit } : null;
+  }
+  soldUnit(
+    actor: Actor,
+    unitId: string,
+    accountId: string,
+    shipmentId?: string,
+  ) {
+    actor = this.shipmentReader(actor);
+    this.identity.customer(actor, accountId);
+    const reference =
+      shipmentId ?? this.inventory.shipmentReference(actor, unitId);
+    const sale =
+      reference === null ? null : this.soldSerial(actor, reference, unitId);
+    check(
+      sale && sale.shipment.account_id === accountId,
+      "NOT_FOUND",
+      "No serialized sale for this account.",
+      404,
+    );
+    return sale;
   }
 }

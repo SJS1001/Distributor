@@ -1,18 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
+import type { SoldSerial, SoldSerialPage } from "../shared/sold-serials.ts";
+import { SoldSerialSelect } from "./sold-serial-select.tsx";
 
-type SoldUnit = { id: string; serial: string; accountId: string };
 export function SoldCoverage({
-  units,
+  initial,
   onClose,
 }: {
-  units: SoldUnit[];
+  initial: SoldSerialPage;
   onClose: () => void;
 }) {
   const heading = useRef<HTMLHeadingElement | null>(null);
   const pending = useRef<AbortController | null>(null);
-  const [unitId, setUnitId] = useState("");
+  const [unit, setUnit] = useState<SoldSerial | null>(null);
   const [coverage, setCoverage] = useState<WarrantyCoverage | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +32,6 @@ export function SoldCoverage({
     setBusy(false);
   };
   const load = async () => {
-    const unit = units.find((u) => u.id === unitId);
     if (!unit || pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
@@ -71,31 +71,23 @@ export function SoldCoverage({
         determine return eligibility. Submit a request for review even when the
         calculated date has elapsed.
       </p>
-      {!units.length && <p>No currently sold serials available.</p>}
-      <label htmlFor="sold-serial-coverage">Sold serial for coverage</label>
-      <select
-        id="sold-serial-coverage"
-        value={unitId}
-        onChange={(e) => {
+      <SoldSerialSelect
+        initial={initial}
+        name="coverage-unit"
+        label="Sold serial for coverage"
+        onSelectionChange={(selected) => {
           clear();
-          setUnitId(e.target.value);
+          setUnit(selected);
         }}
-      >
-        <option value="">Select a sold serial</option>
-        {units.map((u) => (
-          <option key={u.id} value={u.id}>
-            {u.serial}
-          </option>
-        ))}
-      </select>
+      />
       <button
         className="secondary"
-        disabled={!unitId || busy}
+        disabled={!unit || busy}
         onClick={() => void load()}
       >
         {error ? "Retry coverage lookup" : "Check coverage dates"}
       </button>
-      <p role="status">
+      <p role="status" aria-label="Coverage status">
         {busy
           ? "Loading coverage…"
           : coverage

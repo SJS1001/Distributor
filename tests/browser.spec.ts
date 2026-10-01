@@ -4776,9 +4776,16 @@ test("browser: replacement collection retries, cancellation, scan validation and
   await page
     .getByRole("button", { name: "Submit claim / return", exact: true })
     .click();
+  await page.getByLabel("Search sold serials", { exact: true }).fill("REP-NEW");
+  await page
+    .getByRole("button", { name: "Search serials", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status", { name: "Sold serial search status" }),
+  ).toContainText("1 sold serial");
   await page
     .getByLabel("Sold serial", { exact: true })
-    .selectOption(after.soldUnits.find((u: any) => u.serial === "REP-NEW").id);
+    .selectOption({ label: "REP-NEW" });
   await expect(
     page
       .getByLabel("Sold serial", { exact: true })
@@ -11975,6 +11982,13 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
   await opener.click();
   await expect(panel.getByRole("heading")).toBeFocused();
   await expect(check).toBeDisabled();
+  await panel.getByLabel("Search sold serials").fill("COV-");
+  await panel
+    .getByRole("button", { name: "Search serials", exact: true })
+    .click();
+  await expect(
+    panel.getByRole("status", { name: "Sold serial search status" }),
+  ).toContainText("2 sold serials");
   await select.selectOption({ label: "COV-S1" });
   expect(reads).toEqual([]);
   let failed = false;
@@ -11995,7 +12009,9 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
   await panel
     .getByRole("button", { name: "Retry coverage lookup", exact: true })
     .click();
-  await expect(panel.getByRole("status")).toHaveText("Coverage dates loaded");
+  await expect(
+    panel.getByRole("status", { name: "Coverage status" }),
+  ).toHaveText("Coverage dates loaded");
   expect(reads[0]).toBe(reads[1]);
   await expect(panel).toContainText(
     "Current provisional duration: 365 days after shipment.",
@@ -12003,9 +12019,9 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
   await expect(panel).toContainText("Eligibility requires review.");
   await select.selectOption({ label: "COV-S2" });
   await expect(panel).not.toContainText("Serial COV-S1");
-  await expect(panel.getByRole("status")).toHaveText(
-    "Select a serial and check its coverage dates.",
-  );
+  await expect(
+    panel.getByRole("status", { name: "Coverage status" }),
+  ).toHaveText("Select a serial and check its coverage dates.");
   await check.click();
   await expect(panel).toContainText("Serial COV-S2");
   await page.unroute(pattern);
@@ -12073,7 +12089,9 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
   ]);
   await select.selectOption({ label: "COV-S1" });
   await check.click();
-  await expect(panel.getByRole("status")).toHaveText("Coverage dates loaded");
+  await expect(
+    panel.getByRole("status", { name: "Coverage status" }),
+  ).toHaveText("Coverage dates loaded");
   await expect(panel).toContainText("Coverage rules are provisional.");
   expect(
     await page.evaluate(
@@ -12434,5 +12452,380 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("browser: sold serial pages search, retry, cancel and select current claim custody beyond the dashboard page", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const login = async (email: string, password: string) => {
+    await page.goto("/");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await login("admin@example.test", "long-test-only-password");
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const r = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(r.status(), await r.text()).toBe(200);
+    return r.json();
+  };
+  const initial = await (await page.request.get("/api/dashboard")).json();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const account = await cmd("account.create", {
+    name: "Serial page buyer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "SOLD-SEARCH-BROWSER",
+    name: "Sold page equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const serials = Array.from(
+    { length: 25 },
+    (_, i) => `SS-PAGE-${String(i).padStart(3, "0")}${i === 24 ? "%_'" : ""}`,
+  );
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 25, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "SOLD-SEARCH-PAGE",
+    quantity: 25,
+    serials,
+    bin: "SS-PAGE",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 25 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const pick of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: pick.id,
+      serial: pick.serial,
+    });
+  const picked = await (await page.request.get("/api/dashboard")).json();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic 25-unit sale",
+  });
+  const latest = await (await page.request.get("/api/dashboard")).json();
+  const target = latest.stock.find((u: any) => u.serial === serials[24]);
+  await cmd("user.create", {
+    email: "sold-search-buyer@example.test",
+    name: "Sold search buyer",
+    password: "long-user-test-password",
+    requirePasswordChange: false,
+    role: "buyer",
+    sites: [],
+    accountId: account.id,
+    currentPassword: "long-test-only-password",
+  });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await login("sold-search-buyer@example.test", "long-user-test-password");
+  const buyerDashboard = await (
+    await page.request.get("/api/dashboard")
+  ).json();
+  expect(buyerDashboard.soldUnits).toHaveLength(20);
+  expect(
+    buyerDashboard.soldUnits.every((u: any) => u.accountId === account.id),
+  ).toBe(true);
+  expect(buyerDashboard.soldUnitNext).toBeTruthy();
+  await nav(page, "Returns");
+  const opener = page.getByRole("button", {
+    name: "Check sold serial coverage",
+    exact: true,
+  });
+  const panel = page.getByRole("region", {
+    name: "Sold serial coverage",
+    exact: true,
+  });
+  const status = panel.getByRole("status", {
+    name: "Sold serial search status",
+    exact: true,
+  });
+  const select = panel.getByLabel("Sold serial for coverage", { exact: true });
+  const query = panel.getByLabel("Search sold serials", { exact: true });
+  const pattern = "**/api/warranty/sold-units/page*";
+  const reads: string[] = [],
+    submissions: any[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/warranty/sold-units/page")) reads.push(r.url());
+    if (r.url().endsWith("/api/commands/warranty.submit"))
+      submissions.push(r.postDataJSON());
+  });
+  await opener.click();
+  expect(reads).toEqual([]);
+  await expect(status).toContainText("20 sold serials");
+  await expect(select.locator("option")).toHaveCount(21);
+  await select.selectOption({ label: serials[0] });
+  await panel
+    .getByRole("button", { name: "Check coverage dates", exact: true })
+    .click();
+  await expect(
+    panel.getByRole("status", { name: "Coverage status" }),
+  ).toHaveText("Coverage dates loaded");
+  let fail = true;
+  await page.route(pattern, async (route) => {
+    if (fail) {
+      fail = false;
+      await route.fulfill({
+        status: 503,
+        json: { message: "Synthetic serial search failure", code: "TEST" },
+      });
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Next sold serials", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "Synthetic serial search failure",
+  );
+  await expect(select.locator("option")).toHaveCount(21);
+  await expect(select).toHaveValue("");
+  await expect(panel).not.toContainText(`Serial ${serials[0]}`);
+  await expect(
+    panel.getByRole("button", { name: "Retry coverage lookup", exact: true }),
+  ).toHaveCount(0);
+  await panel
+    .getByRole("button", { name: "Retry serial search", exact: true })
+    .click();
+  expect(new URL(reads[0]!).searchParams.get("after")).toBe(
+    buyerDashboard.soldUnitNext,
+  );
+  expect(reads[1]).toBe(reads[0]);
+  await expect(status).toContainText(
+    "5 sold serials on this page · End of results",
+  );
+  await expect(select).toBeFocused();
+  await expect(select.locator("option")).toHaveCount(6);
+  await expect(
+    panel.getByRole("button", { name: "Next sold serials", exact: true }),
+  ).toHaveCount(0);
+  await select.selectOption({ label: serials[24] });
+  await panel
+    .getByRole("button", { name: "Check coverage dates", exact: true })
+    .click();
+  await expect(panel).toContainText(`Serial ${serials[24]}`);
+  await query.fill("%_'");
+  await expect(select).toHaveValue("");
+  await expect(panel).not.toContainText(`Serial ${serials[24]}`);
+  await query.press("Enter");
+  await expect(status).toContainText("1 sold serial");
+  expect(await select.locator("option").allTextContents()).toEqual([
+    "Select a sold serial",
+    serials[24],
+  ]);
+  await query.fill("No matching equipment");
+  await panel
+    .getByRole("button", { name: "Search serials", exact: true })
+    .click();
+  await expect(panel).toContainText("No matching sold serials available.");
+  await query.fill("");
+  await query.press("Enter");
+  await expect(status).toContainText("20 sold serials");
+  await page.unroute(pattern);
+  for (const exit of [
+    "input",
+    "close",
+    "refresh",
+    "navigation",
+    "signout",
+  ] as const) {
+    let release!: () => void, handled!: () => void;
+    const held = new Promise<void>((r) => {
+        release = r;
+      }),
+      done = new Promise<void>((r) => {
+        handled = r;
+      });
+    await page.route(pattern, async () => {
+      await held;
+      handled();
+    });
+    const started = page.waitForRequest((r) =>
+      r.url().includes("/api/warranty/sold-units/page"),
+    );
+    await panel
+      .getByRole("button", { name: "Next sold serials", exact: true })
+      .click();
+    const pending = await started,
+      cancelled = page.waitForEvent("requestfailed", (r) => r === pending);
+    if (exit === "input") await query.fill("SS-PAGE");
+    else if (exit === "close")
+      await panel
+        .getByRole("button", { name: "Close coverage lookup", exact: true })
+        .click();
+    else if (exit === "refresh")
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    else if (exit === "navigation") await nav(page, "Overview");
+    else
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await cancelled;
+    release();
+    await done;
+    await page.unroute(pattern);
+    if (exit === "input") {
+      await panel
+        .getByRole("button", { name: "Close coverage lookup", exact: true })
+        .click();
+    }
+    if (exit === "input" || exit === "close")
+      await expect(opener).toBeFocused();
+    if (exit === "signout") break;
+    if (exit === "refresh")
+      await expect(
+        page.getByRole("button", { name: "Refresh", exact: true }),
+      ).toBeEnabled();
+    await nav(page, "Returns");
+    await opener.click();
+  }
+  await login("sold-search-buyer@example.test", "long-user-test-password");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await nav(page, "Returns");
+  await page
+    .getByRole("button", { name: "Submit claim / return", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("button", { name: "Next sold serials", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("status", { name: "Sold serial search status" }),
+  ).toContainText("5 sold serials");
+  await dialog.getByLabel("Search sold serials", { exact: true }).fill("%_'");
+  await dialog
+    .getByLabel("Search sold serials", { exact: true })
+    .press("Enter");
+  await expect(
+    dialog.getByRole("status", { name: "Sold serial search status" }),
+  ).toContainText("1 sold serial");
+  expect(submissions).toEqual([]);
+  await dialog
+    .getByLabel("Sold serial", { exact: true })
+    .selectOption({ label: serials[24] });
+  await dialog
+    .getByLabel("Request type", { exact: true })
+    .selectOption("warranty");
+  await dialog
+    .getByLabel("Issue / reason", { exact: true })
+    .fill("Synthetic search-selected issue");
+  await dialog
+    .getByLabel("Evidence reference", { exact: true })
+    .fill("Synthetic search-selected evidence");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(submissions).toHaveLength(1);
+  expect(submissions[0].unitId).toBe(target.id);
+  expect(submissions[0].accountId).toBe(account.id);
+  const submitted = await (await page.request.get("/api/dashboard")).json();
+  expect(
+    submitted.claims.filter(
+      (c: any) =>
+        c.unit_id === target.id &&
+        c.issue === "Synthetic search-selected issue",
+    ),
+  ).toHaveLength(1);
+  for (const exit of ["cancel", "refresh", "navigation", "signout"] as const) {
+    await page
+      .getByRole("button", { name: "Submit claim / return", exact: true })
+      .click();
+    let release!: () => void, handled!: () => void;
+    const held = new Promise<void>((r) => {
+        release = r;
+      }),
+      done = new Promise<void>((r) => {
+        handled = r;
+      });
+    await page.route(pattern, async () => {
+      await held;
+      handled();
+    });
+    const started = page.waitForRequest((r) =>
+      r.url().includes("/api/warranty/sold-units/page"),
+    );
+    await dialog
+      .getByRole("button", { name: "Next sold serials", exact: true })
+      .click();
+    const pending = await started,
+      cancelled = page.waitForEvent("requestfailed", (r) => r === pending);
+    if (exit === "cancel")
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    else if (exit === "refresh")
+      await page
+        .getByRole("button", { name: "Refresh", exact: true })
+        .press("Enter");
+    else if (exit === "navigation")
+      await page
+        .getByRole("navigation", { name: "Workspace" })
+        .getByRole("button", { name: "Overview", exact: true })
+        .press("Enter");
+    else
+      await page
+        .getByRole("button", { name: "Sign out", exact: true })
+        .press("Enter");
+    await cancelled;
+    release();
+    await done;
+    await page.unroute(pattern);
+    await expect(dialog).toHaveCount(0);
+    if (exit === "refresh")
+      await expect(
+        page.getByRole("button", { name: "Refresh", exact: true }),
+      ).toBeEnabled();
+    if (exit === "navigation") await nav(page, "Returns");
+    expect(submissions).toHaveLength(1);
+  }
   expect(errors).toEqual([]);
 });

@@ -2580,6 +2580,45 @@ export class Inventory {
       text(evidence, "handover evidence", 2000),
     );
   }
+  // Internal candidates only: the warranty owner resolves current customer
+  // entitlement before returning any of these records to an API caller.
+  soldSerialCandidates(actor: Actor, query: string, after?: string) {
+    const where =
+      "org_id=? AND state='sold' AND quantity=0 AND serial IS NOT NULL AND instr(lower(serial),lower(?))>0";
+    const cursor =
+      after === undefined
+        ? undefined
+        : this.store.get<{ id: string; serial: string }>(
+            `SELECT id,serial FROM inventory_units WHERE ${where} AND id=?`,
+            actor.orgId,
+            query,
+            after,
+          );
+    check(
+      after === undefined || cursor,
+      "CURSOR",
+      "Sold serial cursor is unavailable in the current search.",
+      400,
+    );
+    return this.store.all<{ id: string; productId: string; serial: string }>(
+      `SELECT id,product_id AS productId,serial FROM inventory_units WHERE ${where}
+       ${cursor ? "AND (serial>? OR (serial=? AND id>?))" : ""}
+       ORDER BY serial,id LIMIT 21`,
+      actor.orgId,
+      query,
+      ...(cursor ? [cursor.serial, cursor.serial, cursor.id] : []),
+    );
+  }
+  shipmentReference(actor: Actor, unitId: string): string | null {
+    this.unit(actor, unitId);
+    return (
+      this.store.get<{ reference: string }>(
+        "SELECT reference FROM inventory_movements WHERE org_id=? AND unit_id=? AND type='shipment' ORDER BY rowid DESC LIMIT 1",
+        actor.orgId,
+        unitId,
+      )?.reference ?? null
+    );
+  }
   soldCustody(actor: Actor, unitId: string) {
     const u = this.unit(actor, unitId);
     check(

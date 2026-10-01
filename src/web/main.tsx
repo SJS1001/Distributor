@@ -31,6 +31,8 @@ import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
 import { WarrantyDecisions } from "./warranty-decisions.tsx";
 import { SoldCoverage } from "./warranty-coverage.tsx";
+import { SoldSerialSelect } from "./sold-serial-select.tsx";
+import type { SoldSerial } from "../shared/sold-serials.ts";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -111,6 +113,9 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setDialog((current) =>
+      current?.title === "Request return or warranty review" ? null : current,
+    );
     setCoverageOpen(false);
     coverageOpener.current = null;
     setDecisionClaim(null);
@@ -289,6 +294,9 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    setDialog((current) =>
+      current?.title === "Request return or warranty review" ? null : current,
+    );
     setCoverageOpen(false);
     coverageOpener.current = null;
     setDecisionClaim(null);
@@ -872,6 +880,11 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 setPage(p);
+                setDialog((current) =>
+                  current?.title === "Request return or warranty review"
+                    ? null
+                    : current,
+                );
                 setCoverageOpen(false);
                 coverageOpener.current = null;
                 setDecisionClaim(null);
@@ -3643,16 +3656,29 @@ function App() {
             <div className="actions">
               {can("warranty", "commercial", "buyer") &&
                 button("Submit claim / return", () => {
-                  const sold = data.soldUnits;
+                  let selected: SoldSerial | null = data.soldUnits[0] ?? null;
                   open(
                     "Request return or warranty review",
                     [
-                      select(
-                        "unitId",
-                        "Sold serial",
-                        sold,
-                        (u) => `${u.serial} · ${productName(u.productId)}`,
-                      ),
+                      {
+                        name: "unitId",
+                        label: "Sold serial",
+                        content: (
+                          <SoldSerialSelect
+                            initial={{
+                              items: data.soldUnits,
+                              next: data.soldUnitNext,
+                            }}
+                            name="unitId"
+                            label="Sold serial"
+                            required
+                            chooseFirst
+                            onSelectionChange={(unit) => {
+                              selected = unit;
+                            }}
+                          />
+                        ),
+                      },
                       {
                         name: "type",
                         label: "Request type",
@@ -3672,12 +3698,16 @@ function App() {
                         type: "textarea",
                       },
                     ],
-                    (v) =>
-                      command("warranty.submit", {
+                    (v) => {
+                      if (!selected || selected.id !== v.unitId)
+                        throw new Error(
+                          "Select a currently loaded sold serial.",
+                        );
+                      return command("warranty.submit", {
                         ...v,
-                        accountId: sold.find((u: Item) => u.id === v.unitId)
-                          ?.accountId,
-                      }),
+                        accountId: selected.accountId,
+                      });
+                    },
                   );
                 })}
               {can("warranty", "commercial", "buyer") && (
@@ -3694,7 +3724,7 @@ function App() {
             </div>
             {coverageOpen && (
               <SoldCoverage
-                units={data.soldUnits}
+                initial={{ items: data.soldUnits, next: data.soldUnitNext }}
                 onClose={() => {
                   setCoverageOpen(false);
                   coverageOpener.current?.focus();

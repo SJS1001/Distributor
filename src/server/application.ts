@@ -190,6 +190,11 @@ export class Application {
   dashboard(actor: Actor) {
     actor = this.identity.currentActor(actor);
     const shipments = this.fulfillment.shipmentPage(actor);
+    const sold = ["admin", "warranty", "commercial", "buyer"].includes(
+      actor.role,
+    )
+      ? this.warranty.soldUnitPage(actor)
+      : { items: [], next: null };
     return {
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
@@ -213,11 +218,8 @@ export class Application {
       ].includes(actor.role)
         ? this.billing.invoices(actor)
         : [],
-      soldUnits: ["admin", "warranty", "commercial", "buyer"].includes(
-        actor.role,
-      )
-        ? this.warranty.soldUnits(actor)
-        : [],
+      soldUnits: sold.items,
+      soldUnitNext: sold.next,
       claims: [
         "admin",
         "finance",

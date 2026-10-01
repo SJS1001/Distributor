@@ -50,6 +50,7 @@ function reads(f: Fixture, p: Prepared, actor: Actor) {
     () => f.app.warranty.replacements(actor, p.c.id),
     () => f.app.warranty.manufacturerCases(actor, p.c.id),
     () => f.app.warranty.soldUnits(actor),
+    () => f.app.warranty.soldUnitPage(actor),
     () => f.app.warranty.coverage(actor, p.reserve.newUnitId, f.buyer),
     () => f.app.warranty.replacementShippingHistory(actor, p.r.id),
   ];
