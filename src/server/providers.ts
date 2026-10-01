@@ -3,6 +3,7 @@ import { refundStatuses, type RefundIntent } from "./billing-refunds.ts";
 import { check, integer } from "./core.ts";
 import {
   type AccountingPaymentIntent,
+  type AccountingCreditIntent,
   type Adapter,
   type Effect,
   type EffectResult,
@@ -293,6 +294,32 @@ type QboPayment = {
   ProcessPayment?: boolean;
   Line?: { Amount: number; LinkedTxn?: { TxnId: string; TxnType: string }[] }[];
 };
+type QboCredit = QboInvoice & {
+  RemainingCredit: number;
+  TxnDate?: string;
+  LinkedTxn?: unknown[];
+  Line?: {
+    Amount: number;
+    DetailType: string;
+    SalesItemLineDetail?: {
+      ItemRef?: { value: string };
+      Qty: number;
+      UnitPrice: number;
+      TaxCodeRef?: { value: string };
+    };
+  }[];
+  TxnTaxDetail?: {
+    TotalTax: number;
+    TaxLine?: {
+      Amount: number;
+      DetailType: string;
+      TaxLineDetail?: {
+        TaxRateRef?: { value: string };
+        NetAmountTaxable: number;
+      };
+    }[];
+  };
+};
 const amount = (cents: number) =>
   Number(`${Math.trunc(cents / 100)}.${String(cents % 100).padStart(2, "0")}`);
 export class QuickBooksAdapter implements Adapter {
@@ -334,7 +361,13 @@ export class QuickBooksAdapter implements Adapter {
     return (await response.json()) as {
       Invoice?: QboInvoice;
       Payment?: QboPayment;
-      QueryResponse?: { Invoice?: QboInvoice[]; Payment?: QboPayment[] };
+      CreditMemo?: QboCredit;
+      Preferences?: { SalesFormsPrefs?: { AutoApplyCredit?: boolean } };
+      QueryResponse?: {
+        Invoice?: QboInvoice[];
+        Payment?: QboPayment[];
+        CreditMemo?: QboCredit[];
+      };
     };
   }
   private result(
@@ -406,6 +439,144 @@ export class QuickBooksAdapter implements Adapter {
       },
     };
   }
+  private creditResult(effect: Effect, credit: QboCredit): EffectResult {
+    const p = JSON.parse(effect.payload) as AccountingCreditIntent;
+    const expected = p.lines.map((l) => ({
+      item: l.itemRef,
+      quantity: l.quantity,
+      price: amount(l.unitPrice),
+      net: amount(l.quantity * l.unitPrice),
+      tax: p.taxCodeRef,
+    }));
+    const actual = (credit.Line ?? [])
+      .filter((l) => l.DetailType === "SalesItemLineDetail")
+      .map((l) => ({
+        item: l.SalesItemLineDetail?.ItemRef?.value,
+        quantity: l.SalesItemLineDetail?.Qty,
+        price: l.SalesItemLineDetail?.UnitPrice,
+        net: l.Amount,
+        tax: l.SalesItemLineDetail?.TaxCodeRef?.value,
+      }));
+    // QuickBooks may reorder lines or append one subtotal. Compare the sales
+    // line multiset and reject all other monetary adjustments.
+    const encoded = (lines: unknown[]) =>
+      lines
+        .map((l) => JSON.stringify(l))
+        .sort()
+        .join("\n");
+    const other = (credit.Line ?? []).filter(
+        (l) => l.DetailType !== "SalesItemLineDetail",
+      ),
+      taxes = credit.TxnTaxDetail?.TaxLine ?? [];
+    check(
+      typeof credit.Id === "string" &&
+        credit.Id.trim().length > 0 &&
+        credit.PrivateNote === `Distributor effect ${effect.id}` &&
+        credit.DocNumber === p.credit.number &&
+        credit.TxnDate === p.credit.created_at.slice(0, 10) &&
+        credit.TotalAmt === amount(p.credit.total) &&
+        credit.RemainingCredit === amount(p.credit.total) &&
+        credit.CustomerRef?.value === p.customerRef &&
+        credit.CurrencyRef?.value === p.invoice.currency &&
+        (credit.LinkedTxn ?? []).length === 0 &&
+        encoded(actual) === encoded(expected) &&
+        other.length <= 1 &&
+        other.every(
+          (l) =>
+            l.DetailType === "SubTotalLineDetail" &&
+            l.Amount === amount(p.credit.net),
+        ) &&
+        credit.TxnTaxDetail?.TotalTax === amount(p.credit.tax) &&
+        taxes.length === 1 &&
+        taxes[0]!.Amount === amount(p.credit.tax) &&
+        taxes[0]!.DetailType === "TaxLineDetail" &&
+        taxes[0]!.TaxLineDetail?.TaxRateRef?.value === p.taxRateRef &&
+        taxes[0]!.TaxLineDetail?.NetAmountTaxable === amount(p.credit.net),
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks credit identity, lines, tax or unapplied amount differs; reconcile before marking delivered.",
+    );
+    return {
+      reference: `credit:${credit.Id}`,
+      result: {
+        providerId: credit.Id,
+        creditId: p.credit.id,
+        invoiceId: p.invoice.id,
+        number: p.credit.number,
+        total: p.credit.total,
+        unappliedAmount: p.credit.total,
+        currency: p.invoice.currency,
+      },
+    };
+  }
+  private async sendCredit(effect: Effect) {
+    const p = JSON.parse(effect.payload) as AccountingCreditIntent;
+    check(
+      /^[A-Z0-9-]{1,21}$/.test(p.credit.number),
+      "PROVIDER_QUERY",
+      "Invalid credit document number.",
+    );
+    const preferences = await this.request("/preferences");
+    check(
+      preferences.Preferences?.SalesFormsPrefs?.AutoApplyCredit === false,
+      "ACCOUNTING_CREDIT_AUTOMATION",
+      "Confirm automatic credit application is off before posting an unapplied credit.",
+    );
+    const parent = await this.request(
+        `/invoice/${encodeURIComponent(p.externalInvoiceRef)}`,
+      ),
+      invoice = parent.Invoice;
+    check(
+      invoice &&
+        invoice.Id === p.externalInvoiceRef &&
+        invoice.PrivateNote === `Distributor effect ${p.invoiceEffectId}` &&
+        invoice.DocNumber === p.invoice.number &&
+        invoice.TotalAmt === amount(p.invoice.total) &&
+        invoice.CustomerRef?.value === p.customerRef &&
+        invoice.CurrencyRef?.value === p.invoice.currency,
+      "ACCOUNTING_INVOICE_MISMATCH",
+      "QuickBooks parent invoice differs; reconcile before posting its credit.",
+    );
+    const posted = await this.request(
+      `/creditmemo?requestid=${encodeURIComponent(effect.id)}`,
+      {
+        DocNumber: p.credit.number,
+        TxnDate: p.credit.created_at.slice(0, 10),
+        CustomerRef: { value: p.customerRef },
+        CurrencyRef: { value: p.invoice.currency },
+        PrivateNote: `Distributor effect ${effect.id}`,
+        Line: p.lines.map((l) => ({
+          Amount: amount(l.quantity * l.unitPrice),
+          Description: l.description,
+          DetailType: "SalesItemLineDetail",
+          SalesItemLineDetail: {
+            ItemRef: { value: l.itemRef },
+            Qty: l.quantity,
+            UnitPrice: amount(l.unitPrice),
+            TaxCodeRef: { value: p.taxCodeRef },
+          },
+        })),
+        TxnTaxDetail: {
+          TotalTax: amount(p.credit.tax),
+          TaxLine: [
+            {
+              Amount: amount(p.credit.tax),
+              DetailType: "TaxLineDetail",
+              TaxLineDetail: {
+                TaxRateRef: { value: p.taxRateRef },
+                NetAmountTaxable: amount(p.credit.net),
+              },
+            },
+          ],
+        },
+      },
+    );
+    check(
+      posted.CreditMemo,
+      "PROVIDER_RESPONSE",
+      "QuickBooks omitted the credit memo.",
+    );
+    return this.creditResult(effect, posted.CreditMemo);
+  }
   private async sendPayment(effect: Effect) {
     const p = JSON.parse(effect.payload) as AccountingPaymentIntent;
     const response = await this.request(
@@ -460,6 +631,7 @@ export class QuickBooksAdapter implements Adapter {
     return this.paymentResult(effect, posted.Payment);
   }
   async execute(effect: Effect) {
+    if (effect.kind === "credit") return this.sendCredit(effect);
     if (effect.kind === "payment") return this.sendPayment(effect);
     check(
       effect.kind === "invoice",
@@ -509,6 +681,24 @@ export class QuickBooksAdapter implements Adapter {
     return this.result(response.Invoice, p, effect.id);
   }
   async lookup(effect: Effect) {
+    if (effect.kind === "credit") {
+      const p = JSON.parse(effect.payload) as AccountingCreditIntent;
+      check(
+        /^[A-Z0-9-]{1,21}$/.test(p.credit.number),
+        "PROVIDER_QUERY",
+        "Invalid credit document number.",
+      );
+      const response = await this.request(
+        `/query?query=${encodeURIComponent(`select * from CreditMemo where DocNumber = '${p.credit.number}' maxresults 2`)}`,
+      );
+      const rows = response.QueryResponse?.CreditMemo ?? [];
+      check(
+        rows.length <= 1,
+        "ACCOUNTING_DUPLICATE",
+        "Multiple QuickBooks credits require finance review.",
+      );
+      return rows[0] ? this.creditResult(effect, rows[0]) : null;
+    }
     if (effect.kind === "payment") {
       const p = JSON.parse(effect.payload) as AccountingPaymentIntent;
       check(

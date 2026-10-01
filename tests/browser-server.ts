@@ -157,7 +157,9 @@ const syntheticAccounting: Adapter = {
       reference:
         effect.kind === "payment"
           ? `payment:${effect.id}`
-          : `synthetic-invoice-${effect.id}`,
+          : effect.kind === "credit"
+            ? `credit:${effect.id}`
+            : `synthetic-invoice-${effect.id}`,
       result:
         effect.kind === "payment"
           ? {

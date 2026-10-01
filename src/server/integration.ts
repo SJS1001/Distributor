@@ -15,7 +15,11 @@ import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
 import { IntegrationRefunds } from "./integration-refunds.ts";
-import { Billing, type RecordedPayment } from "./billing.ts";
+import {
+  Billing,
+  type RecordedPayment,
+  type RecordedCredit,
+} from "./billing.ts";
 export type Effect = {
   id: string;
   org_id: string;
@@ -49,6 +53,16 @@ export type AccountingPaymentIntent = {
   depositAccountRef: string;
   appliedAmount: number;
   paymentRef: string;
+};
+export type AccountingCreditIntent = {
+  credit: Omit<RecordedCredit, "lines">;
+  invoice: { id: string; number: string; total: number; currency: string };
+  invoiceEffectId: string;
+  externalInvoiceRef: string;
+  customerRef: string;
+  taxCodeRef: string;
+  taxRateRef: string;
+  lines: (RecordedCredit["lines"][number] & { itemRef: string })[];
 };
 export type Callback = {
   id: string;
@@ -120,7 +134,7 @@ export class Integration {
       .filter(
         (e) =>
           (actor.role !== "buyer" || e.account_id === actor.accountId) &&
-          (!["refund", "payment"].includes(e.kind) ||
+          (!["refund", "payment", "credit"].includes(e.kind) ||
             ["admin", "finance", "support"].includes(actor.role)),
       )
       .map((e) => ({
@@ -459,6 +473,88 @@ export class Integration {
             taxCodeRef: input.taxCodeRef,
             taxRateRef: input.taxRateRef,
           },
+        );
+      },
+    );
+  }
+  accountingCredit(actor: Actor, key: string, input: { creditId: string }) {
+    return this.platform.command(
+      actor,
+      "quickbooks.credit",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        const credit = this.billing.recordedCredit(actor, input.creditId),
+          invoice = this.billing.invoice(actor, credit.invoice_id);
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "quickbooks");
+      },
+      () => {
+        const { lines, ...credit } = this.billing.recordedCredit(
+            actor,
+            input.creditId,
+          ),
+          invoice = this.billing.invoice(actor, credit.invoice_id),
+          parent = this.store.get<Effect>(
+            "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='invoice' AND reference=? AND state='completed'",
+            actor.orgId,
+            invoice.id,
+          );
+        check(
+          parent?.external_ref,
+          "ACCOUNTING_INVOICE_REQUIRED",
+          "Reconcile the QuickBooks invoice before queuing its credit.",
+        );
+        const original = JSON.parse(parent.payload) as {
+          customerRef: string;
+          taxCodeRef: string;
+          taxRateRef: string;
+          lines: (RecordedCredit["lines"][number] & { itemRef: string })[];
+        };
+        const payload: AccountingCreditIntent = {
+          credit,
+          invoice: {
+            id: invoice.id,
+            number: invoice.number,
+            total: invoice.total,
+            currency: invoice.currency,
+          },
+          invoiceEffectId: parent.id,
+          externalInvoiceRef: parent.external_ref,
+          customerRef: text(
+            original.customerRef,
+            "QuickBooks customer mapping",
+          ),
+          taxCodeRef: text(original.taxCodeRef, "QuickBooks tax code mapping"),
+          taxRateRef: text(original.taxRateRef, "QuickBooks tax rate mapping"),
+          lines: lines.map((l) => {
+            const mapped = original.lines.find(
+              (m) =>
+                m.productId === l.productId &&
+                m.unitPrice === l.unitPrice &&
+                m.unitTax === l.unitTax &&
+                m.quantity >= l.quantity,
+            );
+            check(
+              mapped,
+              "ACCOUNTING_CREDIT_MISMATCH",
+              "Credit lines differ from the posted invoice mappings.",
+            );
+            return {
+              ...l,
+              itemRef: text(mapped.itemRef, "QuickBooks item mapping"),
+            };
+          }),
+        };
+        return this.queue(
+          actor,
+          invoice.account_id,
+          "quickbooks",
+          "credit",
+          credit.id,
+          payload,
         );
       },
     );

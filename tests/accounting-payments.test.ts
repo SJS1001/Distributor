@@ -446,7 +446,7 @@ test("QuickBooks cash adapter verifies external invoice before posting and binds
   rows = [];
   assert.equal(await qbo.lookup(effect), null);
   const count = fetch.mock.calls.length;
-  for (const kind of ["credit", "checkout"]) {
+  for (const kind of ["shipment", "checkout"]) {
     await assert.rejects(qbo.execute({ ...effect, kind }), {
       code: "PROVIDER_OPERATION",
     });

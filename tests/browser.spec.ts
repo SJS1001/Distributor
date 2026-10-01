@@ -4003,7 +4003,7 @@ test("browser: credited cash refund request and bank verification retry one rese
   expect(errors).toEqual([]);
 });
 
-test("browser: accounting invoice and cash queues retry lost responses and reconcile uncertain sends without changing native facts", async ({
+test("browser: accounting invoice, cash and credit queues retry lost responses and reconcile uncertain sends without changing native facts", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -4257,5 +4257,85 @@ test("browser: accounting invoice and cash queues retry lost responses and recon
   expect(after.stock).toEqual(before.stock);
   expect(after.orders).toEqual(before.orders);
   expect(after.invoices).toEqual(before.invoices);
+  const lines = invoice.lines;
+  const credit = await cmd("billing.credit", {
+    invoiceId: invoice.id,
+    reference: "QBO-BROWSER-CREDIT",
+    reason: "Synthetic accounting credit",
+    lines: [{ lineId: lines[0].id, quantity: 1 }],
+  });
+  const creditedBefore = await (
+    await page.request.get("/api/dashboard")
+  ).json();
+  const creditFacts = await (await page.request.get("/api/credits")).json();
+  await page.reload();
+  await nav(page, "Billing");
+  const creditRow = page.getByRole("row").filter({
+    has: page.getByRole("cell", { name: credit.number, exact: true }),
+  });
+  await creditRow
+    .getByRole("button", { name: "Queue QuickBooks credit", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Queue QuickBooks credit",
+    exact: true,
+  });
+  await expect(dialog).toContainText("credit stays unapplied");
+  const creditKeys: string[] = [];
+  let lostCredit = false;
+  await page.route("**/api/commands/quickbooks.credit", async (route) => {
+    creditKeys.push(route.request().headers()["idempotency-key"]!);
+    if (!lostCredit) {
+      lostCredit = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await dialog
+    .getByRole("button", { name: "Queue credit", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Queue credit", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(creditKeys).toHaveLength(2);
+  expect(creditKeys[0]).toBe(creditKeys[1]);
+  expect(
+    (await effects()).filter(
+      (e: any) => e.kind === "credit" && e.reference === credit.id,
+    ),
+  ).toHaveLength(1);
+  await operation("credit")
+    .getByRole("button", { name: "Send to provider", exact: true })
+    .click();
+  await expect(operation("credit")).toContainText("unknown");
+  await expect(
+    operation("credit").getByRole("button", {
+      name: "Send to provider",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await operation("credit")
+    .getByRole("button", { name: "Check provider outcome", exact: true })
+    .click();
+  await expect(operation("credit")).toContainText("completed");
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(creditRow).toContainText("completed");
+  await expect(
+    creditRow.getByRole("button", {
+      name: "Queue QuickBooks credit",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const creditedAfter = await (await page.request.get("/api/dashboard")).json();
+  expect(creditedAfter.stock).toEqual(creditedBefore.stock);
+  expect(creditedAfter.orders).toEqual(creditedBefore.orders);
+  expect(creditedAfter.invoices).toEqual(creditedBefore.invoices);
+  expect(await (await page.request.get("/api/credits")).json()).toEqual(
+    creditFacts,
+  );
   expect(errors).toEqual([]);
 });

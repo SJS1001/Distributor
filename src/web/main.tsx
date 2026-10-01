@@ -1904,37 +1904,80 @@ function App() {
               <>
                 <h2>Credit notes</h2>
                 {table(
-                  ["Credit", "Original invoice", "Total", "Actions"],
-                  extra.credits,
-                  (c: Item) => [
-                    c.number,
-                    data.invoices.find((i: Item) => i.id === c.invoice_id)
-                      ?.number ?? c.invoice_id,
-                    money(c.total, currency),
-                    <div className="actions">
-                      {button("Download credit PDF", () => {
-                        void run(() => downloadDocument("credit", c.id))
-                          .then(() =>
-                            setNotice(
-                              "PDF download prepared. Receipt does not confirm delivery.",
-                            ),
-                          )
-                          .catch(() => {});
-                      })}
-                      {can("finance") &&
-                        !c.hasActivePublication &&
-                        button("Review and publish credit", () =>
-                          publishDocument(
-                            "credit",
-                            c.id,
-                            c.number,
-                            data.invoices.find(
-                              (i: Item) => i.id === c.invoice_id,
-                            )?.account_id,
-                          ),
-                        )}
-                    </div>,
+                  [
+                    "Credit",
+                    "Original invoice",
+                    "Total",
+                    ...(can("finance") || can("support")
+                      ? ["QuickBooks handoff"]
+                      : []),
+                    "Actions",
                   ],
+                  extra.credits,
+                  (c: Item) => {
+                    const posted = extra.effects?.find(
+                        (e: Item) =>
+                          e.provider === "quickbooks" &&
+                          e.kind === "credit" &&
+                          e.reference === c.id,
+                      ),
+                      parent = extra.effects?.find(
+                        (e: Item) =>
+                          e.provider === "quickbooks" &&
+                          e.kind === "invoice" &&
+                          e.reference === c.invoice_id &&
+                          e.state === "completed",
+                      );
+                    return [
+                      c.number,
+                      data.invoices.find((i: Item) => i.id === c.invoice_id)
+                        ?.number ?? c.invoice_id,
+                      money(c.total, currency),
+                      ...(can("finance") || can("support")
+                        ? [
+                            posted
+                              ? posted.state
+                              : can("finance") && parent
+                                ? button("Queue QuickBooks credit", () =>
+                                    open(
+                                      "Queue QuickBooks credit",
+                                      [],
+                                      () =>
+                                        command("quickbooks.credit", {
+                                          creditId: c.id,
+                                        }),
+                                      `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
+                                      "Queue credit",
+                                    ),
+                                  )
+                                : "Reconcile QuickBooks invoice first",
+                          ]
+                        : []),
+                      <div className="actions">
+                        {button("Download credit PDF", () => {
+                          void run(() => downloadDocument("credit", c.id))
+                            .then(() =>
+                              setNotice(
+                                "PDF download prepared. Receipt does not confirm delivery.",
+                              ),
+                            )
+                            .catch(() => {});
+                        })}
+                        {can("finance") &&
+                          !c.hasActivePublication &&
+                          button("Review and publish credit", () =>
+                            publishDocument(
+                              "credit",
+                              c.id,
+                              c.number,
+                              data.invoices.find(
+                                (i: Item) => i.id === c.invoice_id,
+                              )?.account_id,
+                            ),
+                          )}
+                      </div>,
+                    ];
+                  },
                 )}
               </>
             )}

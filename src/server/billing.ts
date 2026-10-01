@@ -59,6 +59,16 @@ export type RecordedPayment = {
   amount: number;
   created_at: string;
 };
+export type RecordedCredit = {
+  id: string;
+  invoice_id: string;
+  number: string;
+  net: number;
+  tax: number;
+  total: number;
+  created_at: string;
+  lines: (CommercialLine & { invoiceLineId: string })[];
+};
 export class Billing {
   private store: Store;
   readonly opening: BillingOpening;
@@ -663,6 +673,37 @@ export class Billing {
       kind,
       documentId,
     );
+  }
+  recordedCredit(actor: Actor, creditId: string): RecordedCredit {
+    permit(actor, ["finance", "support"]);
+    const credit = this.store.get<Omit<RecordedCredit, "lines">>(
+      "SELECT id,invoice_id,number,net,tax,total,created_at FROM billing_credits WHERE org_id=? AND id=?",
+      actor.orgId,
+      creditId,
+    );
+    check(credit, "NOT_FOUND", "Credit not found.", 404);
+    this.invoice(actor, credit.invoice_id);
+    const lines = this.store.all<CommercialLine & { invoiceLineId: string }>(
+      `SELECT l.id AS invoiceLineId,l.product_id AS productId,l.description,
+       c.quantity,l.unit_price AS unitPrice,l.unit_tax AS unitTax
+       FROM billing_credit_lines c JOIN billing_lines l
+       ON l.org_id=c.org_id AND l.id=c.invoice_line_id
+       WHERE c.org_id=? AND c.credit_id=? AND l.invoice_id=? ORDER BY c.rowid`,
+      actor.orgId,
+      creditId,
+      credit.invoice_id,
+    );
+    check(
+      lines.length > 0 &&
+        lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0) ===
+          credit.net &&
+        lines.reduce((sum, l) => sum + l.quantity * l.unitTax, 0) ===
+          credit.tax &&
+        credit.total === credit.net + credit.tax,
+      "ACCOUNTING_CREDIT_MISMATCH",
+      "Credit lines do not reconcile to the original credit.",
+    );
+    return { ...credit, lines };
   }
   credits(actor: Actor) {
     permit(actor, ["finance", "commercial", "buyer", "warranty", "support"]);
