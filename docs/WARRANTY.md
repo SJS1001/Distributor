@@ -90,3 +90,16 @@ Warranty owns the case, immutable history and claim decision records. The shared
 
 
 The [current-authority receipt](evidence/LOCAL-WARRANTY-AUTHORITY-2026-10-01.md) covers actual synthetic IAM changes rather than edited caller snapshots. Public read transactions also take SQLite's existing immediate transaction lock; this does not qualify production contention or latency. Evidence operations retain their own existing authorization behavior; this checkpoint does not add transaction wrappers to every evidence read or qualify a concurrent grant-revocation race. Dashboard claim/case collections remain unbounded.
+
+
+## Review and remedy decision history
+
+Returns offers **Review and remedy history** for each accessible claim. It reads existing review, manufacturer and remedy decisions on demand in pages of 20, in retained recording order. This is a decision trail: submission, physical receipt, inspection, replacement custody and uploaded evidence retain their separate records. Manufacturer communication evidence remains in Manufacturer case history.
+
+Staff see the recorded reason and actor ID. Buyers see only decision names and dates for their current account. Each read checks current identity, organization, role, password restrictions, claim account and applicable warehouse grant before looking up a cursor. Support has no access. Staff organization-wide review access follows the existing role policy; warehouse readers follow the returned unit's current site. Immutable decision IDs are scoped to the same organization and claim. Invalid or unavailable cursors reject instead of restarting traversal.
+
+A failed page preserves loaded decisions and the same continuation for retry. Keyboard focus returns to the pager after retry or another page, and to the heading after completion. Closing restores focus to the opener. Switching claims starts a fresh list; closing, navigation, refresh and sign-out cancel its pending browser read. Refresh loads the dashboard once and completes before its button is enabled again. History reads create no stock, money, claim or communication effects.
+
+The read route is `GET /api/warranty/claims/:claimId/decisions` with optional `after` (a decision ID, at most 128 characters). Unknown query fields reject. Returned pages contain at most 20 items and an opaque continuation or null. Recording order remains stable across tied timestamps and database restart. Later appends can appear on subsequent pages; this is not a snapshot traversal. No new schema or index is introduced: returned row bounds do not qualify scan, sort, lock or load cost. Dashboard claim/manufacturer collections remain unbounded, and retaining a decision is not evidence of an approved business outcome.
+
+[Local decision-history evidence](evidence/LOCAL-WARRANTY-DECISIONS-2026-10-01.md) covers native synthetic commands, read conservation, restart, cursor boundaries, current grants, HTTP privacy and browser pagination/retry/cancellation/phone behavior. Actual coverage/remedy policies, manufacturer communication, production security/load/retention/recovery/residency, physical hardware and independent/human acceptance remain open. All tasks and gates remain NOT VERIFIED.

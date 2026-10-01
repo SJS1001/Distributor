@@ -45,6 +45,7 @@ type Prepared = ReturnType<typeof prepare>;
 function reads(f: Fixture, p: Prepared, actor: Actor) {
   return [
     () => f.app.warranty.claim(actor, p.c.id),
+    () => f.app.warranty.decisionHistory(actor, p.c.id),
     () => f.app.warranty.list(actor),
     () => f.app.warranty.replacements(actor, p.c.id),
     () => f.app.warranty.manufacturerCases(actor, p.c.id),
@@ -355,6 +356,9 @@ test("warehouse replacement overview omits new serials outside current grants ev
   const before = facts(f);
   assert.deepEqual(f.app.warranty.list(actor), []);
   assert.throws(() => f.app.warranty.claim(actor, p.c.id), {
+    code: "FORBIDDEN",
+  });
+  assert.throws(() => f.app.warranty.decisionHistory(actor, p.c.id), {
     code: "FORBIDDEN",
   });
   assert.deepEqual(facts(f), before);

@@ -11831,3 +11831,323 @@ test("browser: invoice refund payment selection pages, retries and cancels befor
   ).toEqual(beforePayments);
   expect(errors).toEqual([]);
 });
+
+test("browser: warranty decisions page, retry, cancel and preserve buyer privacy", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Decision browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "DEC-BROWSER",
+    name: "Decision browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await dashboard();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 2, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "DEC-DELIVERY",
+    quantity: 2,
+    serials: ["DEC-SERIAL", "DEC-SERIAL2"],
+    bin: "DEC",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 2 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await dashboard();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic manufacturer fixture handover",
+  });
+  const sold = await dashboard();
+  const claim = await cmd("warranty.submit", {
+    accountId: account.id,
+    unitId: sold.stock.find((u: any) => u.serial === "DEC-SERIAL").id,
+    type: "warranty",
+    issue: "Synthetic failure",
+    evidence: "evidence-issue",
+  });
+
+  const second = await cmd("warranty.submit", {
+    accountId: account.id,
+    unitId: sold.stock.find((u: any) => u.serial === "DEC-SERIAL2").id,
+    type: "warranty",
+    issue: "Synthetic second claim",
+    evidence: "Synthetic second report",
+  });
+  await cmd("warranty.review", {
+    claimId: claim.id,
+    approved: true,
+    reason: "Private decision approval",
+  });
+  for (let i = 0; i < 21; i++) {
+    const maker = await cmd("warranty.manufacturer.refer", {
+      claimId: claim.id,
+      manufacturer: "Synthetic maker",
+      reference: `DEC-MAKER-${i}`,
+      evidence: "Private referral evidence",
+      reason: `Private referral ${i}`,
+    });
+    await cmd("warranty.manufacturer.decide", {
+      caseId: maker.id,
+      revision: 1,
+      outcome: "cancelled",
+      evidence: "Private response evidence",
+      reason: `Private cancellation ${i}`,
+    });
+  }
+  await cmd("user.create", {
+    name: "Decision buyer",
+    email: "decision-buyer@example.test",
+    password: "long-decision-password",
+    role: "buyer",
+    accountId: account.id,
+    sites: [],
+    requirePasswordChange: false,
+    currentPassword: "long-test-only-password",
+  });
+  const before = await dashboard();
+  const nativeFacts = (d: any) => ({
+    stock: d.stock,
+    orders: d.orders,
+    shipments: d.shipments,
+    invoices: d.invoices,
+    claims: d.claims,
+  });
+  const path = `/api/warranty/claims/${claim.id}/decisions`;
+  const pattern = `**${path}*`;
+  const reads: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes(path)) reads.push(r.url());
+  });
+  const dashboardReads: string[] = [];
+  page.on("request", (r) => {
+    if (new URL(r.url()).pathname === "/api/dashboard")
+      dashboardReads.push(r.url());
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeEnabled();
+  expect(dashboardReads).toHaveLength(1);
+  await nav(page, "Returns");
+  expect(reads).toEqual([]);
+  const opener = (id: string) =>
+    page
+      .getByRole("row")
+      .filter({ hasText: id.slice(0, 8) })
+      .filter({
+        has: page.getByRole("button", {
+          name: "Review and remedy history",
+          exact: true,
+        }),
+      })
+      .getByRole("button", { name: "Review and remedy history", exact: true });
+  const panel = page.getByRole("region", {
+    name: "Review and remedy history",
+    exact: true,
+  });
+  await opener(claim.id).click();
+  await expect(panel.getByRole("heading")).toBeFocused();
+  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(panel).toContainText("Private decision approval");
+  await expect(
+    panel.getByRole("columnheader", { name: "Recorded by", exact: true }),
+  ).toBeVisible();
+  let failed = false;
+  const cursors: string[] = [];
+  await page.route(`**${path}?after=*`, async (route) => {
+    cursors.push(route.request().url());
+    if (!failed) {
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        json: { message: "Synthetic decision read failure", code: "TEST" },
+      });
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Load more decisions", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "Synthetic decision read failure",
+  );
+  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(
+    panel.getByRole("button", { name: "Retry decision history", exact: true }),
+  ).toBeFocused();
+  await panel
+    .getByRole("button", { name: "Retry decision history", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toHaveText("40 decisions loaded");
+  expect(cursors[0]).toBe(cursors[1]);
+  await expect(
+    panel.getByRole("button", { name: "Load more decisions", exact: true }),
+  ).toBeFocused();
+  await panel
+    .getByRole("button", { name: "Load more decisions", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toHaveText("43 decisions loaded");
+  await expect(
+    panel.getByRole("button", { name: "All decisions loaded", exact: true }),
+  ).toBeDisabled();
+  expect(await panel.getByRole("row").count()).toBe(44);
+  await expect(panel.getByRole("heading")).toBeFocused();
+  await page.unroute(`**${path}?after=*`);
+  await panel
+    .getByRole("button", { name: "Close decision history", exact: true })
+    .click();
+  await expect(opener(claim.id)).toBeFocused();
+  await opener(claim.id).click();
+  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await opener(second.id).click();
+  await expect(panel.getByRole("status")).toHaveText("0 decisions loaded");
+  await expect(panel).toContainText("No review or remedy decisions recorded.");
+  await expect(panel).not.toContainText("Private decision approval");
+  await panel
+    .getByRole("button", { name: "Close decision history", exact: true })
+    .click();
+  // Every exit must cancel the actual browser request, including the first page.
+  for (const exit of ["close", "refresh", "navigation", "signout"] as const) {
+    let release!: () => void, handled!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const done = new Promise<void>((r) => (handled = r));
+    await page.route(pattern, async () => {
+      await held;
+      handled();
+    });
+    const started = page.waitForRequest((r) => r.url().endsWith(path));
+    const aborted = page.waitForEvent("requestfailed", {
+      predicate: (r) => r.url().endsWith(path),
+    });
+    await opener(claim.id).click();
+    await started;
+    if (exit === "close")
+      await panel
+        .getByRole("button", { name: "Close decision history", exact: true })
+        .click();
+    else if (exit === "refresh")
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    else if (exit === "navigation") await nav(page, "Overview");
+    else {
+      expect(nativeFacts(await dashboard())).toEqual(nativeFacts(before));
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    }
+    await aborted;
+    release();
+    await done;
+    await page.unroute(pattern);
+    await expect(panel).toHaveCount(0);
+    if (exit === "refresh")
+      await expect(
+        page.getByRole("button", { name: "Refresh", exact: true }),
+      ).toBeEnabled();
+    if (exit === "navigation") await nav(page, "Returns");
+  }
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("decision-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-decision-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await nav(page, "Returns");
+  await opener(claim.id).click();
+  await expect(panel.getByRole("status")).toHaveText("20 decisions loaded");
+  await expect(
+    panel.getByRole("columnheader", { name: "Reason", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole("columnheader", { name: "Recorded by", exact: true }),
+  ).toHaveCount(0);
+  await panel
+    .getByRole("button", { name: "Load more decisions", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toHaveText("40 decisions loaded");
+  await panel
+    .getByRole("button", { name: "Load more decisions", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toHaveText("43 decisions loaded");
+  await expect(panel).not.toContainText("Private");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});

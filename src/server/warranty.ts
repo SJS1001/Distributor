@@ -17,6 +17,7 @@ import { Inventory } from "./inventory.ts";
 import { Fulfillment } from "./fulfillment.ts";
 import { Billing } from "./billing.ts";
 import { WarrantyEvidence } from "./warranty-evidence.ts";
+import type { WarrantyDecisionPage } from "../shared/warranty-decisions.ts";
 export type Claim = {
   id: string;
   org_id: string;
@@ -129,6 +130,59 @@ export class Warranty {
   }
   claim(actor: Actor, claimId: string): Claim {
     return this.database.transaction(() => this.claimRecord(actor, claimId));
+  }
+  decisionHistory(
+    actor: Actor,
+    claimId: string,
+    after?: string,
+  ): WarrantyDecisionPage {
+    return this.database.transaction(() => {
+      actor = this.authority(actor, [
+        "warranty",
+        "warehouse",
+        "finance",
+        "commercial",
+        "buyer",
+      ]);
+      const claim = this.claimRecord(actor, claimId);
+      let position = 0;
+      if (after !== undefined) {
+        const cursor = text(after, "Decision cursor", 128);
+        const retained = this.store.get<{ position: number }>(
+          "SELECT rowid AS position FROM warranty_decisions WHERE org_id=? AND claim_id=? AND id=?",
+          actor.orgId,
+          claim.id,
+          cursor,
+        );
+        check(
+          retained,
+          "CURSOR",
+          "Decision cursor is unavailable for this claim.",
+          400,
+        );
+        position = retained.position;
+      }
+      const buyer = actor.role === "buyer";
+      const rows = this.store.all<{
+        id: string;
+        action: string;
+        created_at: string;
+        reason?: string;
+        actor_id?: string;
+      }>(
+        `SELECT id,action,created_at${buyer ? "" : ",reason,actor_id"} FROM warranty_decisions WHERE org_id=? AND claim_id=? AND rowid>? ORDER BY rowid LIMIT 21`,
+        actor.orgId,
+        claim.id,
+        position,
+      );
+      const items = rows.slice(0, 20).map((row) => ({
+        id: row.id,
+        action: row.action,
+        createdAt: row.created_at,
+        ...(buyer ? {} : { reason: row.reason!, actorId: row.actor_id! }),
+      }));
+      return { items, next: rows.length > 20 ? items[19]!.id : null };
+    });
   }
   private claimRecord(actor: Actor, claimId: string): Claim {
     actor = this.authority(actor, [

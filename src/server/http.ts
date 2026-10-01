@@ -1393,6 +1393,24 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     ["after", "limit"],
   );
+  http.get<{ Params: { claimId: string }; Querystring: { after?: string } }>(
+    "/api/warranty/claims/:claimId/decisions",
+    {
+      schema: {
+        params: obj({ claimId: str }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.warranty.decisionHistory(
+        actor(request),
+        request.params.claimId,
+        request.query.after,
+      ),
+  );
   http.get<{ Querystring: { after?: string; limit?: string } }>(
     "/api/billing/inbox/page",
     { schema: { querystring: inboxQuery } },

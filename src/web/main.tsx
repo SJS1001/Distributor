@@ -29,6 +29,7 @@ import { RequiredMfa } from "./required-mfa.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
+import { WarrantyDecisions } from "./warranty-decisions.tsx";
 import { ScanInput } from "./scan-input.tsx";
 import "./style.css";
 type Item = Record<string, any>;
@@ -76,6 +77,8 @@ function App() {
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
+  const [decisionClaim, setDecisionClaim] = useState<string | null>(null);
+  const decisionOpener = useRef<HTMLElement | null>(null);
   const [providerHistoryAccount, setProviderHistoryAccount] = useState<
     string | null
   >(null);
@@ -105,6 +108,8 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setDecisionClaim(null);
+    decisionOpener.current = null;
     setExtra((current) => ({
       ...current,
       refunds: undefined,
@@ -244,6 +249,8 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    setDecisionClaim(null);
+    decisionOpener.current = null;
     setCarrierShipmentId(null);
     carrierOpener.current = null;
     shipmentEpoch.current++;
@@ -275,13 +282,15 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    setDecisionClaim(null);
+    decisionOpener.current = null;
     setCarrierShipmentId(null);
     carrierOpener.current = null;
     void request("/api/logout", { method: "POST" })
       .catch(() => {})
       .finally(() => clearSession());
   };
-  const run = async (work: () => Promise<unknown>) => {
+  const run = async (work: () => Promise<unknown>, refreshAfter = true) => {
     setBusy(true);
     setError("");
     try {
@@ -290,7 +299,7 @@ function App() {
         clearSession("Saved. Your sessions have ended. Sign in again.");
         return result;
       }
-      await refresh();
+      if (refreshAfter) await refresh();
       setNotice("Saved.");
       return result;
     } catch (e) {
@@ -854,6 +863,8 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 setPage(p);
+                setDecisionClaim(null);
+                decisionOpener.current = null;
                 setCarrierShipmentId(null);
                 carrierOpener.current = null;
                 setProviderHistoryAccount(null);
@@ -889,7 +900,7 @@ function App() {
             className="secondary"
             disabled={busy}
             onClick={() => {
-              void run(refresh).catch(() => {});
+              void run(refresh, false).catch(() => {});
             }}
           >
             Refresh
@@ -3677,6 +3688,15 @@ function App() {
                   >
                     Evidence files
                   </button>
+                  <button
+                    className="secondary"
+                    onClick={(event) => {
+                      decisionOpener.current = event.currentTarget;
+                      setDecisionClaim(c.id);
+                    }}
+                  >
+                    Review and remedy history
+                  </button>
                   {c.state === "submitted" &&
                     can("warranty") &&
                     button("Review", () =>
@@ -3872,6 +3892,17 @@ function App() {
                 onClose={() => {
                   setEvidenceClaim(null);
                   evidenceOpener.current?.focus();
+                }}
+              />
+            )}
+            {decisionClaim && (
+              <WarrantyDecisions
+                key={decisionClaim}
+                claimId={decisionClaim}
+                buyer={actor.role === "buyer"}
+                onClose={() => {
+                  setDecisionClaim(null);
+                  decisionOpener.current?.focus();
                 }}
               />
             )}
