@@ -37,6 +37,8 @@ All acceptance tasks remain unverified. The following is code coverage, not task
 
 The [checkout runbook](CHECKOUT.md) and [local checkout receipt](evidence/LOCAL-CHECKOUT-ACCESS-2026-10-01.md) add buyer/finance launch through a fresh scoped request, native balance and current processing-permission checks, retained status/expiry validation and finance/support exact-session refresh with durable claim recovery. Generic lists omit checkout bearer URLs. Complete/unpaid sessions and expired/changed-balance sessions cannot launch; opening/refreshing records no cash. Actual provider qualification, renewed sessions/amount revision, immutable provider observation history and broader buyer/finance/production acceptance remain open.
 
+The [refund write guard receipt](evidence/LOCAL-REFUND-PREWRITE-2026-10-01.md) records current authority/permission, claim and native intent checks after the preliminary Stripe payment read, immediately before refund creation. Changed restrictions prevent the write and retain the unknown reservation for qualified reconciliation. Synthetic timing checks do not qualify real provider behavior or make provider/native writes atomic.
+
 | Tasks | Current local behavior | Remaining acceptance work |
 | --- | --- | --- |
 | D-001–D-006 | Complete planning package and provisional synthetic operating policies; owner direction recorded. | Real examples, commercial/tax/coverage approval, numerical workload/recovery targets, source/license review, hardware selections and re-estimation. |

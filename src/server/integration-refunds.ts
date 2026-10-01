@@ -104,7 +104,47 @@ export class IntegrationRefunds {
     });
     try {
       const result = send
-        ? await adapter.execute(effect)
+        ? await adapter.execute(effect, () =>
+            this.database.transaction(() => {
+              actor = this.principal(actor);
+              this.platform.assertProviderAccess();
+              verification?.assertCurrent();
+              const poll = this.store.get(
+                "SELECT token FROM integration_refund_polls WHERE org_id=? AND effect_id=?",
+                actor.orgId,
+                effectId,
+              );
+              const current = this.integration.effect(actor, effectId);
+              check(
+                poll?.token === token &&
+                  current.state === "running" &&
+                  !current.external_ref,
+                "STATE",
+                "Refund worker lease changed; reconcile before any send.",
+              );
+              check(
+                current.provider === effect.provider &&
+                  current.kind === effect.kind &&
+                  current.account_id === effect.account_id &&
+                  current.reference === effect.reference &&
+                  current.payload === effect.payload,
+                "REFUND_MISMATCH",
+                "Refund operation changed before sending.",
+              );
+              this.identity.providerAllowed(
+                actor,
+                current.account_id,
+                "stripe",
+              );
+              const intent = JSON.parse(current.payload) as RefundIntent;
+              check(
+                intent.refundId === current.reference,
+                "REFUND_MISMATCH",
+                "Refund operation differs from the native refund.",
+              );
+              this.billing.refunds.assertReadyToSend(actor, intent);
+            }),
+          )
         : await adapter.lookup(
             verification
               ? { ...effect, external_ref: verification.reference }

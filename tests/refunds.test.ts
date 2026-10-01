@@ -72,6 +72,322 @@ function adapter(status = "succeeded"): Adapter {
   };
 }
 
+function pausedStripe(
+  t: Parameters<typeof fixture>[0],
+  f: ReturnType<typeof setup>,
+) {
+  const a = new StripeAdapter(
+    "sk_test_synthetic_no_network",
+    "http://127.0.0.1:3000",
+    true,
+  );
+  let release!: () => void, entered!: () => void;
+  const paused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reading = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const context = t as import("node:test").TestContext;
+  const retrieve = context.mock.method(
+    a.client.paymentIntents,
+    "retrieve",
+    async () => {
+      entered();
+      await paused;
+      return {
+        id: "pi_synthetic",
+        livemode: false,
+        status: "succeeded",
+        amount_received: 11300,
+        currency: "cad",
+      } as Stripe.PaymentIntent;
+    },
+  );
+  const refund = {
+    id: "re_synthetic",
+    object: "refund",
+    amount: 11300,
+    currency: "cad",
+    payment_intent: "pi_synthetic",
+    status: "succeeded",
+    metadata: { effect_id: f.effect.id, refund_id: f.refundId },
+  } as unknown as Stripe.Refund;
+  const create = context.mock.method(
+    a.client.refunds,
+    "create",
+    async () => refund,
+  );
+  return { a, reading, release: () => release(), retrieve, create, refund };
+}
+
+test("refund SDK write rechecks restrictions changed during the original payment read", async (t) => {
+  for (const scenario of [
+    "consent",
+    "terms",
+    "restore",
+    "inactive",
+    "role",
+    "password",
+  ] as const) {
+    await t.test(scenario, async (s) => {
+      const f = setup(s),
+        sdk = pausedStripe(s, f);
+      const sending = f.app.integration.execute(f.actor, f.effect.id, sdk.a);
+      await sdk.reading;
+      let code = "FORBIDDEN";
+      if (scenario === "consent") {
+        chooseProviders(f, f.actor, "withdraw-paused", {
+          accountId: f.buyer,
+          region: "CA",
+          mode: "strict",
+          providers: [],
+          version: 2,
+          acknowledgment: "Withdraw during synthetic read",
+        });
+        code = "RESIDENCY_BLOCKED";
+      } else if (scenario === "terms") {
+        const terms = f.app.identity.residency
+          .current(f.actor)
+          .find((d) => d.provider === "stripe")!;
+        f.app.identity.residency.withdraw(f.actor, "withdraw-paused-terms", {
+          provider: "stripe",
+          disclosureId: terms.id,
+          reason: "Synthetic changed terms",
+        });
+        code = "DISCLOSURE_REVIEW_REQUIRED";
+      } else if (scenario === "restore") {
+        f.app.platform.isolateRestore("synthetic", new Date().toISOString());
+        code = "RECOVERY_HOLD";
+      } else if (scenario === "password") {
+        f.app.identity.resetPassword(f.actor, "reset-paused-password", {
+          userId: f.actor.id,
+          revision: f.app.identity.security(f.actor).revision,
+          password: "new-synthetic-test-password",
+          currentPassword: "long-test-only-password",
+          reason: "Synthetic forced password change during provider read",
+        });
+        code = "PASSWORD_CHANGE_REQUIRED";
+      } else {
+        // Fault injection represents a changed durable grant, not a forged actor object.
+        f.app.database
+          .owned("iam")
+          .run(
+            scenario === "inactive"
+              ? "UPDATE iam_users SET active=0 WHERE id=?"
+              : "UPDATE iam_users SET role='support' WHERE id=?",
+            f.actor.id,
+          );
+      }
+      sdk.release();
+      await assert.rejects(sending, { code });
+      assert.equal(sdk.retrieve.mock.callCount(), 1);
+      assert.equal(sdk.create.mock.callCount(), 0);
+      const native = f.app.database.owned("billing");
+      assert.equal(
+        native.get("SELECT state FROM billing_refunds WHERE id=?", f.refundId)!
+          .state,
+        "unknown",
+      );
+      assert.equal(
+        native.get(
+          "SELECT COUNT(*) AS n FROM billing_refund_observations WHERE refund_id=?",
+          f.refundId,
+        )!.n,
+        0,
+      );
+      assert.equal(
+        f.app.database
+          .owned("integration")
+          .get("SELECT state FROM integration_effects WHERE id=?", f.effect.id)!
+          .state,
+        "unknown",
+      );
+    });
+  }
+});
+
+test("refund SDK write rejects changed native intent, state and already retained provider proof", async (t) => {
+  for (const scenario of ["amount", "state", "proof", "payload"] as const) {
+    await t.test(scenario, async (s) => {
+      const f = setup(s),
+        sdk = pausedStripe(s, f);
+      const sending = f.app.integration.execute(f.actor, f.effect.id, sdk.a);
+      await sdk.reading;
+      if (scenario === "amount")
+        f.app.database
+          .owned("billing")
+          .run(
+            "UPDATE billing_refunds SET amount=11299 WHERE id=?",
+            f.refundId,
+          );
+      else if (scenario === "state")
+        f.app.database
+          .owned("billing")
+          .run(
+            "UPDATE billing_refunds SET state='rejected' WHERE id=?",
+            f.refundId,
+          );
+      else if (scenario === "proof")
+        f.app.billing.refunds.observe(
+          f.actor,
+          JSON.parse(f.effect.payload),
+          "re_synthetic",
+          result(f.effect, "pending").result,
+        );
+      else
+        f.app.database
+          .owned("integration")
+          .run(
+            "UPDATE integration_effects SET payload=? WHERE id=?",
+            JSON.stringify({ ...JSON.parse(f.effect.payload), amount: 11299 }),
+            f.effect.id,
+          );
+      sdk.release();
+      await assert.rejects(sending, {
+        code:
+          scenario === "amount" || scenario === "payload"
+            ? "REFUND_MISMATCH"
+            : "STATE",
+      });
+      assert.equal(sdk.create.mock.callCount(), 0);
+      assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 0);
+      assert.equal(
+        f.app.billing.refunds.list(f.actor)[0]!.observations.length,
+        scenario === "proof" ? 1 : 0,
+      );
+    });
+  }
+});
+
+test("an abandoned refund payment read cannot write or release a successor connection's claim", async (t) => {
+  const f = setup(t),
+    sdk = pausedStripe(t, f);
+  const sending = f.app.integration.execute(f.actor, f.effect.id, sdk.a);
+  await sdk.reading;
+  const other = new Application(f.path);
+  t.after(() => other.close());
+  other.integration.recoverStale(-1, f.actor.orgId);
+  other.integration.refunds.recover(-1, f.actor.orgId);
+  let finish!: (r: ReturnType<typeof result>) => void;
+  const response = new Promise<ReturnType<typeof result>>((resolve) => {
+    finish = resolve;
+  });
+  const reading = other.integration.reconcile(f.actor, f.effect.id, {
+    ...adapter(),
+    lookup: async () => response,
+  });
+  const claim = other.database
+    .owned("integration")
+    .get(
+      "SELECT token FROM integration_refund_polls WHERE effect_id=?",
+      f.effect.id,
+    )!.token;
+  sdk.release();
+  await assert.rejects(sending, { code: "STATE" });
+  assert.equal(sdk.create.mock.callCount(), 0);
+  assert.equal(
+    other.database
+      .owned("integration")
+      .get(
+        "SELECT token FROM integration_refund_polls WHERE effect_id=?",
+        f.effect.id,
+      )!.token,
+    claim,
+  );
+  await assert.rejects(
+    f.app.integration.reconcile(f.actor, f.effect.id, adapter()),
+    { code: "STATE" },
+  );
+  finish(result(f.effect));
+  await reading;
+  await f.app.integration.reconcile(f.actor, f.effect.id, adapter());
+  assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 11300);
+  assert.equal(f.app.billing.refunds.list(f.actor)[0]!.observations.length, 2);
+});
+
+test("blocked refund send keeps its reservation and permits only later qualified outcome reads", async (t) => {
+  const f = setup(t),
+    sdk = pausedStripe(t, f);
+  const sending = f.app.integration.execute(f.actor, f.effect.id, sdk.a);
+  await sdk.reading;
+  chooseProviders(f, f.actor, "withdraw-paused", {
+    accountId: f.buyer,
+    region: "CA",
+    mode: "strict",
+    providers: [],
+    version: 2,
+    acknowledgment: "Withdraw synthetic permission",
+  });
+  sdk.release();
+  await assert.rejects(sending, { code: "RESIDENCY_BLOCKED" });
+  assert.equal(sdk.create.mock.callCount(), 0);
+  assert.throws(
+    () =>
+      f.app.billing.refundRequest(f.actor, "over-blocked", {
+        invoiceId: f.invoiceId,
+        paymentId: f.paymentId,
+        amount: 1,
+        reference: "over-blocked",
+        reason: "Synthetic duplicate cash attempt",
+      }),
+    { code: "OVER_REFUND" },
+  );
+  chooseProviders(f, f.actor, "reaccept-paused", {
+    accountId: f.buyer,
+    region: "CA",
+    mode: "provider-exceptions",
+    providers: ["stripe"],
+    version: 3,
+    acknowledgment: "Restore reviewed synthetic permission",
+  });
+  await assert.rejects(f.app.integration.execute(f.actor, f.effect.id, sdk.a), {
+    code: "STATE",
+  });
+  t.mock.method(sdk.a.client.refunds, "list", async () => ({
+    data: [],
+    has_more: false,
+  }));
+  await f.app.integration.reconcile(f.actor, f.effect.id, sdk.a);
+  assert.equal(f.app.integration.effect(f.actor, f.effect.id).state, "unknown");
+  assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 0);
+  t.mock.method(sdk.a.client.refunds, "list", async () => ({
+    data: [sdk.refund],
+    has_more: false,
+  }));
+  await f.app.integration.reconcile(f.actor, f.effect.id, sdk.a);
+  assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 11300);
+  assert.equal(sdk.create.mock.callCount(), 0);
+});
+
+test("authorized refund write retains matching outcome if consent is withdrawn inside the write", async (t) => {
+  const f = setup(t),
+    sdk = pausedStripe(t, f);
+  sdk.create.mock.mockImplementation(async () => {
+    chooseProviders(f, f.actor, "withdraw-after-write", {
+      accountId: f.buyer,
+      region: "CA",
+      mode: "strict",
+      providers: [],
+      version: 2,
+      acknowledgment: "Withdraw after authorized synthetic write",
+    });
+    return sdk.refund;
+  });
+  const sending = f.app.integration.execute(f.actor, f.effect.id, sdk.a);
+  await sdk.reading;
+  sdk.release();
+  await sending;
+  assert.equal(sdk.create.mock.callCount(), 1);
+  assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 11300);
+  assert.equal(f.app.billing.refunds.list(f.actor)[0]!.observations.length, 1);
+  await assert.rejects(
+    f.app.integration.reconcile(f.actor, f.effect.id, sdk.a),
+    { code: "RESIDENCY_BLOCKED" },
+  );
+  assert.equal(sdk.retrieve.mock.callCount(), 1);
+});
+
 test("refund accepted pending reserves cash; verified success and late bank failure preserve observations across restart", async (t) => {
   const f = setup(t);
   await f.app.integration.execute(f.actor, f.effect.id, adapter("pending"));

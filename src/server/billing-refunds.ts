@@ -134,6 +134,24 @@ export class BillingRefunds {
       refundId,
     );
   }
+  assertReadyToSend(actor: Actor, intent: RefundIntent) {
+    check(
+      canonical(this.intent(actor, intent.refundId)) === canonical(intent),
+      "REFUND_MISMATCH",
+      "Native refund intent changed.",
+    );
+    const { row } = this.get(actor, intent.refundId);
+    check(
+      row.state === "unknown" &&
+        !this.store.get(
+          "SELECT refund_id FROM billing_refund_provider WHERE org_id=? AND refund_id=?",
+          actor.orgId,
+          intent.refundId,
+        ),
+      "STATE",
+      "Refund is no longer awaiting its first send.",
+    );
+  }
   observe(
     actor: Actor,
     intent: RefundIntent,
