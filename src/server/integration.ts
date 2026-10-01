@@ -13,6 +13,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
+import { IntegrationOperations } from "./integration-operations.ts";
 import { IntegrationRefunds } from "./integration-refunds.ts";
 import { Billing } from "./billing.ts";
 export type Effect = {
@@ -57,6 +58,7 @@ export type Callback = {
 export class Integration {
   private store: Store;
   readonly refunds: IntegrationRefunds;
+  private readonly operations: IntegrationOperations;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -70,6 +72,13 @@ export class Integration {
     CREATE TABLE IF NOT EXISTS integration_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,session_id TEXT NOT NULL,effect_id TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL;
   `);
+    this.operations = new IntegrationOperations(
+      database,
+      this.store,
+      platform,
+      identity,
+      this,
+    );
     this.refunds = new IntegrationRefunds(
       database,
       this.store,
@@ -313,8 +322,17 @@ export class Integration {
       key,
       input,
       () => {
+        actor = this.identity.currentActor(actor);
+        check(
+          !this.identity.security(actor).passwordChangeRequired,
+          "PASSWORD_CHANGE_REQUIRED",
+          "Change your password before requesting provider work.",
+          403,
+        );
         permit(actor, ["finance", "buyer"]);
-        this.billing.invoice(actor, input.invoiceId);
+        const invoice = this.billing.invoice(actor, input.invoiceId);
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "stripe");
       },
       () => {
         const invoice = this.billing.invoice(actor, input.invoiceId),
@@ -389,8 +407,11 @@ export class Integration {
       key,
       input,
       () => {
+        actor = this.operations.principal(actor);
         permit(actor, ["finance"]);
-        this.billing.invoice(actor, input.invoiceId);
+        const invoice = this.billing.invoice(actor, input.invoiceId);
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "quickbooks");
       },
       () => {
         const invoice = this.billing.invoice(actor, input.invoiceId);
@@ -432,15 +453,17 @@ export class Integration {
   }
   // Crash after a provider call must enter reconciliation, never automatic re-execution.
   recoverStale(milliseconds = 120000, orgId: string | null = null) {
-    return this.database.transaction(() =>
-      Number(
-        this.store.run(
-          "UPDATE integration_effects SET state='unknown',error='Worker interrupted; reconcile provider outcome before retry.' WHERE state='running' AND started_at<? AND (? IS NULL OR org_id=?)",
-          Date.now() - milliseconds,
-          orgId,
-          orgId,
-        ).changes,
-      ),
+    return this.database.transaction(
+      () =>
+        this.operations.recover(milliseconds, orgId) +
+        Number(
+          this.store.run(
+            "UPDATE integration_effects SET state='unknown',error='Worker interrupted; reconcile provider outcome before retry.' WHERE state='running' AND started_at<? AND (? IS NULL OR org_id=?)",
+            Date.now() - milliseconds,
+            orgId,
+            orgId,
+          ).changes,
+        ),
     );
   }
   recoverCallbacks(milliseconds = 120000, orgId: string | null = null) {
@@ -458,79 +481,12 @@ export class Integration {
   async execute(actor: Actor, effectId: string, adapter: Adapter) {
     if (this.effect(actor, effectId).kind === "refund")
       return this.refunds.run(actor, effectId, adapter, true);
-    permit(actor, ["finance", "support"]);
-    this.platform.assertProviderAccess();
-    const effect = this.database.transaction(() => {
-      const e = this.effect(actor, effectId);
-      check(
-        e.state === "pending",
-        "STATE",
-        "Only a pending provider operation may be sent.",
-      );
-      this.identity.providerAllowed(actor, e.account_id, e.provider);
-      this.store.run(
-        "UPDATE integration_effects SET state='running',started_at=?,error=NULL WHERE id=?",
-        Date.now(),
-        e.id,
-      );
-      return e;
-    });
-    let result: EffectResult;
-    try {
-      result = await adapter.execute(effect);
-    } catch (error) {
-      this.database.transaction(() => {
-        this.store.run(
-          "UPDATE integration_effects SET state='unknown',error=? WHERE id=? AND state='running'",
-          "Provider outcome unknown; reconcile the external operation before retrying.",
-          effect.id,
-        );
-        this.platform.audit(actor, "integration.unknown", effect.id, {});
-      });
-      return { id: effect.id, state: this.effect(actor, effect.id).state };
-    }
-    return this.complete(actor, effect, result);
-  }
-  private complete(actor: Actor, effect: Effect, result: EffectResult) {
-    return this.database.transaction(() => {
-      const current = this.effect(actor, effect.id);
-      check(
-        ["running", "unknown"].includes(current.state),
-        "STATE",
-        "Provider operation changed during completion.",
-      );
-      this.store.run(
-        "UPDATE integration_effects SET state='completed',external_ref=?,result=?,error=NULL WHERE id=?",
-        text(result.reference, "provider reference"),
-        canonical(result.result),
-        effect.id,
-      );
-      this.platform.event(actor, "integration.completed", effect.id, {
-        provider: effect.provider,
-        reference: result.reference,
-      });
-      return { id: effect.id, state: "completed" };
-    });
+    return this.operations.run(actor, effectId, adapter, true);
   }
   async reconcile(actor: Actor, effectId: string, adapter: Adapter) {
     if (this.effect(actor, effectId).kind === "refund")
       return this.refunds.run(actor, effectId, adapter, false);
-    permit(actor, ["finance", "support"]);
-    this.platform.assertProviderAccess();
-    const effect = this.effect(actor, effectId);
-    check(
-      effect.state === "unknown",
-      "STATE",
-      "Only unknown outcomes need reconciliation.",
-    );
-    this.identity.providerAllowed(actor, effect.account_id, effect.provider);
-    const result = await adapter.lookup(effect);
-    if (result) return this.complete(actor, effect, result);
-    return {
-      id: effect.id,
-      state: "unknown",
-      message: "No confirmed provider result; do not re-execute automatically.",
-    };
+    return this.operations.run(actor, effectId, adapter, false);
   }
   async stripeSettlement(
     actor: Actor,
@@ -543,7 +499,7 @@ export class Integration {
     }>,
   ) {
     // Caller must verify the raw webhook signature before entering this method.
-    permit(actor, ["finance"]);
+    actor = this.identity.workerActor(actor.orgId, actor.id);
     this.platform.assertProviderAccess();
     const effect = this.store.get<Effect>(
       "SELECT * FROM integration_effects WHERE org_id=? AND provider='stripe' AND kind='checkout' AND external_ref=? AND state='completed'",
@@ -563,6 +519,7 @@ export class Integration {
     );
     this.identity.providerAllowed(actor, effect.account_id, "stripe");
     const payment = await verify(event.sessionId);
+    actor = this.identity.workerActor(actor.orgId, actor.id);
     check(payment.paid, "PAYMENT_PENDING", "Stripe has not confirmed payment.");
     const payload = JSON.parse(effect.payload) as {
       invoiceId: string;
@@ -576,6 +533,8 @@ export class Integration {
       "Provider money/currency differs from checkout intent.",
     );
     return this.database.transaction(() => {
+      actor = this.identity.workerActor(actor.orgId, actor.id);
+      this.platform.assertProviderAccess();
       const hash = digest(canonical({ event, payment })),
         old = this.store.get(
           "SELECT hash FROM integration_inbox WHERE provider='stripe' AND event_id=?",
