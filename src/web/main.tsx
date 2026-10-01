@@ -725,8 +725,12 @@ function App() {
     ) : (
       <div className="empty">{empty}</div>
     );
-  const button = (label: string, action: () => void) => (
-    <button className="secondary" disabled={busy} onClick={action}>
+  const button = (label: string, action: () => void, unavailable = false) => (
+    <button
+      className="secondary"
+      disabled={busy || unavailable}
+      onClick={action}
+    >
       {label}
     </button>
   );
@@ -1849,30 +1853,33 @@ function App() {
                     )}
                   {can("warehouse") &&
                     u.available > 0 &&
-                    button("Transfer", () =>
-                      simple(
-                        "Dispatch transfer",
-                        [
-                          select(
-                            "destinationId",
-                            "Destination",
-                            extra.transferDestinations.filter(
-                              (w: Item) => w.id !== u.warehouse_id,
+                    button(
+                      "Transfer",
+                      () =>
+                        simple(
+                          "Dispatch transfer",
+                          [
+                            select(
+                              "destinationId",
+                              "Destination",
+                              extra.transferDestinations.filter(
+                                (w: Item) => w.id !== u.warehouse_id,
+                              ),
+                              (w) => w.name,
                             ),
-                            (w) => w.name,
-                          ),
-                          {
-                            name: "quantity",
-                            label: "Units",
-                            type: "number",
-                            value: 1,
-                            max: u.available,
-                          },
-                          reason,
-                        ],
-                        "transfer.dispatch",
-                        (v) => ({ ...v, unitId: u.id, revision: u.revision }),
-                      ),
+                            {
+                              name: "quantity",
+                              label: "Units",
+                              type: "number",
+                              value: 1,
+                              max: u.available,
+                            },
+                            reason,
+                          ],
+                          "transfer.dispatch",
+                          (v) => ({ ...v, unitId: u.id, revision: u.revision }),
+                        ),
+                      !Array.isArray(extra.transferDestinations),
                     )}
                 </div>,
               ],

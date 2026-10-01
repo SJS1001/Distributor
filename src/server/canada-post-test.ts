@@ -71,6 +71,7 @@ const maximumLabel = 1_048_576;
 // There is no default transport, startup registration or production switch.
 export class CanadaPostTestClient {
   private readonly config: CanadaPostTestConfig;
+  readonly testApplication = true as const;
   readonly configurationHash: string;
   constructor(
     config: CanadaPostTestConfig,

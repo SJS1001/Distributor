@@ -1001,10 +1001,24 @@ test("browser: audit history traverses older pages, retains retries and cancels 
       .getByRole("button", { name: "Load older audit records", exact: true })
       .click();
     await started;
+    const refreshed =
+      action === "Refresh"
+        ? page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return (
+              url.pathname === endpoint &&
+              url.search === "" &&
+              response.request().method() === "GET"
+            );
+          })
+        : null;
     await page.getByRole("button", { name: action, exact: true }).click();
-    if (action === "Refresh")
+    if (refreshed) {
+      const response = await refreshed;
+      expect(response.status()).toBe(200);
+      await response.finished();
       await expect(panel.locator("tbody tr")).toHaveCount(20);
-    else
+    } else
       await expect(
         page.getByRole("button", { name: "Sign in", exact: true }),
       ).toBeVisible();
@@ -2150,6 +2164,15 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  let releaseDestinations!: () => void;
+  const destinationsHeld = new Promise<void>((resolve) => {
+    releaseDestinations = resolve;
+  });
+  await page.route("**/api/transfer-destinations", async (route) => {
+    const response = await route.fetch();
+    await destinationsHeld;
+    await route.fulfill({ response });
+  });
   await page.goto("/");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
@@ -2166,7 +2189,16 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
     .filter({
       has: page.getByRole("button", { name: "Transfer", exact: true }),
     });
-  await lot.getByRole("button", { name: "Transfer", exact: true }).click();
+  const transferButton = lot.getByRole("button", {
+    name: "Transfer",
+    exact: true,
+  });
+  await expect(transferButton).toBeDisabled();
+  expect(errors).toEqual([]);
+  releaseDestinations();
+  await expect(transferButton).toBeEnabled();
+  await page.unroute("**/api/transfer-destinations");
+  await transferButton.click();
   await page
     .getByLabel("Destination", { exact: true })
     .selectOption({ label: "Ottawa" });

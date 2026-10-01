@@ -14,6 +14,7 @@ import { Database, type Store } from "./database.ts";
 import type { Platform } from "./platform.ts";
 import type { Identity } from "./iam.ts";
 import type { Fulfillment, Shipment } from "./fulfillment.ts";
+import type { CanadaPostShipmentObservation } from "./canada-post-test.ts";
 import { CANADA_POST_INITIALIZE_DDL } from "./canada-post-schema.ts";
 import {
   carrierNames,
@@ -47,6 +48,21 @@ export interface CarrierAdapter {
   sandbox: true;
   book(intent: CarrierIntent, beforeWrite: () => void): Promise<CarrierResult>;
   lookup(intent: CarrierIntent): Promise<CarrierResult | null>;
+}
+// Trusted injected clients only. The marker declares test credentials; it does
+// not qualify an account. Creation has exactly one guarded write; lookup is read-only.
+export interface CanadaPostCreationClient {
+  readonly testApplication: true;
+  readonly configurationHash: string;
+  create(
+    intent: CarrierIntent,
+    groupId: string,
+    beforeWrite: () => void,
+  ): Promise<CanadaPostShipmentObservation>;
+  lookup(
+    intent: CarrierIntent,
+    groupId: string,
+  ): Promise<CanadaPostShipmentObservation | null>;
 }
 type Booking = {
   sequence: number;
@@ -516,6 +532,328 @@ export class CarrierBookings {
         return { id: group.id };
       },
     );
+  }
+  createCanadaPostMember(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+    client: CanadaPostCreationClient,
+  ) {
+    return this.runCanadaPostMember(actor, groupId, bookingId, client, true);
+  }
+  reconcileCanadaPostMember(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+    client: CanadaPostCreationClient,
+  ) {
+    return this.runCanadaPostMember(actor, groupId, bookingId, client, false);
+  }
+  private assertCanadaPostNative(
+    actor: Actor,
+    group: CanadaPostGroup,
+    members: CanadaPostMember[],
+  ) {
+    check(
+      group.token === null &&
+        group.started_at === null &&
+        group.observation === null &&
+        group.manifest_bytes === null &&
+        group.manifest_hash === null,
+      "STATE",
+      "Resolve the manifest claim before creating or reconciling members.",
+    );
+    for (const member of members) {
+      const booking = this.booking(actor, member.booking_id);
+      check(
+        booking.state === "pending" &&
+          booking.token === null &&
+          booking.started_at === null &&
+          booking.reference === null &&
+          booking.tracking === null &&
+          booking.label_bytes === null &&
+          booking.label_type === null &&
+          booking.label_hash === null &&
+          booking.error === null,
+        "CARRIER_MISMATCH",
+        "Group creation requires the exact unclaimed native bookings.",
+      );
+      this.assertNative(actor, booking);
+    }
+  }
+  private assertCanadaPostMemberClaim(
+    group: CanadaPostGroup,
+    member: CanadaPostMember | undefined,
+    original: CanadaPostGroup,
+    originalMember: CanadaPostMember,
+    token: string,
+    send: boolean,
+  ) {
+    check(
+      group.review_hash === original.review_hash &&
+        group.configuration_hash === original.configuration_hash &&
+        group.provider_group_id === original.provider_group_id &&
+        ["creating", "unknown"].includes(group.state) &&
+        group.token === null &&
+        group.observation === null &&
+        group.manifest_bytes === null &&
+        group.manifest_hash === null &&
+        member &&
+        member.active === 1 &&
+        member.review_hash === originalMember.review_hash &&
+        member.token === token &&
+        member.state === (send ? "creating" : "unknown") &&
+        member.provider_shipment_id === null &&
+        member.tracking === null &&
+        member.label_bytes === null &&
+        member.label_hash === null,
+      "STATE",
+      "Canada Post member claim changed; reconcile the outcome without resending.",
+    );
+  }
+  private async runCanadaPostMember(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+    client: CanadaPostCreationClient,
+    send: boolean,
+  ): Promise<CanadaPostGroupView> {
+    actor = this.principal(actor);
+    check(
+      client &&
+        client.testApplication === true &&
+        typeof client.configurationHash === "string" &&
+        /^[a-f0-9]{64}$/.test(client.configurationHash) &&
+        typeof client.create === "function" &&
+        typeof client.lookup === "function",
+      "CARRIER_DISABLED",
+      "An explicitly injected Canada Post test client is required.",
+      503,
+    );
+    // Capture the trusted methods and binding before the first await.
+    const configurationHash = client.configurationHash,
+      create = client.create.bind(client),
+      lookup = client.lookup.bind(client),
+      token = id();
+    const original = this.database.transaction(() => {
+      actor = this.principal(actor);
+      const { group, members } = this.canadaPostGroup(actor, groupId),
+        member = members.find((m) => m.booking_id === bookingId);
+      check(
+        group.configuration_hash === configurationHash,
+        "CARRIER_CONFIG",
+        "The reviewed Canada Post configuration changed.",
+      );
+      check(member, "NOT_FOUND", "Booking is not a member of this group.", 404);
+      check(
+        (send ? ["prepared", "creating"] : ["creating", "unknown"]).includes(
+          group.state,
+        ) &&
+          member.state === (send ? "pending" : "unknown") &&
+          member.token === null &&
+          member.started_at === null &&
+          member.provider_shipment_id === null &&
+          member.tracking === null &&
+          member.label_bytes === null &&
+          member.label_hash === null &&
+          (!send || !members.some((m) => m.state === "unknown")),
+        "STATE",
+        "Reconcile uncertain members before creating another; never resend an uncertain member.",
+      );
+      this.assertCanadaPostNative(actor, group, members);
+      this.store.run(
+        "UPDATE integration_canada_post_members SET state=?,token=?,started_at=? WHERE group_id=? AND booking_id=?",
+        send ? "creating" : "unknown",
+        token,
+        Date.now(),
+        group.id,
+        bookingId,
+      );
+      if (send)
+        this.store.run(
+          "UPDATE integration_canada_post_groups SET state='creating' WHERE id=?",
+          group.id,
+        );
+      this.platform.audit(
+        actor,
+        "carrier.canada-post.member.claimed",
+        group.id,
+        { bookingId, reviewHash: member.review_hash, send },
+      );
+      return {
+        group,
+        member,
+        intent: immutable(this.intent(this.booking(actor, bookingId))),
+      };
+    });
+    let guarded = false;
+    try {
+      const result = send
+        ? await create(
+            original.intent,
+            original.group.provider_group_id,
+            () => {
+              this.database.transaction(() => {
+                actor = this.principal(actor);
+                const { group, members } = this.canadaPostGroup(actor, groupId);
+                this.assertCanadaPostMemberClaim(
+                  group,
+                  members.find((m) => m.booking_id === bookingId),
+                  original.group,
+                  original.member,
+                  token,
+                  send,
+                );
+                check(
+                  !guarded && !members.some((m) => m.state === "unknown"),
+                  "STATE",
+                  "The creation guard can authorize only one write in a resolved group.",
+                );
+                this.assertCanadaPostNative(actor, group, members);
+                guarded = true;
+              });
+            },
+          )
+        : await lookup(original.intent, original.group.provider_group_id);
+      check(
+        !send || guarded,
+        "CARRIER_RESULT",
+        "Canada Post client did not invoke the write guard.",
+      );
+      // Copy and qualify the observation before persistence; never promote a
+      // created label to a native booking until manifest transmission is qualified.
+      const qualified =
+        result === null && !send
+          ? null
+          : validateCanadaPostCreation(result, original.group, original.member);
+      return this.database.transaction(() => {
+        actor = this.principal(actor);
+        const { group, members } = this.canadaPostGroup(actor, groupId);
+        this.assertCanadaPostMemberClaim(
+          group,
+          members.find((m) => m.booking_id === bookingId),
+          original.group,
+          original.member,
+          token,
+          send,
+        );
+        if (qualified) {
+          check(
+            !this.store.get(
+              "SELECT 1 FROM integration_canada_post_members m JOIN integration_canada_post_groups g ON g.id=m.group_id WHERE m.org_id=? AND g.configuration_hash=? AND m.booking_id!=? AND (m.provider_shipment_id=? OR m.tracking=?)",
+              actor.orgId,
+              group.configuration_hash,
+              bookingId,
+              qualified.shipmentId,
+              qualified.tracking,
+            ),
+            "CARRIER_RESULT",
+            "A provider shipment or tracking reference is already bound to another booking.",
+          );
+          this.store.run(
+            "UPDATE integration_canada_post_members SET state='created',token=NULL,started_at=NULL,provider_shipment_id=?,tracking=?,label_bytes=?,label_hash=? WHERE group_id=? AND booking_id=?",
+            qualified.shipmentId,
+            qualified.tracking,
+            qualified.label.bytes,
+            digest(qualified.label.bytes),
+            group.id,
+            bookingId,
+          );
+          this.platform.event(
+            actor,
+            "carrier.canada-post.member.created",
+            group.id,
+            {
+              bookingId,
+              reviewHash: original.member.review_hash,
+              shipmentId: qualified.shipmentId,
+            },
+          );
+        } else {
+          this.store.run(
+            "UPDATE integration_canada_post_members SET token=NULL,started_at=NULL WHERE group_id=? AND booking_id=?",
+            group.id,
+            bookingId,
+          );
+        }
+        const states = this.store.all<{ state: string }>(
+          "SELECT state FROM integration_canada_post_members WHERE group_id=?",
+          group.id,
+        );
+        const state = states.every((m) => m.state === "created")
+          ? "closed"
+          : states.some((m) => m.state === "unknown")
+            ? "unknown"
+            : "creating";
+        this.store.run(
+          "UPDATE integration_canada_post_groups SET state=? WHERE id=?",
+          state,
+          group.id,
+        );
+        this.platform.audit(
+          actor,
+          qualified
+            ? "carrier.canada-post.member.created"
+            : "carrier.canada-post.member.unconfirmed",
+          group.id,
+          {
+            bookingId,
+            reviewHash: original.member.review_hash,
+            reconciled: !send,
+            groupState: state,
+            ...(qualified ? { labelHash: digest(qualified.label.bytes) } : {}),
+          },
+        );
+        return this.reviewCanadaPostGroup(actor, group.id);
+      });
+    } catch (error) {
+      this.database.transaction(() => {
+        const changed = this.store.run(
+          "UPDATE integration_canada_post_members SET state='unknown',token=NULL,started_at=NULL WHERE org_id=? AND group_id=? AND booking_id=? AND token=?",
+          original.group.org_id,
+          groupId,
+          bookingId,
+          token,
+        );
+        if (changed.changes) {
+          this.store.run(
+            "UPDATE integration_canada_post_groups SET state='unknown' WHERE id=?",
+            groupId,
+          );
+          this.platform.audit(
+            actor,
+            "carrier.canada-post.member.unknown",
+            groupId,
+            { bookingId, reviewHash: original.member.review_hash },
+          );
+        }
+      });
+      throw error;
+    }
+  }
+  recoverStaleCanadaPostMembers(ageMs = 120000, orgId?: string) {
+    integer(ageMs, "Canada Post claim age", 0, 86_400_000);
+    if (orgId !== undefined) text(orgId, "Organization", 128);
+    return this.database.transaction(() => {
+      const expired = this.store.all<{ group_id: string; booking_id: string }>(
+        "SELECT group_id,booking_id FROM integration_canada_post_members WHERE token IS NOT NULL AND started_at<=? AND (? IS NULL OR org_id=?)",
+        Date.now() - ageMs,
+        orgId ?? null,
+        orgId ?? null,
+      );
+      for (const member of expired) {
+        this.store.run(
+          "UPDATE integration_canada_post_members SET state='unknown',token=NULL,started_at=NULL WHERE group_id=? AND booking_id=?",
+          member.group_id,
+          member.booking_id,
+        );
+        this.store.run(
+          "UPDATE integration_canada_post_groups SET state='unknown' WHERE id=?",
+          member.group_id,
+        );
+      }
+      return expired.length;
+    });
   }
   private assertNoCanadaPostGroup(bookingId: string) {
     check(
@@ -1018,6 +1356,59 @@ export function validateCarrierLabel(label: {
     "CARRIER_RESULT",
     "Carrier label type and file signature must agree.",
   );
+}
+function validateCanadaPostCreation(
+  result: CanadaPostShipmentObservation | null,
+  group: CanadaPostGroup,
+  member: CanadaPostMember,
+): CanadaPostShipmentObservation {
+  exactFields(result, [
+    "bookingId",
+    "reviewHash",
+    "configurationHash",
+    "groupId",
+    "customerRequestId",
+    "shipmentId",
+    "tracking",
+    "status",
+    "label",
+  ]);
+  const customerRequestId =
+    "D" +
+    digest(
+      canonical({
+        configurationHash: group.configuration_hash,
+        bookingId: member.booking_id,
+        reviewHash: member.review_hash,
+        groupId: group.provider_group_id,
+      }),
+    )
+      .slice(0, 31)
+      .toUpperCase();
+  check(
+    result &&
+      result.bookingId === member.booking_id &&
+      result.reviewHash === member.review_hash &&
+      result.configurationHash === group.configuration_hash &&
+      result.groupId === group.provider_group_id &&
+      result.customerRequestId === customerRequestId &&
+      typeof result.shipmentId === "string" &&
+      /^[A-Za-z0-9_-]{1,32}$/.test(result.shipmentId) &&
+      typeof result.tracking === "string" &&
+      /^\d{11,16}$/.test(result.tracking) &&
+      result.status === "created" &&
+      result.label?.mediaType === "application/pdf",
+    "CARRIER_RESULT",
+    "Canada Post observation must match the exact created group member; unexpected transmission requires separate recovery.",
+  );
+  validateCarrierLabel(result.label);
+  return {
+    ...result,
+    label: {
+      mediaType: "application/pdf",
+      bytes: Buffer.from(result.label.bytes),
+    },
+  };
 }
 function validateResult(
   result: CarrierResult | null,

@@ -137,7 +137,7 @@ function json(value: unknown, status = 200) {
     headers: { "content-type": "application/json" },
   });
 }
-function reference(f: F) {
+function reference(f: F, groupId = group) {
   const { clientId: _id, clientSecret: _secret, ...binding } = f.config;
   return (
     "D" +
@@ -146,15 +146,15 @@ function reference(f: F) {
         configurationHash: digest(canonical(binding)),
         bookingId: f.intent.bookingId,
         reviewHash: f.intent.reviewHash,
-        groupId: group,
+        groupId,
       }),
     )
       .slice(0, 31)
       .toUpperCase()
   );
 }
-function expectedBody(f: F): Json {
-  const ref = reference(f);
+function expectedBody(f: F, groupId = group): Json {
+  const ref = reference(f, groupId);
   const addr = (a: CarrierAddress) => ({
     addressLine1: a.line1,
     ...(a.line2 ? { addressLine2: a.line2 } : {}),
@@ -165,7 +165,7 @@ function expectedBody(f: F): Json {
   });
   return {
     customerRequestId: ref,
-    groupId: group,
+    groupId,
     ...(f.config.shippingPoint.kind === "pickup"
       ? { cpcPickupIndicator: true, requestedShippingPoint: "M5V1A1" }
       : { shippingPointId: "A1B2" }),
@@ -204,6 +204,7 @@ function expectedBody(f: F): Json {
 function simulator(
   f: F,
   options: {
+    groupId?: string;
     tokenHook?: () => void;
     raw?: (call: Call) => Response | undefined;
     loseCreate?: boolean;
@@ -214,8 +215,8 @@ function simulator(
   } = {},
 ) {
   const calls: Call[] = [],
-    body = expectedBody(f),
-    ref = reference(f),
+    body = expectedBody(f, options.groupId),
+    ref = reference(f, options.groupId),
     status = options.status ?? "created",
     pickup = f.config.shippingPoint.kind === "pickup";
   const info = () => ({
@@ -307,7 +308,7 @@ function simulator(
           ? { cpcPickupIndicator: true, finalShippingPoint: "M5V1A1" }
           : { shippingPointId: "A1B2" }),
         shipmentDetail: {
-          groupId: group,
+          groupId: options.groupId ?? group,
           deliverySpec: structuredClone(body.deliverySpec),
         },
       };
@@ -2190,3 +2191,73 @@ test("Canada Post changed recovery review cannot accept prior manifest", async (
   );
   assert.equal(sim.writes, 1);
 });
+
+for (const lost of [false, true])
+  test(`native durable group uses the actual protocol client with synthetic transport, lost reply=${lost}`, async (t) => {
+    const f = setup(t),
+      before = native(f);
+    // The configuration hash does not depend on the injected transport.
+    const binding = new CanadaPostTestClient(f.config, async () => {
+      throw new Error("binding-only client must not send");
+    });
+    const prepared = f.app.carriers.prepareCanadaPostGroup(
+      f.actor,
+      "native-group",
+      {
+        configurationHash: binding.configurationHash,
+        entries: [
+          { bookingId: f.prepared.id, reviewHash: f.prepared.reviewHash },
+        ],
+      },
+    );
+    const providerGroupId = f.app.carriers.reviewCanadaPostGroup(
+      f.actor,
+      prepared.id,
+    ).providerGroupId;
+    const sim = simulator(f, { groupId: providerGroupId, loseCreate: lost }),
+      client = new CanadaPostTestClient(f.config, sim.transport);
+    if (lost) {
+      await assert.rejects(
+        f.app.carriers.createCanadaPostMember(
+          f.actor,
+          prepared.id,
+          f.prepared.id,
+          client,
+        ),
+      );
+      assert.equal(
+        f.app.carriers.reviewCanadaPostGroup(f.actor, prepared.id).state,
+        "unknown",
+      );
+      const read = simulator(f, { groupId: providerGroupId });
+      assert.equal(
+        (
+          await f.app.carriers.reconcileCanadaPostMember(
+            f.actor,
+            prepared.id,
+            f.prepared.id,
+            new CanadaPostTestClient(f.config, read.transport),
+          )
+        ).state,
+        "closed",
+      );
+      assert.equal(writes(read.calls).length, 0);
+    } else {
+      assert.equal(
+        (
+          await f.app.carriers.createCanadaPostMember(
+            f.actor,
+            prepared.id,
+            f.prepared.id,
+            client,
+          )
+        ).state,
+        "closed",
+      );
+    }
+    assert.equal(writes(sim.calls).length, 1);
+    assert.deepEqual(native(f), before);
+    assert.throws(() => f.app.carriers.label(f.actor, f.prepared.id), {
+      code: "STATE",
+    });
+  });
