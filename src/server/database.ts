@@ -1,7 +1,17 @@
 import { DatabaseSync, constants, type SQLInputValue } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DomainError, type Row } from "./core.ts";
+import { DomainError, check, type Row } from "./core.ts";
+
+import {
+  checkIntegrity,
+  checkRegion,
+  inspectConnection,
+  SCHEMA_DDL,
+  SCHEMA_VERSION,
+  supportedSchemaHash,
+} from "./schema.ts";
+import type { Region } from "./iam.ts";
 
 export type Owner =
   | "iam"
@@ -19,14 +29,31 @@ export type Owner =
 export class Database {
   #db: DatabaseSync;
   #owner: Owner | null = null;
+  #initializing = false;
+  #initialized = false;
+  #constructorTransaction = false;
+  #initializationFailed = false;
+  #inspecting = false;
   constructor(public path: string) {
     if (path !== ":memory:")
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.#db = new DatabaseSync(path, { timeout: 5000 });
-    this.#db.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;",
-    );
+    try {
+      this.#db.exec(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;",
+      );
+    } catch (error) {
+      this.#db.close();
+      throw error;
+    }
     this.#db.setAuthorizer((action, first, second) => {
+      // Only fixed synchronous inspection routines enter this scope. It grants
+      // reads/integrity PRAGMAs, never writes, DDL or transaction authority.
+      if (
+        this.#inspecting &&
+        (action === constants.SQLITE_READ || action === constants.SQLITE_PRAGMA)
+      )
+        return constants.SQLITE_OK;
       if (
         [
           constants.SQLITE_ATTACH,
@@ -94,19 +121,124 @@ export class Database {
       this.#owner = previous;
     }
   }
+  #inspect<T>(fn: (db: DatabaseSync) => T): T {
+    this.#inspecting = true;
+    try {
+      return fn(this.#db);
+    } finally {
+      this.#inspecting = false;
+    }
+  }
+  #synchronous<T>(fn: () => T): T {
+    const result = fn();
+    if (result && typeof (result as { then?: unknown }).then === "function")
+      throw new DomainError(
+        "TRANSACTION",
+        "Async work is forbidden inside a business transaction.",
+      );
+    return result;
+  }
+  // The application is the sole orchestrator. Module constructors retain their
+  // ordinary owner scopes while their existing transactions join this boot.
+  initializeSchema<T>(
+    region: Region,
+    eventReports: boolean,
+    construct: () => T,
+  ): T {
+    check(
+      !this.#initialized && !this.#initializing && this.#owner === null,
+      "SCHEMA_INITIALIZATION",
+      "Schema initialization is only allowed once per connection.",
+    );
+    this.#db.exec("BEGIN IMMEDIATE");
+    this.#initializing = true;
+    try {
+      const before = this.#inspect(inspectConnection);
+      check(
+        before.kind !== "legacy",
+        "SCHEMA_UPGRADE_REQUIRED",
+        "Unversioned stores require an operator-reviewed upgrade to a fresh file.",
+      );
+      check(
+        before.region === null || before.region === region,
+        "SCHEMA_REGION",
+        "Store and runtime regions must match.",
+      );
+      if (before.kind === "current") this.#inspect(checkIntegrity);
+      const result = this.#synchronous(construct);
+      check(
+        !this.#initializationFailed,
+        "SCHEMA_INITIALIZATION",
+        "A constructor transaction failed; initialization must roll back.",
+      );
+      const persistedReports = before.eventReports || eventReports;
+      const store = this.owned("platform");
+      if (before.kind === "empty") {
+        store.migrate(SCHEMA_DDL);
+        store.run(
+          "INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)",
+          SCHEMA_VERSION,
+          supportedSchemaHash(persistedReports),
+          Number(persistedReports),
+          region,
+          new Date().toISOString(),
+        );
+      } else if (persistedReports !== before.eventReports) {
+        store.run(
+          "UPDATE platform_schema_version SET schema_hash=?,event_reports=? WHERE singleton=1",
+          supportedSchemaHash(persistedReports),
+          Number(persistedReports),
+        );
+      }
+      this.#inspect(inspectConnection);
+      this.#inspect((db) => checkRegion(db, region, false));
+      this.#inspect(checkIntegrity);
+      this.#db.exec("COMMIT");
+      this.#initialized = true;
+      return result;
+    } catch (error) {
+      if (this.#db.isTransaction) this.#db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      this.#initializing = false;
+    }
+  }
   transaction<T>(fn: () => T): T {
+    // Calling this from a Store callback must not escape the SQL authorizer.
+    check(
+      this.#owner === null,
+      "TRANSACTION",
+      "Transactions cannot start inside an owner SQL scope.",
+    );
+    if (this.#initializing) {
+      check(
+        !this.#constructorTransaction,
+        "TRANSACTION",
+        "Nested business transactions are forbidden.",
+      );
+      this.#constructorTransaction = true;
+      this.#db.exec("SAVEPOINT constructor_transaction");
+      try {
+        const result = this.#synchronous(fn);
+        this.#db.exec("RELEASE constructor_transaction");
+        return result;
+      } catch (error) {
+        this.#initializationFailed = true;
+        this.#db.exec(
+          "ROLLBACK TO constructor_transaction; RELEASE constructor_transaction",
+        );
+        throw error;
+      } finally {
+        this.#constructorTransaction = false;
+      }
+    }
     this.#db.exec("BEGIN IMMEDIATE");
     try {
-      const result = fn();
-      if (result && typeof (result as { then?: unknown }).then === "function")
-        throw new DomainError(
-          "TRANSACTION",
-          "Async work is forbidden inside a business transaction.",
-        );
+      const result = this.#synchronous(fn);
       this.#db.exec("COMMIT");
       return result;
     } catch (error) {
-      this.#db.exec("ROLLBACK");
+      if (this.#db.isTransaction) this.#db.exec("ROLLBACK");
       throw error;
     }
   }

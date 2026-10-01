@@ -3,6 +3,7 @@ import type { SQLInputValue } from "node:sqlite";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { fixture, accept, ship } from "./fixtures.ts";
+import { Inventory } from "../src/server/inventory.ts";
 import { Application } from "../src/server/application.ts";
 import { digest } from "../src/server/core.ts";
 import { createHttp } from "../src/server/http.ts";
@@ -1143,13 +1144,15 @@ test("zero-cost custody needs no inferred account and supplier returns remove or
   );
 });
 
-test("historical sequencing migrates once, rolls back native failures, and never repairs missing evidence on restart", (t) => {
+test("synthetic Inventory sequencing backfills once, rolls back native failures, and never repairs missing evidence on restart", (t) => {
   const f = fixture(t),
     source = f.app.integration.costs.source(f.actor),
     store = f.app.database.owned("inventory");
   store.migrate(
     "DROP TABLE inventory_cost_sequences; DROP TABLE inventory_cost_clock;",
   );
+  // Restore synthetic missing owned tables before startup validates the current schema.
+  new Inventory(f.app.database, f.app.platform, f.app.catalog, f.app.identity);
   f.app.close();
   f.app = new Application(f.path);
   assert.deepEqual(f.app.integration.costs.source(f.actor), source);

@@ -19,21 +19,21 @@ import { EventReport } from "./event-report.ts";
 
 export class Application {
   database: Database;
-  platform: Platform;
-  identity: Identity;
-  catalog: Catalog;
-  inventory: Inventory;
-  labels: StockLabels;
-  procurement: Procurement;
-  billing: Billing;
-  orders: Orders;
-  fulfillment: Fulfillment;
-  carriers: CarrierBookings;
-  warranty: Warranty;
-  integration: Integration;
-  migration: Migration;
-  providerCredentials: ProviderCredentials;
-  eventDelivery: EventDelivery;
+  platform!: Platform;
+  identity!: Identity;
+  catalog!: Catalog;
+  inventory!: Inventory;
+  labels!: StockLabels;
+  procurement!: Procurement;
+  billing!: Billing;
+  orders!: Orders;
+  fulfillment!: Fulfillment;
+  carriers!: CarrierBookings;
+  warranty!: Warranty;
+  integration!: Integration;
+  migration!: Migration;
+  providerCredentials!: ProviderCredentials;
+  eventDelivery!: EventDelivery;
   constructor(
     path: string,
     region: Region = "CA",
@@ -50,115 +50,135 @@ export class Application {
       500,
     );
     this.database = new Database(path);
-    this.platform = new Platform(this.database);
-    this.identity = new Identity(
-      this.database,
-      this.platform,
-      region,
-      (actor, sites) => {
-        for (const siteId of sites) this.inventory.warehouse(actor, siteId);
-      },
-      security.mfaEncryptionKey,
-    );
-    this.platform.configureReadAuthority((actor) => {
-      const current = this.identity.currentActor(actor);
-      check(
-        !this.identity.security(current).passwordChangeRequired,
-        "PASSWORD_CHANGE_REQUIRED",
-        "Change your password before continuing.",
-        403,
+    try {
+      this.database.initializeSchema(
+        region,
+        security.eventReports !== false,
+        () => {
+          this.platform = new Platform(this.database);
+          this.identity = new Identity(
+            this.database,
+            this.platform,
+            region,
+            (actor, sites) => {
+              for (const siteId of sites)
+                this.inventory.warehouse(actor, siteId);
+            },
+            security.mfaEncryptionKey,
+          );
+          this.platform.configureReadAuthority((actor) => {
+            const current = this.identity.currentActor(actor);
+            check(
+              !this.identity.security(current).passwordChangeRequired,
+              "PASSWORD_CHANGE_REQUIRED",
+              "Change your password before continuing.",
+              403,
+            );
+            return current;
+          });
+          this.providerCredentials = new ProviderCredentials(
+            this.database,
+            this.platform,
+            this.identity,
+            security.providerEncryptionKey,
+          );
+          this.catalog = new Catalog(
+            this.database,
+            this.platform,
+            this.identity,
+          );
+          this.inventory = new Inventory(
+            this.database,
+            this.platform,
+            this.catalog,
+            this.identity,
+          );
+          this.labels = new StockLabels(
+            this.database,
+            this.platform,
+            this.identity,
+            this.inventory,
+            this.catalog,
+          );
+          this.procurement = new Procurement(
+            this.database,
+            this.platform,
+            this.catalog,
+            this.inventory,
+            this.identity,
+          );
+          this.billing = new Billing(
+            this.database,
+            this.platform,
+            this.identity,
+            this.catalog,
+          );
+          this.orders = new Orders(
+            this.database,
+            this.platform,
+            this.identity,
+            this.catalog,
+            this.inventory,
+            this.billing,
+          );
+          this.fulfillment = new Fulfillment(
+            this.database,
+            this.platform,
+            this.identity,
+            this.inventory,
+            this.orders,
+            this.billing,
+          );
+          this.carriers = new CarrierBookings(
+            this.database,
+            this.platform,
+            this.identity,
+            this.fulfillment,
+          );
+          this.warranty = new Warranty(
+            this.database,
+            this.platform,
+            this.identity,
+            this.inventory,
+            this.fulfillment,
+            this.billing,
+          );
+          this.integration = new Integration(
+            this.database,
+            this.platform,
+            this.identity,
+            this.billing,
+            this.inventory,
+          );
+          this.migration = new Migration(
+            this.database,
+            this.platform,
+            this.identity,
+            this.inventory,
+            this.catalog,
+            this.billing,
+          );
+          this.eventDelivery = new EventDelivery(
+            this.database,
+            this.platform,
+            this.identity,
+            security.eventReports === false
+              ? []
+              : [new EventReport(this.database)],
+          );
+          this.platform.configureProjection(() =>
+            security.eventReports === false
+              ? 0
+              : this.eventDelivery.tick("event-report", { enabled: true })
+                  .completed,
+          );
+        },
       );
-      return current;
-    });
-    this.providerCredentials = new ProviderCredentials(
-      this.database,
-      this.platform,
-      this.identity,
-      security.providerEncryptionKey,
-    );
-    this.catalog = new Catalog(this.database, this.platform, this.identity);
-    this.inventory = new Inventory(
-      this.database,
-      this.platform,
-      this.catalog,
-      this.identity,
-    );
-    this.labels = new StockLabels(
-      this.database,
-      this.platform,
-      this.identity,
-      this.inventory,
-      this.catalog,
-    );
-    this.procurement = new Procurement(
-      this.database,
-      this.platform,
-      this.catalog,
-      this.inventory,
-      this.identity,
-    );
-    this.billing = new Billing(
-      this.database,
-      this.platform,
-      this.identity,
-      this.catalog,
-    );
-    this.orders = new Orders(
-      this.database,
-      this.platform,
-      this.identity,
-      this.catalog,
-      this.inventory,
-      this.billing,
-    );
-    this.fulfillment = new Fulfillment(
-      this.database,
-      this.platform,
-      this.identity,
-      this.inventory,
-      this.orders,
-      this.billing,
-    );
-    this.carriers = new CarrierBookings(
-      this.database,
-      this.platform,
-      this.identity,
-      this.fulfillment,
-    );
-    this.warranty = new Warranty(
-      this.database,
-      this.platform,
-      this.identity,
-      this.inventory,
-      this.fulfillment,
-      this.billing,
-    );
-    this.integration = new Integration(
-      this.database,
-      this.platform,
-      this.identity,
-      this.billing,
-      this.inventory,
-    );
-    this.migration = new Migration(
-      this.database,
-      this.platform,
-      this.identity,
-      this.inventory,
-      this.catalog,
-      this.billing,
-    );
-    this.eventDelivery = new EventDelivery(
-      this.database,
-      this.platform,
-      this.identity,
-      security.eventReports === false ? [] : [new EventReport(this.database)],
-    );
-    this.platform.configureProjection(() =>
-      security.eventReports === false
-        ? 0
-        : this.eventDelivery.tick("event-report", { enabled: true }).completed,
-    );
+    } catch (error) {
+      this.providerCredentials?.close();
+      this.database.close();
+      throw error;
+    }
   }
   dashboard(actor: Actor) {
     actor = this.identity.currentActor(actor);

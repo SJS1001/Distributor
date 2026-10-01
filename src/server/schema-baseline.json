@@ -1,0 +1,1973 @@
+{
+  "commit": "d93cd0ce926eb0c01bae96abed15f275eb40dc75",
+  "schemas": [
+    {
+      "eventReports": true,
+      "hash": "9e19b6b0496a31dfb0924b4f9a62a660909119882d72f68c66b93377a6dd1ba0",
+      "schema": [
+        {
+          "type": "index",
+          "name": "billing_portal_download_history",
+          "tbl_name": "billing_portal_downloads",
+          "sql": "CREATE INDEX billing_portal_download_history ON billing_portal_downloads(org_id,publication_id,actor_id)"
+        },
+        {
+          "type": "index",
+          "name": "billing_publication_account",
+          "tbl_name": "billing_publications",
+          "sql": "CREATE INDEX billing_publication_account ON billing_publications(org_id,account_id,published_at)"
+        },
+        {
+          "type": "index",
+          "name": "billing_publication_available",
+          "tbl_name": "billing_publications",
+          "sql": "CREATE UNIQUE INDEX billing_publication_available ON billing_publications(org_id,kind,document_id) WHERE state='available'"
+        },
+        {
+          "type": "index",
+          "name": "billing_refund_alert_scope",
+          "tbl_name": "billing_refund_alerts",
+          "sql": "CREATE INDEX billing_refund_alert_scope ON billing_refund_alerts(org_id,seq)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_shipment_account_history",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE INDEX fulfillment_shipment_account_history ON fulfillment_shipments(org_id,account_id,created_at DESC,id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_shipment_history",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE INDEX fulfillment_shipment_history ON fulfillment_shipments(org_id,created_at DESC,id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_shipment_site_history",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE INDEX fulfillment_shipment_site_history ON fulfillment_shipments(org_id,warehouse_id,created_at DESC,id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_short_pick_history",
+          "tbl_name": "fulfillment_short_picks",
+          "sql": "CREATE INDEX fulfillment_short_pick_history ON fulfillment_short_picks(org_id,order_id,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "iam_mfa_pending_expiry",
+          "tbl_name": "iam_mfa_pending",
+          "sql": "CREATE INDEX iam_mfa_pending_expiry ON iam_mfa_pending(expires_at,user_id) WHERE material<>''"
+        },
+        {
+          "type": "index",
+          "name": "integration_authorization_binding",
+          "tbl_name": "integration_authorizations",
+          "sql": "CREATE INDEX integration_authorization_binding ON integration_authorizations(org_id,binding_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_balance_claim",
+          "tbl_name": "integration_balance_reads",
+          "sql": "CREATE UNIQUE INDEX integration_balance_claim ON integration_balance_reads(org_id,effect_id) WHERE token IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "integration_balance_history",
+          "tbl_name": "integration_balance_observations",
+          "sql": "CREATE INDEX integration_balance_history ON integration_balance_observations(org_id,effect_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_carrier_active",
+          "tbl_name": "integration_carrier_bookings",
+          "sql": "CREATE UNIQUE INDEX integration_carrier_active ON integration_carrier_bookings(org_id,shipment_id) WHERE state!='canceled'"
+        },
+        {
+          "type": "index",
+          "name": "integration_carrier_history",
+          "tbl_name": "integration_carrier_bookings",
+          "sql": "CREATE INDEX integration_carrier_history ON integration_carrier_bookings(org_id,shipment_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_checkout_observation_invoice",
+          "tbl_name": "integration_checkout_observations",
+          "sql": "CREATE INDEX integration_checkout_observation_invoice ON integration_checkout_observations(org_id,invoice_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_checkout_renewal_invoice",
+          "tbl_name": "integration_checkout_renewals",
+          "sql": "CREATE INDEX integration_checkout_renewal_invoice ON integration_checkout_renewals(org_id,invoice_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_cost_history",
+          "tbl_name": "integration_cost_packets",
+          "sql": "CREATE INDEX integration_cost_history ON integration_cost_packets(org_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_credit_application_credit",
+          "tbl_name": "integration_credit_applications",
+          "sql": "CREATE INDEX integration_credit_application_credit ON integration_credit_applications(org_id,credit_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_credit_application_invoice",
+          "tbl_name": "integration_credit_applications",
+          "sql": "CREATE INDEX integration_credit_application_invoice ON integration_credit_applications(org_id,invoice_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_external_identity",
+          "tbl_name": "integration_effects",
+          "sql": "CREATE UNIQUE INDEX integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "integration_payment_invoice",
+          "tbl_name": "integration_payment_allocations",
+          "sql": "CREATE INDEX integration_payment_invoice ON integration_payment_allocations(org_id,invoice_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_refund_callback_due",
+          "tbl_name": "integration_refund_callbacks",
+          "sql": "CREATE INDEX integration_refund_callback_due ON integration_refund_callbacks(org_id,binding_id,state,retry_at,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_refund_credit",
+          "tbl_name": "integration_accounting_refunds",
+          "sql": "CREATE INDEX integration_refund_credit ON integration_accounting_refunds(org_id,credit_id)"
+        },
+        {
+          "type": "index",
+          "name": "inventory_cost_sequence_org",
+          "tbl_name": "inventory_cost_sequences",
+          "sql": "CREATE INDEX inventory_cost_sequence_org ON inventory_cost_sequences(org_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "inventory_replacement_reserved",
+          "tbl_name": "inventory_replacements",
+          "sql": "CREATE UNIQUE INDEX inventory_replacement_reserved ON inventory_replacements(org_id,unit_id) WHERE state='reserved'"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_recovery_reference",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE UNIQUE INDEX inventory_serial_recovery_reference ON inventory_serial_reviews(org_id,recovery_ref) WHERE recovery_ref IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_review_history",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE INDEX inventory_serial_review_history ON inventory_serial_reviews(org_id,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_review_missing",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE UNIQUE INDEX inventory_serial_review_missing ON inventory_serial_reviews(org_id,unit_id) WHERE state='approved'"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_review_pending",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE UNIQUE INDEX inventory_serial_review_pending ON inventory_serial_reviews(org_id,unit_id) WHERE state='submitted'"
+        },
+        {
+          "type": "index",
+          "name": "orders_amendment_history",
+          "tbl_name": "orders_amendments",
+          "sql": "CREATE INDEX orders_amendment_history ON orders_amendments(org_id,order_id,revision)"
+        },
+        {
+          "type": "index",
+          "name": "orders_reservation_history_page",
+          "tbl_name": "orders_reservation_history",
+          "sql": "CREATE INDEX orders_reservation_history_page ON orders_reservation_history(org_id,order_id,revision)"
+        },
+        {
+          "type": "index",
+          "name": "platform_audit_order_org",
+          "tbl_name": "platform_audit_order",
+          "sql": "CREATE INDEX platform_audit_order_org ON platform_audit_order(org_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "platform_deliveries_due",
+          "tbl_name": "platform_deliveries",
+          "sql": "CREATE INDEX platform_deliveries_due ON platform_deliveries(consumer_id,state,available_at,lease_until)"
+        },
+        {
+          "type": "index",
+          "name": "platform_deliveries_org",
+          "tbl_name": "platform_deliveries",
+          "sql": "CREATE INDEX platform_deliveries_org ON platform_deliveries(org_id,consumer_id,state,updated_at,event_id)"
+        },
+        {
+          "type": "index",
+          "name": "procurement_followup_receipt",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE INDEX procurement_followup_receipt ON procurement_return_followups(org_id,receipt_id)"
+        },
+        {
+          "type": "index",
+          "name": "procurement_followup_return",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE INDEX procurement_followup_return ON procurement_return_followups(org_id,return_id,revision)"
+        },
+        {
+          "type": "index",
+          "name": "procurement_followup_target",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE INDEX procurement_followup_target ON procurement_return_followups(org_id,target_id)"
+        },
+        {
+          "type": "index",
+          "name": "report_events_org",
+          "tbl_name": "report_events",
+          "sql": "CREATE INDEX report_events_org ON report_events(org_id,occurred_at,event_id)"
+        },
+        {
+          "type": "index",
+          "name": "warranty_evidence_page",
+          "tbl_name": "warranty_evidence",
+          "sql": "CREATE INDEX warranty_evidence_page ON warranty_evidence(org_id,claim_id,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "warranty_manufacturer_pending",
+          "tbl_name": "warranty_manufacturer_cases",
+          "sql": "CREATE UNIQUE INDEX warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending'"
+        },
+        {
+          "type": "index",
+          "name": "warranty_replacement_active",
+          "tbl_name": "warranty_replacements",
+          "sql": "CREATE UNIQUE INDEX warranty_replacement_active ON warranty_replacements(org_id,claim_id) WHERE state IN('reserved','handed_over')"
+        },
+        {
+          "type": "table",
+          "name": "billing_acknowledgments",
+          "tbl_name": "billing_acknowledgments",
+          "sql": "CREATE TABLE billing_acknowledgments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,publication_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,download_id TEXT NOT NULL,content_hash TEXT NOT NULL,statement_version INTEGER NOT NULL CHECK(statement_version=1),statement TEXT NOT NULL,acknowledged_at TEXT NOT NULL,UNIQUE(org_id,publication_id,actor_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_counters",
+          "tbl_name": "billing_counters",
+          "sql": "CREATE TABLE billing_counters(org_id TEXT PRIMARY KEY,value INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_credit_lines",
+          "tbl_name": "billing_credit_lines",
+          "sql": "CREATE TABLE billing_credit_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,credit_id TEXT NOT NULL,invoice_line_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_credits",
+          "tbl_name": "billing_credits",
+          "sql": "CREATE TABLE billing_credits(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,reference TEXT NOT NULL,number TEXT NOT NULL,reason TEXT NOT NULL,net INTEGER NOT NULL,tax INTEGER NOT NULL,total INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,reference),UNIQUE(org_id,number),CHECK(total=net+tax AND net>=0 AND tax>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_document_facts",
+          "tbl_name": "billing_document_facts",
+          "sql": "CREATE TABLE billing_document_facts(org_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('invoice','credit')),document_id TEXT NOT NULL,account_id TEXT NOT NULL,hash TEXT NOT NULL,facts TEXT NOT NULL,PRIMARY KEY(org_id,kind,document_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_document_renditions",
+          "tbl_name": "billing_document_renditions",
+          "sql": "CREATE TABLE billing_document_renditions(org_id TEXT NOT NULL,kind TEXT NOT NULL,document_id TEXT NOT NULL,facts_hash TEXT NOT NULL,renderer_hash TEXT NOT NULL,bytes BLOB NOT NULL,content_hash TEXT NOT NULL,generated_at TEXT NOT NULL,PRIMARY KEY(org_id,kind,document_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_downloads",
+          "tbl_name": "billing_downloads",
+          "sql": "CREATE TABLE billing_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,kind TEXT NOT NULL,document_id TEXT NOT NULL,number TEXT NOT NULL,filename TEXT NOT NULL,content_hash TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_holds",
+          "tbl_name": "billing_holds",
+          "sql": "CREATE TABLE billing_holds(order_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_invoices",
+          "tbl_name": "billing_invoices",
+          "sql": "CREATE TABLE billing_invoices(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,order_id TEXT NOT NULL,shipment_id TEXT NOT NULL,number TEXT NOT NULL,currency TEXT NOT NULL,net INTEGER NOT NULL,tax INTEGER NOT NULL,total INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,shipment_id),UNIQUE(org_id,number),CHECK(total=net+tax AND net>=0 AND tax>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_lines",
+          "tbl_name": "billing_lines",
+          "sql": "CREATE TABLE billing_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,product_id TEXT NOT NULL,description TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_price INTEGER NOT NULL CHECK(unit_price>=0),unit_tax INTEGER NOT NULL CHECK(unit_tax>=0),UNIQUE(invoice_id,product_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_opening_documents",
+          "tbl_name": "billing_opening_documents",
+          "sql": "CREATE TABLE billing_opening_documents(invoice_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,source_hash TEXT NOT NULL,cutoff_at TEXT NOT NULL,issued_at TEXT NOT NULL,due_at TEXT NOT NULL,credited INTEGER NOT NULL CHECK(credited>=0),paid INTEGER NOT NULL CHECK(paid>=0),refunded INTEGER NOT NULL CHECK(refunded>=0),balance INTEGER NOT NULL CHECK(balance>0),created_by TEXT NOT NULL,imported_at TEXT NOT NULL,UNIQUE(org_id,source_ref,source_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_opening_lines",
+          "tbl_name": "billing_opening_lines",
+          "sql": "CREATE TABLE billing_opening_lines(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,credited_quantity INTEGER NOT NULL CHECK(credited_quantity>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_payments",
+          "tbl_name": "billing_payments",
+          "sql": "CREATE TABLE billing_payments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,provider TEXT NOT NULL,external_ref TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),created_at TEXT NOT NULL,UNIQUE(org_id,provider,external_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_portal_downloads",
+          "tbl_name": "billing_portal_downloads",
+          "sql": "CREATE TABLE billing_portal_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,publication_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,content_hash TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_profiles",
+          "tbl_name": "billing_profiles",
+          "sql": "CREATE TABLE billing_profiles(org_id TEXT NOT NULL,target_id TEXT NOT NULL,version INTEGER NOT NULL,profile TEXT NOT NULL,PRIMARY KEY(org_id,target_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_publications",
+          "tbl_name": "billing_publications",
+          "sql": "CREATE TABLE billing_publications(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('invoice','credit')),document_id TEXT NOT NULL,number TEXT NOT NULL,filename TEXT NOT NULL,facts_hash TEXT NOT NULL,content_hash TEXT NOT NULL,renderer_hash TEXT NOT NULL,size INTEGER NOT NULL,review_download_id TEXT NOT NULL,published_by TEXT NOT NULL,published_at TEXT NOT NULL,reason TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('available','withdrawn')),withdrawn_by TEXT,withdrawn_at TEXT,withdrawal_reason TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_alert_reads",
+          "tbl_name": "billing_refund_alert_reads",
+          "sql": "CREATE TABLE billing_refund_alert_reads(org_id TEXT NOT NULL,refund_id TEXT NOT NULL,actor_id TEXT NOT NULL,revision INTEGER NOT NULL,acknowledged_at TEXT NOT NULL,PRIMARY KEY(org_id,refund_id,actor_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_alert_updates",
+          "tbl_name": "billing_refund_alert_updates",
+          "sql": "CREATE TABLE billing_refund_alert_updates(org_id TEXT NOT NULL,refund_id TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('observation','existing-state')),created_at TEXT NOT NULL,PRIMARY KEY(org_id,refund_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_alerts",
+          "tbl_name": "billing_refund_alerts",
+          "sql": "CREATE TABLE billing_refund_alerts(seq INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,invoice_id TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN('pending','requires_action','succeeded','failed','canceled')),state TEXT NOT NULL CHECK(state IN('open','resolved')),revision INTEGER NOT NULL CHECK(revision>0),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,refund_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_observations",
+          "tbl_name": "billing_refund_observations",
+          "sql": "CREATE TABLE billing_refund_observations(id INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,applied INTEGER NOT NULL CHECK(applied IN(0,1)),created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_proofs",
+          "tbl_name": "billing_refund_proofs",
+          "sql": "CREATE TABLE billing_refund_proofs(org_id TEXT NOT NULL,external_ref TEXT NOT NULL,refund_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(org_id,external_ref),UNIQUE(refund_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_provider",
+          "tbl_name": "billing_refund_provider",
+          "sql": "CREATE TABLE billing_refund_provider(refund_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,UNIQUE(org_id,external_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refunds",
+          "tbl_name": "billing_refunds",
+          "sql": "CREATE TABLE billing_refunds(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),reference TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','unknown','completed','rejected')),created_at TEXT NOT NULL,UNIQUE(org_id,reference)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_prices",
+          "tbl_name": "catalog_prices",
+          "sql": "CREATE TABLE catalog_prices(org_id TEXT NOT NULL,product_id TEXT NOT NULL,tier TEXT NOT NULL,unit_price INTEGER NOT NULL CHECK(unit_price>=0),PRIMARY KEY(org_id,product_id,tier)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_products",
+          "tbl_name": "catalog_products",
+          "sql": "CREATE TABLE catalog_products(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,sku TEXT NOT NULL,name TEXT NOT NULL,serialized INTEGER NOT NULL CHECK(serialized IN(0,1)),unit_price INTEGER NOT NULL CHECK(unit_price>=0),tax_bp INTEGER NOT NULL CHECK(tax_bp BETWEEN 0 AND 10000),currency TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,sku)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_delivery",
+          "tbl_name": "fulfillment_delivery",
+          "sql": "CREATE TABLE fulfillment_delivery(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,reference TEXT NOT NULL,delivered_at TEXT NOT NULL,actor_id TEXT NOT NULL,UNIQUE(org_id,shipment_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_delivery_history",
+          "tbl_name": "fulfillment_delivery_history",
+          "sql": "CREATE TABLE fulfillment_delivery_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','returned','delivered')),reference TEXT NOT NULL,reference_key TEXT NOT NULL,evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('operator','legacy')),UNIQUE(org_id,shipment_id,revision),UNIQUE(org_id,shipment_id,reference_key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_shipments",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE TABLE fulfillment_shipments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('packed','shipped','void')),mode TEXT NOT NULL CHECK(mode IN('carrier','collection')),address TEXT NOT NULL,tracking TEXT,carrier TEXT,lines TEXT NOT NULL,units TEXT NOT NULL DEFAULT '[]',invoice_id TEXT,created_at TEXT NOT NULL,shipped_at TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_short_picks",
+          "tbl_name": "fulfillment_short_picks",
+          "sql": "CREATE TABLE fulfillment_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,allocation_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_accounts",
+          "tbl_name": "iam_accounts",
+          "sql": "CREATE TABLE iam_accounts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,currency TEXT NOT NULL,tier TEXT NOT NULL,credit_limit INTEGER NOT NULL CHECK(credit_limit>=0),held INTEGER NOT NULL DEFAULT 0 CHECK(held IN(0,1)),residency_mode TEXT NOT NULL DEFAULT 'strict' CHECK(residency_mode IN('strict','provider-exceptions')),provider_exceptions TEXT NOT NULL DEFAULT '[]',residency_version INTEGER NOT NULL DEFAULT 1) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_attempts",
+          "tbl_name": "iam_attempts",
+          "sql": "CREATE TABLE iam_attempts(email TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_mfa",
+          "tbl_name": "iam_mfa",
+          "sql": "CREATE TABLE iam_mfa (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,secret TEXT NOT NULL,last_step INTEGER NOT NULL,enabled_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_mfa_pending",
+          "tbl_name": "iam_mfa_pending",
+          "sql": "CREATE TABLE iam_mfa_pending (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,key TEXT NOT NULL,enrollment_id TEXT NOT NULL,revision INTEGER NOT NULL,material TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_mfa_recovery",
+          "tbl_name": "iam_mfa_recovery",
+          "sql": "CREATE TABLE iam_mfa_recovery (user_id TEXT NOT NULL,hash TEXT NOT NULL,used_at TEXT,PRIMARY KEY(user_id,hash)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_organizations",
+          "tbl_name": "iam_organizations",
+          "sql": "CREATE TABLE iam_organizations(id TEXT PRIMARY KEY,name TEXT NOT NULL,region TEXT NOT NULL CHECK(region IN ('CA','US')),currency TEXT NOT NULL CHECK(currency IN ('CAD','USD')),policy TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_provider_acceptances",
+          "tbl_name": "iam_provider_acceptances",
+          "sql": "CREATE TABLE iam_provider_acceptances(org_id TEXT NOT NULL,account_id TEXT NOT NULL,choice_version INTEGER NOT NULL,provider TEXT NOT NULL,disclosure_id TEXT NOT NULL REFERENCES iam_provider_disclosures(id),disclosure_hash TEXT NOT NULL,basis TEXT NOT NULL,representative TEXT NOT NULL,evidence_ref TEXT,actor_id TEXT NOT NULL,accepted_at TEXT NOT NULL,PRIMARY KEY(org_id,account_id,choice_version,provider)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_provider_disclosure_current",
+          "tbl_name": "iam_provider_disclosure_current",
+          "sql": "CREATE TABLE iam_provider_disclosure_current(org_id TEXT NOT NULL,provider TEXT NOT NULL,region TEXT NOT NULL,disclosure_id TEXT NOT NULL REFERENCES iam_provider_disclosures(id),PRIMARY KEY(org_id,provider,region)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_provider_disclosures",
+          "tbl_name": "iam_provider_disclosures",
+          "sql": "CREATE TABLE iam_provider_disclosures(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,provider TEXT NOT NULL,region TEXT NOT NULL,version TEXT NOT NULL,body TEXT NOT NULL,hash TEXT NOT NULL,review_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,provider,region,version)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_sessions",
+          "tbl_name": "iam_sessions",
+          "sql": "CREATE TABLE iam_sessions(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,csrf TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_user_security",
+          "tbl_name": "iam_user_security",
+          "sql": "CREATE TABLE iam_user_security(user_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>0),password_change_required INTEGER NOT NULL CHECK(password_change_required IN(0,1)),updated_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_users",
+          "tbl_name": "iam_users",
+          "sql": "CREATE TABLE iam_users(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL,account_id TEXT,role TEXT NOT NULL,sites TEXT NOT NULL,salt TEXT NOT NULL,password_hash TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN(0,1))) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_accounting_refunds",
+          "tbl_name": "integration_accounting_refunds",
+          "sql": "CREATE TABLE integration_accounting_refunds(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,refund_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),UNIQUE(org_id,refund_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_authorizations",
+          "tbl_name": "integration_authorizations",
+          "sql": "CREATE TABLE integration_authorizations (\n      id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,account_id TEXT NOT NULL,worker_id TEXT NOT NULL,\n      realm TEXT NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,state_hash TEXT NOT NULL UNIQUE,\n      credential_revision INTEGER NOT NULL,residency_version INTEGER NOT NULL,expires_at INTEGER NOT NULL,\n      state TEXT NOT NULL CHECK(state IN('pending','exchanging','completed','canceled','denied','unknown','expired')),\n      claim TEXT,started_at INTEGER,installed_revision INTEGER\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_balance_observations",
+          "tbl_name": "integration_balance_observations",
+          "sql": "CREATE TABLE integration_balance_observations(sequence INTEGER PRIMARY KEY,read_id TEXT NOT NULL UNIQUE,org_id TEXT NOT NULL,effect_id TEXT NOT NULL,result TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_balance_reads",
+          "tbl_name": "integration_balance_reads",
+          "sql": "CREATE TABLE integration_balance_reads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,effect_id TEXT NOT NULL,command_key TEXT NOT NULL,hash TEXT NOT NULL,token TEXT,started_at INTEGER,requested_at TEXT NOT NULL,result TEXT,error TEXT,UNIQUE(org_id,command_key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_callbacks",
+          "tbl_name": "integration_callbacks",
+          "sql": "CREATE TABLE integration_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,session_id TEXT NOT NULL,effect_id TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_carrier_bookings",
+          "tbl_name": "integration_carrier_bookings",
+          "sql": "CREATE TABLE integration_carrier_bookings(\n        sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,\n        state TEXT NOT NULL CHECK(state IN('pending','running','unknown','booked','canceled')),\n        review_hash TEXT NOT NULL,intent TEXT NOT NULL,token TEXT,started_at INTEGER,\n        reference TEXT,tracking TEXT,label_bytes BLOB,label_type TEXT,label_hash TEXT,error TEXT,created_at TEXT NOT NULL\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_checkout_observations",
+          "tbl_name": "integration_checkout_observations",
+          "sql": "CREATE TABLE integration_checkout_observations(\n        sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,\n        org_id TEXT NOT NULL,account_id TEXT NOT NULL,invoice_id TEXT NOT NULL,\n        effect_id TEXT NOT NULL REFERENCES integration_effects(id),\n        claim_token TEXT NOT NULL UNIQUE,actor_id TEXT NOT NULL,\n        snapshot TEXT NOT NULL,hash TEXT NOT NULL\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_checkout_renewals",
+          "tbl_name": "integration_checkout_renewals",
+          "sql": "CREATE TABLE integration_checkout_renewals(successor_id TEXT PRIMARY KEY REFERENCES integration_effects(id),org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,predecessor_id TEXT NOT NULL UNIQUE REFERENCES integration_effects(id),reason TEXT NOT NULL,review_version TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_cursors",
+          "tbl_name": "integration_cost_cursors",
+          "sql": "CREATE TABLE integration_cost_cursors(org_id TEXT PRIMARY KEY,through_sequence INTEGER NOT NULL,closing_value INTEGER NOT NULL,packet_id TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_packets",
+          "tbl_name": "integration_cost_packets",
+          "sql": "CREATE TABLE integration_cost_packets(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,region TEXT NOT NULL,currency TEXT NOT NULL,input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','rejected','reviewed','accepted')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,artifact TEXT,content_hash TEXT,receipt TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_receipts",
+          "tbl_name": "integration_cost_receipts",
+          "sql": "CREATE TABLE integration_cost_receipts(org_id TEXT NOT NULL,receiver_ref TEXT NOT NULL,external_ref TEXT NOT NULL,packet_id TEXT NOT NULL UNIQUE,PRIMARY KEY(org_id,receiver_ref,external_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_sources",
+          "tbl_name": "integration_cost_sources",
+          "sql": "CREATE TABLE integration_cost_sources(org_id TEXT NOT NULL,movement_id TEXT NOT NULL,packet_id TEXT NOT NULL,PRIMARY KEY(org_id,movement_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_credential_key",
+          "tbl_name": "integration_credential_key",
+          "sql": "CREATE TABLE integration_credential_key (\n      singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL CHECK(generation>0),fingerprint TEXT NOT NULL\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_credentials",
+          "tbl_name": "integration_credentials",
+          "sql": "CREATE TABLE integration_credentials (\n      org_id TEXT NOT NULL,binding_id TEXT NOT NULL,realm TEXT NOT NULL,client_id TEXT NOT NULL,\n      revision INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','refreshing','unknown','disabled')),\n      material TEXT,claim TEXT,started_at INTEGER,PRIMARY KEY(org_id,binding_id)\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_credit_applications",
+          "tbl_name": "integration_credit_applications",
+          "sql": "CREATE TABLE integration_credit_applications(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_effects",
+          "tbl_name": "integration_effects",
+          "sql": "CREATE TABLE integration_effects(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,provider TEXT NOT NULL,kind TEXT NOT NULL,reference TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','running','unknown','completed','rejected','blocked')),external_ref TEXT,result TEXT,created_at TEXT NOT NULL,residency_version INTEGER NOT NULL,started_at INTEGER,error TEXT,UNIQUE(org_id,provider,kind,reference)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_inbox",
+          "tbl_name": "integration_inbox",
+          "sql": "CREATE TABLE integration_inbox(provider TEXT NOT NULL,event_id TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(provider,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_operation_leases",
+          "tbl_name": "integration_operation_leases",
+          "sql": "CREATE TABLE integration_operation_leases(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,token TEXT,started_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_payment_allocations",
+          "tbl_name": "integration_payment_allocations",
+          "sql": "CREATE TABLE integration_payment_allocations(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,applied_amount INTEGER NOT NULL CHECK(applied_amount>=0),UNIQUE(org_id,payment_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_refund_callbacks",
+          "tbl_name": "integration_refund_callbacks",
+          "sql": "CREATE TABLE integration_refund_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,effect_id TEXT NOT NULL,provider_reference TEXT NOT NULL,event_type TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_refund_polls",
+          "tbl_name": "integration_refund_polls",
+          "sql": "CREATE TABLE integration_refund_polls(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,token TEXT,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_allocations",
+          "tbl_name": "inventory_allocations",
+          "sql": "CREATE TABLE inventory_allocations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),consumed INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0,stage TEXT NOT NULL DEFAULT 'reserved' CHECK(stage IN('reserved','picked')),CHECK(consumed>=0 AND released>=0 AND consumed+released<=quantity)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_cost_clock",
+          "tbl_name": "inventory_cost_clock",
+          "sql": "CREATE TABLE inventory_cost_clock(id INTEGER PRIMARY KEY CHECK(id=1),last_sequence INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_cost_sequences",
+          "tbl_name": "inventory_cost_sequences",
+          "sql": "CREATE TABLE inventory_cost_sequences(sequence INTEGER PRIMARY KEY,org_id TEXT NOT NULL,movement_id TEXT NOT NULL UNIQUE) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_counts",
+          "tbl_name": "inventory_counts",
+          "sql": "CREATE TABLE inventory_counts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,product_id TEXT NOT NULL,bin TEXT NOT NULL,condition TEXT NOT NULL,stock_revision INTEGER NOT NULL,expected_quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,count_ref TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('draft','submitted','approved','rejected')),observed_quantity INTEGER CHECK(observed_quantity>=0),observation_reason TEXT,observed_by TEXT,observed_at TEXT,decision_reason TEXT,decided_by TEXT,decided_at TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL,start_hash TEXT NOT NULL,decision_result TEXT,UNIQUE(org_id,count_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_label_downloads",
+          "tbl_name": "inventory_label_downloads",
+          "sql": "CREATE TABLE inventory_label_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,actor_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,unit_id TEXT NOT NULL,revision INTEGER NOT NULL,copies INTEGER NOT NULL,facts_hash TEXT NOT NULL,content_hash TEXT NOT NULL,filename TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_label_renditions",
+          "tbl_name": "inventory_label_renditions",
+          "sql": "CREATE TABLE inventory_label_renditions(org_id TEXT NOT NULL,facts_hash TEXT NOT NULL,facts TEXT NOT NULL,renderer_hash TEXT NOT NULL,bytes BLOB NOT NULL,content_hash TEXT NOT NULL,PRIMARY KEY(org_id,facts_hash)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_movements",
+          "tbl_name": "inventory_movements",
+          "sql": "CREATE TABLE inventory_movements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,type TEXT NOT NULL,quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_replacements",
+          "tbl_name": "inventory_replacements",
+          "sql": "CREATE TABLE inventory_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over'))) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_serial_reviews",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE TABLE inventory_serial_reviews(\n        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,\n        product_id TEXT NOT NULL,serial TEXT NOT NULL,bin TEXT NOT NULL,stock_revision INTEGER NOT NULL,\n        unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),review_ref TEXT NOT NULL,reason TEXT NOT NULL,\n        observed_by TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,\n        state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','recovered')),\n        decision TEXT CHECK(decision IN('approve','reject')),decision_reason TEXT,decided_by TEXT,decided_at TEXT,decision_result TEXT,\n        recovery_ref TEXT,recovery_reason TEXT,recovery_bin TEXT,recovered_by TEXT,recovered_at TEXT,recovery_hash TEXT,recovery_result TEXT,\n        UNIQUE(org_id,review_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_short_picks",
+          "tbl_name": "inventory_short_picks",
+          "sql": "CREATE TABLE inventory_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,allocation_id TEXT NOT NULL,source_unit_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_lines",
+          "tbl_name": "inventory_transfer_lines",
+          "sql": "CREATE TABLE inventory_transfer_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,unit_id TEXT NOT NULL,received INTEGER NOT NULL DEFAULT 0,UNIQUE(transfer_id,unit_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_losses",
+          "tbl_name": "inventory_transfer_losses",
+          "sql": "CREATE TABLE inventory_transfer_losses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,line_id TEXT NOT NULL,loss_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,line_id,loss_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_manifest",
+          "tbl_name": "inventory_transfer_manifest",
+          "sql": "CREATE TABLE inventory_transfer_manifest(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,unit_id TEXT NOT NULL,product_id TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_origins",
+          "tbl_name": "inventory_transfer_origins",
+          "sql": "CREATE TABLE inventory_transfer_origins(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_unit_id TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_receipts",
+          "tbl_name": "inventory_transfer_receipts",
+          "sql": "CREATE TABLE inventory_transfer_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,line_id TEXT NOT NULL,unit_id TEXT NOT NULL,receipt_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),bin TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,line_id,receipt_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_recoveries",
+          "tbl_name": "inventory_transfer_recoveries",
+          "sql": "CREATE TABLE inventory_transfer_recoveries(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,loss_id TEXT NOT NULL,unit_id TEXT NOT NULL,receipt_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),bin TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,loss_id,receipt_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfers",
+          "tbl_name": "inventory_transfers",
+          "sql": "CREATE TABLE inventory_transfers(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_id TEXT NOT NULL,destination_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('transit','received')),created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_units",
+          "tbl_name": "inventory_units",
+          "sql": "CREATE TABLE inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_warehouses",
+          "tbl_name": "inventory_warehouses",
+          "sql": "CREATE TABLE inventory_warehouses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_document_batches",
+          "tbl_name": "migration_document_batches",
+          "sql": "CREATE TABLE migration_document_batches(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,source_ref TEXT NOT NULL,input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','applied','rejected')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,result TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_document_sources",
+          "tbl_name": "migration_document_sources",
+          "sql": "CREATE TABLE migration_document_sources(org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,invoice_id TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(org_id,source_ref,source_id),UNIQUE(org_id,invoice_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_master_batches",
+          "tbl_name": "migration_master_batches",
+          "sql": "CREATE TABLE migration_master_batches(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,source_ref TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('customer','catalog')),input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','applied','rejected')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,result TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_master_sources",
+          "tbl_name": "migration_master_sources",
+          "sql": "CREATE TABLE migration_master_sources(org_id TEXT NOT NULL,kind TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,target_id TEXT NOT NULL,action TEXT NOT NULL CHECK(action IN('create','match')),input_hash TEXT NOT NULL,PRIMARY KEY(org_id,kind,source_ref,source_id),UNIQUE(org_id,kind,source_ref,target_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_opening_batches",
+          "tbl_name": "migration_opening_batches",
+          "sql": "CREATE TABLE migration_opening_batches(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,source_ref TEXT NOT NULL,input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','applied','rejected')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,result TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_opening_sources",
+          "tbl_name": "migration_opening_sources",
+          "sql": "CREATE TABLE migration_opening_sources(org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,unit_id TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(org_id,source_ref,source_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_amendments",
+          "tbl_name": "orders_amendments",
+          "sql": "CREATE TABLE orders_amendments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,line_id TEXT NOT NULL,revision INTEGER NOT NULL,before_quantity INTEGER NOT NULL,after_quantity INTEGER NOT NULL,unit_price INTEGER NOT NULL,unit_tax INTEGER NOT NULL,before_total INTEGER NOT NULL,after_total INTEGER NOT NULL,allocated_delta INTEGER NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_carts",
+          "tbl_name": "orders_carts",
+          "sql": "CREATE TABLE orders_carts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,lines TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,account_id,warehouse_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_lines",
+          "tbl_name": "orders_lines",
+          "sql": "CREATE TABLE orders_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,description TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),shipped INTEGER NOT NULL DEFAULT 0,canceled INTEGER NOT NULL DEFAULT 0,allocated INTEGER NOT NULL DEFAULT 0,unit_price INTEGER NOT NULL CHECK(unit_price>=0),unit_tax INTEGER NOT NULL CHECK(unit_tax>=0),CHECK(shipped>=0 AND canceled>=0 AND allocated>=0 AND shipped+canceled+allocated<=quantity),UNIQUE(order_id,product_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_orders",
+          "tbl_name": "orders_orders",
+          "sql": "CREATE TABLE orders_orders(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',revision INTEGER NOT NULL DEFAULT 1,currency TEXT NOT NULL,total INTEGER NOT NULL CHECK(total>=0),created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_quotes",
+          "tbl_name": "orders_quotes",
+          "sql": "CREATE TABLE orders_quotes(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,cart_revision INTEGER NOT NULL,lines TEXT NOT NULL,currency TEXT NOT NULL,total INTEGER NOT NULL,expires_at INTEGER NOT NULL,order_id TEXT,policy_version TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_reservation_deadlines",
+          "tbl_name": "orders_reservation_deadlines",
+          "sql": "CREATE TABLE orders_reservation_deadlines(org_id TEXT NOT NULL,order_id TEXT NOT NULL,expires_at INTEGER,PRIMARY KEY(org_id,order_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_reservation_history",
+          "tbl_name": "orders_reservation_history",
+          "sql": "CREATE TABLE orders_reservation_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,revision INTEGER NOT NULL,action TEXT NOT NULL CHECK(action IN('deadline','expire')),before_expires_at INTEGER,expires_at INTEGER,lines TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_audit",
+          "tbl_name": "platform_audit",
+          "sql": "CREATE TABLE platform_audit (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL, reference TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_audit_clock",
+          "tbl_name": "platform_audit_clock",
+          "sql": "CREATE TABLE platform_audit_clock (id INTEGER PRIMARY KEY CHECK(id=1),sequence INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_audit_order",
+          "tbl_name": "platform_audit_order",
+          "sql": "CREATE TABLE platform_audit_order (sequence INTEGER PRIMARY KEY, audit_id TEXT NOT NULL UNIQUE REFERENCES platform_audit(id), org_id TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_commands",
+          "tbl_name": "platform_commands",
+          "sql": "CREATE TABLE platform_commands (org_id TEXT NOT NULL, actor_id TEXT NOT NULL, name TEXT NOT NULL, key TEXT NOT NULL, hash TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(org_id,actor_id,name,key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_deliveries",
+          "tbl_name": "platform_deliveries",
+          "sql": "CREATE TABLE platform_deliveries(\n        consumer_id TEXT NOT NULL,event_id TEXT NOT NULL,org_id TEXT NOT NULL,consumer_version INTEGER NOT NULL,\n        state TEXT NOT NULL CHECK(state IN('leased','retry','quarantined','completed')),\n        attempts INTEGER NOT NULL CHECK(attempts>0),cycle_attempts INTEGER NOT NULL CHECK(cycle_attempts>=0),revision INTEGER NOT NULL CHECK(revision>0),\n        lease_token TEXT,lease_until INTEGER,available_at INTEGER NOT NULL,last_error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,completed_at TEXT,\n        PRIMARY KEY(consumer_id,event_id),CHECK((state='leased' AND lease_token IS NOT NULL AND lease_until IS NOT NULL) OR (state<>'leased' AND lease_token IS NULL AND lease_until IS NULL))) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_delivery_attempts",
+          "tbl_name": "platform_delivery_attempts",
+          "sql": "CREATE TABLE platform_delivery_attempts(\n        id TEXT PRIMARY KEY,consumer_id TEXT NOT NULL,event_id TEXT NOT NULL,org_id TEXT NOT NULL,attempt INTEGER NOT NULL,consumer_version INTEGER NOT NULL,\n        claimed_at TEXT NOT NULL,finished_at TEXT,outcome TEXT NOT NULL CHECK(outcome IN('leased','expired','retry','quarantined','completed')),error_code TEXT,\n        UNIQUE(consumer_id,event_id,attempt)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_delivery_receipts",
+          "tbl_name": "platform_delivery_receipts",
+          "sql": "CREATE TABLE platform_delivery_receipts(consumer_id TEXT NOT NULL,event_id TEXT NOT NULL,org_id TEXT NOT NULL,consumer_version INTEGER NOT NULL,event_hash TEXT NOT NULL,completed_at TEXT NOT NULL,PRIMARY KEY(consumer_id,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_events",
+          "tbl_name": "platform_events",
+          "sql": "CREATE TABLE platform_events (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, type TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, reference TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_projections",
+          "tbl_name": "platform_projections",
+          "sql": "CREATE TABLE platform_projections (event_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, type TEXT NOT NULL, reference TEXT NOT NULL, created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_recovery",
+          "tbl_name": "platform_recovery",
+          "sql": "CREATE TABLE platform_recovery (id INTEGER PRIMARY KEY CHECK(id=1), snapshot_hash TEXT NOT NULL, restored_at TEXT NOT NULL, source_completed_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_draft_versions",
+          "tbl_name": "procurement_draft_versions",
+          "sql": "CREATE TABLE procurement_draft_versions(draft_id TEXT NOT NULL,revision INTEGER NOT NULL,org_id TEXT NOT NULL,state TEXT NOT NULL,input TEXT NOT NULL,actor_id TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(draft_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_drafts",
+          "tbl_name": "procurement_drafts",
+          "sql": "CREATE TABLE procurement_drafts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('draft','received','discarded')),revision INTEGER NOT NULL CHECK(revision>0),input TEXT NOT NULL,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,po_id,line_id,delivery_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_lines",
+          "tbl_name": "procurement_lines",
+          "sql": "CREATE TABLE procurement_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,product_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),received INTEGER NOT NULL DEFAULT 0,unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),CHECK(received>=0 AND received<=quantity),UNIQUE(po_id,product_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_orders",
+          "tbl_name": "procurement_orders",
+          "sql": "CREATE TABLE procurement_orders(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,supplier_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_receipts",
+          "tbl_name": "procurement_receipts",
+          "sql": "CREATE TABLE procurement_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,quantity INTEGER NOT NULL,unit_ids TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,po_id,delivery_ref,line_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_return_followups",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE TABLE procurement_return_followups (\n        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,return_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),\n        kind TEXT NOT NULL CHECK(kind IN('credit','replacement','void','review')),reference TEXT NOT NULL,evidence TEXT NOT NULL,\n        amount INTEGER NOT NULL CHECK(amount>=0),quantity INTEGER NOT NULL CHECK(quantity>=0),receipt_id TEXT,target_id TEXT,\n        state TEXT,resolution TEXT,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,\n        UNIQUE(org_id,reference),UNIQUE(return_id,revision)\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_returns",
+          "tbl_name": "procurement_returns",
+          "sql": "CREATE TABLE procurement_returns(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,receipt_id TEXT NOT NULL,po_id TEXT NOT NULL,supplier_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),serial TEXT,return_ref TEXT NOT NULL,reason TEXT NOT NULL,handover_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,return_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_suppliers",
+          "tbl_name": "procurement_suppliers",
+          "sql": "CREATE TABLE procurement_suppliers(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "report_events",
+          "tbl_name": "report_events",
+          "sql": "CREATE TABLE report_events(event_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,type TEXT NOT NULL,reference TEXT NOT NULL,occurred_at TEXT NOT NULL,payload_hash TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_claims",
+          "tbl_name": "warranty_claims",
+          "sql": "CREATE TABLE warranty_claims(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,unit_id TEXT NOT NULL,shipment_id TEXT NOT NULL,invoice_id TEXT NOT NULL,type TEXT NOT NULL CHECK(type IN('warranty','return')),state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','received','inspected','repair','disposed')),issue TEXT NOT NULL,evidence TEXT NOT NULL,coverage_end TEXT NOT NULL,inspection TEXT NOT NULL DEFAULT '',disposition TEXT,credit_id TEXT,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_decisions",
+          "tbl_name": "warranty_decisions",
+          "sql": "CREATE TABLE warranty_decisions(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,action TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_evidence",
+          "tbl_name": "warranty_evidence",
+          "sql": "CREATE TABLE warranty_evidence(\n        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,\n        filename TEXT NOT NULL,media_type TEXT NOT NULL CHECK(media_type IN('image/jpeg','image/png','application/pdf','text/plain')),\n        audience TEXT NOT NULL CHECK(audience IN('customer','staff')),description TEXT NOT NULL,\n        byte_length INTEGER NOT NULL CHECK(byte_length BETWEEN 1 AND 5242880),\n        content_hash TEXT NOT NULL,content BLOB NOT NULL CHECK(length(content)=byte_length),\n        uploaded_by TEXT NOT NULL,created_at TEXT NOT NULL,\n        UNIQUE(org_id,claim_id,audience,content_hash),\n        FOREIGN KEY(claim_id) REFERENCES warranty_claims(id)\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_manufacturer_cases",
+          "tbl_name": "warranty_manufacturer_cases",
+          "sql": "CREATE TABLE warranty_manufacturer_cases(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,manufacturer TEXT NOT NULL,reference TEXT NOT NULL,manufacturer_key TEXT NOT NULL,reference_key TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','accepted','denied','cancelled')),revision INTEGER NOT NULL CHECK(revision>=1),created_at TEXT NOT NULL,UNIQUE(org_id,manufacturer_key,reference_key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_manufacturer_history",
+          "tbl_name": "warranty_manufacturer_history",
+          "sql": "CREATE TABLE warranty_manufacturer_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,case_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(case_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacement_history",
+          "tbl_name": "warranty_replacement_history",
+          "sql": "CREATE TABLE warranty_replacement_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(replacement_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacement_shipping",
+          "tbl_name": "warranty_replacement_shipping",
+          "sql": "CREATE TABLE warranty_replacement_shipping(\n      replacement_id TEXT PRIMARY KEY REFERENCES warranty_replacements(id),org_id TEXT NOT NULL,\n      carrier TEXT NOT NULL,tracking TEXT NOT NULL,carrier_key TEXT NOT NULL,tracking_key TEXT NOT NULL,\n      recipient TEXT NOT NULL,address TEXT NOT NULL,evidence TEXT NOT NULL,dispatched_at TEXT NOT NULL,\n      state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','delivered')),\n      revision INTEGER NOT NULL CHECK(revision>=1),observed_at TEXT NOT NULL,\n      UNIQUE(org_id,carrier_key,tracking_key)\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacement_shipping_history",
+          "tbl_name": "warranty_replacement_shipping_history",
+          "sql": "CREATE TABLE warranty_replacement_shipping_history(\n      id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL REFERENCES warranty_replacements(id),\n      revision INTEGER NOT NULL CHECK(revision>=1),state TEXT NOT NULL,reference TEXT NOT NULL,reference_key TEXT NOT NULL,\n      evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,\n      UNIQUE(replacement_id,revision),UNIQUE(replacement_id,reference_key)\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacements",
+          "tbl_name": "warranty_replacements",
+          "sql": "CREATE TABLE warranty_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,new_unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over')),revision INTEGER NOT NULL CHECK(revision>=1),old_disposition TEXT NOT NULL CHECK(old_disposition IN('restock','scrap')),coverage_end TEXT NOT NULL,reason TEXT NOT NULL,recipient TEXT,evidence TEXT,created_at TEXT NOT NULL,completed_at TEXT) STRICT"
+        },
+        {
+          "type": "trigger",
+          "name": "platform_audit_sequence",
+          "tbl_name": "platform_audit",
+          "sql": "CREATE TRIGGER platform_audit_sequence AFTER INSERT ON platform_audit BEGIN\n        UPDATE platform_audit_clock SET sequence=sequence+1 WHERE id=1;\n        INSERT INTO platform_audit_order(sequence,audit_id,org_id) SELECT sequence,new.id,new.org_id FROM platform_audit_clock WHERE id=1;\n      END"
+        }
+      ]
+    },
+    {
+      "eventReports": false,
+      "hash": "d1438d0f3faae366ad95502cfce65d8c3efa38a08054dd795e036041f2fefe99",
+      "schema": [
+        {
+          "type": "index",
+          "name": "billing_portal_download_history",
+          "tbl_name": "billing_portal_downloads",
+          "sql": "CREATE INDEX billing_portal_download_history ON billing_portal_downloads(org_id,publication_id,actor_id)"
+        },
+        {
+          "type": "index",
+          "name": "billing_publication_account",
+          "tbl_name": "billing_publications",
+          "sql": "CREATE INDEX billing_publication_account ON billing_publications(org_id,account_id,published_at)"
+        },
+        {
+          "type": "index",
+          "name": "billing_publication_available",
+          "tbl_name": "billing_publications",
+          "sql": "CREATE UNIQUE INDEX billing_publication_available ON billing_publications(org_id,kind,document_id) WHERE state='available'"
+        },
+        {
+          "type": "index",
+          "name": "billing_refund_alert_scope",
+          "tbl_name": "billing_refund_alerts",
+          "sql": "CREATE INDEX billing_refund_alert_scope ON billing_refund_alerts(org_id,seq)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_shipment_account_history",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE INDEX fulfillment_shipment_account_history ON fulfillment_shipments(org_id,account_id,created_at DESC,id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_shipment_history",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE INDEX fulfillment_shipment_history ON fulfillment_shipments(org_id,created_at DESC,id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_shipment_site_history",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE INDEX fulfillment_shipment_site_history ON fulfillment_shipments(org_id,warehouse_id,created_at DESC,id DESC)"
+        },
+        {
+          "type": "index",
+          "name": "fulfillment_short_pick_history",
+          "tbl_name": "fulfillment_short_picks",
+          "sql": "CREATE INDEX fulfillment_short_pick_history ON fulfillment_short_picks(org_id,order_id,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "iam_mfa_pending_expiry",
+          "tbl_name": "iam_mfa_pending",
+          "sql": "CREATE INDEX iam_mfa_pending_expiry ON iam_mfa_pending(expires_at,user_id) WHERE material<>''"
+        },
+        {
+          "type": "index",
+          "name": "integration_authorization_binding",
+          "tbl_name": "integration_authorizations",
+          "sql": "CREATE INDEX integration_authorization_binding ON integration_authorizations(org_id,binding_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_balance_claim",
+          "tbl_name": "integration_balance_reads",
+          "sql": "CREATE UNIQUE INDEX integration_balance_claim ON integration_balance_reads(org_id,effect_id) WHERE token IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "integration_balance_history",
+          "tbl_name": "integration_balance_observations",
+          "sql": "CREATE INDEX integration_balance_history ON integration_balance_observations(org_id,effect_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_carrier_active",
+          "tbl_name": "integration_carrier_bookings",
+          "sql": "CREATE UNIQUE INDEX integration_carrier_active ON integration_carrier_bookings(org_id,shipment_id) WHERE state!='canceled'"
+        },
+        {
+          "type": "index",
+          "name": "integration_carrier_history",
+          "tbl_name": "integration_carrier_bookings",
+          "sql": "CREATE INDEX integration_carrier_history ON integration_carrier_bookings(org_id,shipment_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_checkout_observation_invoice",
+          "tbl_name": "integration_checkout_observations",
+          "sql": "CREATE INDEX integration_checkout_observation_invoice ON integration_checkout_observations(org_id,invoice_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_checkout_renewal_invoice",
+          "tbl_name": "integration_checkout_renewals",
+          "sql": "CREATE INDEX integration_checkout_renewal_invoice ON integration_checkout_renewals(org_id,invoice_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_cost_history",
+          "tbl_name": "integration_cost_packets",
+          "sql": "CREATE INDEX integration_cost_history ON integration_cost_packets(org_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "integration_credit_application_credit",
+          "tbl_name": "integration_credit_applications",
+          "sql": "CREATE INDEX integration_credit_application_credit ON integration_credit_applications(org_id,credit_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_credit_application_invoice",
+          "tbl_name": "integration_credit_applications",
+          "sql": "CREATE INDEX integration_credit_application_invoice ON integration_credit_applications(org_id,invoice_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_external_identity",
+          "tbl_name": "integration_effects",
+          "sql": "CREATE UNIQUE INDEX integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "integration_payment_invoice",
+          "tbl_name": "integration_payment_allocations",
+          "sql": "CREATE INDEX integration_payment_invoice ON integration_payment_allocations(org_id,invoice_id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_refund_callback_due",
+          "tbl_name": "integration_refund_callbacks",
+          "sql": "CREATE INDEX integration_refund_callback_due ON integration_refund_callbacks(org_id,binding_id,state,retry_at,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "integration_refund_credit",
+          "tbl_name": "integration_accounting_refunds",
+          "sql": "CREATE INDEX integration_refund_credit ON integration_accounting_refunds(org_id,credit_id)"
+        },
+        {
+          "type": "index",
+          "name": "inventory_cost_sequence_org",
+          "tbl_name": "inventory_cost_sequences",
+          "sql": "CREATE INDEX inventory_cost_sequence_org ON inventory_cost_sequences(org_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "inventory_replacement_reserved",
+          "tbl_name": "inventory_replacements",
+          "sql": "CREATE UNIQUE INDEX inventory_replacement_reserved ON inventory_replacements(org_id,unit_id) WHERE state='reserved'"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_recovery_reference",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE UNIQUE INDEX inventory_serial_recovery_reference ON inventory_serial_reviews(org_id,recovery_ref) WHERE recovery_ref IS NOT NULL"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_review_history",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE INDEX inventory_serial_review_history ON inventory_serial_reviews(org_id,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_review_missing",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE UNIQUE INDEX inventory_serial_review_missing ON inventory_serial_reviews(org_id,unit_id) WHERE state='approved'"
+        },
+        {
+          "type": "index",
+          "name": "inventory_serial_review_pending",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE UNIQUE INDEX inventory_serial_review_pending ON inventory_serial_reviews(org_id,unit_id) WHERE state='submitted'"
+        },
+        {
+          "type": "index",
+          "name": "orders_amendment_history",
+          "tbl_name": "orders_amendments",
+          "sql": "CREATE INDEX orders_amendment_history ON orders_amendments(org_id,order_id,revision)"
+        },
+        {
+          "type": "index",
+          "name": "orders_reservation_history_page",
+          "tbl_name": "orders_reservation_history",
+          "sql": "CREATE INDEX orders_reservation_history_page ON orders_reservation_history(org_id,order_id,revision)"
+        },
+        {
+          "type": "index",
+          "name": "platform_audit_order_org",
+          "tbl_name": "platform_audit_order",
+          "sql": "CREATE INDEX platform_audit_order_org ON platform_audit_order(org_id,sequence)"
+        },
+        {
+          "type": "index",
+          "name": "platform_deliveries_due",
+          "tbl_name": "platform_deliveries",
+          "sql": "CREATE INDEX platform_deliveries_due ON platform_deliveries(consumer_id,state,available_at,lease_until)"
+        },
+        {
+          "type": "index",
+          "name": "platform_deliveries_org",
+          "tbl_name": "platform_deliveries",
+          "sql": "CREATE INDEX platform_deliveries_org ON platform_deliveries(org_id,consumer_id,state,updated_at,event_id)"
+        },
+        {
+          "type": "index",
+          "name": "procurement_followup_receipt",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE INDEX procurement_followup_receipt ON procurement_return_followups(org_id,receipt_id)"
+        },
+        {
+          "type": "index",
+          "name": "procurement_followup_return",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE INDEX procurement_followup_return ON procurement_return_followups(org_id,return_id,revision)"
+        },
+        {
+          "type": "index",
+          "name": "procurement_followup_target",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE INDEX procurement_followup_target ON procurement_return_followups(org_id,target_id)"
+        },
+        {
+          "type": "index",
+          "name": "warranty_evidence_page",
+          "tbl_name": "warranty_evidence",
+          "sql": "CREATE INDEX warranty_evidence_page ON warranty_evidence(org_id,claim_id,created_at,id)"
+        },
+        {
+          "type": "index",
+          "name": "warranty_manufacturer_pending",
+          "tbl_name": "warranty_manufacturer_cases",
+          "sql": "CREATE UNIQUE INDEX warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending'"
+        },
+        {
+          "type": "index",
+          "name": "warranty_replacement_active",
+          "tbl_name": "warranty_replacements",
+          "sql": "CREATE UNIQUE INDEX warranty_replacement_active ON warranty_replacements(org_id,claim_id) WHERE state IN('reserved','handed_over')"
+        },
+        {
+          "type": "table",
+          "name": "billing_acknowledgments",
+          "tbl_name": "billing_acknowledgments",
+          "sql": "CREATE TABLE billing_acknowledgments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,publication_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,actor_name TEXT NOT NULL,download_id TEXT NOT NULL,content_hash TEXT NOT NULL,statement_version INTEGER NOT NULL CHECK(statement_version=1),statement TEXT NOT NULL,acknowledged_at TEXT NOT NULL,UNIQUE(org_id,publication_id,actor_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_counters",
+          "tbl_name": "billing_counters",
+          "sql": "CREATE TABLE billing_counters(org_id TEXT PRIMARY KEY,value INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_credit_lines",
+          "tbl_name": "billing_credit_lines",
+          "sql": "CREATE TABLE billing_credit_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,credit_id TEXT NOT NULL,invoice_line_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_credits",
+          "tbl_name": "billing_credits",
+          "sql": "CREATE TABLE billing_credits(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,reference TEXT NOT NULL,number TEXT NOT NULL,reason TEXT NOT NULL,net INTEGER NOT NULL,tax INTEGER NOT NULL,total INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,reference),UNIQUE(org_id,number),CHECK(total=net+tax AND net>=0 AND tax>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_document_facts",
+          "tbl_name": "billing_document_facts",
+          "sql": "CREATE TABLE billing_document_facts(org_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('invoice','credit')),document_id TEXT NOT NULL,account_id TEXT NOT NULL,hash TEXT NOT NULL,facts TEXT NOT NULL,PRIMARY KEY(org_id,kind,document_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_document_renditions",
+          "tbl_name": "billing_document_renditions",
+          "sql": "CREATE TABLE billing_document_renditions(org_id TEXT NOT NULL,kind TEXT NOT NULL,document_id TEXT NOT NULL,facts_hash TEXT NOT NULL,renderer_hash TEXT NOT NULL,bytes BLOB NOT NULL,content_hash TEXT NOT NULL,generated_at TEXT NOT NULL,PRIMARY KEY(org_id,kind,document_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_downloads",
+          "tbl_name": "billing_downloads",
+          "sql": "CREATE TABLE billing_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,kind TEXT NOT NULL,document_id TEXT NOT NULL,number TEXT NOT NULL,filename TEXT NOT NULL,content_hash TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_holds",
+          "tbl_name": "billing_holds",
+          "sql": "CREATE TABLE billing_holds(order_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_invoices",
+          "tbl_name": "billing_invoices",
+          "sql": "CREATE TABLE billing_invoices(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,order_id TEXT NOT NULL,shipment_id TEXT NOT NULL,number TEXT NOT NULL,currency TEXT NOT NULL,net INTEGER NOT NULL,tax INTEGER NOT NULL,total INTEGER NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,shipment_id),UNIQUE(org_id,number),CHECK(total=net+tax AND net>=0 AND tax>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_lines",
+          "tbl_name": "billing_lines",
+          "sql": "CREATE TABLE billing_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,product_id TEXT NOT NULL,description TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_price INTEGER NOT NULL CHECK(unit_price>=0),unit_tax INTEGER NOT NULL CHECK(unit_tax>=0),UNIQUE(invoice_id,product_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_opening_documents",
+          "tbl_name": "billing_opening_documents",
+          "sql": "CREATE TABLE billing_opening_documents(invoice_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,source_hash TEXT NOT NULL,cutoff_at TEXT NOT NULL,issued_at TEXT NOT NULL,due_at TEXT NOT NULL,credited INTEGER NOT NULL CHECK(credited>=0),paid INTEGER NOT NULL CHECK(paid>=0),refunded INTEGER NOT NULL CHECK(refunded>=0),balance INTEGER NOT NULL CHECK(balance>0),created_by TEXT NOT NULL,imported_at TEXT NOT NULL,UNIQUE(org_id,source_ref,source_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_opening_lines",
+          "tbl_name": "billing_opening_lines",
+          "sql": "CREATE TABLE billing_opening_lines(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,credited_quantity INTEGER NOT NULL CHECK(credited_quantity>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_payments",
+          "tbl_name": "billing_payments",
+          "sql": "CREATE TABLE billing_payments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,provider TEXT NOT NULL,external_ref TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),created_at TEXT NOT NULL,UNIQUE(org_id,provider,external_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_portal_downloads",
+          "tbl_name": "billing_portal_downloads",
+          "sql": "CREATE TABLE billing_portal_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,publication_id TEXT NOT NULL,account_id TEXT NOT NULL,actor_id TEXT NOT NULL,content_hash TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_profiles",
+          "tbl_name": "billing_profiles",
+          "sql": "CREATE TABLE billing_profiles(org_id TEXT NOT NULL,target_id TEXT NOT NULL,version INTEGER NOT NULL,profile TEXT NOT NULL,PRIMARY KEY(org_id,target_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_publications",
+          "tbl_name": "billing_publications",
+          "sql": "CREATE TABLE billing_publications(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('invoice','credit')),document_id TEXT NOT NULL,number TEXT NOT NULL,filename TEXT NOT NULL,facts_hash TEXT NOT NULL,content_hash TEXT NOT NULL,renderer_hash TEXT NOT NULL,size INTEGER NOT NULL,review_download_id TEXT NOT NULL,published_by TEXT NOT NULL,published_at TEXT NOT NULL,reason TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('available','withdrawn')),withdrawn_by TEXT,withdrawn_at TEXT,withdrawal_reason TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_alert_reads",
+          "tbl_name": "billing_refund_alert_reads",
+          "sql": "CREATE TABLE billing_refund_alert_reads(org_id TEXT NOT NULL,refund_id TEXT NOT NULL,actor_id TEXT NOT NULL,revision INTEGER NOT NULL,acknowledged_at TEXT NOT NULL,PRIMARY KEY(org_id,refund_id,actor_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_alert_updates",
+          "tbl_name": "billing_refund_alert_updates",
+          "sql": "CREATE TABLE billing_refund_alert_updates(org_id TEXT NOT NULL,refund_id TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('observation','existing-state')),created_at TEXT NOT NULL,PRIMARY KEY(org_id,refund_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_alerts",
+          "tbl_name": "billing_refund_alerts",
+          "sql": "CREATE TABLE billing_refund_alerts(seq INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,invoice_id TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN('pending','requires_action','succeeded','failed','canceled')),state TEXT NOT NULL CHECK(state IN('open','resolved')),revision INTEGER NOT NULL CHECK(revision>0),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,refund_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_observations",
+          "tbl_name": "billing_refund_observations",
+          "sql": "CREATE TABLE billing_refund_observations(id INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,applied INTEGER NOT NULL CHECK(applied IN(0,1)),created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_proofs",
+          "tbl_name": "billing_refund_proofs",
+          "sql": "CREATE TABLE billing_refund_proofs(org_id TEXT NOT NULL,external_ref TEXT NOT NULL,refund_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(org_id,external_ref),UNIQUE(refund_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refund_provider",
+          "tbl_name": "billing_refund_provider",
+          "sql": "CREATE TABLE billing_refund_provider(refund_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,UNIQUE(org_id,external_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "billing_refunds",
+          "tbl_name": "billing_refunds",
+          "sql": "CREATE TABLE billing_refunds(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),reference TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','unknown','completed','rejected')),created_at TEXT NOT NULL,UNIQUE(org_id,reference)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_prices",
+          "tbl_name": "catalog_prices",
+          "sql": "CREATE TABLE catalog_prices(org_id TEXT NOT NULL,product_id TEXT NOT NULL,tier TEXT NOT NULL,unit_price INTEGER NOT NULL CHECK(unit_price>=0),PRIMARY KEY(org_id,product_id,tier)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "catalog_products",
+          "tbl_name": "catalog_products",
+          "sql": "CREATE TABLE catalog_products(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,sku TEXT NOT NULL,name TEXT NOT NULL,serialized INTEGER NOT NULL CHECK(serialized IN(0,1)),unit_price INTEGER NOT NULL CHECK(unit_price>=0),tax_bp INTEGER NOT NULL CHECK(tax_bp BETWEEN 0 AND 10000),currency TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,sku)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_delivery",
+          "tbl_name": "fulfillment_delivery",
+          "sql": "CREATE TABLE fulfillment_delivery(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,reference TEXT NOT NULL,delivered_at TEXT NOT NULL,actor_id TEXT NOT NULL,UNIQUE(org_id,shipment_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_delivery_history",
+          "tbl_name": "fulfillment_delivery_history",
+          "sql": "CREATE TABLE fulfillment_delivery_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','returned','delivered')),reference TEXT NOT NULL,reference_key TEXT NOT NULL,evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('operator','legacy')),UNIQUE(org_id,shipment_id,revision),UNIQUE(org_id,shipment_id,reference_key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_shipments",
+          "tbl_name": "fulfillment_shipments",
+          "sql": "CREATE TABLE fulfillment_shipments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('packed','shipped','void')),mode TEXT NOT NULL CHECK(mode IN('carrier','collection')),address TEXT NOT NULL,tracking TEXT,carrier TEXT,lines TEXT NOT NULL,units TEXT NOT NULL DEFAULT '[]',invoice_id TEXT,created_at TEXT NOT NULL,shipped_at TEXT) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "fulfillment_short_picks",
+          "tbl_name": "fulfillment_short_picks",
+          "sql": "CREATE TABLE fulfillment_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,allocation_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_accounts",
+          "tbl_name": "iam_accounts",
+          "sql": "CREATE TABLE iam_accounts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,currency TEXT NOT NULL,tier TEXT NOT NULL,credit_limit INTEGER NOT NULL CHECK(credit_limit>=0),held INTEGER NOT NULL DEFAULT 0 CHECK(held IN(0,1)),residency_mode TEXT NOT NULL DEFAULT 'strict' CHECK(residency_mode IN('strict','provider-exceptions')),provider_exceptions TEXT NOT NULL DEFAULT '[]',residency_version INTEGER NOT NULL DEFAULT 1) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_attempts",
+          "tbl_name": "iam_attempts",
+          "sql": "CREATE TABLE iam_attempts(email TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_mfa",
+          "tbl_name": "iam_mfa",
+          "sql": "CREATE TABLE iam_mfa (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,secret TEXT NOT NULL,last_step INTEGER NOT NULL,enabled_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_mfa_pending",
+          "tbl_name": "iam_mfa_pending",
+          "sql": "CREATE TABLE iam_mfa_pending (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,key TEXT NOT NULL,enrollment_id TEXT NOT NULL,revision INTEGER NOT NULL,material TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_mfa_recovery",
+          "tbl_name": "iam_mfa_recovery",
+          "sql": "CREATE TABLE iam_mfa_recovery (user_id TEXT NOT NULL,hash TEXT NOT NULL,used_at TEXT,PRIMARY KEY(user_id,hash)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_organizations",
+          "tbl_name": "iam_organizations",
+          "sql": "CREATE TABLE iam_organizations(id TEXT PRIMARY KEY,name TEXT NOT NULL,region TEXT NOT NULL CHECK(region IN ('CA','US')),currency TEXT NOT NULL CHECK(currency IN ('CAD','USD')),policy TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_provider_acceptances",
+          "tbl_name": "iam_provider_acceptances",
+          "sql": "CREATE TABLE iam_provider_acceptances(org_id TEXT NOT NULL,account_id TEXT NOT NULL,choice_version INTEGER NOT NULL,provider TEXT NOT NULL,disclosure_id TEXT NOT NULL REFERENCES iam_provider_disclosures(id),disclosure_hash TEXT NOT NULL,basis TEXT NOT NULL,representative TEXT NOT NULL,evidence_ref TEXT,actor_id TEXT NOT NULL,accepted_at TEXT NOT NULL,PRIMARY KEY(org_id,account_id,choice_version,provider)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_provider_disclosure_current",
+          "tbl_name": "iam_provider_disclosure_current",
+          "sql": "CREATE TABLE iam_provider_disclosure_current(org_id TEXT NOT NULL,provider TEXT NOT NULL,region TEXT NOT NULL,disclosure_id TEXT NOT NULL REFERENCES iam_provider_disclosures(id),PRIMARY KEY(org_id,provider,region)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_provider_disclosures",
+          "tbl_name": "iam_provider_disclosures",
+          "sql": "CREATE TABLE iam_provider_disclosures(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,provider TEXT NOT NULL,region TEXT NOT NULL,version TEXT NOT NULL,body TEXT NOT NULL,hash TEXT NOT NULL,review_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,provider,region,version)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_sessions",
+          "tbl_name": "iam_sessions",
+          "sql": "CREATE TABLE iam_sessions(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,csrf TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_user_security",
+          "tbl_name": "iam_user_security",
+          "sql": "CREATE TABLE iam_user_security(user_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>0),password_change_required INTEGER NOT NULL CHECK(password_change_required IN(0,1)),updated_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "iam_users",
+          "tbl_name": "iam_users",
+          "sql": "CREATE TABLE iam_users(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL,account_id TEXT,role TEXT NOT NULL,sites TEXT NOT NULL,salt TEXT NOT NULL,password_hash TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN(0,1))) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_accounting_refunds",
+          "tbl_name": "integration_accounting_refunds",
+          "sql": "CREATE TABLE integration_accounting_refunds(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,refund_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),UNIQUE(org_id,refund_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_authorizations",
+          "tbl_name": "integration_authorizations",
+          "sql": "CREATE TABLE integration_authorizations (\n      id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,account_id TEXT NOT NULL,worker_id TEXT NOT NULL,\n      realm TEXT NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,state_hash TEXT NOT NULL UNIQUE,\n      credential_revision INTEGER NOT NULL,residency_version INTEGER NOT NULL,expires_at INTEGER NOT NULL,\n      state TEXT NOT NULL CHECK(state IN('pending','exchanging','completed','canceled','denied','unknown','expired')),\n      claim TEXT,started_at INTEGER,installed_revision INTEGER\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_balance_observations",
+          "tbl_name": "integration_balance_observations",
+          "sql": "CREATE TABLE integration_balance_observations(sequence INTEGER PRIMARY KEY,read_id TEXT NOT NULL UNIQUE,org_id TEXT NOT NULL,effect_id TEXT NOT NULL,result TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_balance_reads",
+          "tbl_name": "integration_balance_reads",
+          "sql": "CREATE TABLE integration_balance_reads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,effect_id TEXT NOT NULL,command_key TEXT NOT NULL,hash TEXT NOT NULL,token TEXT,started_at INTEGER,requested_at TEXT NOT NULL,result TEXT,error TEXT,UNIQUE(org_id,command_key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_callbacks",
+          "tbl_name": "integration_callbacks",
+          "sql": "CREATE TABLE integration_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,session_id TEXT NOT NULL,effect_id TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_carrier_bookings",
+          "tbl_name": "integration_carrier_bookings",
+          "sql": "CREATE TABLE integration_carrier_bookings(\n        sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,\n        state TEXT NOT NULL CHECK(state IN('pending','running','unknown','booked','canceled')),\n        review_hash TEXT NOT NULL,intent TEXT NOT NULL,token TEXT,started_at INTEGER,\n        reference TEXT,tracking TEXT,label_bytes BLOB,label_type TEXT,label_hash TEXT,error TEXT,created_at TEXT NOT NULL\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_checkout_observations",
+          "tbl_name": "integration_checkout_observations",
+          "sql": "CREATE TABLE integration_checkout_observations(\n        sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,\n        org_id TEXT NOT NULL,account_id TEXT NOT NULL,invoice_id TEXT NOT NULL,\n        effect_id TEXT NOT NULL REFERENCES integration_effects(id),\n        claim_token TEXT NOT NULL UNIQUE,actor_id TEXT NOT NULL,\n        snapshot TEXT NOT NULL,hash TEXT NOT NULL\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_checkout_renewals",
+          "tbl_name": "integration_checkout_renewals",
+          "sql": "CREATE TABLE integration_checkout_renewals(successor_id TEXT PRIMARY KEY REFERENCES integration_effects(id),org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,predecessor_id TEXT NOT NULL UNIQUE REFERENCES integration_effects(id),reason TEXT NOT NULL,review_version TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_cursors",
+          "tbl_name": "integration_cost_cursors",
+          "sql": "CREATE TABLE integration_cost_cursors(org_id TEXT PRIMARY KEY,through_sequence INTEGER NOT NULL,closing_value INTEGER NOT NULL,packet_id TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_packets",
+          "tbl_name": "integration_cost_packets",
+          "sql": "CREATE TABLE integration_cost_packets(sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,region TEXT NOT NULL,currency TEXT NOT NULL,input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','rejected','reviewed','accepted')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,artifact TEXT,content_hash TEXT,receipt TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_receipts",
+          "tbl_name": "integration_cost_receipts",
+          "sql": "CREATE TABLE integration_cost_receipts(org_id TEXT NOT NULL,receiver_ref TEXT NOT NULL,external_ref TEXT NOT NULL,packet_id TEXT NOT NULL UNIQUE,PRIMARY KEY(org_id,receiver_ref,external_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_cost_sources",
+          "tbl_name": "integration_cost_sources",
+          "sql": "CREATE TABLE integration_cost_sources(org_id TEXT NOT NULL,movement_id TEXT NOT NULL,packet_id TEXT NOT NULL,PRIMARY KEY(org_id,movement_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_credential_key",
+          "tbl_name": "integration_credential_key",
+          "sql": "CREATE TABLE integration_credential_key (\n      singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL CHECK(generation>0),fingerprint TEXT NOT NULL\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_credentials",
+          "tbl_name": "integration_credentials",
+          "sql": "CREATE TABLE integration_credentials (\n      org_id TEXT NOT NULL,binding_id TEXT NOT NULL,realm TEXT NOT NULL,client_id TEXT NOT NULL,\n      revision INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','refreshing','unknown','disabled')),\n      material TEXT,claim TEXT,started_at INTEGER,PRIMARY KEY(org_id,binding_id)\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_credit_applications",
+          "tbl_name": "integration_credit_applications",
+          "sql": "CREATE TABLE integration_credit_applications(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_effects",
+          "tbl_name": "integration_effects",
+          "sql": "CREATE TABLE integration_effects(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,provider TEXT NOT NULL,kind TEXT NOT NULL,reference TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','running','unknown','completed','rejected','blocked')),external_ref TEXT,result TEXT,created_at TEXT NOT NULL,residency_version INTEGER NOT NULL,started_at INTEGER,error TEXT,UNIQUE(org_id,provider,kind,reference)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_inbox",
+          "tbl_name": "integration_inbox",
+          "sql": "CREATE TABLE integration_inbox(provider TEXT NOT NULL,event_id TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(provider,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_operation_leases",
+          "tbl_name": "integration_operation_leases",
+          "sql": "CREATE TABLE integration_operation_leases(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,token TEXT,started_at INTEGER) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_payment_allocations",
+          "tbl_name": "integration_payment_allocations",
+          "sql": "CREATE TABLE integration_payment_allocations(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,applied_amount INTEGER NOT NULL CHECK(applied_amount>=0),UNIQUE(org_id,payment_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_refund_callbacks",
+          "tbl_name": "integration_refund_callbacks",
+          "sql": "CREATE TABLE integration_refund_callbacks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,event_id TEXT NOT NULL,effect_id TEXT NOT NULL,provider_reference TEXT NOT NULL,event_type TEXT NOT NULL,hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','processing','waiting','blocked','failed','completed')),attempts INTEGER NOT NULL DEFAULT 0,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0,error TEXT,created_at TEXT NOT NULL,UNIQUE(org_id,binding_id,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "integration_refund_polls",
+          "tbl_name": "integration_refund_polls",
+          "sql": "CREATE TABLE integration_refund_polls(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,token TEXT,started_at INTEGER,retry_at INTEGER NOT NULL DEFAULT 0) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_allocations",
+          "tbl_name": "inventory_allocations",
+          "sql": "CREATE TABLE inventory_allocations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),consumed INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0,stage TEXT NOT NULL DEFAULT 'reserved' CHECK(stage IN('reserved','picked')),CHECK(consumed>=0 AND released>=0 AND consumed+released<=quantity)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_cost_clock",
+          "tbl_name": "inventory_cost_clock",
+          "sql": "CREATE TABLE inventory_cost_clock(id INTEGER PRIMARY KEY CHECK(id=1),last_sequence INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_cost_sequences",
+          "tbl_name": "inventory_cost_sequences",
+          "sql": "CREATE TABLE inventory_cost_sequences(sequence INTEGER PRIMARY KEY,org_id TEXT NOT NULL,movement_id TEXT NOT NULL UNIQUE) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_counts",
+          "tbl_name": "inventory_counts",
+          "sql": "CREATE TABLE inventory_counts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,product_id TEXT NOT NULL,bin TEXT NOT NULL,condition TEXT NOT NULL,stock_revision INTEGER NOT NULL,expected_quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,count_ref TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('draft','submitted','approved','rejected')),observed_quantity INTEGER CHECK(observed_quantity>=0),observation_reason TEXT,observed_by TEXT,observed_at TEXT,decision_reason TEXT,decided_by TEXT,decided_at TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL,start_hash TEXT NOT NULL,decision_result TEXT,UNIQUE(org_id,count_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_label_downloads",
+          "tbl_name": "inventory_label_downloads",
+          "sql": "CREATE TABLE inventory_label_downloads(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,actor_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,unit_id TEXT NOT NULL,revision INTEGER NOT NULL,copies INTEGER NOT NULL,facts_hash TEXT NOT NULL,content_hash TEXT NOT NULL,filename TEXT NOT NULL,size INTEGER NOT NULL,requested_at TEXT NOT NULL,state TEXT NOT NULL CHECK(state='prepared')) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_label_renditions",
+          "tbl_name": "inventory_label_renditions",
+          "sql": "CREATE TABLE inventory_label_renditions(org_id TEXT NOT NULL,facts_hash TEXT NOT NULL,facts TEXT NOT NULL,renderer_hash TEXT NOT NULL,bytes BLOB NOT NULL,content_hash TEXT NOT NULL,PRIMARY KEY(org_id,facts_hash)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_movements",
+          "tbl_name": "inventory_movements",
+          "sql": "CREATE TABLE inventory_movements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,type TEXT NOT NULL,quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_replacements",
+          "tbl_name": "inventory_replacements",
+          "sql": "CREATE TABLE inventory_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over'))) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_serial_reviews",
+          "tbl_name": "inventory_serial_reviews",
+          "sql": "CREATE TABLE inventory_serial_reviews(\n        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,\n        product_id TEXT NOT NULL,serial TEXT NOT NULL,bin TEXT NOT NULL,stock_revision INTEGER NOT NULL,\n        unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),review_ref TEXT NOT NULL,reason TEXT NOT NULL,\n        observed_by TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,\n        state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','recovered')),\n        decision TEXT CHECK(decision IN('approve','reject')),decision_reason TEXT,decided_by TEXT,decided_at TEXT,decision_result TEXT,\n        recovery_ref TEXT,recovery_reason TEXT,recovery_bin TEXT,recovered_by TEXT,recovered_at TEXT,recovery_hash TEXT,recovery_result TEXT,\n        UNIQUE(org_id,review_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_short_picks",
+          "tbl_name": "inventory_short_picks",
+          "sql": "CREATE TABLE inventory_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,allocation_id TEXT NOT NULL,source_unit_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_lines",
+          "tbl_name": "inventory_transfer_lines",
+          "sql": "CREATE TABLE inventory_transfer_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,unit_id TEXT NOT NULL,received INTEGER NOT NULL DEFAULT 0,UNIQUE(transfer_id,unit_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_losses",
+          "tbl_name": "inventory_transfer_losses",
+          "sql": "CREATE TABLE inventory_transfer_losses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,line_id TEXT NOT NULL,loss_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,line_id,loss_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_manifest",
+          "tbl_name": "inventory_transfer_manifest",
+          "sql": "CREATE TABLE inventory_transfer_manifest(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,unit_id TEXT NOT NULL,product_id TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_origins",
+          "tbl_name": "inventory_transfer_origins",
+          "sql": "CREATE TABLE inventory_transfer_origins(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_unit_id TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_receipts",
+          "tbl_name": "inventory_transfer_receipts",
+          "sql": "CREATE TABLE inventory_transfer_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,line_id TEXT NOT NULL,unit_id TEXT NOT NULL,receipt_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),bin TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,line_id,receipt_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfer_recoveries",
+          "tbl_name": "inventory_transfer_recoveries",
+          "sql": "CREATE TABLE inventory_transfer_recoveries(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,loss_id TEXT NOT NULL,unit_id TEXT NOT NULL,receipt_ref TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),bin TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,loss_id,receipt_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_transfers",
+          "tbl_name": "inventory_transfers",
+          "sql": "CREATE TABLE inventory_transfers(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_id TEXT NOT NULL,destination_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('transit','received')),created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_units",
+          "tbl_name": "inventory_units",
+          "sql": "CREATE TABLE inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "inventory_warehouses",
+          "tbl_name": "inventory_warehouses",
+          "sql": "CREATE TABLE inventory_warehouses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_document_batches",
+          "tbl_name": "migration_document_batches",
+          "sql": "CREATE TABLE migration_document_batches(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,source_ref TEXT NOT NULL,input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','applied','rejected')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,result TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_document_sources",
+          "tbl_name": "migration_document_sources",
+          "sql": "CREATE TABLE migration_document_sources(org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,invoice_id TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(org_id,source_ref,source_id),UNIQUE(org_id,invoice_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_master_batches",
+          "tbl_name": "migration_master_batches",
+          "sql": "CREATE TABLE migration_master_batches(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,source_ref TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN('customer','catalog')),input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','applied','rejected')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,result TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_master_sources",
+          "tbl_name": "migration_master_sources",
+          "sql": "CREATE TABLE migration_master_sources(org_id TEXT NOT NULL,kind TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,target_id TEXT NOT NULL,action TEXT NOT NULL CHECK(action IN('create','match')),input_hash TEXT NOT NULL,PRIMARY KEY(org_id,kind,source_ref,source_id),UNIQUE(org_id,kind,source_ref,target_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_opening_batches",
+          "tbl_name": "migration_opening_batches",
+          "sql": "CREATE TABLE migration_opening_batches(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,batch_ref TEXT NOT NULL,source_ref TEXT NOT NULL,input TEXT NOT NULL,input_hash TEXT NOT NULL,report TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','applied','rejected')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,result TEXT,UNIQUE(org_id,batch_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "migration_opening_sources",
+          "tbl_name": "migration_opening_sources",
+          "sql": "CREATE TABLE migration_opening_sources(org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,unit_id TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(org_id,source_ref,source_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_amendments",
+          "tbl_name": "orders_amendments",
+          "sql": "CREATE TABLE orders_amendments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,line_id TEXT NOT NULL,revision INTEGER NOT NULL,before_quantity INTEGER NOT NULL,after_quantity INTEGER NOT NULL,unit_price INTEGER NOT NULL,unit_tax INTEGER NOT NULL,before_total INTEGER NOT NULL,after_total INTEGER NOT NULL,allocated_delta INTEGER NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_carts",
+          "tbl_name": "orders_carts",
+          "sql": "CREATE TABLE orders_carts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,lines TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,account_id,warehouse_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_lines",
+          "tbl_name": "orders_lines",
+          "sql": "CREATE TABLE orders_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,description TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),shipped INTEGER NOT NULL DEFAULT 0,canceled INTEGER NOT NULL DEFAULT 0,allocated INTEGER NOT NULL DEFAULT 0,unit_price INTEGER NOT NULL CHECK(unit_price>=0),unit_tax INTEGER NOT NULL CHECK(unit_tax>=0),CHECK(shipped>=0 AND canceled>=0 AND allocated>=0 AND shipped+canceled+allocated<=quantity),UNIQUE(order_id,product_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_orders",
+          "tbl_name": "orders_orders",
+          "sql": "CREATE TABLE orders_orders(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',revision INTEGER NOT NULL DEFAULT 1,currency TEXT NOT NULL,total INTEGER NOT NULL CHECK(total>=0),created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_quotes",
+          "tbl_name": "orders_quotes",
+          "sql": "CREATE TABLE orders_quotes(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,cart_revision INTEGER NOT NULL,lines TEXT NOT NULL,currency TEXT NOT NULL,total INTEGER NOT NULL,expires_at INTEGER NOT NULL,order_id TEXT,policy_version TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_reservation_deadlines",
+          "tbl_name": "orders_reservation_deadlines",
+          "sql": "CREATE TABLE orders_reservation_deadlines(org_id TEXT NOT NULL,order_id TEXT NOT NULL,expires_at INTEGER,PRIMARY KEY(org_id,order_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "orders_reservation_history",
+          "tbl_name": "orders_reservation_history",
+          "sql": "CREATE TABLE orders_reservation_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,revision INTEGER NOT NULL,action TEXT NOT NULL CHECK(action IN('deadline','expire')),before_expires_at INTEGER,expires_at INTEGER,lines TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_audit",
+          "tbl_name": "platform_audit",
+          "sql": "CREATE TABLE platform_audit (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL, reference TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_audit_clock",
+          "tbl_name": "platform_audit_clock",
+          "sql": "CREATE TABLE platform_audit_clock (id INTEGER PRIMARY KEY CHECK(id=1),sequence INTEGER NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_audit_order",
+          "tbl_name": "platform_audit_order",
+          "sql": "CREATE TABLE platform_audit_order (sequence INTEGER PRIMARY KEY, audit_id TEXT NOT NULL UNIQUE REFERENCES platform_audit(id), org_id TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_commands",
+          "tbl_name": "platform_commands",
+          "sql": "CREATE TABLE platform_commands (org_id TEXT NOT NULL, actor_id TEXT NOT NULL, name TEXT NOT NULL, key TEXT NOT NULL, hash TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(org_id,actor_id,name,key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_deliveries",
+          "tbl_name": "platform_deliveries",
+          "sql": "CREATE TABLE platform_deliveries(\n        consumer_id TEXT NOT NULL,event_id TEXT NOT NULL,org_id TEXT NOT NULL,consumer_version INTEGER NOT NULL,\n        state TEXT NOT NULL CHECK(state IN('leased','retry','quarantined','completed')),\n        attempts INTEGER NOT NULL CHECK(attempts>0),cycle_attempts INTEGER NOT NULL CHECK(cycle_attempts>=0),revision INTEGER NOT NULL CHECK(revision>0),\n        lease_token TEXT,lease_until INTEGER,available_at INTEGER NOT NULL,last_error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,completed_at TEXT,\n        PRIMARY KEY(consumer_id,event_id),CHECK((state='leased' AND lease_token IS NOT NULL AND lease_until IS NOT NULL) OR (state<>'leased' AND lease_token IS NULL AND lease_until IS NULL))) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_delivery_attempts",
+          "tbl_name": "platform_delivery_attempts",
+          "sql": "CREATE TABLE platform_delivery_attempts(\n        id TEXT PRIMARY KEY,consumer_id TEXT NOT NULL,event_id TEXT NOT NULL,org_id TEXT NOT NULL,attempt INTEGER NOT NULL,consumer_version INTEGER NOT NULL,\n        claimed_at TEXT NOT NULL,finished_at TEXT,outcome TEXT NOT NULL CHECK(outcome IN('leased','expired','retry','quarantined','completed')),error_code TEXT,\n        UNIQUE(consumer_id,event_id,attempt)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_delivery_receipts",
+          "tbl_name": "platform_delivery_receipts",
+          "sql": "CREATE TABLE platform_delivery_receipts(consumer_id TEXT NOT NULL,event_id TEXT NOT NULL,org_id TEXT NOT NULL,consumer_version INTEGER NOT NULL,event_hash TEXT NOT NULL,completed_at TEXT NOT NULL,PRIMARY KEY(consumer_id,event_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_events",
+          "tbl_name": "platform_events",
+          "sql": "CREATE TABLE platform_events (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, type TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, reference TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_projections",
+          "tbl_name": "platform_projections",
+          "sql": "CREATE TABLE platform_projections (event_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, type TEXT NOT NULL, reference TEXT NOT NULL, created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "platform_recovery",
+          "tbl_name": "platform_recovery",
+          "sql": "CREATE TABLE platform_recovery (id INTEGER PRIMARY KEY CHECK(id=1), snapshot_hash TEXT NOT NULL, restored_at TEXT NOT NULL, source_completed_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_draft_versions",
+          "tbl_name": "procurement_draft_versions",
+          "sql": "CREATE TABLE procurement_draft_versions(draft_id TEXT NOT NULL,revision INTEGER NOT NULL,org_id TEXT NOT NULL,state TEXT NOT NULL,input TEXT NOT NULL,actor_id TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(draft_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_drafts",
+          "tbl_name": "procurement_drafts",
+          "sql": "CREATE TABLE procurement_drafts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('draft','received','discarded')),revision INTEGER NOT NULL CHECK(revision>0),input TEXT NOT NULL,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,po_id,line_id,delivery_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_lines",
+          "tbl_name": "procurement_lines",
+          "sql": "CREATE TABLE procurement_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,product_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),received INTEGER NOT NULL DEFAULT 0,unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),CHECK(received>=0 AND received<=quantity),UNIQUE(po_id,product_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_orders",
+          "tbl_name": "procurement_orders",
+          "sql": "CREATE TABLE procurement_orders(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,supplier_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'open',created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_receipts",
+          "tbl_name": "procurement_receipts",
+          "sql": "CREATE TABLE procurement_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,quantity INTEGER NOT NULL,unit_ids TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,po_id,delivery_ref,line_id)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_return_followups",
+          "tbl_name": "procurement_return_followups",
+          "sql": "CREATE TABLE procurement_return_followups (\n        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,return_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),\n        kind TEXT NOT NULL CHECK(kind IN('credit','replacement','void','review')),reference TEXT NOT NULL,evidence TEXT NOT NULL,\n        amount INTEGER NOT NULL CHECK(amount>=0),quantity INTEGER NOT NULL CHECK(quantity>=0),receipt_id TEXT,target_id TEXT,\n        state TEXT,resolution TEXT,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,\n        UNIQUE(org_id,reference),UNIQUE(return_id,revision)\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_returns",
+          "tbl_name": "procurement_returns",
+          "sql": "CREATE TABLE procurement_returns(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,receipt_id TEXT NOT NULL,po_id TEXT NOT NULL,supplier_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),serial TEXT,return_ref TEXT NOT NULL,reason TEXT NOT NULL,handover_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,return_ref)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "procurement_suppliers",
+          "tbl_name": "procurement_suppliers",
+          "sql": "CREATE TABLE procurement_suppliers(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_claims",
+          "tbl_name": "warranty_claims",
+          "sql": "CREATE TABLE warranty_claims(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,unit_id TEXT NOT NULL,shipment_id TEXT NOT NULL,invoice_id TEXT NOT NULL,type TEXT NOT NULL CHECK(type IN('warranty','return')),state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','received','inspected','repair','disposed')),issue TEXT NOT NULL,evidence TEXT NOT NULL,coverage_end TEXT NOT NULL,inspection TEXT NOT NULL DEFAULT '',disposition TEXT,credit_id TEXT,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_decisions",
+          "tbl_name": "warranty_decisions",
+          "sql": "CREATE TABLE warranty_decisions(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,action TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_evidence",
+          "tbl_name": "warranty_evidence",
+          "sql": "CREATE TABLE warranty_evidence(\n        id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,\n        filename TEXT NOT NULL,media_type TEXT NOT NULL CHECK(media_type IN('image/jpeg','image/png','application/pdf','text/plain')),\n        audience TEXT NOT NULL CHECK(audience IN('customer','staff')),description TEXT NOT NULL,\n        byte_length INTEGER NOT NULL CHECK(byte_length BETWEEN 1 AND 5242880),\n        content_hash TEXT NOT NULL,content BLOB NOT NULL CHECK(length(content)=byte_length),\n        uploaded_by TEXT NOT NULL,created_at TEXT NOT NULL,\n        UNIQUE(org_id,claim_id,audience,content_hash),\n        FOREIGN KEY(claim_id) REFERENCES warranty_claims(id)\n      ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_manufacturer_cases",
+          "tbl_name": "warranty_manufacturer_cases",
+          "sql": "CREATE TABLE warranty_manufacturer_cases(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,manufacturer TEXT NOT NULL,reference TEXT NOT NULL,manufacturer_key TEXT NOT NULL,reference_key TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','accepted','denied','cancelled')),revision INTEGER NOT NULL CHECK(revision>=1),created_at TEXT NOT NULL,UNIQUE(org_id,manufacturer_key,reference_key)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_manufacturer_history",
+          "tbl_name": "warranty_manufacturer_history",
+          "sql": "CREATE TABLE warranty_manufacturer_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,case_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(case_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacement_history",
+          "tbl_name": "warranty_replacement_history",
+          "sql": "CREATE TABLE warranty_replacement_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(replacement_id,revision)) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacement_shipping",
+          "tbl_name": "warranty_replacement_shipping",
+          "sql": "CREATE TABLE warranty_replacement_shipping(\n      replacement_id TEXT PRIMARY KEY REFERENCES warranty_replacements(id),org_id TEXT NOT NULL,\n      carrier TEXT NOT NULL,tracking TEXT NOT NULL,carrier_key TEXT NOT NULL,tracking_key TEXT NOT NULL,\n      recipient TEXT NOT NULL,address TEXT NOT NULL,evidence TEXT NOT NULL,dispatched_at TEXT NOT NULL,\n      state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','delivered')),\n      revision INTEGER NOT NULL CHECK(revision>=1),observed_at TEXT NOT NULL,\n      UNIQUE(org_id,carrier_key,tracking_key)\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacement_shipping_history",
+          "tbl_name": "warranty_replacement_shipping_history",
+          "sql": "CREATE TABLE warranty_replacement_shipping_history(\n      id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL REFERENCES warranty_replacements(id),\n      revision INTEGER NOT NULL CHECK(revision>=1),state TEXT NOT NULL,reference TEXT NOT NULL,reference_key TEXT NOT NULL,\n      evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,\n      UNIQUE(replacement_id,revision),UNIQUE(replacement_id,reference_key)\n    ) STRICT"
+        },
+        {
+          "type": "table",
+          "name": "warranty_replacements",
+          "tbl_name": "warranty_replacements",
+          "sql": "CREATE TABLE warranty_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,new_unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over')),revision INTEGER NOT NULL CHECK(revision>=1),old_disposition TEXT NOT NULL CHECK(old_disposition IN('restock','scrap')),coverage_end TEXT NOT NULL,reason TEXT NOT NULL,recipient TEXT,evidence TEXT,created_at TEXT NOT NULL,completed_at TEXT) STRICT"
+        },
+        {
+          "type": "trigger",
+          "name": "platform_audit_sequence",
+          "tbl_name": "platform_audit",
+          "sql": "CREATE TRIGGER platform_audit_sequence AFTER INSERT ON platform_audit BEGIN\n        UPDATE platform_audit_clock SET sequence=sequence+1 WHERE id=1;\n        INSERT INTO platform_audit_order(sequence,audit_id,org_id) SELECT sequence,new.id,new.org_id FROM platform_audit_clock WHERE id=1;\n      END"
+        }
+      ]
+    }
+  ]
+}

@@ -13,6 +13,7 @@
     "worker": "tsx src/server/worker.ts",
     "events:worker": "tsx src/server/event-worker.ts",
     "recovery": "tsx src/server/recovery-cli.ts",
+    "schema": "tsx src/server/schema-cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "build": "vite build",

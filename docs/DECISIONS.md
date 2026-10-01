@@ -56,3 +56,10 @@ Use synthetic or explicitly approved de-identified samples locally: SKU/customer
 For each settled choice record date, responsible reviewer, rationale, considered alternative, affected tasks/contracts, verification signal and revisit trigger. A decision affecting costs or operations is not silently made by a developer. Technical details within a later authorized scope can be selected without reopening settled business choices.
 
 All DEC items above are pending except the confirmed direction. Missing business answers block the relevant gate, not unrelated planning work.
+
+
+## Initial schema compatibility contract — 2026-10-01
+
+Engineering selection within implementation authority: fresh initialization commits module DDL, constructor backfills and a platform version receipt together. Normal startup validates the exact versioned profile before constructors; nonempty unversioned, changed and future layouts fail closed. A separate local operator CLI can clone only the frozen previous release or supported current layout to a fresh same-region file, adding legacy version metadata without altering business facts. See [schema upgrades](SCHEMA-UPGRADES.md) for review, cutoff, reconciliation and remaining qualification.
+
+This bounded contract replaces implicit startup repair with explicit version evidence. It does not select production writer authority, hosting, RPO/RTO or a cutover policy. Destructive/earlier/rolling migrations require new supported versions and fixtures; authorization and product gate statuses are unchanged. Revisit before any module schema change, restore of an older archive, or qualified production release.

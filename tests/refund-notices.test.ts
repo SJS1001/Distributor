@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
+import { Billing } from "../src/server/billing.ts";
 import { Application } from "../src/server/application.ts";
 import { createHttp } from "../src/server/http.ts";
 import type { Adapter } from "../src/server/integration.ts";
@@ -363,7 +364,7 @@ test("a late audit failure rolls back refund cash, exception resolution, immutab
   assert.equal(alerts.page(f.actor).unread, 0);
 });
 
-test("existing verified exceptions backfill once after upgrade without inventing earlier notice history", async (t) => {
+test("synthetic Billing exceptions backfill once without inventing earlier notice history", async (t) => {
   const f = setup(t);
   await f.observe("succeeded");
   await f.observe("requires_action");
@@ -372,6 +373,8 @@ test("existing verified exceptions backfill once after upgrade without inventing
     .migrate(
       "DROP TABLE billing_refund_alert_reads; DROP TABLE billing_refund_alert_updates; DROP TABLE billing_refund_alerts;",
     );
+  // Restore synthetic missing owned tables before startup validates the current schema.
+  new Billing(f.app.database, f.app.platform, f.app.identity, f.app.catalog);
   f.app.close();
   f.app = new Application(f.path);
   const alerts = () => f.app.billing.refunds.alerts;

@@ -478,3 +478,39 @@ test("recovered HTTP sessions require fresh login and authenticated dashboard di
   }
   noStaging(f);
 });
+
+test("backup refuses altered schema version receipts despite unchanged DDL and preserves source evidence", async (t) => {
+  for (const alteration of [
+    "version=999",
+    "schema_hash='" + "0".repeat(64) + "'",
+    "event_reports=0",
+    "region='US'",
+    "initialized_at='invalid'",
+    "initialized_at='2026-02-30T12:00:00.000Z'",
+    "initialized_at='2025-02-29T12:00:00.000Z'",
+  ]) {
+    const f = fixture(t),
+      p = paths(f);
+    f.app.database
+      .owned("platform")
+      .run(
+        "UPDATE platform_schema_version SET " +
+          alteration +
+          " WHERE singleton=1",
+      );
+    const before = f.app.database
+      .owned("platform")
+      .all("SELECT * FROM platform_schema_version");
+    await assert.rejects(createBackup(f.path, p.archive, "CA", p.key), {
+      code: "RECOVERY_SCHEMA",
+    });
+    assert.equal(existsSync(p.archive), false);
+    assert.deepEqual(
+      f.app.database
+        .owned("platform")
+        .all("SELECT * FROM platform_schema_version"),
+      before,
+    );
+    noStaging(f);
+  }
+});

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
+import { EventReport } from "../src/server/event-report.ts";
 import {
   EventDelivery,
   type EventConsumer,
@@ -499,22 +500,15 @@ async function child(
   await ready;
   return p;
 }
-function processSchema(f: ReturnType<typeof fixture>) {
-  f.app.database
-    .owned("report")
-    .migrate(
-      "CREATE TABLE IF NOT EXISTS report_process_effects(event_id TEXT PRIMARY KEY) STRICT",
-    );
-}
 function restartEngine(f: ReturnType<typeof fixture>) {
-  const store = f.app.database.owned("report");
+  const report = new EventReport(f.app.database);
   return new EventDelivery(f.app.database, f.app.platform, f.app.identity, [
     {
       id: "process-report",
       version: 1,
       eventVersions: [1],
       apply(e) {
-        store.run("INSERT INTO report_process_effects VALUES(?)", e.id);
+        report.apply(e);
       },
     },
   ]);
@@ -525,7 +519,6 @@ for (const mode of ["claimed", "during", "after"])
     { timeout: 10000 },
     async (t) => {
       const f = fixture(t);
-      processSchema(f);
       const total = outbox(f).get(
         "SELECT COUNT(*) AS count FROM platform_events",
       )!.count;
@@ -547,7 +540,7 @@ for (const mode of ["claimed", "during", "after"])
       assert.equal(
         f.app.database
           .owned("report")
-          .get("SELECT COUNT(*) AS count FROM report_process_effects")?.count,
+          .get("SELECT COUNT(*) AS count FROM report_events")?.count,
         mode === "after" ? 1 : 0,
       );
       expire(f, "process-report");
@@ -558,7 +551,7 @@ for (const mode of ["claimed", "during", "after"])
       assert.equal(
         f.app.database
           .owned("report")
-          .get("SELECT COUNT(*) AS count FROM report_process_effects")?.count,
+          .get("SELECT COUNT(*) AS count FROM report_events")?.count,
         total,
       );
       assert.equal(
@@ -579,7 +572,6 @@ test(
   { timeout: 10000 },
   async (t) => {
     const f = fixture(t);
-    processSchema(f);
     for (let n = 0; n < 35; n++)
       f.app.platform.event(f.actor, "SyntheticFact", `concurrent-${n}`, { n });
     const total = Number(
@@ -613,7 +605,7 @@ test(
     assert.equal(
       f.app.database
         .owned("report")
-        .get("SELECT COUNT(*) AS count FROM report_process_effects")?.count,
+        .get("SELECT COUNT(*) AS count FROM report_events")?.count,
       total,
     );
   },

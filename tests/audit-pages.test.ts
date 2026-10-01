@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { spawn } from "node:child_process";
 import { fixture } from "./fixtures.ts";
+import { Platform } from "../src/server/platform.ts";
 import { Application } from "../src/server/application.ts";
 import { DomainError, type Actor } from "../src/server/core.ts";
 import { createHttp } from "../src/server/http.ts";
@@ -135,7 +136,7 @@ test("audit cursors use actual organization and current role, active and passwor
   iam.run("UPDATE iam_users SET active=0 WHERE id=?", f.actor.id);
   denied("FORBIDDEN", () => f.app.platform.auditPage(f.actor, cursor));
 });
-test("legacy audit backfill preserves bytes and cursors across restart and SQLite vacuum", (t) => {
+test("synthetic Platform audit backfill preserves bytes and cursors across restart and SQLite vacuum", (t) => {
   const f = fixture(t);
   seed(f, 45);
   const p = f.app.database.owned("platform");
@@ -144,6 +145,8 @@ test("legacy audit backfill preserves bytes and cursors across restart and SQLit
   );
   const old = p.all("SELECT * FROM platform_audit ORDER BY rowid"),
     commands = p.all("SELECT * FROM platform_commands ORDER BY rowid");
+  // Restore synthetic missing owned tables before startup validates the current schema.
+  new Platform(f.app.database);
   f.app.close();
   f.app = new Application(f.path);
   assert.deepEqual(

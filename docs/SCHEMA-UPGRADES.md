@@ -1,0 +1,51 @@
+# Versioned startup and reviewed database upgrades
+
+D-009/D-036/D-037/D-039 engineering work. All product tasks/gates remain NOT VERIFIED. This procedure supports a local upgrade rehearsal; publication, deployment, provider calls and production activation require separate authority.
+
+## Supported contracts
+
+A fresh store initializes its owned schema, constructor backfills and platform-owned version receipt in one SQLite write transaction. A late exception rolls back the entire initialization. A current store checks its version, recorded fingerprint and supported schema profile before running constructors; mismatched, future and unversioned nonempty stores reject normal startup. Concurrent first startup may return a SQLite lock error for one process; stop overlapping starters and retry after the successful initialization closes. The local contention probe verifies valid schema and unchanged receipt after retry, not automatic retry or production startup availability. Schema checks establish structural compatibility, not the correctness of every business record or protection against an authorized database administrator.
+
+Version 1 admits only the frozen previous local release `d93cd0ce926eb0c01bae96abed15f275eb40dc75` baseline (with the optional event report present or absent), and the matching current versioned profiles. Historical module backfill tests are synthetic fixtures; missing tables in an otherwise current production store are schema drift, not permission for automatic repair. Older layouts and future releases need explicit migrations, independent fixtures and a revised version/compatibility register.
+
+The fingerprint hashes the JSON representation of ordered `sqlite_schema` entries (`type`, `name`, `tbl_name`, `sql`), excluding names beginning `sqlite_`. Versioned fingerprints include the version table. Optional reporting can add its two schema objects atomically; disabling it retains existing objects and records. No reporting removal, destructive migration or downgrade is supported. The separate encrypted recovery procedure currently qualifies the report-enabled schema only; a report-disabled clone does not qualify backup/restore for that profile. Concurrent first startup can reject one process with a SQLite lock error while another initializes successfully. Preserve the winning store and retry after startup completes; this is not evidence of rolling-start availability. A database has one physical version across its regional organizations; account administrators cannot upgrade it through HTTP.
+
+## Inspect and prepare
+
+The CLI uses Node 24.16.x and filesystem authority over the entire regional store. Inspect prints bounded structural/version/region metadata, with no users, customer records, tokens or business contents:
+
+```sh
+npm run schema -- inspect /absolute/private/source.db
+```
+
+Inspection is read-only. An unbootstrapped store can report no organization region; upgrade requires a bootstrapped source whose organization region agrees with the requested CA/US region. An unsupported schema fails before application constructors run. Review the reported fingerprint against the approved exact release and retain the source/version/cutoff receipt privately.
+
+Stop every source writer and consumer first, including the API, event/provider workers, admin CLI and old binaries. The CLI cannot prove they are stopped. A SQLite snapshot includes committed WAL data, but neither a snapshot nor a transient write lock prevents an old process from writing later. Keep one authoritative source and record the actual cutoff. The existing encrypted recovery command expects the full report-enabled schema; recovery of a reports-disabled profile is not qualified. Review supported report installation or a separately tested recovery procedure before relying on backups. Preserve a separately encrypted backup and its keys; an upgraded file is plaintext and does not replace a recovery archive.
+
+Prepare a private destination directory on trusted storage. Destination files/sidecars must not exist; source and final directory symlinks reject. Ancestor paths, physical storage residency, free capacity and permissions remain the operator's responsibility. Do not start any application against the staging or destination file while the upgrade is running.
+
+## Upgrade to a fresh file
+
+Copy the exact fingerprint from the reviewed inspection; the example placeholder must be replaced:
+
+```sh
+npm run schema -- upgrade /absolute/private/source.db /absolute/private/upgrade-v1/upgraded.db 'REPLACE_WITH_REVIEWED_64_CHARACTER_LOWERCASE_SHA256' CA
+```
+
+The operation verifies supported schema, version, integrity, foreign keys and source region; backs up committed SQLite state to private staging; verifies the copied snapshot against the expected fingerprint; initializes the supported legacy version receipt or preserves the current receipt; and revalidates before publication. The original source is never opened as an application and is not changed. The destination is synchronized and published exclusively with mode 0600. The receipt identifies source/destination fingerprints, versions, requested region and the operation interval; it is not an activation or RPO/RTO receipt.
+
+Business identifiers, receipts, stock/money, session state, provider credentials, uncertain outcomes and any recovery hold retain their meaning. MFA and provider ciphertext still need the original separately held runtime keys. No credential refresh, shipment, payment, provider lookup, event delivery, session invalidation or hold release is performed. Existing copied sessions and grants describe the cutoff, so keep this copy isolated until current access and external outcomes are reviewed. A schema upgrade cannot reverse transactions or shipments after its snapshot.
+
+Normal errors remove private staging and never overwrite a destination. SIGKILL/power loss can leave private plaintext staging; prove the operation is stopped before inspecting or removing it. A publication synchronization failure can leave a final file present even though the command reports failure. Preserve it and the receipt/log, inspect it, and use a new destination for any retry. Never retry over a possible winning destination.
+
+## Rehearsal, activation and rollback
+
+Use the fresh copy only in an isolated authorized rehearsal. Reconcile source/copy organization and grants, table/receipt identities, stock quantities/costs/serial custody, accepted order and reservation state, shipment/return facts, invoice/credit/payment/refund balances and external operation identities. Re-run the required native scenarios and denied access checks at the exact candidate with provider IO disabled. Confirm optional reporting behavior and retained histories/cursors. Preserve failure evidence rather than editing records to force reconciliation.
+
+This CLI does not select writer authority, route customers, activate providers or deploy a release. Activation still needs a reviewed cutoff, current access/customer choice, external outcome reconciliation, one writer, routing/rollback plan and operator approval. Keep the original source authoritative while rehearsing. Once a new authoritative writer or irreversible external effect exists, reverting to an old file is not a safe rollback; compare and reconcile subsequent facts explicitly. Mixed-version writers are unsupported, even if both schemas appear familiar.
+
+Encrypted recovery continues to demand the exact running application's schema. An archive from before versioning is not silently restored/migrated by recovery. A separate authorized legacy-archive procedure remains required; do not replace archive integrity checks with this clone operation.
+
+## Evidence and limits
+
+The [schema upgrade engineering receipt](evidence/LOCAL-SCHEMA-UPGRADES-2026-10-01.md) records the tested candidate, independent review and retained failures: 633 backend tests and 42 Chromium tests passed on the workstation. Synthetic fixtures and process faults establish only their tested boundaries. Production volume/retention, disk/power faults, cutover/RPO/RTO targets, key/storage residency, real provider outcomes, rolling compatibility, automated activation, human acceptance and all product gates remain unqualified.

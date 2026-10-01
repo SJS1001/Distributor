@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork, type ChildProcess } from "node:child_process";
+import { Inventory } from "../src/server/inventory.ts";
 import { Application } from "../src/server/application.ts";
 import type { Actor } from "../src/server/core.ts";
 import { fixture } from "./fixtures.ts";
@@ -295,7 +296,7 @@ test("serialized arrivals require the exact scan, one unit, matching line and cu
   );
 });
 
-test("legacy transfers reconstruct immutable quantities from dispatch movements and preserve unknown historical receipt evidence", (t) => {
+test("synthetic Inventory transfer backfill reconstructs immutable quantities from dispatch movements and preserves unknown historical receipt evidence", (t) => {
   const f = fixture(t),
     u = bulk(f);
   const legacy = f.app.inventory.dispatchTransfer(f.actor, "legacy-transit", {
@@ -335,6 +336,8 @@ test("legacy transfers reconstruct immutable quantities from dispatch movements 
   store.migrate(
     "DROP TABLE inventory_transfer_receipts; DROP TABLE inventory_transfer_manifest;",
   );
+  // Restore synthetic missing owned tables before startup validates the current schema.
+  new Inventory(f.app.database, f.app.platform, f.app.catalog, f.app.identity);
   f.app.close();
   f.app = new Application(f.path);
   const rows = f.app.inventory.transfers(f.actor);

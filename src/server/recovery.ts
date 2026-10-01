@@ -20,7 +20,8 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Application } from "./application.ts";
-import { check } from "./core.ts";
+import { check, DomainError } from "./core.ts";
+import { inspectConnection } from "./schema.ts";
 import { type Region } from "./iam.ts";
 
 const magic = Buffer.from("DISTBKP1"),
@@ -103,6 +104,20 @@ function inspect(path: string, region: Region, expectedSchema: string) {
       "RECOVERY_SCHEMA",
       "Snapshot schema differs from this application; use a separately tested upgrade procedure.",
     );
+    // A matching DDL hash alone cannot validate altered version/profile metadata.
+    // Preserve recovery's public error vocabulary instead of leaking SQLite text.
+    try {
+      check(
+        inspectConnection(db).kind === "current",
+        "RECOVERY_SCHEMA",
+        "Snapshot requires a supported current schema receipt.",
+      );
+    } catch {
+      throw new DomainError(
+        "RECOVERY_SCHEMA",
+        "Snapshot schema receipt is not supported by this application.",
+      );
+    }
     const integrity = db.prepare("PRAGMA integrity_check").all();
     check(
       integrity.length === 1 &&

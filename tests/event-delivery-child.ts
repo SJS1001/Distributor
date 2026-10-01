@@ -1,4 +1,5 @@
 import { Application } from "../src/server/application.ts";
+import { EventReport } from "../src/server/event-report.ts";
 import {
   EventDelivery,
   type EventConsumer,
@@ -17,13 +18,13 @@ process.on(
     if (message.action === "init") {
       mode = message.mode;
       app = new Application(message.path);
-      const store = app.database.owned("report");
+      const report = new EventReport(app.database);
       const consumer: EventConsumer = {
         id: "process-report",
         version: 1,
         eventVersions: [1],
         apply(event) {
-          store.run("INSERT INTO report_process_effects VALUES(?)", event.id);
+          report.apply(event);
           if (mode === "during") marker("during");
         },
       };
