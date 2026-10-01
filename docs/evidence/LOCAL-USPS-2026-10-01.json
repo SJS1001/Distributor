@@ -866,5 +866,19 @@
     "docs/PROVIDERS.md": "41f0007ecfaac11f3a56f77939832a02f833894fe9f7afbb2412f91d6003380f",
     "docs/IMPLEMENTATION.md": "9ea9baefa1c8c60945ed7f3c98cbf8118b72e099b7df8599238ee29e52f4fe80",
     "docs/evidence/LOCAL-USPS-2026-10-01.md": "d7a65b9a192b8bec103aead749de5e660784a556b90e50d69ae39f14197aabd7"
+  },
+  "sourceCommit": "df0a472263810e5e63d7e6f056baaeed2782fb16",
+  "committedByteAudit": {
+    "sourceCommit": "df0a472263810e5e63d7e6f056baaeed2782fb16",
+    "auditedAt": "2026-10-01T23:25:10.662452+00:00",
+    "status": "PASS",
+    "trackedFiles": 534,
+    "testedInputs": 265,
+    "historicalEvidence": 183,
+    "licenseNotices": 170,
+    "commandRecords": 11,
+    "checkoutClean": true,
+    "path": "/tmp/distributor-usps-checkpoint/post-commit-audit.json",
+    "sha256": "9970ecc2662783ad4ab3f469d74a17bf434e8265626950527f5118d764b22887"
   }
 }
