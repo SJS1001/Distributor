@@ -305,7 +305,7 @@
   "scopeDocumentSha256": {
     "docs/PROVIDERS.md": "182399ba18c0834c2a31c8030602c17412cae8f21149f080ecd0fe619026ca16",
     "docs/IMPLEMENTATION.md": "1e7aa36676ccf680d8b5509409ac3191542e8bdd60c9aaebed389ee86c6ab3bf",
-    "docs/HANDOFF.md": "f30802c91462d0a56cc91ecadb6bbeb07ff09b248ce4ebd665c7f0543e0c96fc",
+    "docs/HANDOFF.md": "d1d483efe71b0fe9b57ce4eda593165420367d1730bc3d1fcccc2c8d65e8f50d",
     "docs/evidence/LOCAL-QUICKBOOKS-DISCONNECT-2026-10-01.md": "2255a08ca65a0405c0d11cb09c65b19e202c18df2eac8c5f8a4322625118e861"
   },
   "historicalEvidenceSha256": {
@@ -635,6 +635,21 @@
       "log": "/tmp/distributor-quickbooks-disconnect-checkpoint/receipt-whitespace.log",
       "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "recordSha256": "8f2099d63eb18420744db08bb5f7d267d1d4d104a8bc93d5f1ff929eba64bd9c"
+    },
+    "staged-whitespace": {
+      "name": "staged-whitespace",
+      "command": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "startedAt": "2026-10-01T20:54:22.652354+00:00",
+      "elapsedSeconds": 0.00957158301025629,
+      "exitCode": 0,
+      "log": "/tmp/distributor-quickbooks-disconnect-checkpoint/staged-whitespace.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "recordSha256": "82b83de7694368a47d685e0a92a2f8a1f1ddbddaea7a2701f7bfc75ff4c1c0a0"
     }
   },
   "finalCommands": [
