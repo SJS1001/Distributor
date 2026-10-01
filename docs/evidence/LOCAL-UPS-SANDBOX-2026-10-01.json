@@ -37,7 +37,6 @@
     "package.json": "66b1a3c85402c093a70792c6ae3d8eb66afe4cb3702e466c997c5f26839fc1b5",
     "playwright.config.ts": "231f5d6153e3232aa8fe01f4786535a66f9ac6ce14490cb2f956b4995b76eaaa",
     "scripts/verify_plan.py": "34071d7d4f1488f6549bfd48e4480509f681bbcb66f61ad503bfa74cc5e844cc",
-    "src/.DS_Store": "8d13137fc4b0d52630966004e9e429d6042ab2bede86ad5ad3c7008c7e7b2d5e",
     "src/server/application.ts": "ef1695aa276bfce9330625dd55afb6fae4f56039a159ff806d4900825bb01928",
     "src/server/assets/notosans/NotoSans.ttf": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5",
     "src/server/assets/notosans/OFL.txt": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
@@ -257,11 +256,11 @@
   "documentationSha256": {
     "README.md": "8af2bc0c7f6f974291bfaef68564600cf8801b5717532db50d5535626ebddac3",
     "docs/CARRIER-BOOKINGS.md": "ad723fee3dede99c78a481915ea1d820ebfd46aad8d6a296ca93ffef0ec1cd32",
-    "docs/HANDOFF.md": "12b7d9bbba1c63b5ff55a4338c5473c4cbfae3e007cd82b441460716a8dba838",
+    "docs/HANDOFF.md": "af3ee1e334c024be43b94075f78b931d1957963ee21f5494793d54489b4f838a",
     "docs/IMPLEMENTATION.md": "1b4c1b1e0981b46ed7f72c16c18bd29c2c0c8416c4d89e70956b25bd63918804",
     "docs/PROVIDERS.md": "a2937030474f9bbdbafd3dcaab53e6ad90f8b12f45a57e7d517a3b030881071d",
     "docs/REUSE.md": "6680cbdf5c42fd12c1cc0d02692067aa4a88993b131440ba2af1bb8736a111ba",
-    "docs/evidence/LOCAL-UPS-SANDBOX-2026-10-01.md": "e0329110fd40bac680236fcbada97bdf043be5ec123db91f050d35738bc25fc7"
+    "docs/evidence/LOCAL-UPS-SANDBOX-2026-10-01.md": "226af83bfcf8025f82ea06aa957c3b6603cfff3cb38d866a8649325a62da676b"
   },
   "historicalEvidenceSha256": {
     "docs/evidence/BILLING-FAILED-VARIABLE-FONT-2026-09-30.pdf": "985d3e7975bbb4bdc48c0f141f2515b48a611f9c7128a3df1b9f9e863987705e",
@@ -648,6 +647,14 @@
   ],
   "execution": "direct workstation checks and local commit only; no CI, cloud source transfer, push/PR, actual provider IO, deployment, purchase, live data, publication or OPUS/UB integration",
   "receiptSha256": {
-    "docs/evidence/LOCAL-UPS-SANDBOX-2026-10-01.md": "e0329110fd40bac680236fcbada97bdf043be5ec123db91f050d35738bc25fc7"
+    "docs/evidence/LOCAL-UPS-SANDBOX-2026-10-01.md": "226af83bfcf8025f82ea06aa957c3b6603cfff3cb38d866a8649325a62da676b"
+  },
+  "candidateCaptureExcluded": {
+    "src/.DS_Store": "Ignored workstation metadata; initial committed-byte audit failed on this nontracked entry. Original 223-entry private candidate.json retained."
+  },
+  "postCommitAuditInitial": {
+    "status": "FAIL",
+    "reason": "git show HEAD:src/.DS_Store returned exit 128 because ignored workstation metadata is not committed",
+    "correction": "Exclude metadata; bind all 222 application/test/configuration/license inputs to committed bytes; no tested code changed"
   }
 }
