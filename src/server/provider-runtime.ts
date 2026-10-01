@@ -480,6 +480,25 @@ export function configuredProviders(
                   )
               : async () => required("QUICKBOOKS_ACCESS_TOKEN"),
             true,
+            (effect) => {
+              check(
+                effect.org_id === required("PROVIDER_ORG_ID"),
+                "FORBIDDEN",
+                "Provider organization differs.",
+                403,
+              );
+              const actor = app.identity.workerActor(
+                effect.org_id,
+                required("PROVIDER_WORKER_USER_ID"),
+              );
+              app.platform.assertProviderAccess();
+              app.identity.providerAllowed(
+                actor,
+                effect.account_id,
+                "quickbooks",
+              );
+              app.integration.assertAccountingRefundReady(actor, effect);
+            },
           )
         : undefined,
     },

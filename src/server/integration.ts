@@ -48,7 +48,7 @@ export type EffectResult = {
   result: Record<string, unknown>;
 };
 export type Adapter = {
-  execute(effect: Effect): Promise<EffectResult>;
+  execute(effect: Effect, beforeWrite?: () => void): Promise<EffectResult>;
   lookup(effect: Effect): Promise<EffectResult | null>;
   readInvoiceBalance?(effect: Effect): Promise<AccountingBalance>;
 };
@@ -79,6 +79,29 @@ export type AccountingCreditApplicationIntent = {
   amount: number;
   applicationRef: string;
   applicationDate: string;
+};
+export type AccountingRefundIntent = {
+  refundId: string;
+  paymentId: string;
+  cashReference: string;
+  amount: number;
+  payment: AccountingPaymentIntent;
+  credit: AccountingCreditIntent;
+  creditEffectId: string;
+  externalCreditRef: string;
+  paymentEffectId: string;
+  externalPaymentRef: string;
+  bankAccountRef: string;
+  receivableAccountRef: string;
+  nonTaxCodeRef: string;
+  expenseRef: string;
+  expenseDate: string;
+};
+export type AccountingRefundApplicationIntent = {
+  refund: AccountingRefundIntent;
+  expenseEffectId: string;
+  externalExpenseRef: string;
+  applicationRef: string;
 };
 export type Callback = {
   id: string;
@@ -118,6 +141,8 @@ export class Integration {
     CREATE UNIQUE INDEX IF NOT EXISTS integration_external_identity ON integration_effects(org_id,provider,external_ref) WHERE external_ref IS NOT NULL;
     CREATE TABLE IF NOT EXISTS integration_payment_allocations(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,payment_id TEXT NOT NULL,applied_amount INTEGER NOT NULL CHECK(applied_amount>=0),UNIQUE(org_id,payment_id)) STRICT;
     CREATE INDEX IF NOT EXISTS integration_payment_invoice ON integration_payment_allocations(org_id,invoice_id);
+    CREATE TABLE IF NOT EXISTS integration_accounting_refunds(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,refund_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),UNIQUE(org_id,refund_id)) STRICT;
+    CREATE INDEX IF NOT EXISTS integration_refund_credit ON integration_accounting_refunds(org_id,credit_id);
     CREATE TABLE IF NOT EXISTS integration_credit_applications(effect_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,credit_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0)) STRICT;
     CREATE INDEX IF NOT EXISTS integration_credit_application_invoice ON integration_credit_applications(org_id,invoice_id);
     CREATE INDEX IF NOT EXISTS integration_credit_application_credit ON integration_credit_applications(org_id,credit_id);
@@ -173,9 +198,14 @@ export class Integration {
       .filter(
         (e) =>
           (actor.role !== "buyer" || e.account_id === actor.accountId) &&
-          (!["refund", "payment", "credit", "credit-application"].includes(
-            e.kind,
-          ) ||
+          (![
+            "refund",
+            "payment",
+            "credit",
+            "credit-application",
+            "refund-expense",
+            "refund-application",
+          ].includes(e.kind) ||
             ["admin", "finance", "support"].includes(actor.role)),
       )
       .map((e) => ({
@@ -199,6 +229,12 @@ export class Integration {
             ? this.creditApplicationCapacity(actor, e.reference)
             : undefined,
         recoveryHold: !!this.platform.recoveryHold(),
+        accountingRefund:
+          e.provider === "quickbooks" &&
+          ["refund-expense", "refund-application"].includes(e.kind) &&
+          ["admin", "finance", "support"].includes(actor.role)
+            ? this.accountingRefundStatus(actor, e)
+            : undefined,
       }));
   }
   pending(actor: Actor, limit = 20) {
@@ -748,7 +784,9 @@ export class Integration {
     const credit = this.billing.recordedCredit(actor, creditId),
       invoice = this.billing.invoice(actor, credit.invoice_id),
       reservedAmount = this.store.get<{ amount: number }>(
-        "SELECT COALESCE(SUM(amount),0) AS amount FROM integration_credit_applications WHERE org_id=? AND credit_id=?",
+        "SELECT (SELECT COALESCE(SUM(amount),0) FROM integration_credit_applications WHERE org_id=? AND credit_id=?) + (SELECT COALESCE(SUM(amount),0) FROM integration_accounting_refunds WHERE org_id=? AND credit_id=?) AS amount",
+        actor.orgId,
+        creditId,
         actor.orgId,
         creditId,
       )!.amount;
@@ -861,6 +899,292 @@ export class Integration {
         return effect;
       },
     );
+  }
+  private refundCredit(actor: Actor, creditId: string) {
+    const native = this.billing.recordedCredit(actor, creditId),
+      invoice = this.billing.invoice(actor, native.invoice_id),
+      credit = this.store.get<Effect>(
+        "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='credit' AND reference=? AND state='completed'",
+        actor.orgId,
+        creditId,
+      );
+    check(
+      credit && credit.external_ref?.startsWith("credit:"),
+      "ACCOUNTING_CREDIT_REQUIRED",
+      "Reconcile the original QuickBooks credit first.",
+    );
+    const original = JSON.parse(credit.payload) as AccountingCreditIntent,
+      parent = this.effect(actor, original.invoiceEffectId),
+      { lines, ...nativeCredit } = native;
+    check(
+      parent.provider === "quickbooks" &&
+        parent.kind === "invoice" &&
+        parent.state === "completed" &&
+        parent.reference === invoice.id &&
+        parent.external_ref === original.externalInvoiceRef &&
+        parent.account_id === invoice.account_id &&
+        credit.account_id === invoice.account_id &&
+        canonical(original.invoice) ===
+          canonical({
+            id: invoice.id,
+            number: invoice.number,
+            total: invoice.total,
+            currency: invoice.currency,
+          }) &&
+        canonical(original.credit) === canonical(nativeCredit) &&
+        canonical(
+          original.lines.map(({ itemRef: _mapping, ...line }) => line),
+        ) === canonical(lines) &&
+        original.customerRef === JSON.parse(parent.payload).customerRef,
+      "ACCOUNTING_CREDIT_MISMATCH",
+      "Original credit or invoice identity changed; reconcile before recording a refund.",
+    );
+    return { native, invoice, credit, original };
+  }
+  accountingRefund(
+    actor: Actor,
+    key: string,
+    input: {
+      refundId: string;
+      creditId: string;
+      bankAccountRef: string;
+      receivableAccountRef: string;
+      nonTaxCodeRef: string;
+      expenseDate: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "quickbooks.refund",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        const fact = this.billing.refunds.accountingFact(actor, input.refundId),
+          invoice = this.billing.invoice(actor, fact.invoiceId);
+        check(
+          fact.state === "completed" && fact.cashReference,
+          "ACCOUNTING_REFUND_REQUIRED",
+          "Confirm the native cash refund before recording it in accounting.",
+        );
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "quickbooks");
+      },
+      () => {
+        const fact = this.billing.refunds.accountingFact(actor, input.refundId),
+          { native, invoice, credit, original } = this.refundCredit(
+            actor,
+            input.creditId,
+          );
+        check(
+          fact.invoiceId === invoice.id &&
+            fact.currency === invoice.currency &&
+            this.billing.totals(actor, invoice.id).paid >= invoice.total,
+          "ACCOUNTING_REFUND_MISMATCH",
+          "Refund and credit must belong to the same paid original invoice.",
+        );
+        const payment = this.store.get<Effect>(
+          "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='payment' AND reference=? AND state='completed'",
+          actor.orgId,
+          fact.paymentId,
+        );
+        check(
+          payment && payment.external_ref?.startsWith("payment:"),
+          "ACCOUNTING_PAYMENT_REQUIRED",
+          "Reconcile the original received payment first.",
+        );
+        const cash = JSON.parse(payment.payload) as AccountingPaymentIntent;
+        check(
+          cash.invoice.id === invoice.id &&
+            cash.externalInvoiceRef === original.externalInvoiceRef &&
+            cash.customerRef === original.customerRef &&
+            canonical(cash.payment) ===
+              canonical(this.billing.recordedPayment(actor, fact.paymentId)),
+          "ACCOUNTING_REFUND_MISMATCH",
+          "Original accounting payment differs from the native refund.",
+        );
+        const date = text(input.expenseDate, "Refund accounting date", 10);
+        check(
+          /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+            Number.isFinite(Date.parse(date)) &&
+            new Date(date).toISOString().slice(0, 10) === date,
+          "VALIDATION",
+          "Refund accounting date must be a valid ISO calendar date.",
+        );
+        const payload: AccountingRefundIntent = {
+          refundId: fact.id,
+          paymentId: fact.paymentId,
+          cashReference: fact.cashReference!,
+          amount: fact.amount,
+          payment: cash,
+          paymentEffectId: payment.id,
+          externalPaymentRef: payment.external_ref!.slice(8),
+          credit: original,
+          creditEffectId: credit.id,
+          externalCreditRef: text(
+            credit.external_ref!.slice(7),
+            "QuickBooks credit identity",
+          ),
+          bankAccountRef: text(input.bankAccountRef, "Refund bank account"),
+          receivableAccountRef: text(
+            input.receivableAccountRef,
+            "Accounts receivable account",
+          ),
+          nonTaxCodeRef: text(
+            input.nonTaxCodeRef,
+            "Non-tax refund expense code",
+          ),
+          expenseDate: date,
+          expenseRef: `DR-${digest(fact.id).slice(0, 18)}`,
+        };
+        const old = this.store.get<Effect>(
+          "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='refund-expense' AND reference=?",
+          actor.orgId,
+          fact.id,
+        );
+        if (old)
+          return this.queue(
+            actor,
+            invoice.account_id,
+            "quickbooks",
+            "refund-expense",
+            fact.id,
+            payload,
+          );
+        check(
+          fact.amount <=
+            this.creditApplicationCapacity(actor, native.id).availableCredit,
+          "ACCOUNTING_ALLOCATION",
+          "Pending, unknown or delivered credit applications and refunds reserve this credit.",
+        );
+        const reserved = this.store.get<{ amount: number }>(
+          "SELECT COALESCE(SUM(r.amount),0) AS amount FROM integration_accounting_refunds r JOIN integration_effects e ON e.id=r.effect_id WHERE r.org_id=? AND json_extract(e.payload,'$.paymentId')=?",
+          actor.orgId,
+          fact.paymentId,
+        )!.amount;
+        check(
+          reserved + fact.amount <= cash.appliedAmount,
+          "ACCOUNTING_ALLOCATION",
+          "Refunds exceed the original accounting payment applied to this invoice.",
+        );
+        const effect = this.queue(
+          actor,
+          invoice.account_id,
+          "quickbooks",
+          "refund-expense",
+          fact.id,
+          payload,
+        );
+        this.store.run(
+          "INSERT INTO integration_accounting_refunds VALUES(?,?,?,?,?,?)",
+          effect.id,
+          actor.orgId,
+          invoice.id,
+          fact.id,
+          native.id,
+          fact.amount,
+        );
+        return effect;
+      },
+    );
+  }
+  accountingRefundApplication(
+    actor: Actor,
+    key: string,
+    input: { refundId: string },
+  ) {
+    return this.platform.command(
+      actor,
+      "quickbooks.refund.apply",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        const fact = this.billing.refunds.accountingFact(actor, input.refundId),
+          invoice = this.billing.invoice(actor, fact.invoiceId);
+        check(
+          fact.state === "completed",
+          "ACCOUNTING_REFUND_REQUIRED",
+          "Reconcile the current cash refund before linking its accounting credit.",
+        );
+        this.platform.assertProviderAccess();
+        this.identity.providerAllowed(actor, invoice.account_id, "quickbooks");
+      },
+      () => {
+        const expense = this.store.get<Effect>(
+          "SELECT * FROM integration_effects WHERE org_id=? AND provider='quickbooks' AND kind='refund-expense' AND reference=? AND state='completed'",
+          actor.orgId,
+          input.refundId,
+        );
+        check(
+          expense && expense.external_ref?.startsWith("expense:"),
+          "ACCOUNTING_EXPENSE_REQUIRED",
+          "Reconcile the refund expense before linking its credit.",
+        );
+        this.assertAccountingRefundReady(actor, expense);
+        const refund = JSON.parse(expense.payload) as AccountingRefundIntent;
+        this.refundCredit(actor, refund.credit.credit.id);
+        const payload: AccountingRefundApplicationIntent = {
+          refund,
+          expenseEffectId: expense.id,
+          externalExpenseRef: text(
+            expense.external_ref!.slice(8),
+            "QuickBooks refund expense identity",
+          ),
+          applicationRef: `DA-${digest(expense.id).slice(0, 18)}`,
+        };
+        return this.queue(
+          actor,
+          expense.account_id,
+          "quickbooks",
+          "refund-application",
+          input.refundId,
+          payload,
+        );
+      },
+    );
+  }
+  assertAccountingRefundReady(actor: Actor, effect: Effect) {
+    if (
+      effect.provider !== "quickbooks" ||
+      !["refund-expense", "refund-application"].includes(effect.kind)
+    )
+      return;
+    const payload = JSON.parse(effect.payload),
+      p = (
+        effect.kind === "refund-application" ? payload.refund : payload
+      ) as AccountingRefundIntent,
+      fact = this.billing.refunds.accountingFact(actor, p.refundId);
+    check(
+      fact.state === "completed" &&
+        fact.id === effect.reference &&
+        fact.invoiceId === p.credit.invoice.id &&
+        fact.paymentId === p.paymentId &&
+        fact.cashReference === p.cashReference &&
+        fact.amount === p.amount &&
+        fact.currency === p.credit.invoice.currency,
+      "ACCOUNTING_REFUND_MISMATCH",
+      "Native refund is no longer confirmed or its identity differs; finance must reconcile the accounting outcome.",
+    );
+  }
+  private accountingRefundStatus(actor: Actor, effect: Effect) {
+    const payload = JSON.parse(effect.payload),
+      p = (
+        effect.kind === "refund-application" ? payload.refund : payload
+      ) as AccountingRefundIntent,
+      fact = this.billing.refunds.accountingFact(actor, p.refundId);
+    return {
+      refundId: fact.id,
+      invoiceId: fact.invoiceId,
+      creditId: p.credit.credit.id,
+      amount: p.amount,
+      currency: p.credit.invoice.currency,
+      nativeState: fact.state,
+      requiresReview:
+        fact.state !== "completed" || fact.cashReference !== p.cashReference,
+    };
   }
   // Crash after a provider call must enter reconciliation, never automatic re-execution.
   recoverStale(milliseconds = 120000, orgId: string | null = null) {

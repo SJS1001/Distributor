@@ -15,6 +15,15 @@ export type RefundIntent = {
   amount: number;
   currency: string;
 };
+export type AccountingRefundFact = {
+  id: string;
+  invoiceId: string;
+  paymentId: string;
+  amount: number;
+  currency: string;
+  state: string;
+  cashReference: string | null;
+};
 export const refundStatuses = [
   "pending",
   "requires_action",
@@ -83,6 +92,33 @@ export class BillingRefunds {
       paymentAmount: Number(payment.amount),
       amount: Number(row.amount),
       currency: invoice.currency.toLowerCase(),
+    };
+  }
+  accountingFact(actor: Actor, refundId: string): AccountingRefundFact {
+    permit(actor, ["finance", "support"]);
+    const { row, invoice } = this.get(actor, refundId);
+    const proof = this.store.get(
+        "SELECT external_ref FROM billing_refund_proofs WHERE org_id=? AND refund_id=?",
+        actor.orgId,
+        refundId,
+      ),
+      provider = this.store.get(
+        "SELECT external_ref FROM billing_refund_provider WHERE org_id=? AND refund_id=?",
+        actor.orgId,
+        refundId,
+      );
+    return {
+      id: refundId,
+      invoiceId: invoice.id,
+      paymentId: String(row.payment_id),
+      amount: Number(row.amount),
+      currency: invoice.currency,
+      state: String(row.state),
+      cashReference: proof
+        ? String(proof.external_ref)
+        : provider
+          ? String(provider.external_ref)
+          : null,
     };
   }
   markUnknown(actor: Actor, refundId: string) {

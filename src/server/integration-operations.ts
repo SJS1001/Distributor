@@ -99,6 +99,7 @@ export class IntegrationOperations {
           : "Only unknown outcomes need reconciliation.",
       );
       this.identity.providerAllowed(actor, e.account_id, e.provider);
+      if (send) this.integration.assertAccountingRefundReady(actor, e);
       this.store.run(
         "INSERT OR IGNORE INTO integration_operation_leases(effect_id,org_id) VALUES(?,?)",
         effectId,
@@ -131,7 +132,26 @@ export class IntegrationOperations {
     let result: EffectResult | null;
     try {
       result = send
-        ? await adapter.execute(effect)
+        ? await adapter.execute(effect, () => {
+            actor = this.principal(actor);
+            this.platform.assertProviderAccess();
+            this.identity.providerAllowed(
+              actor,
+              effect.account_id,
+              effect.provider,
+            );
+            const lease = this.store.get(
+              "SELECT token FROM integration_operation_leases WHERE org_id=? AND effect_id=?",
+              actor.orgId,
+              effectId,
+            );
+            check(
+              lease?.token === token,
+              "STATE",
+              "Provider write claim is no longer active.",
+            );
+            this.integration.assertAccountingRefundReady(actor, effect);
+          })
         : await adapter.lookup(effect);
     } catch (error) {
       this.release(actor, effect, token);

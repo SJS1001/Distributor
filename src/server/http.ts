@@ -661,6 +661,21 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ creditId: str, amount: { ...num, minimum: 1 } }),
       run: (a, k, p) => app.integration.accountingCreditApplication(a, k, p),
     },
+    "quickbooks.refund": {
+      schema: obj({
+        refundId: str,
+        creditId: str,
+        bankAccountRef: str,
+        receivableAccountRef: str,
+        nonTaxCodeRef: str,
+        expenseDate: str,
+      }),
+      run: (a, k, p) => app.integration.accountingRefund(a, k, p),
+    },
+    "quickbooks.refund.apply": {
+      schema: obj({ refundId: str }),
+      run: (a, k, p) => app.integration.accountingRefundApplication(a, k, p),
+    },
     "quickbooks.payment": {
       schema: obj({
         paymentId: str,

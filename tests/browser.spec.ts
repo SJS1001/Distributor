@@ -5281,3 +5281,324 @@ test("browser: stock cost reviews survive lost replies and separate immutable do
   }
   expect(errors).toEqual([]);
 });
+
+test("browser: confirmed cash refunds queue one accounting expense and zero-cash credit link after lost replies without changing native facts", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const account = await cmd("account.create", {
+    name: "Accounting refund browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "QBO-REFUND-BROWSER",
+    name: "Accounting refund equipment",
+    serialized: false,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await (await page.request.get("/api/dashboard")).json(),
+    warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 2, unitCost: 6000 }],
+  });
+  const received = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: received.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "QBO-REFUND-BROWSER-DEL",
+    quantity: 2,
+    serials: [],
+    bin: "REFUND",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 2 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await (await page.request.get("/api/dashboard")).json();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic accounting refund counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  const shipped = await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic accounting refund handover",
+  });
+  const invoiceId = shipped.invoiceId;
+  const payment = await cmd("billing.payment.manual", {
+    invoiceId,
+    amount: 22600,
+    reference: "QBO-REFUND-BROWSER-CASH",
+    reason: "Synthetic verified cash",
+  });
+  const paid = await (await page.request.get("/api/dashboard")).json(),
+    invoice = paid.invoices.find((i: any) => i.id === invoiceId);
+  const credit = await cmd("billing.credit", {
+    invoiceId,
+    reference: "QBO-REFUND-BROWSER-CREDIT",
+    reason: "Synthetic returned equipment credit",
+    lines: [{ lineId: invoice.lines[0].id, quantity: 1 }],
+  });
+  await cmd("account.residency", {
+    accountId: account.id,
+    region: "CA",
+    mode: "provider-exceptions",
+    providers: ["quickbooks"],
+    version: 1,
+    acknowledgment: "Synthetic named QuickBooks processing exception",
+  });
+  const reconcileSetup = async (id: string) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const options = {
+      headers: { "x-csrf-token": csrf, origin: "http://127.0.0.1:3117" },
+    };
+    const sent = await page.request.post(`/api/effects/${id}/execute`, options);
+    expect(sent.status(), await sent.text()).toBe(200);
+    expect((await sent.json()).state).toBe("unknown");
+    const read = await page.request.post(
+      `/api/effects/${id}/reconcile`,
+      options,
+    );
+    expect(read.status(), await read.text()).toBe(200);
+    expect((await read.json()).state).toBe("completed");
+  };
+  await reconcileSetup(
+    (
+      await cmd("quickbooks.invoice", {
+        invoiceId,
+        customerRef: "customer-1",
+        itemRefs: { [product.id]: "item-1" },
+        taxCodeRef: "tax-1",
+        taxRateRef: "rate-1",
+      })
+    ).id,
+  );
+  await reconcileSetup(
+    (
+      await cmd("quickbooks.payment", {
+        paymentId: payment.id,
+        appliedAmount: 22600,
+        depositAccountRef: "bank-1",
+      })
+    ).id,
+  );
+  await reconcileSetup(
+    (await cmd("quickbooks.credit", { creditId: credit.id })).id,
+  );
+  const refund = await cmd("billing.refund.request", {
+    invoiceId,
+    paymentId: payment.id,
+    amount: 5000,
+    reference: "QBO-REFUND-BROWSER-REQUEST",
+    reason: "Synthetic credited cash refund",
+  });
+  await cmd("billing.refund.manual", {
+    refundId: refund.id,
+    reference: "QBO-REFUND-BROWSER-BANK",
+    reason: "Synthetic completed bank refund",
+  });
+  const nativeFacts = async () => {
+    const dashboard = await (await page.request.get("/api/dashboard")).json();
+    return {
+      stock: dashboard.stock,
+      orders: dashboard.orders,
+      shipments: dashboard.shipments,
+      invoices: dashboard.invoices,
+      credits: await (await page.request.get("/api/credits")).json(),
+      payments: await (await page.request.get("/api/billing/payments")).json(),
+      refunds: await (await page.request.get("/api/billing/refunds")).json(),
+    };
+  };
+  const before = await nativeFacts();
+  await page.reload();
+  await nav(page, "Billing");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const refundRow = page.getByRole("row").filter({
+    has: page.getByRole("cell", {
+      name: "QBO-REFUND-BROWSER-REQUEST",
+      exact: true,
+    }),
+  });
+  await refundRow
+    .getByRole("button", {
+      name: "Queue QuickBooks refund expense",
+      exact: true,
+    })
+    .click();
+  let dialog = page.getByRole("dialog", {
+    name: "Queue QuickBooks refund expense",
+    exact: true,
+  });
+  await expect(dialog).toContainText("already returned to the customer");
+  await expect(
+    dialog.getByLabel("Original QuickBooks credit", { exact: true }),
+  ).toHaveValue(credit.id);
+  await dialog
+    .getByLabel("QuickBooks refund bank account ID", { exact: true })
+    .fill("bank-1");
+  await dialog
+    .getByLabel("QuickBooks accounts receivable ID", { exact: true })
+    .fill("ar-1");
+  await dialog
+    .getByLabel("QuickBooks non-tax expense code ID", { exact: true })
+    .fill("NON");
+  await dialog
+    .getByLabel("Refund accounting date", { exact: true })
+    .fill("2026-10-01");
+  const expenseKeys: string[] = [],
+    linkKeys: string[] = [];
+  const loseFirstReply = async (name: string, keys: string[]) => {
+    let lost = false;
+    await page.route(`**/api/commands/${name}`, async (route) => {
+      keys.push(route.request().headers()["idempotency-key"]!);
+      if (!lost) {
+        lost = true;
+        const response = await route.fetch();
+        expect(response.status(), await response.text()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    });
+  };
+  await loseFirstReply("quickbooks.refund", expenseKeys);
+  await dialog
+    .getByRole("button", { name: "Queue refund expense", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Queue refund expense", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(expenseKeys).toHaveLength(2);
+  expect(expenseKeys[0]).toBe(expenseKeys[1]);
+  const effects = async () => (await page.request.get("/api/effects")).json();
+  let rows = await effects();
+  expect(
+    rows.filter(
+      (e: any) => e.kind === "refund-expense" && e.reference === refund.id,
+    ),
+  ).toHaveLength(1);
+  const operation = (kind: string) =>
+    page.getByRole("row").filter({
+      has: page.getByRole("cell", {
+        name: `quickbooks · ${kind}`,
+        exact: true,
+      }),
+    });
+  const reconcileScreen = async (kind: string) => {
+    await operation(kind)
+      .getByRole("button", { name: "Send to provider", exact: true })
+      .click();
+    await expect(operation(kind)).toContainText("unknown");
+    await expect(
+      operation(kind).getByRole("button", {
+        name: "Send to provider",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await operation(kind)
+      .getByRole("button", { name: "Check provider outcome", exact: true })
+      .click();
+    await expect(operation(kind)).toContainText("completed");
+  };
+  await reconcileScreen("refund-expense");
+  await expect(
+    refundRow.getByRole("button", {
+      name: "Link refund expense to credit",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.reload();
+  await nav(page, "Billing");
+  await refundRow
+    .getByRole("button", { name: "Link refund expense to credit", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Link refund expense to credit",
+    exact: true,
+  });
+  await expect(dialog).toContainText("zero-cash accounting payment");
+  await loseFirstReply("quickbooks.refund.apply", linkKeys);
+  await dialog
+    .getByRole("button", { name: "Queue refund link", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Queue refund link", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(linkKeys).toHaveLength(2);
+  expect(linkKeys[0]).toBe(linkKeys[1]);
+  rows = await effects();
+  expect(
+    rows.filter(
+      (e: any) => e.kind === "refund-application" && e.reference === refund.id,
+    ),
+  ).toHaveLength(1);
+  await reconcileScreen("refund-application");
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(refundRow).toContainText("QuickBooks refund link: completed");
+  await expect(operation("refund-expense")).toContainText(
+    "Confirmed cash already returned",
+  );
+  expect(await nativeFacts()).toEqual(before);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});

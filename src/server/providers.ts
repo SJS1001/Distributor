@@ -5,6 +5,8 @@ import {
   type AccountingPaymentIntent,
   type AccountingCreditIntent,
   type AccountingCreditApplicationIntent,
+  type AccountingRefundIntent,
+  type AccountingRefundApplicationIntent,
   type Adapter,
   type Effect,
   type EffectResult,
@@ -293,7 +295,32 @@ type QboPayment = {
   PrivateNote?: string;
   TxnDate?: string;
   ProcessPayment?: boolean;
+  ARAccountRef?: { value: string };
   Line?: { Amount: number; LinkedTxn?: { TxnId: string; TxnType: string }[] }[];
+};
+type QboPurchase = {
+  Id: string;
+  DocNumber?: string;
+  TxnDate?: string;
+  PrivateNote?: string;
+  TotalAmt: number;
+  PaymentType?: string;
+  Credit?: boolean;
+  AccountRef?: { value: string };
+  EntityRef?: { value: string; type?: string };
+  CurrencyRef?: { value: string };
+  LinkedTxn?: unknown[];
+  Line?: {
+    Amount: number;
+    DetailType: string;
+    AccountBasedExpenseLineDetail?: {
+      AccountRef?: { value: string };
+      CustomerRef?: { value: string };
+      BillableStatus?: string;
+      TaxCodeRef?: { value: string };
+    };
+  }[];
+  TxnTaxDetail?: { TotalTax: number; TaxLine?: { Amount: number }[] };
 };
 type QboCredit = QboInvoice & {
   RemainingCredit: number;
@@ -325,10 +352,12 @@ const amount = (cents: number) =>
   Number(`${Math.trunc(cents / 100)}.${String(cents % 100).padStart(2, "0")}`);
 export class QuickBooksAdapter implements Adapter {
   private base: string;
+  private writeChecks = new WeakMap<Effect, () => void>();
   constructor(
     private realm: string,
     private token: (effect: Effect) => Promise<string>,
     private enabled = false,
+    private beforeWrite?: (effect: Effect) => void | Promise<void>,
   ) {
     check(
       /^\d+$/.test(realm),
@@ -344,10 +373,15 @@ export class QuickBooksAdapter implements Adapter {
       "PROVIDER_DISABLED",
       "Outbound provider access is disabled.",
     );
+    const token = await this.token(effect);
+    if (body) {
+      await this.beforeWrite?.(effect);
+      this.writeChecks.get(effect)?.();
+    }
     const response = await fetch(this.base + path, {
       method: body ? "POST" : "GET",
       headers: {
-        Authorization: `Bearer ${await this.token(effect)}`,
+        Authorization: `Bearer ${token}`,
         Accept: "application/json",
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
@@ -363,11 +397,19 @@ export class QuickBooksAdapter implements Adapter {
       Invoice?: QboInvoice;
       Payment?: QboPayment;
       CreditMemo?: QboCredit;
+      Purchase?: QboPurchase;
+      Account?: {
+        Id: string;
+        Active?: boolean;
+        AccountType?: string;
+        CurrencyRef?: { value: string };
+      };
       Preferences?: { SalesFormsPrefs?: { AutoApplyCredit?: boolean } };
       QueryResponse?: {
         Invoice?: QboInvoice[];
         Payment?: QboPayment[];
         CreditMemo?: QboCredit[];
+        Purchase?: QboPurchase[];
       };
     };
   }
@@ -822,7 +864,296 @@ export class QuickBooksAdapter implements Adapter {
     );
     return this.paymentResult(effect, posted.Payment);
   }
-  async execute(effect: Effect) {
+  private refundExpenseResult(
+    effect: Effect,
+    expense: QboPurchase,
+  ): EffectResult {
+    const p = JSON.parse(effect.payload) as AccountingRefundIntent,
+      lines = expense.Line ?? [],
+      detail = lines[0]?.AccountBasedExpenseLineDetail;
+    check(
+      typeof expense.Id === "string" &&
+        expense.Id.trim().length > 0 &&
+        expense.DocNumber === p.expenseRef &&
+        expense.PrivateNote === `Distributor effect ${effect.id}` &&
+        expense.TxnDate === p.expenseDate &&
+        expense.PaymentType === "Cash" &&
+        (expense.Credit === undefined || expense.Credit === false) &&
+        expense.EntityRef?.value === p.credit.customerRef &&
+        expense.EntityRef.type === "Customer" &&
+        expense.AccountRef?.value === p.bankAccountRef &&
+        expense.CurrencyRef?.value === p.credit.invoice.currency &&
+        expense.TotalAmt === amount(p.amount) &&
+        lines.length === 1 &&
+        lines[0]!.Amount === amount(p.amount) &&
+        lines[0]!.DetailType === "AccountBasedExpenseLineDetail" &&
+        detail?.AccountRef?.value === p.receivableAccountRef &&
+        detail.CustomerRef?.value === p.credit.customerRef &&
+        detail.BillableStatus === "NotBillable" &&
+        detail.TaxCodeRef?.value === p.nonTaxCodeRef &&
+        (!expense.TxnTaxDetail ||
+          (expense.TxnTaxDetail.TotalTax === 0 &&
+            (expense.TxnTaxDetail.TaxLine ?? []).every(
+              (line) => line.Amount === 0,
+            ))),
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks refund expense identity, accounts, money or tax differs; reconcile before marking delivered.",
+    );
+    return {
+      reference: `expense:${expense.Id}`,
+      result: {
+        providerId: expense.Id,
+        refundId: p.refundId,
+        invoiceId: p.credit.invoice.id,
+        creditId: p.credit.credit.id,
+        amount: p.amount,
+        currency: p.credit.invoice.currency,
+        expenseRef: p.expenseRef,
+        expenseDate: p.expenseDate,
+      },
+    };
+  }
+  private refundApplicationResult(
+    effect: Effect,
+    payment: QboPayment,
+  ): EffectResult {
+    const p = JSON.parse(effect.payload) as AccountingRefundApplicationIntent,
+      refund = p.refund,
+      lines = payment.Line ?? [];
+    check(
+      typeof payment.Id === "string" &&
+        payment.Id.trim().length > 0 &&
+        payment.PrivateNote === `Distributor effect ${effect.id}` &&
+        payment.PaymentRefNum === p.applicationRef &&
+        payment.TotalAmt === 0 &&
+        payment.UnappliedAmt === 0 &&
+        payment.CustomerRef?.value === refund.credit.customerRef &&
+        payment.CurrencyRef?.value === refund.credit.invoice.currency &&
+        payment.ARAccountRef?.value === refund.receivableAccountRef &&
+        payment.DepositToAccountRef?.value === refund.bankAccountRef &&
+        payment.TxnDate === refund.expenseDate &&
+        (payment.ProcessPayment === undefined ||
+          payment.ProcessPayment === false) &&
+        lines.length === 2 &&
+        lines.every(
+          (line) =>
+            line.Amount === amount(refund.amount) &&
+            line.LinkedTxn?.length === 1,
+        ) &&
+        lines.filter(
+          (line) =>
+            line.LinkedTxn?.[0]?.TxnType === "Expense" &&
+            line.LinkedTxn[0].TxnId === p.externalExpenseRef,
+        ).length === 1 &&
+        lines.filter(
+          (line) =>
+            line.LinkedTxn?.[0]?.TxnType === "CreditMemo" &&
+            line.LinkedTxn[0].TxnId === refund.externalCreditRef,
+        ).length === 1,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks refund application identity, accounts, zero-cash money or links differ; reconcile before marking delivered.",
+    );
+    return {
+      reference: `payment:${payment.Id}`,
+      result: {
+        providerId: payment.Id,
+        refundId: refund.refundId,
+        invoiceId: refund.credit.invoice.id,
+        creditId: refund.credit.credit.id,
+        amount: refund.amount,
+        currency: refund.credit.invoice.currency,
+        applicationRef: p.applicationRef,
+        expenseRef: refund.expenseRef,
+      },
+    };
+  }
+  private async refundPreflight(effect: Effect, p: AccountingRefundIntent) {
+    const preferences = await this.request(effect, "/preferences");
+    check(
+      preferences.Preferences?.SalesFormsPrefs?.AutoApplyCredit === false,
+      "ACCOUNTING_CREDIT_AUTOMATION",
+      "Turn off automatic credit application and reconcile existing allocations before recording a refund.",
+    );
+    const { Invoice: invoice } = await this.request(
+      effect,
+      `/invoice/${encodeURIComponent(p.credit.externalInvoiceRef)}`,
+    );
+    check(
+      invoice &&
+        invoice.Id === p.credit.externalInvoiceRef &&
+        invoice.PrivateNote ===
+          `Distributor effect ${p.credit.invoiceEffectId}` &&
+        invoice.DocNumber === p.credit.invoice.number &&
+        invoice.TotalAmt === amount(p.credit.invoice.total) &&
+        invoice.CustomerRef?.value === p.credit.customerRef &&
+        invoice.CurrencyRef?.value === p.credit.invoice.currency &&
+        invoice.Balance === 0,
+      "ACCOUNTING_INVOICE_MISMATCH",
+      "QuickBooks original invoice must match and be fully paid before recording its refund.",
+    );
+    const { Payment: payment } = await this.request(
+      effect,
+      `/payment/${encodeURIComponent(p.externalPaymentRef)}`,
+    );
+    check(
+      payment && payment.Id === p.externalPaymentRef,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks omitted the original received payment.",
+    );
+    this.paymentResult(
+      { ...effect, id: p.paymentEffectId, payload: JSON.stringify(p.payment) },
+      payment,
+    );
+    const { CreditMemo: credit } = await this.request(
+      effect,
+      `/creditmemo/${encodeURIComponent(p.externalCreditRef)}`,
+    );
+    check(
+      credit && credit.Id === p.externalCreditRef,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks omitted the original refund credit.",
+    );
+    this.creditResult(
+      { ...effect, id: p.creditEffectId, payload: JSON.stringify(p.credit) },
+      credit,
+      true,
+    );
+    check(
+      credit.RemainingCredit >= amount(p.amount),
+      "ACCOUNTING_ALLOCATION",
+      "QuickBooks remaining credit cannot cover this refund; reconcile external allocations.",
+    );
+    for (const [reference, type] of [
+      [p.bankAccountRef, "Bank"],
+      [p.receivableAccountRef, "Accounts Receivable"],
+    ]) {
+      const { Account: account } = await this.request(
+        effect,
+        `/account/${encodeURIComponent(reference!)}`,
+      );
+      check(
+        account &&
+          account.Id === reference &&
+          account.Active === true &&
+          account.AccountType === type &&
+          account.CurrencyRef?.value === p.credit.invoice.currency,
+        "ACCOUNTING_ACCOUNT_MISMATCH",
+        "Refund accounts must be active bank and accounts receivable accounts in the invoice currency.",
+      );
+    }
+  }
+  private async sendRefundExpense(effect: Effect) {
+    const p = JSON.parse(effect.payload) as AccountingRefundIntent;
+    check(
+      /^DR-[a-f0-9]{18}$/.test(p.expenseRef),
+      "PROVIDER_QUERY",
+      "Invalid refund expense reference.",
+    );
+    await this.refundPreflight(effect, p);
+    const { Purchase: expense } = await this.request(
+      effect,
+      `/purchase?requestid=${encodeURIComponent(effect.id)}`,
+      {
+        PaymentType: "Cash",
+        Credit: false,
+        AccountRef: { value: p.bankAccountRef },
+        EntityRef: { value: p.credit.customerRef, type: "Customer" },
+        CurrencyRef: { value: p.credit.invoice.currency },
+        DocNumber: p.expenseRef,
+        TxnDate: p.expenseDate,
+        PrivateNote: `Distributor effect ${effect.id}`,
+        TotalAmt: amount(p.amount),
+        Line: [
+          {
+            Amount: amount(p.amount),
+            DetailType: "AccountBasedExpenseLineDetail",
+            AccountBasedExpenseLineDetail: {
+              AccountRef: { value: p.receivableAccountRef },
+              CustomerRef: { value: p.credit.customerRef },
+              BillableStatus: "NotBillable",
+              TaxCodeRef: { value: p.nonTaxCodeRef },
+            },
+          },
+        ],
+        TxnTaxDetail: { TotalTax: 0 },
+      },
+    );
+    check(
+      expense,
+      "PROVIDER_RESPONSE",
+      "QuickBooks omitted the refund expense.",
+    );
+    return this.refundExpenseResult(effect, expense);
+  }
+  private async sendRefundApplication(effect: Effect) {
+    const p = JSON.parse(effect.payload) as AccountingRefundApplicationIntent;
+    check(
+      /^DA-[a-f0-9]{18}$/.test(p.applicationRef),
+      "PROVIDER_QUERY",
+      "Invalid refund application reference.",
+    );
+    await this.refundPreflight(effect, p.refund);
+    const { Purchase: expense } = await this.request(
+      effect,
+      `/purchase/${encodeURIComponent(p.externalExpenseRef)}`,
+    );
+    check(
+      expense &&
+        expense.Id === p.externalExpenseRef &&
+        (expense.LinkedTxn ?? []).length === 0,
+      "ACCOUNTING_MISMATCH",
+      "QuickBooks omitted the exact unapplied refund expense.",
+    );
+    this.refundExpenseResult(
+      { ...effect, id: p.expenseEffectId, payload: JSON.stringify(p.refund) },
+      expense,
+    );
+    const { Payment: payment } = await this.request(
+      effect,
+      `/payment?requestid=${encodeURIComponent(effect.id)}`,
+      {
+        TotalAmt: 0,
+        CustomerRef: { value: p.refund.credit.customerRef },
+        CurrencyRef: { value: p.refund.credit.invoice.currency },
+        ARAccountRef: { value: p.refund.receivableAccountRef },
+        DepositToAccountRef: { value: p.refund.bankAccountRef },
+        PaymentRefNum: p.applicationRef,
+        PrivateNote: `Distributor effect ${effect.id}`,
+        TxnDate: p.refund.expenseDate,
+        ProcessPayment: false,
+        Line: [
+          {
+            Amount: amount(p.refund.amount),
+            LinkedTxn: [{ TxnId: p.externalExpenseRef, TxnType: "Expense" }],
+          },
+          {
+            Amount: amount(p.refund.amount),
+            LinkedTxn: [
+              { TxnId: p.refund.externalCreditRef, TxnType: "CreditMemo" },
+            ],
+          },
+        ],
+      },
+    );
+    check(
+      payment,
+      "PROVIDER_RESPONSE",
+      "QuickBooks omitted the refund application.",
+    );
+    return this.refundApplicationResult(effect, payment);
+  }
+  async execute(effect: Effect, beforeWrite?: () => void) {
+    if (beforeWrite) this.writeChecks.set(effect, beforeWrite);
+    try {
+      return await this.send(effect);
+    } finally {
+      this.writeChecks.delete(effect);
+    }
+  }
+  private async send(effect: Effect) {
+    if (effect.kind === "refund-expense") return this.sendRefundExpense(effect);
+    if (effect.kind === "refund-application")
+      return this.sendRefundApplication(effect);
     if (effect.kind === "credit-application")
       return this.sendCreditApplication(effect);
     if (effect.kind === "credit") return this.sendCredit(effect);
@@ -876,6 +1207,38 @@ export class QuickBooksAdapter implements Adapter {
     return this.result(response.Invoice, p, effect.id);
   }
   async lookup(effect: Effect) {
+    if (
+      effect.kind === "refund-expense" ||
+      effect.kind === "refund-application"
+    ) {
+      const expense = effect.kind === "refund-expense",
+        p = JSON.parse(effect.payload) as AccountingRefundIntent &
+          AccountingRefundApplicationIntent,
+        reference = expense ? p.expenseRef : p.applicationRef;
+      check(
+        (expense ? /^DR-[a-f0-9]{18}$/ : /^DA-[a-f0-9]{18}$/).test(reference),
+        "PROVIDER_QUERY",
+        "Invalid refund accounting reference.",
+      );
+      const entity = expense ? "Purchase" : "Payment",
+        field = expense ? "DocNumber" : "PaymentRefNum";
+      const response = await this.request(
+        effect,
+        `/query?query=${encodeURIComponent(`select * from ${entity} where ${field} = '${reference}' maxresults 2`)}`,
+      );
+      const rows = expense
+        ? (response.QueryResponse?.Purchase ?? [])
+        : (response.QueryResponse?.Payment ?? []);
+      check(
+        rows.length <= 1,
+        "ACCOUNTING_DUPLICATE",
+        "Multiple QuickBooks refund accounting records require finance review.",
+      );
+      if (!rows[0]) return null;
+      return expense
+        ? this.refundExpenseResult(effect, rows[0] as QboPurchase)
+        : this.refundApplicationResult(effect, rows[0] as QboPayment);
+    }
     if (effect.kind === "credit-application") {
       const p = JSON.parse(effect.payload) as AccountingCreditApplicationIntent;
       check(

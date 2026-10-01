@@ -169,31 +169,45 @@ const syntheticAccounting: Adapter = {
     const p = JSON.parse(effect.payload);
     accountingResults.set(effect.id, {
       reference:
-        effect.kind === "payment" || effect.kind === "credit-application"
+        effect.kind === "payment" ||
+        effect.kind === "credit-application" ||
+        effect.kind === "refund-application"
           ? `payment:${effect.id}`
           : effect.kind === "credit"
             ? `credit:${effect.id}`
-            : `synthetic-invoice-${effect.id}`,
+            : effect.kind === "refund-expense"
+              ? `expense:${effect.id}`
+              : `synthetic-invoice-${effect.id}`,
       result:
-        effect.kind === "payment"
+        effect.kind === "refund-expense" || effect.kind === "refund-application"
           ? {
-              paymentId: p.payment.id,
-              amount: p.payment.amount,
-              appliedAmount: p.appliedAmount,
-              currency: p.invoice.currency,
+              refundId: effect.reference,
+              amount:
+                effect.kind === "refund-expense" ? p.amount : p.refund.amount,
+              currency:
+                effect.kind === "refund-expense"
+                  ? p.credit.invoice.currency
+                  : p.refund.credit.invoice.currency,
             }
-          : effect.kind === "credit-application"
+          : effect.kind === "payment"
             ? {
-                creditId: p.credit.credit.id,
-                invoiceId: p.credit.invoice.id,
-                amount: p.amount,
-                currency: p.credit.invoice.currency,
-              }
-            : {
-                number: p.invoice.number,
-                total: p.invoice.total,
+                paymentId: p.payment.id,
+                amount: p.payment.amount,
+                appliedAmount: p.appliedAmount,
                 currency: p.invoice.currency,
-              },
+              }
+            : effect.kind === "credit-application"
+              ? {
+                  creditId: p.credit.credit.id,
+                  invoiceId: p.credit.invoice.id,
+                  amount: p.amount,
+                  currency: p.credit.invoice.currency,
+                }
+              : {
+                  number: p.invoice.number,
+                  total: p.invoice.total,
+                  currency: p.invoice.currency,
+                },
     });
     throw Error("Synthetic lost accounting send response");
   },
