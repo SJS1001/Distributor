@@ -58,6 +58,16 @@ export class Application {
       },
       security.mfaEncryptionKey,
     );
+    this.platform.configureReadAuthority((actor) => {
+      const current = this.identity.currentActor(actor);
+      check(
+        !this.identity.security(current).passwordChangeRequired,
+        "PASSWORD_CHANGE_REQUIRED",
+        "Change your password before continuing.",
+        403,
+      );
+      return current;
+    });
     this.providerCredentials = new ProviderCredentials(
       this.database,
       this.platform,

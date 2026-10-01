@@ -13,6 +13,7 @@ import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
 import { EventReporting } from "./event-reporting.tsx";
+import { AuditHistory } from "./audit-history.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
@@ -758,7 +759,7 @@ function App() {
         "Returns",
         "Customers",
         "Security",
-        ...(can("support") ? ["Event reporting"] : []),
+        ...(can("support") ? ["Audit history", "Event reporting"] : []),
         ...(admin ? ["Imports", "Administration"] : []),
       ]
     : ["Overview", "Orders", "Billing", "Returns", "Customers", "Security"];
@@ -828,6 +829,9 @@ function App() {
             Recovery workspace: provider operations and payment links are on
             hold. An operator must reconcile this snapshot before activation.
           </p>
+        )}
+        {page === "Audit history" && can("support") && (
+          <AuditHistory key={eventViewEpoch} />
         )}
         {page === "Event reporting" && can("support") && (
           <EventReporting
@@ -4534,24 +4538,6 @@ function App() {
                   </div>,
                 ],
               )}
-            </section>
-            <section className="panel">
-              <h2>Audit history</h2>
-              {button("Load audit trail", () => {
-                void request("/api/audit")
-                  .then((audit) => setExtra((e) => ({ ...e, audit })))
-                  .catch((e) => setError(e.message));
-              })}
-              {extra.audit &&
-                table(
-                  ["Time", "Action", "Reference"],
-                  extra.audit,
-                  (a: Item) => [
-                    new Date(a.created_at).toLocaleString(),
-                    a.action,
-                    a.reference,
-                  ],
-                )}
             </section>
           </>
         )}

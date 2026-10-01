@@ -1414,6 +1414,19 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/audit", async (request) =>
     app.platform.audits(actor(request)),
   );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/audit/page",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.platform.auditPage(actor(request), request.query.after),
+  );
   http.get<{ Params: { consumerId: string }; Querystring: { after?: string } }>(
     "/api/events/:consumerId/deliveries",
     {

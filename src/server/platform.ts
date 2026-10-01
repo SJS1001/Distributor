@@ -1,5 +1,4 @@
 import {
-  account,
   canonical,
   check,
   digest,
@@ -14,6 +13,7 @@ import { Database, type Store } from "./database.ts";
 export class Platform {
   private store: Store;
   private projection?: () => number;
+  private readAuthority?: (actor: Actor) => Actor;
   constructor(private database: Database) {
     this.store = database.owned("platform");
     this.store.migrate(`
@@ -23,6 +23,23 @@ export class Platform {
       CREATE TABLE IF NOT EXISTS platform_projections (event_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, type TEXT NOT NULL, reference TEXT NOT NULL, created_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS platform_recovery (id INTEGER PRIMARY KEY CHECK(id=1), snapshot_hash TEXT NOT NULL, restored_at TEXT NOT NULL, source_completed_at TEXT NOT NULL) STRICT;
     `);
+    // Preserve existing IDs/bytes. A durable sequence avoids timestamp ties,
+    // clock rollback and rowid changes during later SQLite maintenance.
+    this.database.transaction(() =>
+      this.store.migrate(`
+      CREATE TABLE IF NOT EXISTS platform_audit_order (sequence INTEGER PRIMARY KEY, audit_id TEXT NOT NULL UNIQUE REFERENCES platform_audit(id), org_id TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS platform_audit_clock (id INTEGER PRIMARY KEY CHECK(id=1),sequence INTEGER NOT NULL) STRICT;
+      INSERT INTO platform_audit_clock VALUES(1,0) ON CONFLICT(id) DO NOTHING;
+      CREATE INDEX IF NOT EXISTS platform_audit_order_org ON platform_audit_order(org_id,sequence);
+      INSERT INTO platform_audit_order(sequence,audit_id,org_id)
+        SELECT rowid,id,org_id FROM platform_audit WHERE id NOT IN (SELECT audit_id FROM platform_audit_order) ORDER BY rowid;
+      UPDATE platform_audit_clock SET sequence=MAX(sequence,COALESCE((SELECT MAX(sequence) FROM platform_audit_order),0)) WHERE id=1;
+      CREATE TRIGGER IF NOT EXISTS platform_audit_sequence AFTER INSERT ON platform_audit BEGIN
+        UPDATE platform_audit_clock SET sequence=sequence+1 WHERE id=1;
+        INSERT INTO platform_audit_order(sequence,audit_id,org_id) SELECT sequence,new.id,new.org_id FROM platform_audit_clock WHERE id=1;
+      END;
+    `),
+    );
   }
   recoveryHold() {
     return this.store.get("SELECT * FROM platform_recovery WHERE id=1") ?? null;
@@ -113,18 +130,55 @@ export class Platform {
     );
   }
   events(actor: Actor) {
-    permit(actor, ["support"]);
+    actor = this.authorizeRead(actor);
     return this.store.all(
       "SELECT * FROM platform_events WHERE org_id=? ORDER BY created_at DESC LIMIT 200",
       actor.orgId,
     );
   }
   audits(actor: Actor) {
-    permit(actor, ["support"]);
+    actor = this.authorizeRead(actor);
     return this.store.all(
       "SELECT * FROM platform_audit WHERE org_id=? ORDER BY created_at DESC LIMIT 200",
       actor.orgId,
     );
+  }
+  configureReadAuthority(authorize: (actor: Actor) => Actor) {
+    this.readAuthority = authorize;
+  }
+  private authorizeRead(actor: Actor) {
+    check(
+      this.readAuthority,
+      "AUTHORITY",
+      "Audit authority is unavailable.",
+      503,
+    );
+    const current = this.readAuthority(actor);
+    permit(current, ["support"]);
+    return current;
+  }
+  auditPage(actor: Actor, after?: string) {
+    actor = this.authorizeRead(actor);
+    let before: number | null = null;
+    if (after !== undefined) {
+      after = text(after, "Audit cursor", 128);
+      const cursor = this.store.get(
+        "SELECT sequence FROM platform_audit_order WHERE org_id=? AND audit_id=?",
+        actor.orgId,
+        after,
+      );
+      check(cursor, "CURSOR", "Audit cursor is unavailable.", 400);
+      before = Number(cursor.sequence);
+    }
+    const rows = this.store.all(
+      `SELECT a.id,a.actor_id,a.action,a.reference,a.created_at FROM platform_audit_order o
+       JOIN platform_audit a ON a.id=o.audit_id AND a.org_id=o.org_id
+       WHERE o.org_id=? ${before === null ? "" : "AND o.sequence<?"}
+       ORDER BY o.sequence DESC LIMIT 21`,
+      ...[actor.orgId, ...(before === null ? [] : [before])],
+    );
+    const items = rows.slice(0, 20);
+    return { items, next: rows.length > 20 ? String(items.at(-1)!.id) : null };
   }
   // Compile-time application composition; no business module imports the optional report.
   configureProjection(run: () => number) {

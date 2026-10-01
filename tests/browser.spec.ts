@@ -315,6 +315,185 @@ test("browser: reviewed stock QR downloads retain one receipt after a lost respo
   expect(after.stock).toEqual(before.stock);
   expect(errors).toEqual([]);
 });
+
+test("browser: audit history traverses older pages, retains retries and cancels stale reads", async ({
+  page,
+  browser,
+}) => {
+  const errors: string[] = [];
+  const login = async (p: Page, email: string, password: string) => {
+    p.on("pageerror", (e) => errors.push(e.message));
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p.getByLabel("Password", { exact: true }).fill(password);
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await login(page, "event-admin@example.test", "long-event-test-password");
+  const before = await (await page.request.get("/api/dashboard")).json();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const endpoint = "/api/audit/page";
+  let firstFailure = false;
+  await page.route(`**${endpoint}`, async (route) => {
+    if (!firstFailure) {
+      firstFailure = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await nav(page, "Audit history");
+  const panel = page.getByRole("region", {
+    name: "Audit history",
+    exact: true,
+  });
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await panel
+    .getByRole("button", { name: "Retry audit history", exact: true })
+    .click();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  const first = await (await page.request.get(endpoint)).json();
+  expect(first.items).toHaveLength(20);
+  expect(JSON.stringify(first)).not.toMatch(
+    /requestHash|detail|payload|password_hash/,
+  );
+  for (const row of first.items)
+    expect(Object.keys(row).sort()).toEqual([
+      "action",
+      "actor_id",
+      "created_at",
+      "id",
+      "reference",
+    ]);
+  let continuationFailure = false;
+  await page.route(`**${endpoint}?after=*`, async (route) => {
+    if (!continuationFailure) {
+      continuationFailure = true;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Load older audit records", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  await panel
+    .getByRole("button", { name: "Retry audit history", exact: true })
+    .click();
+  await expect(panel.locator("tbody tr")).toHaveCount(40);
+  const second = await (
+    await page.request.get(
+      `${endpoint}?after=${encodeURIComponent(first.next)}`,
+    )
+  ).json();
+  const ids: string[] = [...first.items, ...second.items].map((r) => r.id);
+  let next: string | null = second.next;
+  let pages = 2;
+  while (next && pages < 200) {
+    const data = await (
+      await page.request.get(`${endpoint}?after=${encodeURIComponent(next)}`)
+    ).json();
+    ids.push(...data.items.map((r: { id: string }) => r.id));
+    next = data.next;
+    await panel
+      .getByRole("button", { name: "Load older audit records", exact: true })
+      .click();
+    await expect(panel.locator("tbody tr")).toHaveCount(ids.length);
+    pages++;
+  }
+  expect(next).toBeNull();
+  expect(ids.length).toBeGreaterThan(200);
+  expect(new Set(ids).size).toBe(ids.length);
+  await expect(
+    panel.getByRole("heading", { name: "Audit history", exact: true }),
+  ).toBeFocused();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.unroute(`**${endpoint}?after=*`);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  for (const action of ["Refresh", "Sign out"] as const) {
+    let announce!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**${endpoint}?after=*`, async (route) => {
+      const response = await route.fetch();
+      announce();
+      await held;
+      await route.fulfill({ response });
+    });
+    await panel
+      .getByRole("button", { name: "Load older audit records", exact: true })
+      .click();
+    await started;
+    await page.getByRole("button", { name: action, exact: true }).click();
+    if (action === "Refresh")
+      await expect(panel.locator("tbody tr")).toHaveCount(20);
+    else
+      await expect(
+        page.getByRole("button", { name: "Sign in", exact: true }),
+      ).toBeVisible();
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+    if (action === "Refresh")
+      await expect(panel.locator("tbody tr")).toHaveCount(20);
+    else await expect(panel).toHaveCount(0);
+  }
+  const supportContext = await browser.newContext(),
+    buyerContext = await browser.newContext();
+  try {
+    const support = await supportContext.newPage(),
+      buyer = await buyerContext.newPage();
+    await login(
+      support,
+      "event-support@example.test",
+      "long-event-test-password",
+    );
+    await nav(support, "Audit history");
+    await expect(
+      support
+        .getByRole("region", { name: "Audit history", exact: true })
+        .locator("tbody tr"),
+    ).toHaveCount(20);
+    await login(
+      buyer,
+      "refund-buyer@example.test",
+      "long-notice-test-password",
+    );
+    await expect(
+      buyer
+        .getByRole("navigation", { name: "Workspace" })
+        .getByRole("button", { name: "Audit history", exact: true }),
+    ).toHaveCount(0);
+    expect((await buyer.request.get(endpoint)).status()).toBe(403);
+    expect((await buyer.request.get("/api/audit")).status()).toBe(403);
+  } finally {
+    await supportContext.close();
+    await buyerContext.close();
+  }
+  expect(
+    (
+      await page.request.post("/api/login", {
+        data: {
+          email: "event-admin@example.test",
+          password: "long-event-test-password",
+        },
+        headers: { origin: "http://127.0.0.1:3117" },
+      })
+    ).status(),
+  ).toBe(200);
+  const after = await (await page.request.get("/api/dashboard")).json();
+  for (const key of ["stock", "orders", "invoices"])
+    expect(after[key]).toEqual(before[key]);
+  expect(errors).toEqual([]);
+});
 async function installScanHarness(page: Page) {
   // Real local MediaStream lifetime, synthetic decoding/permission outcomes; no physical camera claim.
   await page.addInitScript(() => {
