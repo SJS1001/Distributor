@@ -643,7 +643,7 @@
   "scopeDocumentSha256": {
     "docs/CARRIER-BOOKINGS.md": "0abd731b106cad5600f28c29bdf69517de28be38eaad4be4590cc301b6a3d017",
     "docs/IMPLEMENTATION.md": "81331331ae588e4731b5c8f6b56c6dbe611f9e6419c0062f99c3533ff125a32c",
-    "docs/HANDOFF.md": "d22342f337cf267ec9b7415a2c6b6b2d83661843c0dccfb48c9805f31b7d8127",
+    "docs/HANDOFF.md": "0b50f3284096613738b5ae7dd2c37e1410c3e60b4114fb29f652c9dad36523f5",
     "docs/evidence/LOCAL-CANADA-POST-UI-2026-10-01.md": "b1c20e53c1d0e9c0b67b7082e7bd6845d2c1b25a7ebc56316f19618fcb37d6b5"
   },
   "commands": {
@@ -822,5 +822,19 @@
     "Device/operator/security/load/retention/recovery qualification outstanding",
     "Private temporary artifacts not guaranteed archived",
     "Direct workstation/local commits only; no CI/cloud/provider/publication"
-  ]
+  ],
+  "sourceCommit": "2548ec51d691e8be97c6f496aaed55f010e646ca",
+  "committedByteAudit": {
+    "path": "/tmp/distributor-canada-post-ui-checkpoint/post-commit-audit.json",
+    "sha256": "b5f38201b393ba7569af81c8e739a435ecf7a54aa280fa7d6214f2c9d5fc7737",
+    "status": "PASS",
+    "sourceCommit": "2548ec51d691e8be97c6f496aaed55f010e646ca",
+    "checkedAt": "2026-10-01T22:48:34.885905+00:00",
+    "repositoryFiles": 522,
+    "testedInputs": 259,
+    "historicalEvidenceFiles": 179,
+    "dependencyLicenseFiles": 170,
+    "commandRecords": 19,
+    "scope": "Committed/workstation bytes, command logs, captured inputs and unchanged baseline; no product/provider gate acceptance"
+  }
 }
