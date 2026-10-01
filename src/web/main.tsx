@@ -2234,6 +2234,39 @@ function App() {
                         (v) => ({ ...v, claimId: c.id }),
                       ),
                     )}
+                  {c.type === "warranty" &&
+                    ["approved", "received", "inspected", "repair"].includes(
+                      c.state,
+                    ) &&
+                    can("warranty") &&
+                    !c.manufacturerCases?.some(
+                      (m: Item) => m.state === "pending",
+                    ) &&
+                    button("Record manufacturer referral", () =>
+                      open(
+                        "Record manufacturer referral",
+                        [
+                          { name: "manufacturer", label: "Manufacturer" },
+                          {
+                            name: "reference",
+                            label: "Manufacturer case reference",
+                          },
+                          {
+                            name: "evidence",
+                            label: "Referral evidence reference",
+                            type: "textarea",
+                          },
+                          reason,
+                        ],
+                        (v) =>
+                          command("warranty.manufacturer.refer", {
+                            ...v,
+                            claimId: c.id,
+                          }),
+                        "Record a referral already arranged outside Distributor. This does not contact the manufacturer, move equipment or authorize a customer credit.",
+                        "Record referral",
+                      ),
+                    )}
                   {c.state === "received" &&
                     can("warehouse", "warranty") &&
                     button("Inspect", () =>
@@ -2282,6 +2315,83 @@ function App() {
                     )}
                 </div>,
               ],
+            )}
+            {can("warranty", "warehouse", "finance", "commercial") && (
+              <section aria-label="Manufacturer case history">
+                <h2>Manufacturer case history</h2>
+                <p>
+                  Staff record referrals and responses obtained outside
+                  Distributor. Acceptance does not move equipment, approve a
+                  replacement or issue a credit. Follow the separate authorized
+                  return and billing tasks.
+                </p>
+                {table(
+                  [
+                    "Claim",
+                    "Manufacturer / reference",
+                    "State",
+                    "Evidence history",
+                    "Actions",
+                  ],
+                  data.claims.flatMap((c: Item) =>
+                    (c.manufacturerCases ?? []).map((m: Item) => ({
+                      ...m,
+                      claim: c,
+                    })),
+                  ),
+                  (m: Item) => [
+                    m.claim.id.slice(0, 8),
+                    <>
+                      {m.manufacturer}
+                      <small>{m.reference}</small>
+                    </>,
+                    `${m.state} · revision ${m.revision}`,
+                    m.history.map((h: Item) => (
+                      <div key={h.revision}>
+                        <small>
+                          {h.state} · {h.created_at} · {h.actor_id}
+                        </small>
+                        <small>
+                          {h.evidence} · {h.reason}
+                        </small>
+                      </div>
+                    )),
+                    m.state === "pending" && can("warranty")
+                      ? button("Record manufacturer response", () =>
+                          open(
+                            "Record manufacturer response",
+                            [
+                              {
+                                name: "outcome",
+                                label: "Manufacturer outcome",
+                                options: [
+                                  "accepted",
+                                  "denied",
+                                  "cancelled",
+                                ].map((v) => ({ value: v, label: v })),
+                              },
+                              {
+                                name: "evidence",
+                                label: "Response evidence reference",
+                                type: "textarea",
+                              },
+                              reason,
+                            ],
+                            (v) =>
+                              command("warranty.manufacturer.decide", {
+                                ...v,
+                                caseId: m.id,
+                                revision: m.revision,
+                              }),
+                            `${m.manufacturer} · ${m.reference} · ${m.state}. Record the actual external response or cancellation evidence. This does not change stock, claim disposition or money.`,
+                            "Record response",
+                          ),
+                        )
+                      : "",
+                  ],
+                  "No manufacturer cases have been recorded.",
+                )}
+              </section>
             )}
           </>
         )}

@@ -3188,3 +3188,282 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     for (const context of contexts) await context.close();
   }
 });
+
+test("browser: manual manufacturer history recovers lost responses, rejects stale decisions and preserves stock and money", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Manufacturer browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "MFG-BROWSER",
+    name: "Manufacturer browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await dashboard();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 1, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "MFG-DELIVERY",
+    quantity: 1,
+    serials: ["MFG-SERIAL"],
+    bin: "MFG",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await dashboard();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic manufacturer fixture handover",
+  });
+  const sold = await dashboard();
+  const claim = await cmd("warranty.submit", {
+    accountId: account.id,
+    unitId: sold.stock.find((u: any) => u.serial === "MFG-SERIAL").id,
+    type: "warranty",
+    issue: "Synthetic failure",
+    evidence: "mfg-issue",
+  });
+  await cmd("warranty.review", {
+    claimId: claim.id,
+    approved: true,
+    reason: "Synthetic authorization",
+  });
+  const before = await dashboard();
+  const originalClaim = before.claims.find((c: any) => c.id === claim.id);
+  const invariant = (value: any) => ({
+    stock: value.stock,
+    orders: value.orders,
+    shipments: value.shipments,
+    invoices: value.invoices,
+  });
+  const keys: string[] = [];
+  let lost = false;
+  await page.route(
+    "**/api/commands/warranty.manufacturer.refer",
+    async (route) => {
+      keys.push(route.request().headers()["idempotency-key"]!);
+      if (!lost) {
+        lost = true;
+        await route.fetch();
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await page.reload();
+  await nav(page, "Returns");
+  const claimRow = page
+    .getByRole("row")
+    .filter({ hasText: claim.id.slice(0, 8) })
+    .filter({
+      has: page.getByRole("button", {
+        name: "Record manufacturer referral",
+        exact: true,
+      }),
+    });
+  const refer = async (reference: string) => {
+    await claimRow
+      .getByRole("button", {
+        name: "Record manufacturer referral",
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "Record manufacturer referral",
+      exact: true,
+    });
+    await dialog
+      .getByLabel("Manufacturer", { exact: true })
+      .fill("Synthetic Maker");
+    await dialog
+      .getByLabel("Manufacturer case reference", { exact: true })
+      .fill(reference);
+    await dialog
+      .getByLabel("Referral evidence reference", { exact: true })
+      .fill("mfg-referral-" + reference);
+    await dialog
+      .getByLabel("Reason / evidence", { exact: true })
+      .fill("Requested externally");
+    await dialog
+      .getByRole("button", { name: "Record referral", exact: true })
+      .click();
+    return dialog;
+  };
+  const referralDialog = await refer("BROWSER-M-001");
+  await expect(referralDialog.getByRole("alert")).toBeVisible();
+  await referralDialog
+    .getByRole("button", { name: "Record referral", exact: true })
+    .click();
+  await expect(referralDialog).not.toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  const section = page.getByRole("region", {
+    name: "Manufacturer case history",
+    exact: true,
+  });
+  const first = section.getByRole("row").filter({ hasText: "BROWSER-M-001" });
+  await expect(first).toContainText("pending · revision 1");
+  await first
+    .getByRole("button", { name: "Record manufacturer response", exact: true })
+    .click();
+  const responseDialog = page.getByRole("dialog", {
+    name: "Record manufacturer response",
+    exact: true,
+  });
+  const pending = (await dashboard()).claims.find((c: any) => c.id === claim.id)
+    .manufacturerCases[0];
+  await cmd("warranty.manufacturer.decide", {
+    caseId: pending.id,
+    revision: 1,
+    outcome: "accepted",
+    evidence: "mfg-concurrent-response",
+    reason: "Recorded by another staff session",
+  });
+  await responseDialog
+    .getByLabel("Manufacturer outcome", { exact: true })
+    .selectOption("denied");
+  await responseDialog
+    .getByLabel("Response evidence reference", { exact: true })
+    .fill("mfg-stale-response");
+  await responseDialog
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Stale attempt");
+  await responseDialog
+    .getByRole("button", { name: "Record response", exact: true })
+    .click();
+  await expect(responseDialog.getByRole("alert")).toContainText(
+    "Manufacturer case changed",
+  );
+  await responseDialog
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(first).toContainText("accepted · revision 2");
+  await expect(first).not.toContainText("mfg-stale-response");
+  const followup = await refer("BROWSER-M-002");
+  await expect(followup).not.toBeVisible();
+  const second = section.getByRole("row").filter({ hasText: "BROWSER-M-002" });
+  const responseKeys: string[] = [];
+  let lostResponse = false;
+  await page.route(
+    "**/api/commands/warranty.manufacturer.decide",
+    async (route) => {
+      responseKeys.push(route.request().headers()["idempotency-key"]!);
+      if (!lostResponse) {
+        lostResponse = true;
+        await route.fetch();
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await second
+    .getByRole("button", { name: "Record manufacturer response", exact: true })
+    .click();
+  await responseDialog
+    .getByLabel("Manufacturer outcome", { exact: true })
+    .selectOption("cancelled");
+  await responseDialog
+    .getByLabel("Response evidence reference", { exact: true })
+    .fill("mfg-cancellation");
+  await responseDialog
+    .getByLabel("Reason / evidence", { exact: true })
+    .fill("Synthetic duplicate enquiry withdrawn externally");
+  await responseDialog
+    .getByRole("button", { name: "Record response", exact: true })
+    .click();
+  await expect(responseDialog.getByRole("alert")).toBeVisible();
+  await responseDialog
+    .getByRole("button", { name: "Record response", exact: true })
+    .click();
+  await expect(responseDialog).not.toBeVisible();
+  expect(responseKeys).toHaveLength(2);
+  expect(responseKeys[0]).toBe(responseKeys[1]);
+  await page.reload();
+  await nav(page, "Returns");
+  await expect(first).toContainText("accepted · revision 2");
+  await expect(second).toContainText("cancelled · revision 2");
+  const after = await dashboard();
+  const finalClaim = after.claims.find((c: any) => c.id === claim.id);
+  expect(finalClaim.manufacturerCases).toHaveLength(2);
+  expect(
+    finalClaim.manufacturerCases.map((m: any) => m.history.length),
+  ).toEqual([2, 2]);
+  const { manufacturerCases: _beforeCases, ...original } = originalClaim;
+  const { manufacturerCases: _afterCases, ...final } = finalClaim;
+  expect(final).toEqual(original);
+  expect(invariant(after)).toEqual(invariant(before));
+  expect(after.invoices.find((i: any) => i.order_id === order.id).total).toBe(
+    11300,
+  );
+  expect(errors).toEqual([]);
+});

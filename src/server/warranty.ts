@@ -2,6 +2,7 @@ import {
   account,
   check,
   id,
+  integer,
   now,
   permit,
   site,
@@ -31,6 +32,16 @@ export type Claim = {
   credit_id: string | null;
   created_at: string;
 };
+type ManufacturerCase = {
+  id: string;
+  org_id: string;
+  claim_id: string;
+  manufacturer: string;
+  reference: string;
+  state: "pending" | "accepted" | "denied" | "cancelled";
+  revision: number;
+  created_at: string;
+};
 export class Warranty {
   private store: Store;
   constructor(
@@ -45,6 +56,9 @@ export class Warranty {
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS warranty_claims(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,unit_id TEXT NOT NULL,shipment_id TEXT NOT NULL,invoice_id TEXT NOT NULL,type TEXT NOT NULL CHECK(type IN('warranty','return')),state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','received','inspected','repair','disposed')),issue TEXT NOT NULL,evidence TEXT NOT NULL,coverage_end TEXT NOT NULL,inspection TEXT NOT NULL DEFAULT '',disposition TEXT,credit_id TEXT,created_at TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS warranty_decisions(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,action TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS warranty_manufacturer_cases(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,manufacturer TEXT NOT NULL,reference TEXT NOT NULL,manufacturer_key TEXT NOT NULL,reference_key TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','accepted','denied','cancelled')),revision INTEGER NOT NULL CHECK(revision>=1),created_at TEXT NOT NULL,UNIQUE(org_id,manufacturer_key,reference_key)) STRICT;
+    CREATE UNIQUE INDEX IF NOT EXISTS warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending';
+    CREATE TABLE IF NOT EXISTS warranty_manufacturer_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,case_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(case_id,revision)) STRICT;
   `);
   }
   claim(actor: Actor, claimId: string): Claim {
@@ -73,7 +87,212 @@ export class Warranty {
             actor.sites.includes(
               this.inventory.unit(actor, c.unit_id).warehouse_id,
             )),
-      );
+      )
+      .map((c) => ({
+        ...c,
+        manufacturerCases:
+          actor.role === "buyer" ? [] : this.manufacturerCases(actor, c.id),
+      }));
+  }
+  manufacturerCases(actor: Actor, claimId: string) {
+    permit(actor, ["warranty", "warehouse", "finance", "commercial"]);
+    this.claim(actor, claimId);
+    return this.store
+      .all<ManufacturerCase>(
+        "SELECT * FROM warranty_manufacturer_cases WHERE org_id=? AND claim_id=? ORDER BY created_at DESC,id DESC",
+        actor.orgId,
+        claimId,
+      )
+      .map((c) => ({
+        id: c.id,
+        claimId: c.claim_id,
+        manufacturer: c.manufacturer,
+        reference: c.reference,
+        state: c.state,
+        revision: c.revision,
+        createdAt: c.created_at,
+        history: this.store.all(
+          "SELECT revision,state,evidence,reason,actor_id,created_at FROM warranty_manufacturer_history WHERE org_id=? AND case_id=? ORDER BY revision",
+          actor.orgId,
+          c.id,
+        ),
+      }));
+  }
+  referManufacturer(
+    actor: Actor,
+    key: string,
+    input: {
+      claimId: string;
+      manufacturer: string;
+      reference: string;
+      evidence: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.manufacturer.refer",
+      key,
+      input,
+      () => {
+        permit(actor, ["warranty"]);
+        const c = this.claim(actor, input.claimId);
+        site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
+      },
+      () => {
+        const c = this.claim(actor, input.claimId);
+        check(
+          c.type === "warranty" &&
+            ["approved", "received", "inspected", "repair"].includes(c.state),
+          "STATE",
+          "Manufacturer referral requires an approved, unfinished warranty claim.",
+        );
+        const manufacturer = text(input.manufacturer, "manufacturer", 160),
+          reference = text(input.reference, "manufacturer case reference", 160),
+          manufacturerKey = manufacturer.normalize("NFKC").toLowerCase(),
+          referenceKey = reference.normalize("NFKC").toLowerCase();
+        check(
+          !this.store.get(
+            "SELECT id FROM warranty_manufacturer_cases WHERE org_id=? AND claim_id=? AND state='pending'",
+            actor.orgId,
+            c.id,
+          ),
+          "PENDING_MANUFACTURER_CASE",
+          "Finish or cancel the pending manufacturer case before another referral.",
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM warranty_manufacturer_cases WHERE org_id=? AND manufacturer_key=? AND reference_key=?",
+            actor.orgId,
+            manufacturerKey,
+            referenceKey,
+          ),
+          "MANUFACTURER_REFERENCE",
+          "This manufacturer case reference is already recorded.",
+        );
+        const caseId = id();
+        this.store.run(
+          "INSERT INTO warranty_manufacturer_cases VALUES(?,?,?,?,?,?,?,'pending',1,?)",
+          caseId,
+          actor.orgId,
+          c.id,
+          manufacturer,
+          reference,
+          manufacturerKey,
+          referenceKey,
+          now(),
+        );
+        this.manufacturerHistory(
+          actor,
+          caseId,
+          1,
+          "pending",
+          input.evidence,
+          input.reason,
+        );
+        this.decision(actor, c.id, "manufacturer.referred", input.reason);
+        return { id: caseId, claimId: c.id, state: "pending", revision: 1 };
+      },
+    );
+  }
+  private manufacturerCase(actor: Actor, caseId: string) {
+    const c = this.store.get<ManufacturerCase>(
+      "SELECT * FROM warranty_manufacturer_cases WHERE org_id=? AND id=?",
+      actor.orgId,
+      caseId,
+    );
+    check(c, "NOT_FOUND", "Manufacturer case not found.", 404);
+    const claim = this.claim(actor, c.claim_id);
+    site(actor, this.inventory.unit(actor, claim.unit_id).warehouse_id);
+    return c;
+  }
+  private manufacturerHistory(
+    actor: Actor,
+    caseId: string,
+    revision: number,
+    state: string,
+    evidence: string,
+    reason: string,
+  ) {
+    this.store.run(
+      "INSERT INTO warranty_manufacturer_history VALUES(?,?,?,?,?,?,?,?,?)",
+      id(),
+      actor.orgId,
+      caseId,
+      revision,
+      state,
+      text(evidence, "manufacturer evidence reference", 2000),
+      text(reason, "manufacturer decision reason", 1000),
+      actor.id,
+      now(),
+    );
+  }
+  decideManufacturer(
+    actor: Actor,
+    key: string,
+    input: {
+      caseId: string;
+      revision: number;
+      outcome: "accepted" | "denied" | "cancelled";
+      evidence: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.manufacturer.decide",
+      key,
+      input,
+      () => {
+        permit(actor, ["warranty"]);
+        this.manufacturerCase(actor, input.caseId);
+      },
+      () => {
+        const c = this.manufacturerCase(actor, input.caseId);
+        check(
+          integer(input.revision, "case revision", 1) === c.revision,
+          "STALE_MANUFACTURER_CASE",
+          "Manufacturer case changed. Refresh and review its current history.",
+        );
+        check(
+          c.state === "pending",
+          "STATE",
+          "Manufacturer case already has a final decision.",
+        );
+        check(
+          ["accepted", "denied", "cancelled"].includes(input.outcome),
+          "VALIDATION",
+          "Unknown manufacturer outcome.",
+          400,
+        );
+        this.store.run(
+          "UPDATE warranty_manufacturer_cases SET state=?,revision=revision+1 WHERE id=? AND org_id=?",
+          input.outcome,
+          c.id,
+          actor.orgId,
+        );
+        this.manufacturerHistory(
+          actor,
+          c.id,
+          c.revision + 1,
+          input.outcome,
+          input.evidence,
+          input.reason,
+        );
+        this.decision(
+          actor,
+          c.claim_id,
+          `manufacturer.${input.outcome}`,
+          input.reason,
+        );
+        return {
+          id: c.id,
+          claimId: c.claim_id,
+          state: input.outcome,
+          revision: c.revision + 1,
+        };
+      },
+    );
   }
   submit(
     actor: Actor,

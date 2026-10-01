@@ -539,6 +539,26 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ claimId: str, reason: str }),
       run: (a, k, p) => app.warranty.credit(a, k, p),
     },
+    "warranty.manufacturer.refer": {
+      schema: obj({
+        claimId: str,
+        manufacturer: str,
+        reference: str,
+        evidence: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.referManufacturer(a, k, p),
+    },
+    "warranty.manufacturer.decide": {
+      schema: obj({
+        caseId: str,
+        revision: num,
+        outcome: choice("accepted", "denied", "cancelled"),
+        evidence: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.decideManufacturer(a, k, p),
+    },
     "stripe.checkout": {
       schema: obj({ invoiceId: str }),
       run: (a, k, p) => app.integration.checkout(a, k, p),
