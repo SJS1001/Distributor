@@ -1,0 +1,19 @@
+# Reviewed order reservation deadlines
+
+Local implementation against D-016/D-019/D-021; every product gate remains NOT VERIFIED. Commercial expiry, notification and approval policy requires owner/operator acceptance.
+
+An order has no reservation deadline by default. Administrator or commercial staff can set a future deadline, renew it, or clear it on an open order using the current order revision and a buyer-visible reason. Setting a deadline changes no stock or money. Renewing or clearing is an explicit staff decision; allocation never silently renews it. The interface accepts local date/time and the server compares the resulting instant against its own clock.
+
+Once due, the deadline blocks new allocations, quantity increases and new reserved-to-picked transitions. It does not prevent shipping stock already picked/packed, reductions, cancellation or unpicking after any packing is voided. Staff may explicitly renew or clear a due deadline without releasing stock; that decision is retained in history.
+
+**Expire unpicked reservations** requires a due open order, current revision and buyer-visible reason. It releases all remaining unpicked reservations to backorder through Inventory's owning operation. Picked and packed commitments remain intact. The accepted quantity, description, price, tax, order total, credit exposure, original quote, invoices, cash and physical stock quantities/cost remain unchanged. Releasing reservations does not cancel an order or release its financial exposure. Orders with no unpicked reservations reject the expiry as no change.
+
+The retained expiry history keeps new allocation, quantity increases and picking blocked even if the server clock moves backward or the application restarts. Explicitly renewing or clearing resets that block. A later unpick can be followed by another reviewed expiry. A renewal does not automatically reallocate previously released stock; use Allocate separately and review available stock and credit holds.
+
+Order-owned immutable history, order revision, allocation release, event, audit and permanent command receipt commit or roll back together. Current real user/role/active/password/account/site grants precede reads and cached retries. Exact retries return the original result without repeating release; changed inputs need a new key. Buyers can read only their account's history, warehouse users only authorized sites, and existing finance/support order readers retain read access. Only administrator/commercial staff can change deadlines or expire reservations. Reasons are visible to buyers and must contain no private internal notes.
+
+The history endpoint returns descending revision pages of 20. A failed continuation retains loaded records; leaving Orders, Refresh or signing out cancels reads. Status is refreshed from server observations and is not a live scheduling service.
+
+Commands are `order.reservation.deadline` (`orderId`, `revision`, `expiresAt` in integer epoch milliseconds or `null`, `reason`) and `order.reservation.expire` (`orderId`, `revision`, `reason`). `GET /api/orders/:orderId/reservations` accepts only optional positive integer `after` revision and returns `expiresAt`, `overdue`, `items` and `next`. The native operation uses one database transaction and no optional event processor.
+
+There is no automatic scheduler, customer notification delivery, default timeout or approved expiry/renewal duties. Wall-clock comparison before an explicit expiry, actual monitoring, physical/operator/customer agreement, production load/retention/tamper resistance/security/clock/recovery and upgrades remain unqualified. Stop old writers before upgrading; mixed application versions are unqualified. These direct workstation checks authorize no CI runner jobs, deployment, external processing or publication. Future CI remains separately authorized GitHub-hosted work.

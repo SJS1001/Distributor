@@ -9222,3 +9222,383 @@ test("browser: phone order amendments retain accepted money, retry lost response
   await expect(history).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test("browser: phone reservation deadlines and expiry preserve accepted money, retry committed expiry and show scoped history", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const login = async (email: string) => {
+    await page.goto("/");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page
+      .getByLabel("Password", { exact: true })
+      .fill("long-test-only-password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  const cmd = async (name: string, data: unknown) => {
+    const session = await (await page.request.get("/api/session")).json();
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        origin: "http://127.0.0.1:3117",
+        "x-csrf-token": session.csrf,
+        "idempotency-key": crypto.randomUUID(),
+      },
+      data,
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  await login("admin@example.test");
+  const account = await cmd("account.create", {
+    name: "Synthetic reservation phone customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const other = await cmd("account.create", {
+    name: "Synthetic other reservation customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "RESERVE-PHONE",
+    name: "Synthetic reserved equipment",
+    serialized: false,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const warehouseId = (await dashboard()).warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 2, unitCost: 6000 }],
+  });
+  const lineId = (
+    await (await page.request.get("/api/purchases")).json()
+  ).orders.find((o: any) => o.id === po.id).lines[0].id;
+  // Separate received lots give one picked and one unpicked reservation.
+  for (let i = 0; i < 2; i++)
+    await cmd("purchase.receive", {
+      poId: po.id,
+      lineId,
+      deliveryRef: `SYNTHETIC-RESERVATION-${i}`,
+      quantity: 1,
+      serials: [],
+      bin: `RESERVATION-${i}`,
+      quarantine: false,
+    });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 2 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const accepted = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${accepted.id}/picks`)
+  ).json();
+  expect(picks).toHaveLength(2);
+  await cmd("fulfillment.pick", {
+    orderId: accepted.id,
+    allocationId: picks[0].id,
+    serial: picks[0].serial,
+  });
+  const original = (await dashboard()).orders.find(
+    (o: any) => o.id === accepted.id,
+  );
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await nav(page, "Orders");
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "Synthetic reservation phone customer" })
+    .filter({
+      has: page.getByRole("button", {
+        name: "View reservation history",
+        exact: true,
+      }),
+    });
+  const opener = row.getByRole("button", {
+    name: "View reservation history",
+    exact: true,
+  });
+  const history = page.getByRole("region", {
+    name: "Order reservation history",
+    exact: true,
+  });
+  await expect(row).toContainText("No reservation deadline");
+  await opener.click();
+  await expect(history).toContainText("No reservation changes recorded.");
+  await expect(history.getByRole("heading")).toBeFocused();
+  await history
+    .getByRole("button", { name: "Close reservation history", exact: true })
+    .click();
+  await expect(opener).toBeFocused();
+  await row
+    .getByRole("button", { name: "Set reservation deadline", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const future = new Date(Date.now() + 3600000);
+  const local = new Date(future.getTime() - future.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+  await page
+    .getByLabel("Future reservation deadline (local time)", { exact: true })
+    .fill(local);
+  await page
+    .getByLabel("Buyer-visible reason for reservation change", { exact: true })
+    .fill("Synthetic reviewed reservation window");
+  await dialog
+    .getByRole("button", { name: "Save reservation deadline", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText("Reservation deadline:");
+  await row
+    .getByRole("button", { name: "Renew reservation deadline", exact: true })
+    .click();
+  const renewed = new Date(future.getTime() + 3600000);
+  const renewedLocal = new Date(
+    renewed.getTime() - renewed.getTimezoneOffset() * 60000,
+  )
+    .toISOString()
+    .slice(0, 16);
+  await page
+    .getByLabel("Future reservation deadline (local time)", { exact: true })
+    .fill(renewedLocal);
+  await page
+    .getByLabel("Buyer-visible reason for reservation change", { exact: true })
+    .fill("Synthetic explicit reviewed renewal");
+  await dialog
+    .getByRole("button", { name: "Save reservation deadline", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await row
+    .getByRole("button", { name: "Clear reservation deadline", exact: true })
+    .click();
+  await page
+    .getByLabel("Buyer-visible reason for reservation change", { exact: true })
+    .fill("Synthetic reviewed clearing");
+  await dialog
+    .getByRole("button", { name: "Clear reservation deadline", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText("No reservation deadline");
+  let order = (await dashboard()).orders.find((o: any) => o.id === accepted.id);
+  const dueAt = Date.now() + 150;
+  await cmd("order.reservation.deadline", {
+    orderId: accepted.id,
+    revision: order.revision,
+    expiresAt: dueAt,
+    reason: "Synthetic short reservation window",
+  });
+  await expect
+    .poll(
+      async () =>
+        (await dashboard()).orders.find((o: any) => o.id === accepted.id)
+          .reservation.overdue,
+    )
+    .toBe(true);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(row).toContainText("Reservation deadline due");
+  const keys: string[] = [];
+  const payloads: unknown[] = [];
+  await page.route(
+    "**/api/commands/order.reservation.expire",
+    async (route) => {
+      keys.push(route.request().headers()["idempotency-key"]!);
+      payloads.push(route.request().postDataJSON());
+      if (keys.length === 1) {
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await row
+    .getByRole("button", { name: "Expire unpicked reservations", exact: true })
+    .click();
+  await expect(dialog).toContainText("credit exposure stay intact");
+  await expect(dialog).toContainText("Picked and packed stock is preserved");
+  await page
+    .getByLabel("Buyer-visible reason for reservation expiry", { exact: true })
+    .fill("Synthetic reviewed release after deadline");
+  await dialog
+    .getByRole("button", { name: "Expire unpicked reservations", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Expire unpicked reservations", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  expect(payloads[0]).toEqual(payloads[1]);
+  await page.unroute("**/api/commands/order.reservation.expire");
+  await expect(row).toContainText("2 ordered / 1 reserved");
+  order = (await dashboard()).orders.find((o: any) => o.id === accepted.id);
+  expect(order.total).toBe(original.total);
+  expect(order.lines[0]).toMatchObject({
+    quantity: 2,
+    allocated: 1,
+    unit_price: 10000,
+    unit_tax: 1300,
+  });
+  let records = await (
+    await page.request.get(`/api/orders/${accepted.id}/reservations`)
+  ).json();
+  expect(records.items.filter((r: any) => r.action === "expire")).toHaveLength(
+    1,
+  );
+  expect(records.items[0].lines[0]).toMatchObject({
+    released: 1,
+    retainedPicked: 1,
+  });
+  await opener.click();
+  await expect(history).toContainText(
+    "1 released to backorder · 1 picked units retained",
+  );
+  await expect(history).toContainText("Synthetic reserved equipment");
+  await expect(history).toContainText("Reservation deadline cleared");
+  await history
+    .getByRole("button", { name: "Close reservation history", exact: true })
+    .click();
+  let revision = order.revision;
+  for (let i = 0; i < 21; i++) {
+    await cmd("order.reservation.deadline", {
+      orderId: accepted.id,
+      revision,
+      expiresAt: Date.now() + 3600000 + i * 60000,
+      reason: `Synthetic reviewed renewal ${i + 1}`,
+    });
+    revision++;
+  }
+  for (const [suffix, accountId] of [
+    ["buyer", account.id],
+    ["other", other.id],
+  ])
+    await cmd("user.create", {
+      name: `Synthetic reservation ${suffix}`,
+      email: `reservation-${suffix}@example.test`,
+      password: "long-test-only-password",
+      role: "buyer",
+      accountId,
+      sites: [],
+      requirePasswordChange: false,
+      currentPassword: "long-test-only-password",
+    });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await login("reservation-other@example.test");
+  expect(
+    (
+      await page.request.get(`/api/orders/${accepted.id}/reservations`)
+    ).status(),
+  ).toBe(403);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await login("reservation-buyer@example.test");
+  await nav(page, "Orders");
+  await expect(row).toContainText("Reservation deadline:");
+  for (const name of [
+    "Set reservation deadline",
+    "Renew reservation deadline",
+    "Clear reservation deadline",
+    "Expire unpicked reservations",
+  ])
+    await expect(row.getByRole("button", { name, exact: true })).toHaveCount(0);
+  const first = `**/api/orders/${accepted.id}/reservations`;
+  await page.route(first, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Synthetic history unavailable" }),
+    }),
+  );
+  await opener.click();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic history unavailable",
+  );
+  await expect(history.getByRole("listitem")).toHaveCount(0);
+  await page.unroute(first);
+  await history
+    .getByRole("button", { name: "Retry reservation history", exact: true })
+    .click();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  let failOlder = true;
+  const older = `**/api/orders/${accepted.id}/reservations?after=*`;
+  await page.route(older, async (route) => {
+    if (failOlder) {
+      failOlder = false;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          message: "Synthetic older history unavailable",
+        }),
+      });
+    } else await route.continue();
+  });
+  await history
+    .getByRole("button", { name: "Load older reservations", exact: true })
+    .click();
+  await expect(history.getByRole("alert")).toContainText(
+    "Synthetic older history unavailable",
+  );
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await history
+    .getByRole("button", { name: "Retry reservation history", exact: true })
+    .click();
+  await expect(history.getByRole("listitem")).toHaveCount(26);
+  await expect(history).toContainText(
+    "Synthetic reviewed release after deadline",
+  );
+  await expect(history).toContainText("Reservation deadline renewed");
+  await page.unroute(older);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(history).toHaveCount(0);
+  // Verify that navigation aborts the actual pending scoped history read.
+  let finish!: () => void;
+  let handled!: () => void;
+  const held = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const done = new Promise<void>((resolve) => {
+    handled = resolve;
+  });
+  await page.route(first, async () => {
+    await held;
+    handled();
+  });
+  const started = page.waitForRequest((r) =>
+    r.url().endsWith(`/api/orders/${accepted.id}/reservations`),
+  );
+  const aborted = page.waitForEvent("requestfailed", {
+    predicate: (r) =>
+      r.url().endsWith(`/api/orders/${accepted.id}/reservations`),
+  });
+  await opener.click();
+  await started;
+  await expect(history).toContainText("Loading reservation history…");
+  await nav(page, "Overview");
+  await aborted;
+  finish();
+  await done;
+  await page.unroute(first);
+  await nav(page, "Orders");
+  await expect(history).toHaveCount(0);
+  await opener.click();
+  await expect(history.getByRole("listitem")).toHaveCount(20);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(history).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

@@ -48,6 +48,19 @@ type Cart = {
   lines: string;
   updated_at: string;
 };
+type ReservationHistory = {
+  id: string;
+  org_id: string;
+  order_id: string;
+  revision: number;
+  action: "deadline" | "expire";
+  before_expires_at: number | null;
+  expires_at: number | null;
+  lines: string;
+  reason: string;
+  actor_id: string;
+  created_at: string;
+};
 export class Orders {
   private store: Store;
   constructor(
@@ -66,6 +79,9 @@ export class Orders {
     CREATE TABLE IF NOT EXISTS orders_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,description TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),shipped INTEGER NOT NULL DEFAULT 0,canceled INTEGER NOT NULL DEFAULT 0,allocated INTEGER NOT NULL DEFAULT 0,unit_price INTEGER NOT NULL CHECK(unit_price>=0),unit_tax INTEGER NOT NULL CHECK(unit_tax>=0),CHECK(shipped>=0 AND canceled>=0 AND allocated>=0 AND shipped+canceled+allocated<=quantity),UNIQUE(order_id,product_id)) STRICT;
     CREATE TABLE IF NOT EXISTS orders_amendments(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,line_id TEXT NOT NULL,revision INTEGER NOT NULL,before_quantity INTEGER NOT NULL,after_quantity INTEGER NOT NULL,unit_price INTEGER NOT NULL,unit_tax INTEGER NOT NULL,before_total INTEGER NOT NULL,after_total INTEGER NOT NULL,allocated_delta INTEGER NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT;
     CREATE INDEX IF NOT EXISTS orders_amendment_history ON orders_amendments(org_id,order_id,revision);
+    CREATE TABLE IF NOT EXISTS orders_reservation_deadlines(org_id TEXT NOT NULL,order_id TEXT NOT NULL,expires_at INTEGER,PRIMARY KEY(org_id,order_id)) STRICT;
+    CREATE TABLE IF NOT EXISTS orders_reservation_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,revision INTEGER NOT NULL,action TEXT NOT NULL CHECK(action IN('deadline','expire')),before_expires_at INTEGER,expires_at INTEGER,lines TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT;
+    CREATE INDEX IF NOT EXISTS orders_reservation_history_page ON orders_reservation_history(org_id,order_id,revision);
   `);
   }
   order(actor: Actor, orderId: string): Order {
@@ -105,7 +121,11 @@ export class Orders {
         (o) =>
           actor.role !== "warehouse" || actor.sites.includes(o.warehouse_id),
       )
-      .map((o) => ({ ...o, lines: this.lines(actor, o.id) }));
+      .map((o) => ({
+        ...o,
+        lines: this.lines(actor, o.id),
+        reservation: this.reservationStatus(actor, o.id),
+      }));
   }
   carts(actor: Actor) {
     permit(actor, ["commercial", "buyer"]);
@@ -381,6 +401,7 @@ export class Orders {
       key,
       input,
       () => {
+        actor = this.reservationActor(actor, true);
         permit(actor, ["commercial"]);
         this.order(actor, input.orderId);
       },
@@ -396,6 +417,7 @@ export class Orders {
           "CREDIT_HOLD",
           "Account is on hold.",
         );
+        this.assertReservationCurrent(actor, order.id);
         for (const l of this.lines(actor, order.id)) {
           const qty = this.inventory.reserve(
             actor,
@@ -417,6 +439,285 @@ export class Orders {
         return { id: order.id, revision: order.revision + 1 };
       },
     );
+  }
+  private reservationActor(actor: Actor, write = false) {
+    const current = this.amendmentActor(actor);
+    if (write) permit(current, ["commercial"]);
+    return current;
+  }
+  private reservationStatus(actor: Actor, orderId: string) {
+    const expiresAt =
+      this.store.get<{ expires_at: number | null }>(
+        "SELECT expires_at FROM orders_reservation_deadlines WHERE org_id=? AND order_id=?",
+        actor.orgId,
+        orderId,
+      )?.expires_at ?? null;
+    const expired =
+      this.store.get<{ action: "deadline" | "expire" }>(
+        "SELECT action FROM orders_reservation_history WHERE org_id=? AND order_id=? ORDER BY revision DESC LIMIT 1",
+        actor.orgId,
+        orderId,
+      )?.action === "expire";
+    return {
+      expiresAt,
+      overdue: expired || (expiresAt !== null && expiresAt <= Date.now()),
+    };
+  }
+  // Owning operation used by allocation and fulfillment inside their native transaction.
+  assertReservationCurrent(actor: Actor, orderId: string) {
+    this.order(actor, orderId);
+    check(
+      !this.reservationStatus(actor, orderId).overdue,
+      "RESERVATION_EXPIRED",
+      "Reservation deadline passed. Commercial staff must review expiry or renew the deadline before new picks or allocations.",
+    );
+  }
+  reservations(actor: Actor, orderId: string, after?: string) {
+    actor = this.reservationActor(actor);
+    this.order(actor, orderId);
+    check(
+      after === undefined || /^[1-9][0-9]{0,15}$/.test(after),
+      "VALIDATION",
+      "Invalid reservation history cursor.",
+      400,
+    );
+    const cursor =
+      after === undefined ? Number.MAX_SAFE_INTEGER : Number(after);
+    integer(cursor, "reservation history cursor", 1, Number.MAX_SAFE_INTEGER);
+    const rows = this.store.all<ReservationHistory>(
+      "SELECT * FROM orders_reservation_history WHERE org_id=? AND order_id=? AND revision<? ORDER BY revision DESC LIMIT 21",
+      actor.orgId,
+      orderId,
+      cursor,
+    );
+    const items = rows
+      .slice(0, 20)
+      .map((r) => ({ ...r, lines: JSON.parse(String(r.lines)) }));
+    return {
+      ...this.reservationStatus(actor, orderId),
+      items,
+      next: rows.length > 20 ? String(items.at(-1)!.revision) : null,
+    };
+  }
+  reservationDeadline(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      revision: number;
+      expiresAt: number | null;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.reservation.deadline",
+      key,
+      input,
+      () => {
+        actor = this.reservationActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.order(actor, input.orderId),
+          reason = text(input.reason, "buyer-visible reservation reason", 1000),
+          previous = this.reservationStatus(actor, order.id).expiresAt;
+        integer(input.revision, "order revision", 1, Number.MAX_SAFE_INTEGER);
+        check(
+          order.state === "open" && order.revision === input.revision,
+          "REVISION",
+          "Order changed or is closed; refresh before reviewing reservations.",
+        );
+        if (input.expiresAt !== null) {
+          integer(input.expiresAt, "reservation deadline", 1, 253402300799999);
+          check(
+            input.expiresAt > Date.now(),
+            "VALIDATION",
+            "Choose a future reservation deadline.",
+            400,
+          );
+        }
+        check(
+          previous !== input.expiresAt,
+          "NO_CHANGE",
+          "Reservation deadline must change.",
+        );
+        this.store.run(
+          "INSERT INTO orders_reservation_deadlines VALUES(?,?,?) ON CONFLICT(org_id,order_id) DO UPDATE SET expires_at=excluded.expires_at",
+          actor.orgId,
+          order.id,
+          input.expiresAt,
+        );
+        this.refresh(actor, order.id);
+        return this.recordReservation(
+          actor,
+          order,
+          "deadline",
+          previous,
+          input.expiresAt,
+          [],
+          reason,
+        );
+      },
+    );
+  }
+  expireReservations(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      revision: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.reservation.expire",
+      key,
+      input,
+      () => {
+        actor = this.reservationActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.order(actor, input.orderId),
+          reason = text(input.reason, "buyer-visible expiry reason", 1000),
+          status = this.reservationStatus(actor, order.id);
+        integer(input.revision, "order revision", 1, Number.MAX_SAFE_INTEGER);
+        check(
+          order.state === "open" && order.revision === input.revision,
+          "REVISION",
+          "Order changed or is closed; refresh before reviewing reservations.",
+        );
+        check(
+          status.overdue,
+          "NOT_DUE",
+          "Reservation deadline has not passed.",
+        );
+        const allocations = this.inventory.allocations(actor, order.id),
+          orderLines = this.lines(actor, order.id);
+        check(
+          allocations.every(
+            (a) =>
+              a.quantity === a.consumed + a.released ||
+              orderLines.some((l) => l.product_id === a.product_id),
+          ),
+          "ALLOCATION",
+          "Order reservations require reconciliation.",
+        );
+        const changes = orderLines.map((line) => {
+          const open = allocations.filter(
+              (a) => a.product_id === line.product_id,
+            ),
+            released = open.reduce(
+              (sum, a) =>
+                sum +
+                (a.stage === "reserved"
+                  ? a.quantity - a.consumed - a.released
+                  : 0),
+              0,
+            ),
+            retainedPicked = open.reduce(
+              (sum, a) =>
+                sum +
+                (a.stage === "picked"
+                  ? a.quantity - a.consumed - a.released
+                  : 0),
+              0,
+            );
+          check(
+            released + retainedPicked === line.allocated,
+            "ALLOCATION",
+            "Order reservations require reconciliation.",
+          );
+          return {
+            lineId: line.id,
+            productId: line.product_id,
+            released,
+            retainedPicked,
+          };
+        });
+        check(
+          changes.some((l) => l.released > 0),
+          "NO_CHANGE",
+          "No unpicked reservations remain to expire. Picked and packed stock is retained.",
+        );
+        for (const line of changes) {
+          check(
+            this.inventory.release(
+              actor,
+              order.id,
+              line.productId,
+              line.released,
+            ) === line.released,
+            "ALLOCATION",
+            "Reservation release failed.",
+          );
+          this.store.run(
+            "UPDATE orders_lines SET allocated=allocated-? WHERE org_id=? AND id=?",
+            line.released,
+            actor.orgId,
+            line.lineId,
+          );
+        }
+        this.refresh(actor, order.id);
+        return this.recordReservation(
+          actor,
+          order,
+          "expire",
+          status.expiresAt,
+          status.expiresAt,
+          changes,
+          reason,
+        );
+      },
+    );
+  }
+  private recordReservation(
+    actor: Actor,
+    order: Order,
+    action: "deadline" | "expire",
+    beforeExpiresAt: number | null,
+    expiresAt: number | null,
+    lines: {
+      lineId: string;
+      productId: string;
+      released: number;
+      retainedPicked: number;
+    }[],
+    reason: string,
+  ) {
+    const historyId = id(),
+      revision = order.revision + 1;
+    this.store.run(
+      "INSERT INTO orders_reservation_history VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+      historyId,
+      actor.orgId,
+      order.id,
+      revision,
+      action,
+      beforeExpiresAt,
+      expiresAt,
+      JSON.stringify(lines),
+      reason,
+      actor.id,
+      now(),
+    );
+    const result = {
+      id: order.id,
+      historyId,
+      revision,
+      action,
+      expiresAt,
+      lines,
+    };
+    this.platform.event(
+      actor,
+      `orders.reservation.${action}`,
+      order.id,
+      result,
+    );
+    return result;
   }
   private amendmentActor(actor: Actor, write = false) {
     const current = this.identity.currentActor(actor);
@@ -512,6 +813,7 @@ export class Orders {
           total = integer(order.total + amount, "amended order total", 0, 1e12);
         let allocatedDelta = 0;
         if (delta > 0) {
+          this.assertReservationCurrent(actor, order.id);
           check(
             this.catalog.product(actor, line.product_id).active,
             "PRODUCT",

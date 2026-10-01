@@ -374,6 +374,13 @@ export class Fulfillment {
       key,
       input,
       () => {
+        actor = this.identity.currentActor(actor);
+        check(
+          !this.identity.security(actor).passwordChangeRequired,
+          "PASSWORD_CHANGE_REQUIRED",
+          "Change your password before picking stock.",
+          403,
+        );
         permit(actor, ["warehouse"]);
         const o = this.orders.order(actor, input.orderId);
         site(actor, o.warehouse_id);
@@ -401,6 +408,12 @@ export class Fulfillment {
             "PACKED",
             "Void active packing before unpicking this allocation.",
           );
+        else if (
+          this.inventory
+            .allocations(actor, input.orderId)
+            .find((a) => a.id === input.allocationId)?.stage === "reserved"
+        )
+          this.orders.assertReservationCurrent(actor, input.orderId);
         const a = input.unpick
           ? this.inventory.unpick(actor, input.allocationId)
           : this.inventory.pick(actor, input.allocationId, input.serial);

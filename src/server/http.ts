@@ -654,6 +654,23 @@ export function commands(app: Application): Record<string, Spec> {
       }),
       run: (a, k, p) => app.orders.amend(a, k, p),
     },
+    "order.reservation.deadline": {
+      schema: obj({
+        orderId: str,
+        revision: num,
+        expiresAt: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 253402300799999,
+        },
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.reservationDeadline(a, k, p),
+    },
+    "order.reservation.expire": {
+      schema: obj({ orderId: str, revision: num, reason: str }),
+      run: (a, k, p) => app.orders.expireReservations(a, k, p),
+    },
     "fulfillment.pick": {
       schema: obj(
         {
@@ -1225,6 +1242,23 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     async (request) =>
       app.orders.amendments(
+        actor(request),
+        request.params.orderId,
+        request.query.after,
+      ),
+  );
+  http.get<{ Params: { orderId: string }; Querystring: { after?: string } }>(
+    "/api/orders/:orderId/reservations",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,15}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.orders.reservations(
         actor(request),
         request.params.orderId,
         request.query.after,

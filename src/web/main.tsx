@@ -18,6 +18,7 @@ import { EventReporting } from "./event-reporting.tsx";
 import { DisclosureReview } from "./provider-disclosures.tsx";
 import { ProviderHistory } from "./provider-history.tsx";
 import { OrderAmendments } from "./order-amendments.tsx";
+import { OrderReservations, ReservationStatus } from "./order-reservations.tsx";
 import { SupplierReturnHistory } from "./supplier-return-history.tsx";
 import { AuditHistory } from "./audit-history.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
@@ -30,7 +31,13 @@ type Field = {
   name: string;
   label: string;
   type?:
-    "number" | "textarea" | "checkbox" | "password" | "multiselect" | "date";
+    | "number"
+    | "textarea"
+    | "checkbox"
+    | "password"
+    | "multiselect"
+    | "date"
+    | "datetime-local";
   options?: { value: string; label: string }[];
   value?: string | number | boolean | string[];
   optional?: boolean;
@@ -71,6 +78,10 @@ function App() {
   const supplierHistoryOpener = useRef<HTMLElement | null>(null);
   const [amendmentOrderId, setAmendmentOrderId] = useState<string | null>(null);
   const amendmentOpener = useRef<HTMLElement | null>(null);
+  const [reservationOrderId, setReservationOrderId] = useState<string | null>(
+    null,
+  );
+  const reservationOpener = useRef<HTMLElement | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
@@ -82,6 +93,8 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setReservationOrderId(null);
+    reservationOpener.current = null;
     setAmendmentOrderId(null);
     amendmentOpener.current = null;
     const epoch = ++shipmentEpoch.current;
@@ -215,6 +228,8 @@ function App() {
     setEvidenceClaim(null);
     setProviderHistoryAccount(null);
     setSupplierHistoryId(null);
+    setReservationOrderId(null);
+    reservationOpener.current = null;
     setAmendmentOrderId(null);
     amendmentOpener.current = null;
     supplierHistoryOpener.current = null;
@@ -811,6 +826,8 @@ function App() {
                 setPage(p);
                 setProviderHistoryAccount(null);
                 setSupplierHistoryId(null);
+                setReservationOrderId(null);
+                reservationOpener.current = null;
                 setAmendmentOrderId(null);
                 amendmentOpener.current = null;
                 setError("");
@@ -1037,7 +1054,10 @@ function App() {
                       )}
                   </div>
                 )),
-                <span className="badge">{o.state}</span>,
+                <div>
+                  <span className="badge">{o.state}</span>
+                  <ReservationStatus reservation={o.reservation} />
+                </div>,
                 <div className="actions">
                   {can(
                     "commercial",
@@ -1047,10 +1067,144 @@ function App() {
                     "support",
                   ) &&
                     button("View amendment history", () => {
+                      setReservationOrderId(null);
+                      reservationOpener.current = null;
                       amendmentOpener.current =
                         document.activeElement as HTMLElement | null;
                       setAmendmentOrderId(o.id);
                     })}
+                  {can(
+                    "commercial",
+                    "buyer",
+                    "warehouse",
+                    "finance",
+                    "support",
+                  ) &&
+                    button("View reservation history", () => {
+                      setAmendmentOrderId(null);
+                      amendmentOpener.current = null;
+                      reservationOpener.current =
+                        document.activeElement as HTMLElement | null;
+                      setReservationOrderId(o.id);
+                    })}
+                  {o.state === "open" && can("commercial") && (
+                    <>
+                      {button(
+                        o.reservation?.expiresAt == null
+                          ? "Set reservation deadline"
+                          : "Renew reservation deadline",
+                        () =>
+                          open(
+                            "Review reservation deadline",
+                            [
+                              {
+                                name: "expiresAt",
+                                label:
+                                  "Future reservation deadline (local time)",
+                                type: "datetime-local",
+                                help: "Choose a future date and time. Allocation does not renew this deadline.",
+                              },
+                              {
+                                name: "reason",
+                                label:
+                                  "Buyer-visible reason for reservation change",
+                                type: "textarea",
+                              },
+                            ],
+                            async (v) => {
+                              const expiresAt = new Date(v.expiresAt).getTime();
+                              if (!Number.isFinite(expiresAt))
+                                throw new Error(
+                                  "Choose a valid future date and time.",
+                                );
+                              return command("order.reservation.deadline", {
+                                orderId: o.id,
+                                revision: o.revision,
+                                expiresAt,
+                                reason: v.reason,
+                              });
+                            },
+                            <p>
+                              Review the future deadline before saving. Once
+                              due, new reservations, quantity increases and new
+                              picking require an explicit renewal or clearing of
+                              the deadline. No stock is released until expiry is
+                              reviewed. The reason is visible to the buyer.
+                            </p>,
+                            "Save reservation deadline",
+                          ),
+                      )}
+                      {o.reservation?.expiresAt != null && (
+                        <>
+                          {button("Clear reservation deadline", () =>
+                            open(
+                              "Review clearing reservation deadline",
+                              [
+                                {
+                                  name: "reason",
+                                  label:
+                                    "Buyer-visible reason for reservation change",
+                                  type: "textarea",
+                                },
+                              ],
+                              (v) =>
+                                command("order.reservation.deadline", {
+                                  orderId: o.id,
+                                  revision: o.revision,
+                                  expiresAt: null,
+                                  reason: v.reason,
+                                }),
+                              <p>
+                                Clearing removes the deadline and permits new
+                                allocation and picking. This does not restore
+                                stock already released to backorder. The reason
+                                is visible to the buyer.
+                              </p>,
+                              "Clear reservation deadline",
+                            ),
+                          )}
+                          {button("Expire unpicked reservations", () => {
+                            if (
+                              !o.reservation.overdue &&
+                              o.reservation.expiresAt > Date.now()
+                            ) {
+                              setError(
+                                "The reservation deadline is not due yet. Refresh to review its current status.",
+                              );
+                              return;
+                            }
+                            open(
+                              "Review reservation expiry",
+                              [
+                                {
+                                  name: "reason",
+                                  label:
+                                    "Buyer-visible reason for reservation expiry",
+                                  type: "textarea",
+                                },
+                              ],
+                              (v) =>
+                                command("order.reservation.expire", {
+                                  orderId: o.id,
+                                  revision: o.revision,
+                                  reason: v.reason,
+                                }),
+                              <p>
+                                Release only unpicked reserved units to
+                                backorder. Picked and packed stock is preserved.
+                                The original ordered quantities, accepted
+                                prices, tax, order total and credit exposure
+                                stay intact. The deadline remains due until
+                                explicitly renewed or cleared. The reason is
+                                visible to the buyer.
+                              </p>,
+                              "Expire unpicked reservations",
+                            );
+                          })}
+                        </>
+                      )}
+                    </>
+                  )}
                   {o.state === "open" &&
                     can("commercial") &&
                     button("Allocate", () => {
@@ -1252,6 +1406,22 @@ function App() {
                 </div>,
               ],
             )}
+            {reservationOrderId &&
+              data.orders.some((o: Item) => o.id === reservationOrderId) && (
+                <OrderReservations
+                  key={`${reservationOrderId}:${eventViewEpoch}`}
+                  orderId={reservationOrderId}
+                  lines={
+                    data.orders.find((o: Item) => o.id === reservationOrderId)!
+                      .lines
+                  }
+                  onClose={() => {
+                    setReservationOrderId(null);
+                    reservationOpener.current?.focus();
+                    reservationOpener.current = null;
+                  }}
+                />
+              )}
             {amendmentOrderId &&
               data.orders.some((o: Item) => o.id === amendmentOrderId) && (
                 <OrderAmendments
