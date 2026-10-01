@@ -619,7 +619,7 @@
   "scopeDocumentSha256": {
     "docs/CARRIER-BOOKINGS.md": "4430c3d9fd0c0bd48904e9e89fe3627940a3e82960f2a53b24333bc716a1ee19",
     "docs/IMPLEMENTATION.md": "24464eb9372ecf46f3f3cc3f34e9273d70f6b9d8d071936a0afe682e90d3ea86",
-    "docs/HANDOFF.md": "b086098d5f65eadc8cb11c81cefe4bfe7bc738c5f9558606ad196000fd45ef13",
+    "docs/HANDOFF.md": "4f340aec84ddfe700e3b87951fa0b6180079595bcbc65a666e6f1ef859198733",
     "docs/evidence/LOCAL-CANADA-POST-PROTOCOL-2026-10-01.md": "ca57be053b6c8fc593964247c1bf5fbf5f6c24bb6154656d43d65380dd4ea0fa"
   },
   "commands": [
