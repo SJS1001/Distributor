@@ -646,7 +646,7 @@
   "scopeDocumentSha256": {
     "docs/CARRIER-BOOKINGS.md": "cdacf35de8cbf1fc2ab088563d38a3f99b16643967b4f288d8ead8a53bf4d0a8",
     "docs/IMPLEMENTATION.md": "fa76533f657a628fe784cf1a66728ff6ca6ce561169b5da3d20904d8cf9fff2b",
-    "docs/HANDOFF.md": "5a994acb6fcb21ce9a3891a5336e86ef7c842c49faef01aa446f4e3526c43db0",
+    "docs/HANDOFF.md": "26d3160a31cc7c088cfad43ee633fc4da6344b9e88a417ecea4137cf46901852",
     "docs/evidence/LOCAL-CARRIER-CLAIM-REVIEW-2026-10-01.md": "4f3f1c2c661e060c2bd8d1ea3c3f1f42271df3dc29f22e09dc193d16d92e27d5"
   },
   "commands": {
@@ -809,5 +809,19 @@
     "External account writers unfenced; devices/security/load/retention/recovery unqualified",
     "Private temporary artifacts not guaranteed archived",
     "Direct workstation/local commits only; no CI/cloud/provider/publication"
-  ]
+  ],
+  "sourceCommit": "c8d1812077d575e31764f2511a3f81fe7454bb45",
+  "committedByteAudit": {
+    "sourceCommit": "c8d1812077d575e31764f2511a3f81fe7454bb45",
+    "auditedAt": "2026-10-01T22:58:56.935872+00:00",
+    "status": "PASS",
+    "trackedFiles": 525,
+    "testedInputs": 260,
+    "historicalEvidence": 181,
+    "licenseNotices": 170,
+    "commandRecords": 17,
+    "checkoutClean": true,
+    "path": "/tmp/distributor-carrier-claim-review-checkpoint/post-commit-audit.json",
+    "sha256": "e08788ef9314b25abecaeaa2d4da88d73175f9bc1870d5f4f174b2a6ea29c19e"
+  }
 }
