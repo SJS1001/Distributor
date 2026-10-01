@@ -1170,6 +1170,15 @@ for (const provider of carrierNames)
     const receipt = f.app.carriers.prepare(f.actor, "named-prepare", {
       ...f.input,
       provider,
+      ...(provider === "dhl-express"
+        ? {
+            dhl: {
+              plannedShippingAt: "2026-10-03T10:30:00-04:00",
+              description: "Synthetic domestic equipment",
+              incoterm: "DAP" as const,
+            },
+          }
+        : {}),
     });
     const runtime = new CarrierRuntime(
       f.app,
@@ -1181,6 +1190,12 @@ for (const provider of carrierNames)
             book: async (intent, guard) => {
               calls.push(`book:${named}`);
               assert.equal(intent.provider, named);
+              if (named === "dhl-express")
+                assert.deepEqual(intent.dhl, {
+                  plannedShippingAt: "2026-10-03T10:30:00-04:00",
+                  description: "Synthetic domestic equipment",
+                  incoterm: "DAP",
+                });
               guard();
               return proof(intent);
             },

@@ -1,4 +1,5 @@
 import { assertCarrierConfiguration } from "./carrier-configuration.ts";
+import { captureDhlReview } from "./dhl-shipping-review.ts";
 import {
   canonical,
   check,
@@ -268,6 +269,7 @@ export class CarrierBookings {
       reviewHash: booking.review_hash,
       service: intent.service,
       ...(intent.configuration ? { configuration: intent.configuration } : {}),
+      ...(intent.dhl ? { dhl: intent.dhl } : {}),
       origin: intent.origin,
       destination: intent.destination,
       parcel: intent.parcel,
@@ -1765,14 +1767,34 @@ export class CarrierBookings {
           "CARRIER_BOOKING_ACTIVE",
           "Review the current booking; only canceled unsent bookings may be replaced.",
         );
+        check(
+          input.provider === "dhl-express" || !Object.hasOwn(input, "dhl"),
+          "VALIDATION",
+          "DHL review fields apply only to DHL Express.",
+          400,
+        );
+        const origin = address(input.origin),
+          destination = address(input.destination),
+          reviewedParcel = parcel(input.parcel);
         const review = {
           shipmentId: shipment.id,
           previousId: input.previousId,
           provider: input.provider,
           service: clean(input.service, "Carrier service", 100),
-          origin: address(input.origin),
-          destination: address(input.destination),
-          parcel: parcel(input.parcel),
+          origin,
+          destination,
+          parcel: reviewedParcel,
+          ...(input.provider === "dhl-express"
+            ? {
+                dhl: captureDhlReview(
+                  input.dhl,
+                  shipment,
+                  origin,
+                  destination,
+                  reviewedParcel,
+                ),
+              }
+            : {}),
           reviewedDestination: shipment.address,
           acknowledgment: clean(
             input.acknowledgment,

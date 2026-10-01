@@ -33,7 +33,36 @@ export type CarrierConfiguration = {
     readonly description: string;
   }[];
 };
+// Explicit equipment/goods review; no address, price or customs defaults.
+export type DhlShippingReview = {
+  plannedShippingAt: string;
+  description: string;
+  incoterm: "DAP" | "FCA" | "EXW" | "CPT" | "CIP" | "DPU";
+  customs?: {
+    currency: "USD" | "CAD";
+    invoiceNumber: string;
+    invoiceDate: string;
+    exportReason:
+      | "commercial_purpose_or_sale"
+      | "return"
+      | "warranty_replacement"
+      | "sample"
+      | "gift"
+      | "temporary";
+    acknowledgment: string;
+    lines: {
+      allocationId: string;
+      quantity: number;
+      description: string;
+      unitValueMinor: number;
+      manufacturerCountry: string;
+      commodityCode: string;
+      netWeightGrams: number;
+    }[];
+  };
+};
 export type CarrierPrepare = {
+  dhl?: DhlShippingReview;
   configurationHash?: string;
   shipmentId: string;
   previousId: string | null;
@@ -46,6 +75,7 @@ export type CarrierPrepare = {
   acknowledgment: string;
 };
 export type CarrierBookingView = {
+  dhl?: DhlShippingReview;
   configuration?: CarrierConfiguration;
   id: string;
   shipmentId: string;
