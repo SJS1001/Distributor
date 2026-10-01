@@ -3467,3 +3467,321 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
   );
   expect(errors).toEqual([]);
 });
+
+test("browser: replacement collection retries, cancellation, scan validation and successor claim retain serial history", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const cmd = async (name: string, payload: any) => {
+    const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+    const response = await page.request.post(`/api/commands/${name}`, {
+      headers: {
+        "x-csrf-token": csrf,
+        "idempotency-key": crypto.randomUUID(),
+        origin: "http://127.0.0.1:3117",
+      },
+      data: payload,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Replacement browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "REP-BROWSER",
+    name: "Replacement browser equipment",
+    serialized: true,
+    unitPrice: 10000,
+    taxBasisPoints: 1300,
+  });
+  const initial = await dashboard();
+  const warehouseId = initial.warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 3, unitCost: 6000 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "REP-DELIVERY",
+    quantity: 3,
+    serials: ["REP-OLD", "REP-NEW", "REP-SPARE"],
+    bin: "REP",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 1 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  for (const p of picks)
+    await cmd("fulfillment.pick", {
+      orderId: order.id,
+      allocationId: p.id,
+      serial: p.serial,
+    });
+  const picked = await dashboard();
+  const packed = await cmd("fulfillment.pack", {
+    orderId: order.id,
+    revision: picked.orders.find((o: any) => o.id === order.id).revision,
+    mode: "collection",
+    address: "Synthetic counter",
+    lines: picks.map((p: any) => ({
+      allocationId: p.id,
+      quantity: p.quantity,
+    })),
+  });
+  await cmd("fulfillment.ship", {
+    shipmentId: packed.id,
+    handoverEvidence: "Synthetic manufacturer fixture handover",
+  });
+  const sold = await dashboard();
+  const claim = await cmd("warranty.submit", {
+    accountId: account.id,
+    unitId: sold.stock.find((u: any) => u.serial === "REP-OLD").id,
+    type: "warranty",
+    issue: "Synthetic failure",
+    evidence: "mfg-issue",
+  });
+  await cmd("warranty.review", {
+    claimId: claim.id,
+    approved: true,
+    reason: "Synthetic authorization",
+  });
+  await cmd("warranty.receive", {
+    claimId: claim.id,
+    warehouseId,
+    bin: "REP-Q",
+    serial: "REP-OLD",
+  });
+  await cmd("warranty.inspect", {
+    claimId: claim.id,
+    findings: "Synthetic replacement inspection",
+  });
+  const before = await dashboard();
+  const finances = (d: any) => ({
+    orders: d.orders,
+    shipments: d.shipments,
+    invoices: d.invoices,
+  });
+  await page.reload();
+  await nav(page, "Returns");
+  const section = page.getByRole("region", {
+    name: "Replacement history",
+    exact: true,
+  });
+  const claimRow = page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("button", {
+        name: "Approve replacement",
+        exact: true,
+      }),
+    })
+    .filter({ hasText: claim.id.slice(0, 8) });
+  const reserve = async () => {
+    await claimRow
+      .getByRole("button", { name: "Approve replacement", exact: true })
+      .click();
+    await page.getByLabel("Replacement serial", { exact: true }).selectOption({
+      label: `REP-NEW · ${before.warehouses.find((w: any) => w.id === warehouseId).name}`,
+    });
+    await page
+      .getByLabel("Reason / evidence", { exact: true })
+      .fill("Synthetic replacement review");
+    await page
+      .getByRole("button", { name: "Reserve replacement", exact: true })
+      .click();
+  };
+  await reserve();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  let current = (await dashboard()).claims.find((c: any) => c.id === claim.id)
+    .replacements[0];
+  await section
+    .getByRole("button", { name: "Hand over replacement", exact: true })
+    .click();
+  await page
+    .getByLabel("Scan replacement serial", { exact: true })
+    .fill("REP-NEW");
+  await page
+    .getByLabel("Collection recipient", { exact: true })
+    .fill("Synthetic recipient");
+  await page
+    .getByLabel("Collection evidence reference", { exact: true })
+    .fill("Synthetic stale dialog");
+  await cmd("warranty.replacement.cancel", {
+    replacementId: current.id,
+    revision: 1,
+    reason: "Synthetic concurrent cancellation",
+  });
+  await page
+    .getByRole("button", { name: "Record handover", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Replacement changed",
+  );
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(section).toContainText("cancelled · v2");
+  const keys: Record<string, string[]> = {};
+  const lost = new Set<string>();
+  for (const name of [
+    "warranty.replacement.reserve",
+    "warranty.replacement.handover",
+  ]) {
+    keys[name] = [];
+    await page.route(`**/api/commands/${name}`, async (route) => {
+      keys[name]!.push(route.request().headers()["idempotency-key"]!);
+      if (!lost.has(name)) {
+        lost.add(name);
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    });
+  }
+  await reserve();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Reserve replacement", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const activeRow = section.getByRole("row").filter({
+    has: page.getByRole("button", {
+      name: "Hand over replacement",
+      exact: true,
+    }),
+  });
+  await activeRow
+    .getByRole("button", { name: "Hand over replacement", exact: true })
+    .click();
+  await page
+    .getByLabel("Scan replacement serial", { exact: true })
+    .fill("REP-SPARE");
+  await page
+    .getByLabel("Collection recipient", { exact: true })
+    .fill("Synthetic recipient");
+  await page
+    .getByLabel("Collection evidence reference", { exact: true })
+    .fill("Synthetic collection receipt");
+  // Invalid scan is checked before installing lost-response interception for a successful handover.
+  await page.unroute("**/api/commands/warranty.replacement.handover");
+  await page
+    .getByRole("button", { name: "Record handover", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Scanned replacement serial does not match",
+  );
+  await page
+    .getByLabel("Scan replacement serial", { exact: true })
+    .fill("REP-NEW");
+  await page.route(
+    "**/api/commands/warranty.replacement.handover",
+    async (route) => {
+      const name = "warranty.replacement.handover";
+      keys[name]!.push(route.request().headers()["idempotency-key"]!);
+      if (!lost.has(name)) {
+        lost.add(name);
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await page
+    .getByRole("button", { name: "Record handover", exact: true })
+    .click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Record handover", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  for (const v of Object.values(keys)) {
+    expect(v).toHaveLength(2);
+    expect(v[0]).toBe(v[1]);
+  }
+  await page.reload();
+  await nav(page, "Returns");
+  await expect(section).toContainText("handed_over · v2");
+  await expect(section).toContainText("Synthetic collection receipt");
+  const after = await dashboard();
+  expect(finances(after)).toEqual(finances(before));
+  expect(after.stock.find((u: any) => u.serial === "REP-OLD").state).toBe(
+    "scrapped",
+  );
+  expect(after.stock.find((u: any) => u.serial === "REP-NEW").state).toBe(
+    "sold",
+  );
+  expect(after.stock.find((u: any) => u.serial === "REP-SPARE").available).toBe(
+    1,
+  );
+  const native = page
+    .getByRole("row")
+    .filter({ hasText: claim.id.slice(0, 8) })
+    .filter({ hasText: "Synthetic failure" });
+  await expect(
+    native.getByRole("button", { name: "Issue return credit", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Submit claim / return", exact: true })
+    .click();
+  await page
+    .getByLabel("Sold serial", { exact: true })
+    .selectOption(after.soldUnits.find((u: any) => u.serial === "REP-NEW").id);
+  await expect(
+    page
+      .getByLabel("Sold serial", { exact: true })
+      .locator("option")
+      .filter({ hasText: "REP-OLD" }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Request type", { exact: true })
+    .selectOption("warranty");
+  await page
+    .getByLabel("Issue / reason", { exact: true })
+    .fill("Synthetic successor failure");
+  await page
+    .getByLabel("Evidence reference", { exact: true })
+    .fill("Synthetic successor evidence");
+  await next(page);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const final = await dashboard(),
+    successor = final.claims.find(
+      (c: any) => c.issue === "Synthetic successor failure",
+    ),
+    original = final.claims.find((c: any) => c.id === claim.id);
+  expect(successor.invoice_id).toBe(original.invoice_id);
+  expect(successor.coverage_end).toBe(original.coverage_end);
+  expect(errors).toEqual([]);
+});

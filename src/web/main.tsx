@@ -2137,17 +2137,7 @@ function App() {
             <div className="actions">
               {can("warranty", "commercial", "buyer") &&
                 button("Submit claim / return", () => {
-                  const sold = data.shipments
-                    .filter((s: Item) => s.state === "shipped")
-                    .flatMap((s: Item) =>
-                      s.units
-                        .filter((u: Item) => u.serial)
-                        .map((u: Item) => ({
-                          ...u,
-                          id: u.unitId,
-                          accountId: s.account_id,
-                        })),
-                    );
+                  const sold = data.soldUnits;
                   open(
                     "Request return or warranty review",
                     [
@@ -2284,6 +2274,9 @@ function App() {
                       ),
                     )}
                   {["inspected", "repair"].includes(c.state) &&
+                    !c.replacements?.some(
+                      (r: Item) => r.state === "reserved",
+                    ) &&
                     can("warranty") &&
                     button("Disposition", () =>
                       simple(
@@ -2302,8 +2295,70 @@ function App() {
                         (v) => ({ ...v, claimId: c.id }),
                       ),
                     )}
+                  {["inspected", "repair"].includes(c.state) &&
+                    !c.credit_id &&
+                    !c.replacements?.some(
+                      (r: Item) => r.state !== "cancelled",
+                    ) &&
+                    can("warranty") &&
+                    button("Approve replacement", () =>
+                      open(
+                        "Approve replacement reservation",
+                        [
+                          select(
+                            "newUnitId",
+                            "Replacement serial",
+                            data.stock.filter(
+                              (u: Item) =>
+                                u.serial &&
+                                u.state === "stock" &&
+                                u.condition === "usable" &&
+                                u.available === 1 &&
+                                u.product_id ===
+                                  data.stock.find(
+                                    (o: Item) => o.id === c.unit_id,
+                                  )?.product_id,
+                            ),
+                            (u) =>
+                              `${u.serial} · ${warehouseName(u.warehouse_id)}`,
+                          ),
+                          {
+                            name: "oldDisposition",
+                            label: "Returned unit at handover",
+                            options: [
+                              { value: "scrap", label: "Scrap" },
+                              {
+                                value: "restock",
+                                label: "Restock after inspection / repair",
+                              },
+                            ],
+                          },
+                          {
+                            name: "coveragePolicy",
+                            label: "Replacement coverage",
+                            options: [
+                              {
+                                value: "inherit_original",
+                                label: "Retain original coverage end date",
+                              },
+                            ],
+                          },
+                          reason,
+                        ],
+                        (v) =>
+                          command("warranty.replacement.reserve", {
+                            ...v,
+                            claimId: c.id,
+                          }),
+                        `Reserve one serial for customer collection. The returned unit stays in quarantine until handover. Coverage ends ${c.coverage_end}. Coverage and remedy policies require business qualification.`,
+                        "Reserve replacement",
+                      ),
+                    )}
                   {c.state === "disposed" &&
                     !c.credit_id &&
+                    !c.replacements?.some(
+                      (r: Item) => r.state !== "cancelled",
+                    ) &&
                     can("finance") &&
                     button("Issue return credit", () =>
                       simple(
@@ -2316,6 +2371,89 @@ function App() {
                 </div>,
               ],
             )}
+            <section aria-label="Replacement history">
+              <h2>Replacement history</h2>
+              <p>
+                Approved serials are held for customer collection. Handover
+                records the scanned serial and recipient, retains original
+                invoice and coverage, and applies the approved returned-unit
+                disposition.
+              </p>
+              {table(
+                ["Claim", "Serials / coverage", "State", "Evidence", "Actions"],
+                data.claims.flatMap((c: Item) =>
+                  (c.replacements ?? []).map((r: Item) => ({ ...r, claim: c })),
+                ),
+                (r: Item) => [
+                  r.claimId.slice(0, 8),
+                  <>
+                    {r.oldSerial} → {r.newSerial}
+                    <small>
+                      Coverage ends {r.coverageEnd} · returned unit:{" "}
+                      {r.oldDisposition}
+                    </small>
+                  </>,
+                  `${r.state} · v${r.revision}`,
+                  <>
+                    {r.recipient && <p>Recipient: {r.recipient}</p>}
+                    {r.evidence && <p>{r.evidence}</p>}
+                    {(r.history ?? []).map((h: Item) => (
+                      <p key={h.revision}>
+                        v{h.revision} · {h.state} · {h.reason}
+                      </p>
+                    ))}
+                  </>,
+                  <div className="actions">
+                    {r.state === "reserved" &&
+                      can("warranty") &&
+                      button("Cancel replacement", () =>
+                        simple(
+                          "Cancel replacement reservation",
+                          [reason],
+                          "warranty.replacement.cancel",
+                          (v) => ({
+                            ...v,
+                            replacementId: r.id,
+                            revision: r.revision,
+                          }),
+                        ),
+                      )}
+                    {r.state === "reserved" &&
+                      can("warehouse") &&
+                      button("Hand over replacement", () =>
+                        open(
+                          "Record replacement collection",
+                          [
+                            {
+                              name: "serial",
+                              label: "Scan replacement serial",
+                              scan: "single",
+                            },
+                            {
+                              name: "recipient",
+                              label: "Collection recipient",
+                            },
+                            {
+                              name: "evidence",
+                              label: "Collection evidence reference",
+                              type: "textarea",
+                            },
+                          ],
+                          (v) =>
+                            command("warranty.replacement.handover", {
+                              ...v,
+                              replacementId: r.id,
+                              revision: r.revision,
+                            }),
+                          `${r.newSerial} replaces ${r.oldSerial}. Confirm physical collection for ${accountName(r.claim.account_id)}; returned unit disposition: ${r.oldDisposition}.`,
+                          "Record handover",
+                        ),
+                      )}
+                  </div>,
+                ],
+                "No replacements have been recorded.",
+              )}
+            </section>
             {can("warranty", "warehouse", "finance", "commercial") && (
               <section aria-label="Manufacturer case history">
                 <h2>Manufacturer case history</h2>

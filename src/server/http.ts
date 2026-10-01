@@ -539,6 +539,30 @@ export function commands(app: Application): Record<string, Spec> {
       schema: obj({ claimId: str, reason: str }),
       run: (a, k, p) => app.warranty.credit(a, k, p),
     },
+    "warranty.replacement.reserve": {
+      schema: obj({
+        claimId: str,
+        newUnitId: str,
+        oldDisposition: choice("restock", "scrap"),
+        coveragePolicy: choice("inherit_original"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.reserveReplacement(a, k, p),
+    },
+    "warranty.replacement.cancel": {
+      schema: obj({ replacementId: str, revision: num, reason: str }),
+      run: (a, k, p) => app.warranty.cancelReplacement(a, k, p),
+    },
+    "warranty.replacement.handover": {
+      schema: obj({
+        replacementId: str,
+        revision: num,
+        serial: str,
+        recipient: str,
+        evidence: str,
+      }),
+      run: (a, k, p) => app.warranty.handoverReplacement(a, k, p),
+    },
     "warranty.manufacturer.refer": {
       schema: obj({
         claimId: str,

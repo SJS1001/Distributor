@@ -1,4 +1,4 @@
-# Warranty and manual manufacturer cases
+# Warranty, replacement collection and manual manufacturer cases
 
 Local implementation checkpoint: 2026-10-01. Tasks D-030–D-033 and G6 remain NOT VERIFIED. This is a synthetic engineering workflow; actual coverage, manufacturer terms, returned custody, financial policy and operator acceptance require qualification. See [proposed contracts](CONTRACTS.md), [decisions](DECISIONS.md) and [the local receipt](evidence/LOCAL-MANUFACTURER-CASES-2026-10-01.md).
 
@@ -6,7 +6,27 @@ Local implementation checkpoint: 2026-10-01. Tasks D-030–D-033 and G6 remain N
 
 A claim references a sold serial, customer, shipment and original invoice. Staff or the scoped buyer submit issue and evidence references; a warranty reviewer or administrator approves/rejects the claim with a reason. Current coverage dates use the organization's provisional coverage-days setting. A calculated date does not establish coverage eligibility or approved expiry rules.
 
-An approved return receives the exact serial into quarantine at an authorized warehouse. Inspection records findings; a warranty reviewer or administrator selects repair, restock or scrap. Inventory owns the custody change. Finance separately issues the permitted original-invoice credit and records any authorized refund. Manufacturer acceptance does not trigger these tasks. Replacement procurement/allocation, physical manufacturer custody, attachment storage and approved coverage/expiry policies remain engineering and qualification gaps.
+An approved return receives the exact serial into quarantine at an authorized warehouse. Inspection records findings; a warranty reviewer or administrator selects repair, restock or scrap. Inventory owns the custody change. Finance separately issues the permitted original-invoice credit and records any authorized refund. Manufacturer acceptance does not trigger these tasks. Same-product serialized replacement reservation and customer collection are available as described below. Carrier replacement shipping, substitutions/procurement, physical manufacturer custody, attachment storage and approved coverage/expiry policies remain engineering and qualification gaps.
+
+## Reserve a replacement for collection
+
+An inspected or repair-state claim without a credit or active replacement offers **Approve replacement** to a warranty reviewer or administrator. Select an available usable serial of the same product, the returned unit's eventual scrap/restock disposition, original coverage inheritance and an approval reason. Reasons are required and limited to 1,000 characters. This provisional engineering policy requires business approval; it does not establish coverage eligibility or that a repaired unit is fit for resale.
+
+Reservation creates revision 1, holds that serial against ordinary orders, transfers and other stock operations, and leaves the returned serial in quarantine. It creates no new order, shipment, invoice, credit or payment. Current grants for both units' warehouses are required to reserve, cancel or collect, including cached retries. An administrator bypasses site restrictions under the existing role model. This workflow records collection; it does not book a carrier or procure manufacturer stock.
+
+The Replacement history section retains old/new serials, inherited coverage date, state and revision. Staff also see approval/cancellation history and collection recipient/evidence. Buyers see only their account's serial/state/coverage projection, without staff reasons, recipient or evidence.
+
+## Cancel or collect a reserved replacement
+
+A warranty reviewer or administrator may **Cancel replacement** with the displayed revision and a reason. Cancellation releases the hold, retains history and leaves the returned unit quarantined. A fresh replacement or ordinary disposition/return credit can then be selected. Closing a dialog changes no custody.
+
+A warehouse operator or administrator uses **Hand over replacement**, scans the exact held serial, and records the collection recipient (maximum 160 characters) and evidence reference (maximum 2,000). Successful collection transitions once to handed_over revision 2, removes the replacement from warehouse stock and atomically applies the approved scrap/restock disposition to the returned unit. The claim becomes disposed with replacement disposition. The warranty return-credit operation rejects this claim; general finance credits remain separate invoice-level operations and still require approved remedy/reconciliation policy.
+
+Cancellation and collection compete on the same revision; a stale attempt rejects and requires refresh/review. Wrong serials, missing recipient/evidence and stale revisions leave stock and money unchanged. Lost committed responses retry with the original key and unchanged payload. Collection does not prove physical handover or authenticate the evidence reference.
+
+The replacement's current sold custody links future claims to the original shipment/invoice and captured original coverage end date, including another replacement in that chain. A later ordinary sale after a return/restock establishes the new customer and new invoice instead; historical replacement ownership does not authorize the former buyer. Coverage dates do not reset and do not enforce approved expiry/transferability rules.
+
+HTTP commands are `warranty.replacement.reserve`, `warranty.replacement.cancel` and `warranty.replacement.handover`. Exact field shapes, current session, origin/CSRF and idempotency checks apply. Inventory owns holds and custody; warranty owns approval, history and original coverage lineage. Shared transactions commit these facts with receipts/audit and roll them back together on failure. See [replacement evidence](evidence/LOCAL-WARRANTY-REPLACEMENTS-2026-10-01.md) for bounded synthetic concurrency, rollback, ownership and browser checks. These do not pass D-030–D-033 or G6.
 
 ## Record an external manufacturer referral
 

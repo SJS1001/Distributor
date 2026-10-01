@@ -123,6 +123,11 @@ export class Application {
       ].includes(actor.role)
         ? this.billing.invoices(actor)
         : [],
+      soldUnits: ["admin", "warranty", "commercial", "buyer"].includes(
+        actor.role,
+      )
+        ? this.warranty.soldUnits(actor)
+        : [],
       claims: [
         "admin",
         "finance",

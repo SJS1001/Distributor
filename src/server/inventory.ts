@@ -111,6 +111,8 @@ export class Inventory {
       CREATE TABLE IF NOT EXISTS inventory_warehouses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_allocations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),consumed INTEGER NOT NULL DEFAULT 0,released INTEGER NOT NULL DEFAULT 0,stage TEXT NOT NULL DEFAULT 'reserved' CHECK(stage IN('reserved','picked')),CHECK(consumed>=0 AND released>=0 AND consumed+released<=quantity)) STRICT;
+      CREATE TABLE IF NOT EXISTS inventory_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over'))) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS inventory_replacement_reserved ON inventory_replacements(org_id,unit_id) WHERE state='reserved';
       CREATE TABLE IF NOT EXISTS inventory_movements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,type TEXT NOT NULL,quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_transfers(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_id TEXT NOT NULL,destination_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('transit','received')),created_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_transfer_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,unit_id TEXT NOT NULL,received INTEGER NOT NULL DEFAULT 0,UNIQUE(transfer_id,unit_id)) STRICT;
@@ -202,7 +204,8 @@ export class Inventory {
   private reserved(unitId: string) {
     return Number(
       this.store.get(
-        "SELECT COALESCE(SUM(quantity-consumed-released),0) AS qty FROM inventory_allocations WHERE unit_id=?",
+        "SELECT (SELECT COALESCE(SUM(quantity-consumed-released),0) FROM inventory_allocations WHERE unit_id=?)+(SELECT COUNT(*) FROM inventory_replacements WHERE unit_id=? AND state='reserved') AS qty",
+        unitId,
         unitId,
       )?.qty ?? 0,
     );
@@ -1893,6 +1896,132 @@ export class Inventory {
         return result;
       },
     );
+  }
+  // Called by Warranty inside the shared business transaction; Inventory owns custody.
+  reserveReplacement(
+    actor: Actor,
+    reference: string,
+    unitId: string,
+    productId: string,
+  ) {
+    permit(actor, ["warranty"]);
+    const u = this.unit(actor, unitId);
+    site(actor, u.warehouse_id);
+    check(
+      u.product_id === productId &&
+        u.serial &&
+        u.state === "stock" &&
+        u.condition === "usable" &&
+        u.quantity === 1 &&
+        this.reserved(u.id) === 0,
+      "REPLACEMENT_STOCK",
+      "Replacement requires an unreserved usable serial of the same product.",
+    );
+    this.store.run(
+      "INSERT INTO inventory_replacements VALUES(?,?,?,'reserved')",
+      reference,
+      actor.orgId,
+      u.id,
+    );
+    this.movement(
+      actor,
+      u,
+      "replacement.reserve",
+      0,
+      reference,
+      "Approved replacement reservation",
+    );
+  }
+  releaseReplacement(actor: Actor, reference: string, reason: string) {
+    permit(actor, ["warranty"]);
+    const r = this.store.get(
+      "SELECT * FROM inventory_replacements WHERE org_id=? AND id=?",
+      actor.orgId,
+      reference,
+    );
+    check(
+      r && r.state === "reserved",
+      "STATE",
+      "Replacement reservation is not open.",
+    );
+    const u = this.unit(actor, String(r.unit_id));
+    site(actor, u.warehouse_id);
+    this.store.run(
+      "UPDATE inventory_replacements SET state='cancelled' WHERE id=?",
+      reference,
+    );
+    this.movement(
+      actor,
+      u,
+      "replacement.cancel",
+      0,
+      reference,
+      text(reason, "cancellation reason", 1000),
+    );
+  }
+  handoverReplacement(
+    actor: Actor,
+    reference: string,
+    serial: string,
+    evidence: string,
+  ) {
+    permit(actor, ["warehouse"]);
+    const r = this.store.get(
+      "SELECT * FROM inventory_replacements WHERE org_id=? AND id=?",
+      actor.orgId,
+      reference,
+    );
+    check(
+      r && r.state === "reserved",
+      "STATE",
+      "Replacement reservation is not open.",
+    );
+    const u = this.unit(actor, String(r.unit_id));
+    site(actor, u.warehouse_id);
+    check(
+      u.serial === serial,
+      "SERIAL",
+      "Scanned replacement serial does not match.",
+    );
+    check(
+      u.state === "stock" &&
+        u.condition === "usable" &&
+        u.quantity === 1 &&
+        this.reserved(u.id) === 1,
+      "STATE",
+      "Replacement stock is not ready for handover.",
+    );
+    this.store.run(
+      "UPDATE inventory_replacements SET state='handed_over' WHERE id=?",
+      reference,
+    );
+    this.store.run(
+      "UPDATE inventory_units SET state='sold',quantity=0,revision=revision+1 WHERE id=?",
+      u.id,
+    );
+    this.movement(
+      actor,
+      u,
+      "replacement.handover",
+      -1,
+      reference,
+      text(evidence, "handover evidence", 2000),
+    );
+  }
+  soldCustody(actor: Actor, unitId: string) {
+    const u = this.unit(actor, unitId);
+    check(
+      u.serial && u.state === "sold" && u.quantity === 0,
+      "STATE",
+      "Unit is not currently in sold custody.",
+    );
+    const custody = this.store.get<{ type: string; reference: string }>(
+      "SELECT type,reference FROM inventory_movements WHERE org_id=? AND unit_id=? AND type IN('shipment','replacement.handover') ORDER BY rowid DESC LIMIT 1",
+      actor.orgId,
+      unitId,
+    );
+    check(custody, "NOT_FOUND", "Sold custody evidence is missing.", 404);
+    return custody;
   }
   receiveReturn(
     actor: Actor,

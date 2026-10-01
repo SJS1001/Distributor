@@ -42,6 +42,21 @@ type ManufacturerCase = {
   revision: number;
   created_at: string;
 };
+type Replacement = {
+  id: string;
+  org_id: string;
+  claim_id: string;
+  new_unit_id: string;
+  state: "reserved" | "cancelled" | "handed_over";
+  revision: number;
+  old_disposition: "restock" | "scrap";
+  coverage_end: string;
+  reason: string;
+  recipient: string | null;
+  evidence: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
 export class Warranty {
   private store: Store;
   constructor(
@@ -55,6 +70,9 @@ export class Warranty {
     this.store = database.owned("warranty");
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS warranty_claims(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,unit_id TEXT NOT NULL,shipment_id TEXT NOT NULL,invoice_id TEXT NOT NULL,type TEXT NOT NULL CHECK(type IN('warranty','return')),state TEXT NOT NULL CHECK(state IN('submitted','approved','rejected','received','inspected','repair','disposed')),issue TEXT NOT NULL,evidence TEXT NOT NULL,coverage_end TEXT NOT NULL,inspection TEXT NOT NULL DEFAULT '',disposition TEXT,credit_id TEXT,created_at TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS warranty_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,new_unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over')),revision INTEGER NOT NULL CHECK(revision>=1),old_disposition TEXT NOT NULL CHECK(old_disposition IN('restock','scrap')),coverage_end TEXT NOT NULL,reason TEXT NOT NULL,recipient TEXT,evidence TEXT,created_at TEXT NOT NULL,completed_at TEXT) STRICT;
+    CREATE UNIQUE INDEX IF NOT EXISTS warranty_replacement_active ON warranty_replacements(org_id,claim_id) WHERE state IN('reserved','handed_over');
+    CREATE TABLE IF NOT EXISTS warranty_replacement_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,replacement_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(replacement_id,revision)) STRICT;
     CREATE TABLE IF NOT EXISTS warranty_decisions(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,action TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS warranty_manufacturer_cases(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,claim_id TEXT NOT NULL,manufacturer TEXT NOT NULL,reference TEXT NOT NULL,manufacturer_key TEXT NOT NULL,reference_key TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','accepted','denied','cancelled')),revision INTEGER NOT NULL CHECK(revision>=1),created_at TEXT NOT NULL,UNIQUE(org_id,manufacturer_key,reference_key)) STRICT;
     CREATE UNIQUE INDEX IF NOT EXISTS warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending';
@@ -90,9 +108,355 @@ export class Warranty {
       )
       .map((c) => ({
         ...c,
+        replacements: this.replacements(actor, c.id),
         manufacturerCases:
           actor.role === "buyer" ? [] : this.manufacturerCases(actor, c.id),
       }));
+  }
+  replacements(actor: Actor, claimId: string) {
+    permit(actor, ["warranty", "warehouse", "finance", "commercial", "buyer"]);
+    const c = this.claim(actor, claimId);
+    return this.store
+      .all<Replacement>(
+        "SELECT * FROM warranty_replacements WHERE org_id=? AND claim_id=? ORDER BY rowid",
+        actor.orgId,
+        claimId,
+      )
+      .map((r) => ({
+        id: r.id,
+        claimId,
+        newUnitId: r.new_unit_id,
+        oldSerial: this.inventory.unit(actor, c.unit_id).serial,
+        newSerial: this.inventory.unit(actor, r.new_unit_id).serial,
+        state: r.state,
+        revision: r.revision,
+        coverageEnd: r.coverage_end,
+        oldDisposition: r.old_disposition,
+        createdAt: r.created_at,
+        completedAt: r.completed_at,
+        ...(actor.role === "buyer"
+          ? {}
+          : {
+              reason: r.reason,
+              recipient: r.recipient,
+              evidence: r.evidence,
+              history: this.store.all(
+                "SELECT revision,state,reason,actor_id,created_at FROM warranty_replacement_history WHERE org_id=? AND replacement_id=? ORDER BY revision",
+                actor.orgId,
+                r.id,
+              ),
+            }),
+      }));
+  }
+  private replacement(actor: Actor, replacementId: string) {
+    const r = this.store.get<Replacement>(
+      "SELECT * FROM warranty_replacements WHERE org_id=? AND id=?",
+      actor.orgId,
+      replacementId,
+    );
+    check(r, "NOT_FOUND", "Replacement not found.", 404);
+    const c = this.claim(actor, r.claim_id);
+    site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
+    site(actor, this.inventory.unit(actor, r.new_unit_id).warehouse_id);
+    return { r, c };
+  }
+  private hasReplacement(actor: Actor, claimId: string) {
+    return this.store.get(
+      "SELECT id FROM warranty_replacements WHERE org_id=? AND claim_id=? AND state IN('reserved','handed_over')",
+      actor.orgId,
+      claimId,
+    );
+  }
+  private replacementHistory(actor: Actor, r: Replacement, reason: string) {
+    this.store.run(
+      "INSERT INTO warranty_replacement_history VALUES(?,?,?,?,?,?,?,?)",
+      id(),
+      actor.orgId,
+      r.id,
+      r.revision,
+      r.state,
+      text(reason, "replacement reason", 1000),
+      actor.id,
+      now(),
+    );
+    this.decision(actor, r.claim_id, `replacement.${r.state}`, reason);
+  }
+  reserveReplacement(
+    actor: Actor,
+    key: string,
+    input: {
+      claimId: string;
+      newUnitId: string;
+      oldDisposition: "restock" | "scrap";
+      coveragePolicy: "inherit_original";
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.replacement.reserve",
+      key,
+      input,
+      () => {
+        permit(actor, ["warranty"]);
+        const c = this.claim(actor, input.claimId);
+        site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
+        site(actor, this.inventory.unit(actor, input.newUnitId).warehouse_id);
+      },
+      () => {
+        const c = this.claim(actor, input.claimId),
+          old = this.inventory.unit(actor, c.unit_id);
+        check(
+          ["inspected", "repair"].includes(c.state),
+          "STATE",
+          "Replacement requires an inspected return or completed repair review.",
+        );
+        check(
+          !c.credit_id && !this.hasReplacement(actor, c.id),
+          "REMEDY",
+          "Claim already has a credit or active replacement.",
+        );
+        check(
+          ["restock", "scrap"].includes(input.oldDisposition) &&
+            input.coveragePolicy === "inherit_original",
+          "VALIDATION",
+          "Select a returned-unit disposition and inherited original coverage.",
+          400,
+        );
+        check(
+          old.state === "stock" &&
+            old.condition === "quarantine" &&
+            old.quantity === 1,
+          "STATE",
+          "Returned serial must remain in quarantine.",
+        );
+        const replacementId = id();
+        this.inventory.reserveReplacement(
+          actor,
+          replacementId,
+          input.newUnitId,
+          old.product_id,
+        );
+        this.store.run(
+          "INSERT INTO warranty_replacements VALUES(?,?,?,?,'reserved',1,?,?,?,NULL,NULL,?,NULL)",
+          replacementId,
+          actor.orgId,
+          c.id,
+          input.newUnitId,
+          input.oldDisposition,
+          c.coverage_end,
+          text(input.reason, "replacement reason", 1000),
+          now(),
+        );
+        const { r } = this.replacement(actor, replacementId);
+        this.replacementHistory(actor, r, input.reason);
+        return {
+          id: r.id,
+          claimId: c.id,
+          state: r.state,
+          revision: r.revision,
+        };
+      },
+    );
+  }
+  cancelReplacement(
+    actor: Actor,
+    key: string,
+    input: { replacementId: string; revision: number; reason: string },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.replacement.cancel",
+      key,
+      input,
+      () => {
+        permit(actor, ["warranty"]);
+        this.replacement(actor, input.replacementId);
+      },
+      () => {
+        const { r } = this.replacement(actor, input.replacementId);
+        check(
+          integer(input.revision, "replacement revision", 1) === r.revision,
+          "STALE_REPLACEMENT",
+          "Replacement changed. Refresh and review its history.",
+        );
+        check(
+          r.state === "reserved",
+          "STATE",
+          "Only a pending replacement can be cancelled.",
+        );
+        this.inventory.releaseReplacement(actor, r.id, input.reason);
+        this.store.run(
+          "UPDATE warranty_replacements SET state='cancelled',revision=revision+1,completed_at=? WHERE id=?",
+          now(),
+          r.id,
+        );
+        this.replacementHistory(
+          actor,
+          { ...r, state: "cancelled", revision: r.revision + 1 },
+          input.reason,
+        );
+        return { id: r.id, state: "cancelled", revision: r.revision + 1 };
+      },
+    );
+  }
+  handoverReplacement(
+    actor: Actor,
+    key: string,
+    input: {
+      replacementId: string;
+      revision: number;
+      serial: string;
+      recipient: string;
+      evidence: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.replacement.handover",
+      key,
+      input,
+      () => {
+        permit(actor, ["warehouse"]);
+        this.replacement(actor, input.replacementId);
+      },
+      () => {
+        const { r, c } = this.replacement(actor, input.replacementId);
+        check(
+          integer(input.revision, "replacement revision", 1) === r.revision,
+          "STALE_REPLACEMENT",
+          "Replacement changed. Refresh and review its history.",
+        );
+        check(
+          r.state === "reserved" &&
+            ["inspected", "repair"].includes(c.state) &&
+            !c.credit_id,
+          "STATE",
+          "Replacement is not pending on an inspected claim.",
+        );
+        const recipient = text(input.recipient, "collection recipient", 160),
+          evidence = text(input.evidence, "handover evidence", 2000);
+        this.inventory.handoverReplacement(actor, r.id, input.serial, evidence);
+        this.inventory.returnDisposition(
+          actor,
+          c.unit_id,
+          r.old_disposition,
+          c.id,
+          r.reason,
+        );
+        this.store.run(
+          "UPDATE warranty_replacements SET state='handed_over',revision=revision+1,recipient=?,evidence=?,completed_at=? WHERE id=?",
+          recipient,
+          evidence,
+          now(),
+          r.id,
+        );
+        this.store.run(
+          "UPDATE warranty_claims SET state='disposed',disposition='replacement' WHERE id=?",
+          c.id,
+        );
+        this.replacementHistory(
+          actor,
+          { ...r, state: "handed_over", revision: r.revision + 1 },
+          "Replacement collected with recorded recipient and evidence.",
+        );
+        return {
+          id: r.id,
+          claimId: c.id,
+          state: "handed_over",
+          revision: r.revision + 1,
+          newUnitId: r.new_unit_id,
+        };
+      },
+    );
+  }
+  private entitlement(actor: Actor, unitId: string, accountId: string) {
+    this.identity.customer(actor, accountId);
+    const custody = this.inventory.soldCustody(actor, unitId);
+    if (custody.type === "replacement.handover") {
+      const r = this.store.get<Replacement>(
+        "SELECT * FROM warranty_replacements WHERE org_id=? AND id=? AND new_unit_id=? AND state='handed_over'",
+        actor.orgId,
+        custody.reference,
+        unitId,
+      );
+      check(r, "NOT_FOUND", "Replacement ownership evidence is missing.", 404);
+      const c = this.claim(actor, r.claim_id);
+      check(
+        c.account_id === accountId,
+        "NOT_FOUND",
+        "No current serialized replacement for this account.",
+        404,
+      );
+      return {
+        shipmentId: c.shipment_id,
+        invoiceId: c.invoice_id,
+        coverageEnd: r.coverage_end,
+      };
+    }
+    const sale = this.fulfillment.soldUnit(actor, unitId, accountId);
+    const days = JSON.parse(this.identity.organization(actor).policy)
+      .coverageDays as number;
+    return {
+      shipmentId: sale.shipment.id,
+      invoiceId: sale.shipment.invoice_id!,
+      coverageEnd: new Date(
+        Date.parse(sale.shipment.shipped_at!) + days * 86400000,
+      ).toISOString(),
+    };
+  }
+  soldUnits(actor: Actor) {
+    permit(actor, ["warranty", "commercial", "buyer"]);
+    const candidates = new Map<
+      string,
+      { id: string; productId: string; serial: string; accountId: string }
+    >();
+    for (const s of this.fulfillment
+      .shipments(actor)
+      .filter((s) => s.state === "shipped"))
+      for (const u of s.units as {
+        unitId: string;
+        productId: string;
+        serial: string | null;
+      }[]) {
+        if (!u.serial || this.inventory.unit(actor, u.unitId).state !== "sold")
+          continue;
+        const custody = this.inventory.soldCustody(actor, u.unitId);
+        if (custody.type === "shipment" && custody.reference === s.id)
+          candidates.set(u.unitId, {
+            id: u.unitId,
+            productId: u.productId,
+            serial: u.serial,
+            accountId: s.account_id,
+          });
+      }
+    for (const r of this.store.all<Replacement>(
+      "SELECT * FROM warranty_replacements WHERE org_id=? AND state='handed_over' ORDER BY rowid",
+      actor.orgId,
+    )) {
+      const c = this.store.get<Claim>(
+        "SELECT * FROM warranty_claims WHERE org_id=? AND id=?",
+        actor.orgId,
+        r.claim_id,
+      )!;
+      if (actor.role === "buyer" && c.account_id !== actor.accountId) continue;
+      const u = this.inventory.unit(actor, r.new_unit_id),
+        custody =
+          u.state === "sold" ? this.inventory.soldCustody(actor, u.id) : null;
+      if (
+        custody?.type === "replacement.handover" &&
+        custody.reference === r.id
+      )
+        candidates.set(u.id, {
+          id: u.id,
+          productId: u.product_id,
+          serial: u.serial!,
+          accountId: c.account_id,
+        });
+    }
+    return [...candidates.values()].filter(
+      (u) => this.inventory.unit(actor, u.id).state === "sold",
+    );
   }
   manufacturerCases(actor: Actor, claimId: string) {
     permit(actor, ["warranty", "warehouse", "finance", "commercial"]);
@@ -321,7 +685,7 @@ export class Warranty {
           "Unknown claim type.",
           400,
         );
-        const sale = this.fulfillment.soldUnit(
+        const entitlement = this.entitlement(
             actor,
             input.unitId,
             input.accountId,
@@ -341,11 +705,7 @@ export class Warranty {
           "ACTIVE_CLAIM",
           "Unit already has an active claim.",
         );
-        const days = JSON.parse(this.identity.organization(actor).policy)
-          .coverageDays as number;
-        const coverageEnd = new Date(
-            Date.parse(sale.shipment.shipped_at!) + days * 86400000,
-          ).toISOString(),
+        const coverageEnd = entitlement.coverageEnd,
           claimId = id();
         this.store.run(
           "INSERT INTO warranty_claims(id,org_id,account_id,unit_id,shipment_id,invoice_id,type,state,issue,evidence,coverage_end,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -353,8 +713,8 @@ export class Warranty {
           actor.orgId,
           input.accountId,
           unit.id,
-          sale.shipment.id,
-          sale.shipment.invoice_id!,
+          entitlement.shipmentId,
+          entitlement.invoiceId,
           input.type,
           "submitted",
           text(input.issue, "issue", 2000),
@@ -529,6 +889,11 @@ export class Warranty {
       () => {
         const claim = this.claim(actor, input.claimId);
         check(
+          !this.hasReplacement(actor, claim.id),
+          "REMEDY",
+          "Cancel the pending replacement before another disposition.",
+        );
+        check(
           ["restock", "scrap", "repair"].includes(input.disposition),
           "VALIDATION",
           "Unknown disposition.",
@@ -583,7 +948,9 @@ export class Warranty {
       () => {
         const claim = this.claim(actor, input.claimId);
         check(
-          claim.state === "disposed" && !claim.credit_id,
+          claim.state === "disposed" &&
+            !claim.credit_id &&
+            !this.hasReplacement(actor, claim.id),
           "STATE",
           "Credit requires final disposition and must not already exist.",
         );
