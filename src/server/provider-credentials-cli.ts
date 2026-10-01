@@ -8,29 +8,35 @@ try {
   const [action] = process.argv.slice(2);
   check(
     process.argv.length === 3 &&
-      ["status", "install", "disable"].includes(action ?? ""),
+      ["status", "install", "disable", "key-status", "rotate"].includes(
+        action ?? "",
+      ),
     "CLI",
-    "Usage: provider-credentials <status|install|disable>; mutation input must arrive through protected stdin.",
+    "Usage: provider-credentials <status|install|disable|key-status|rotate>; mutation input must arrive through protected stdin.",
     400,
   );
   const required = (name: string) => {
     check(process.env[name], "PROVIDER_CONFIG", `Missing ${name}.`, 500);
     return process.env[name]!;
   };
-  const binding = {
-    id: required("PROVIDER_BINDING_ID"),
-    orgId: required("PROVIDER_ORG_ID"),
-    workerUserId: required("PROVIDER_WORKER_USER_ID"),
-    realm: required("QUICKBOOKS_REALM_ID"),
-    clientId: required("QUICKBOOKS_CLIENT_ID"),
-  };
+  const binding = ["status", "install", "disable"].includes(action!)
+    ? {
+        id: required("PROVIDER_BINDING_ID"),
+        orgId: required("PROVIDER_ORG_ID"),
+        workerUserId: required("PROVIDER_WORKER_USER_ID"),
+        realm: required("QUICKBOOKS_REALM_ID"),
+        clientId: required("QUICKBOOKS_CLIENT_ID"),
+      }
+    : undefined;
   app = new Application(
     required("DATABASE_PATH"),
     (process.env.DATA_REGION ?? "CA") as Region,
     { providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY },
   );
   let result;
-  if (action === "status") result = app.providerCredentials.status(binding);
+  if (action === "status") result = app.providerCredentials.status(binding!);
+  else if (action === "key-status")
+    result = app.providerCredentials.keyStatus();
   else {
     check(
       !process.stdin.isTTY,
@@ -49,20 +55,43 @@ try {
     const value = JSON.parse(input) as {
       revision: number;
       tokens?: TokenBundle;
+      generation?: number;
+      nextKey?: string;
+      workers?: { orgId: string; workerUserId: string }[];
     };
-    integer(value.revision, "credential revision");
-    if (action === "install") {
+    check(
+      value && typeof value === "object" && !Array.isArray(value),
+      "CREDENTIAL_INPUT",
+      "Supply a credential operation object.",
+    );
+    if (action === "rotate") {
       check(
-        value.tokens,
+        Object.keys(value).every((name) =>
+          ["generation", "nextKey", "workers"].includes(name),
+        ),
         "CREDENTIAL_INPUT",
-        "Supply a credential token bundle.",
+        "Unexpected rotation input.",
       );
-      result = app.providerCredentials.install(
-        binding,
-        value.revision,
-        value.tokens,
+      result = app.providerCredentials.rotate(
+        value.workers!,
+        value.generation!,
+        value.nextKey!,
       );
-    } else result = app.providerCredentials.disable(binding, value.revision);
+    } else {
+      integer(value.revision, "credential revision");
+      if (action === "install") {
+        check(
+          value.tokens,
+          "CREDENTIAL_INPUT",
+          "Supply a credential token bundle.",
+        );
+        result = app.providerCredentials.install(
+          binding!,
+          value.revision,
+          value.tokens,
+        );
+      } else result = app.providerCredentials.disable(binding!, value.revision);
+    }
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
 } catch (error) {

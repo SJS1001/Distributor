@@ -94,6 +94,7 @@ export class QuickBooksAuthorization {
     );
     if (outbound) {
       this.platform.assertProviderAccess();
+      this.vault.assertCurrentKey();
       check(
         this.vault.available,
         "CREDENTIAL_KEY",

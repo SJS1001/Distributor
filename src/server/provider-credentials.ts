@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "node:crypto";
 import { check, DomainError, id, integer, text, type Actor } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
@@ -36,6 +41,7 @@ type Credential = {
 export class ProviderCredentials {
   private store: Store;
   private key?: Buffer;
+  private generation = 0;
   readonly authorization: QuickBooksAuthorization;
   constructor(
     private database: Database,
@@ -55,7 +61,11 @@ export class ProviderCredentials {
       org_id TEXT NOT NULL,binding_id TEXT NOT NULL,realm TEXT NOT NULL,client_id TEXT NOT NULL,
       revision INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','refreshing','unknown','disabled')),
       material TEXT,claim TEXT,started_at INTEGER,PRIMARY KEY(org_id,binding_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS integration_credential_key (
+      singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL CHECK(generation>0),fingerprint TEXT NOT NULL
     ) STRICT;`);
+    this.generation = this.keyRow()?.generation ?? 0;
     this.authorization = new QuickBooksAuthorization(
       database,
       platform,
@@ -67,11 +77,217 @@ export class ProviderCredentials {
     );
   }
   get available() {
-    return !!this.key;
+    return this.keyAvailable(this.keyRow());
+  }
+  private keyAvailable(current: ReturnType<ProviderCredentials["keyRow"]>) {
+    return (
+      !!this.key &&
+      (!current ||
+        (current.fingerprint === this.fingerprint(this.key) &&
+          (current.generation === this.generation ||
+            (this.generation === 0 && current.generation === 1))))
+    );
   }
   close() {
     this.key?.fill(0);
     this.key = undefined;
+  }
+  private fingerprint(key: Buffer) {
+    return createHash("sha256")
+      .update("distributor-provider-key-v1")
+      .update(key)
+      .digest("hex");
+  }
+  private keyRow() {
+    return this.store.get<{ generation: number; fingerprint: string }>(
+      "SELECT generation,fingerprint FROM integration_credential_key WHERE singleton=1",
+    );
+  }
+  keyStatus() {
+    const current = this.keyRow();
+    return {
+      generation: current?.generation ?? 0,
+      configured: !!this.key,
+      current: this.keyAvailable(current),
+    };
+  }
+  private assertConfiguredKey() {
+    check(
+      this.key,
+      "CREDENTIAL_KEY",
+      "Provider encryption key is unavailable.",
+      503,
+    );
+    check(
+      this.available,
+      "CREDENTIAL_INTEGRITY",
+      "Provider key or generation differs; restart with the current key.",
+      503,
+    );
+  }
+  assertCurrentKey() {
+    this.assertConfiguredKey();
+    // Before the first marker, a configured key must prove existing legacy material.
+    if (!this.keyRow()) {
+      this.store.visit<Credential>(
+        "SELECT * FROM integration_credentials WHERE material IS NOT NULL",
+        [],
+        (row) => {
+          this.decrypt(row);
+        },
+      );
+    }
+  }
+  private registerKey() {
+    this.assertCurrentKey();
+    let current = this.keyRow();
+    if (!current) {
+      // This marker commits in the same transaction as the credential write.
+      this.store.run(
+        "INSERT INTO integration_credential_key VALUES(1,1,?)",
+        this.fingerprint(this.key!),
+      );
+      current = this.keyRow()!;
+    }
+    this.generation = current.generation;
+  }
+  // Filesystem operator action. Every affected organization needs current finance authority.
+  rotate(
+    workers: { orgId: string; workerUserId: string }[],
+    generation: number,
+    nextKey: string,
+  ) {
+    integer(generation, "key generation", 0, Number.MAX_SAFE_INTEGER - 1);
+    check(
+      typeof nextKey === "string" && /^[a-fA-F0-9]{64}$/.test(nextKey),
+      "CREDENTIAL_KEY",
+      "Supply a separate 64-character hexadecimal key through protected stdin.",
+    );
+    check(
+      Array.isArray(workers) && workers.length > 0 && workers.length <= 100,
+      "CREDENTIAL_SCOPE",
+      "Supply current finance workers for all affected organizations (at most 100).",
+    );
+    const replacement = Buffer.from(nextKey, "hex");
+    let committed = false;
+    try {
+      const result = this.database.transaction(() => {
+        this.assertCurrentKey();
+        this.platform.assertProviderAccess();
+        check(
+          (this.keyRow()?.generation ?? 0) === generation,
+          "REVISION",
+          "Key generation changed; inspect current status before rotation.",
+        );
+        check(
+          this.fingerprint(replacement) !== this.fingerprint(this.key!),
+          "CREDENTIAL_KEY",
+          "Choose a different encryption key.",
+        );
+        const actors = new Map<string, Actor>();
+        for (const worker of workers) {
+          check(
+            worker && typeof worker === "object" && !Array.isArray(worker),
+            "CREDENTIAL_SCOPE",
+            "Supply organization worker identities.",
+          );
+          text(worker.orgId, "organization ID");
+          text(worker.workerUserId, "worker ID");
+          check(
+            !actors.has(worker.orgId),
+            "CREDENTIAL_SCOPE",
+            "Duplicate organization in rotation authority.",
+          );
+          actors.set(
+            worker.orgId,
+            this.identity.workerActor(worker.orgId, worker.workerUserId),
+          );
+        }
+        const scopes = this.store.all<{ org_id: string }>(
+          "SELECT org_id FROM integration_credentials UNION SELECT org_id FROM integration_authorizations WHERE state IN('pending','exchanging') LIMIT 101",
+        );
+        check(
+          scopes.length <= 100 && scopes.every((row) => actors.has(row.org_id)),
+          "CREDENTIAL_SCOPE",
+          "Current finance authority is required for every affected organization.",
+        );
+        check(
+          !this.store.get(
+            "SELECT 1 FROM integration_credentials WHERE state='refreshing' UNION ALL SELECT 1 FROM integration_authorizations WHERE state='exchanging' LIMIT 1",
+          ),
+          "CREDENTIAL_BUSY",
+          "Resolve active or interrupted provider exchanges before rotating.",
+          503,
+        );
+        const rows = this.store.all<Credential>(
+          "SELECT * FROM integration_credentials ORDER BY org_id,binding_id LIMIT 1001",
+        );
+        check(
+          rows.length <= 1000,
+          "CREDENTIAL_LIMIT",
+          "This local rotation supports at most 1,000 bindings.",
+        );
+        for (const row of rows) {
+          check(
+            Number.isSafeInteger(row.revision) &&
+              row.revision < Number.MAX_SAFE_INTEGER,
+            "REVISION",
+            "Credential revision is exhausted.",
+          );
+          check(
+            (row.state === "ready") === (row.material !== null),
+            "CREDENTIAL_INTEGRITY",
+            "Credential material does not match its state.",
+            503,
+          );
+          const material =
+            row.material === null
+              ? null
+              : this.encrypt(
+                  { ...row, revision: row.revision + 1 },
+                  this.decrypt(row),
+                  replacement,
+                );
+          this.store.run(
+            "UPDATE integration_credentials SET revision=revision+1,material=?,claim=NULL,started_at=NULL WHERE org_id=? AND binding_id=?",
+            material,
+            row.org_id,
+            row.binding_id,
+          );
+        }
+        const canceled = this.authorization.invalidateRestoredAttempts();
+        this.store.run(
+          "INSERT INTO integration_credential_key VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET generation=excluded.generation,fingerprint=excluded.fingerprint",
+          generation + 1,
+          this.fingerprint(replacement),
+        );
+        for (const actor of actors.values()) {
+          this.platform.audit(
+            actor,
+            "provider.credentials.rotate",
+            "provider-vault",
+            {
+              generation: generation + 1,
+              bindings: rows.filter((row) => row.org_id === actor.orgId).length,
+              provider: "quickbooks",
+              environment: "sandbox",
+            },
+          );
+        }
+        return {
+          generation: generation + 1,
+          bindings: rows.length,
+          canceledAuthorizations: canceled,
+        };
+      });
+      this.key?.fill(0);
+      this.key = replacement;
+      this.generation = result.generation;
+      committed = true;
+      return result;
+    } finally {
+      if (!committed) replacement.fill(0);
+    }
   }
   private validateBinding(binding: CredentialBinding) {
     text(binding.id, "binding ID");
@@ -133,7 +349,8 @@ export class ProviderCredentials {
       ]),
     );
   }
-  private encrypt(row: Credential, bundle: TokenBundle) {
+  private encrypt(row: Credential, bundle: TokenBundle, replacement?: Buffer) {
+    if (!replacement) this.registerKey();
     check(
       this.key,
       "CREDENTIAL_KEY",
@@ -141,7 +358,7 @@ export class ProviderCredentials {
       503,
     );
     const iv = randomBytes(12),
-      cipher = createCipheriv("aes-256-gcm", this.key, iv);
+      cipher = createCipheriv("aes-256-gcm", replacement ?? this.key, iv);
     cipher.setAAD(this.context(row));
     const plaintext = Buffer.from(JSON.stringify(bundle));
     try {
@@ -156,6 +373,7 @@ export class ProviderCredentials {
     }
   }
   private decrypt(row: Credential): TokenBundle {
+    this.assertConfiguredKey();
     check(
       this.key,
       "CREDENTIAL_KEY",
