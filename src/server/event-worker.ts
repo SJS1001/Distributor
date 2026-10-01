@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { Application } from "./application.ts";
+import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError } from "./core.ts";
 import { type Region } from "./iam.ts";
 
@@ -13,7 +14,7 @@ try {
     400,
   );
   check(
-    process.env.LOCAL_EVENT_REPORTS === "enabled",
+    configuredEventReports() && process.env.LOCAL_EVENT_REPORTS === "enabled",
     "EVENTS_DISABLED",
     "Local event reporting is disabled.",
     503,
@@ -32,7 +33,7 @@ try {
     "Select the database region.",
     400,
   );
-  app = new Application(path, region as Region);
+  app = new Application(path, region as Region, { eventReports: true });
   process.stdout.write(
     `${JSON.stringify(app.eventDelivery.tick("event-report", { enabled: true }))}\n`,
   );

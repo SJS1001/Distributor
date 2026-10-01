@@ -49,3 +49,8 @@ Encrypted recovery continues to demand an exact supported current application pr
 ## Evidence and limits
 
 The [schema upgrade engineering receipt](evidence/LOCAL-SCHEMA-UPGRADES-2026-10-01.md) records the tested candidate, independent review and retained failures: 633 backend tests and 42 Chromium tests passed on the workstation. Synthetic fixtures and process faults establish only their tested boundaries. Production volume/retention, disk/power faults, cutover/RPO/RTO targets, key/storage residency, real provider outcomes, rolling compatibility, automated activation, human acceptance and all product gates remain unqualified.
+
+
+## Runtime reporting profile
+
+After inspection or an isolated recovery rehearsal, configure `EVENT_REPORTS=disabled` consistently on all application entry points to retain a report-disabled profile. Existing report-enabled tables and history are preserved when runtime registration is disabled. Absent configuration retains the earlier enabled default; explicit enabled startup may install the optional profile atomically. This setting controls registration, not schema downgrade, event deletion, provider access or a scheduler. The event worker also needs separate batch permission. See [local event reporting](EVENTS.md) and [encrypted recovery](RECOVERY.md).

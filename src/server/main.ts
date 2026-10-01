@@ -1,4 +1,5 @@
 import { Application } from "./application.ts";
+import { configuredEventReports } from "./report-runtime.ts";
 import { createHttp } from "./http.ts";
 import { check } from "./core.ts";
 import { type Region } from "./iam.ts";
@@ -24,6 +25,7 @@ const app = new Application(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
   {
+    eventReports: configuredEventReports(),
     mfaEncryptionKey: process.env.MFA_ENCRYPTION_KEY,
     providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
   },

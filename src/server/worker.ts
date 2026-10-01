@@ -1,4 +1,5 @@
 import { Application } from "./application.ts";
+import { configuredEventReports } from "./report-runtime.ts";
 import { configuredProviders } from "./provider-runtime.ts";
 import { check, DomainError } from "./core.ts";
 import { type Region } from "./iam.ts";
@@ -7,7 +8,10 @@ import { type Region } from "./iam.ts";
 const app = new Application(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
-  { providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY },
+  {
+    eventReports: configuredEventReports(),
+    providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
+  },
 );
 try {
   check(

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
 import { Application } from "./application.ts";
+import { configuredEventReports } from "./report-runtime.ts";
 import { check } from "./core.ts";
 import { type Region } from "./iam.ts";
 const action = process.argv[2];
@@ -13,6 +14,7 @@ check(
 const app = new Application(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
+  { eventReports: configuredEventReports() },
 );
 try {
   let password = process.env.BOOTSTRAP_PASSWORD;

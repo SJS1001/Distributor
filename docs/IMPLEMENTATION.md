@@ -236,3 +236,10 @@ The [recovery procedure](RECOVERY.md) now uses shared exact schema/version/recei
 The [local receipt](evidence/LOCAL-RECOVERY-PROFILES-2026-10-01.md) records both CA/US stored profiles, committed WAL cutoff balances, durable holds, session/credential invalidation, authenticated malformed metadata and previous-writer archive compatibility. Final full backend passes 641/641; type, format and production build checks pass. No UI code changed; the preceding Chromium result remains historical.
 
 This is bounded D-036/D-039 engineering, not activation or production recovery qualification. Pre-version archives, disk/power faults, production volume, storage/key residency, backup schedules/retention, RPO/RTO, current authority/customer/provider reconciliation, human operator acceptance and all product gates remain unresolved. Full system incomplete; local commits/direct workstation checks only.
+
+
+## Explicit runtime reporting configuration
+
+The [runtime receipt](evidence/LOCAL-REPORT-RUNTIME-2026-10-01.md) adds `EVENT_REPORTS=enabled|disabled` across the HTTP server, bootstrap/demo and provider/operator commands. Disabled registration preserves both supported stored profiles and historical reports without processing pending events; the event worker also needs separate foreground batch permission. Normal HTTP startup of a report-disabled encrypted restore now preserves its profile when configured disabled, including its provider hold. Invalid settings reject before application database opening. Absent setting preserves the enabled compatibility default; export it consistently on every process.
+
+Full backend passes 649/649; focused checks, type, format and build pass. No frontend changes; preceding browser evidence remains historical. This is bounded D-010/D-011/D-036/D-039 engineering only. Production configuration distribution, infrastructure residency, provider/device/security/load/retention/recovery and human acceptance remain unresolved. All tasks/gates remain NOT VERIFIED; full system incomplete, local commits/direct workstation checks only.

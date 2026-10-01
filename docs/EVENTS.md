@@ -10,15 +10,17 @@ The existing version-1 envelope is `{id, orgId, type, version, reference, create
 
 Consumers are trusted synchronous application code with an ID, implementation version and explicitly supported event versions. No dynamic plugin, external I/O or asynchronous handler is supported. Async functions are rejected at registration; a returned thenable rolls back the attempted local effect and quarantines it. These checks enforce a programming contract, not a sandbox against malicious or deferred code. Stop old workers before changing the registered implementation. A changed implementation cannot execute a claim recorded for another implementation version; expired claims can subsequently be acquired by the new version.
 
-`Application(..., {eventReports:false})` omits the optional registration. Startup does not process events. Existing `platform_projections` rows remain historical and are not deleted or migrated into the new report. The compatibility `platform.project(true)` now processes at most 20 events and returns its completed count; `false` does nothing. It no longer promises to drain an entire outbox in one invocation.
+`EVENT_REPORTS=disabled` omits the optional registration in the HTTP server, bootstrap/demo, provider worker, credential CLI and QuickBooks authorization CLI. The shared setting accepts exactly `enabled` or `disabled`; absent defaults to `enabled` for compatibility. Invalid values reject before opening the application database. `.env.example` is a template and is not automatically loaded. Export the setting consistently for every process using the store. The constructor equivalent is `Application(..., {eventReports:false})`. Startup does not process events. Existing `platform_projections` rows remain historical and are not deleted or migrated into the new report. The compatibility `platform.project(true)` now processes at most 20 events and returns its completed count; `false` does nothing. It no longer promises to drain an entire outbox in one invocation.
 
 ## One foreground batch
 
 Direct workstation commands are currently authorized; CI runner jobs and operational scheduling are not. For an existing disposable local database:
 
 ```sh
-DATABASE_PATH=/absolute/path/to/synthetic.db DATA_REGION=CA LOCAL_EVENT_REPORTS=enabled npm run events:worker
+DATABASE_PATH=/absolute/path/to/synthetic.db DATA_REGION=CA EVENT_REPORTS=enabled LOCAL_EVENT_REPORTS=enabled npm run events:worker
 ```
+
+The event worker requires both `EVENT_REPORTS=enabled` (or its compatibility default) and `LOCAL_EVENT_REPORTS=enabled`. Batch permission cannot override `EVENT_REPORTS=disabled`; refusal occurs before opening the store, installing the consumer or claiming work. Explicitly enabling registration can install absent report tables and update the supported schema receipt atomically. Disabling registration preserves existing report tables, receipts, pending events and history; it does not erase them or remove native event recording. Registration alone does not start a scheduler or batch.
 
 Use `US` only for a US-tagged database. This command accepts no arguments, fails closed when disabled or the database is missing, validates organizational region tags, processes one batch of at most 20, prints aggregate counts and exits. The environment variables must be exported or supplied explicitly; `.env.example` is not automatically loaded. Region tags do not prove physical data residency. No provider runtime, credentials or outbound request is needed.
 
@@ -51,3 +53,6 @@ The interface handles the compiled metadata consumer only; it does not list dyna
 Local encrypted backup/restore preserves reports, attempt history and permanent receipts. Restored provider access remains held; optional local metadata processing does not clear that hold or perform provider work. SIGKILL checks exercise termination before effect processing, during an uncommitted effect and after a committed effect, with one report effect after recovery. Expiry is advanced synthetically in these tests; actual clock behavior, production termination and RPO/RTO remain unqualified.
 
 No production scheduler, retention/deletion policy, external broker, deployment, actual hosting residency, aggregate-state replay, malicious-plugin boundary, load qualification or independent human acceptance is provided. Keep completed receipts permanent until an explicitly approved retention/rebuild protocol exists. General module/protocol qualification and full G1/G7 remain open. See the [local event receipt](evidence/LOCAL-EVENT-DELIVERY-2026-10-01.md).
+
+
+[Local runtime configuration evidence](evidence/LOCAL-REPORT-RUNTIME-2026-10-01.md) records real loopback child-process startup and stored-profile preservation, with synthetic fixtures and explicit qualification limits.

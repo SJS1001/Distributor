@@ -1,4 +1,5 @@
 import { Application } from "./application.ts";
+import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError, integer } from "./core.ts";
 import { type Region } from "./iam.ts";
 import { type TokenBundle } from "./provider-credentials.ts";
@@ -31,7 +32,10 @@ try {
   app = new Application(
     required("DATABASE_PATH"),
     (process.env.DATA_REGION ?? "CA") as Region,
-    { providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY },
+    {
+      eventReports: configuredEventReports(),
+      providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
+    },
   );
   let result;
   if (action === "status") result = app.providerCredentials.status(binding!);

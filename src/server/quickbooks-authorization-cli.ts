@@ -1,4 +1,5 @@
 import { Application } from "./application.ts";
+import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError, text } from "./core.ts";
 import { type Region } from "./iam.ts";
 let app: Application | undefined;
@@ -64,7 +65,10 @@ try {
   app = new Application(
     required("DATABASE_PATH"),
     (process.env.DATA_REGION ?? "CA") as Region,
-    { providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY },
+    {
+      eventReports: configuredEventReports(),
+      providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
+    },
   );
   const flow = app.providerCredentials.authorization;
   let result;
