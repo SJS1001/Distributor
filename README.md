@@ -21,6 +21,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Decisions and inputs](docs/DECISIONS.md) | Confirmed direction, proposed choices and unanswered business questions |
 | [Reuse assessment](docs/REUSE.md) | OPUS extraction, open-source shortlist, licensing and UB readiness |
 | [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
+| [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Warranty and replacements](docs/WARRANTY.md) | Native returns, replacement collection, manufacturer evidence and remaining qualification |
 | [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets, optional MFA and session revocation |

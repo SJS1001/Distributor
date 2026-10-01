@@ -5004,3 +5004,280 @@ test("browser: authenticator setup retries, required second factor, recovery reu
     await secondContext.close();
   }
 });
+
+test("browser: stock cost reviews survive lost replies and separate immutable download from receiver acceptance", async ({
+  page,
+  browser,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await nav(page, "Billing");
+  const panel = page.getByRole("region", {
+    name: "Stock cost accounting handoffs",
+    exact: true,
+  });
+  await panel
+    .getByRole("button", { name: "Load stock cost review", exact: true })
+    .click();
+  const source = await (
+    await page.request.get("/api/accounting/cost-source")
+  ).json();
+  expect(source.movements.length).toBeGreaterThan(0);
+  const session = await (await page.request.get("/api/session")).json(),
+    headers = { origin: "http://127.0.0.1:3117", "x-csrf-token": session.csrf };
+  const mappings = source.byType
+    .filter((v: any) => v.increase || v.decrease)
+    .map((v: any) => ({
+      type: v.type,
+      offsetAccount: v.type === "receipt" ? "2100" : "5000",
+    }));
+  const input = {
+    version: 1,
+    batchRef: "BROWSER-COST",
+    afterSequence: source.afterSequence,
+    throughSequence: source.throughSequence,
+    inventoryAccount: "1200",
+    mappings,
+    expectedMovements: source.movements.length,
+    expectedIncrease: source.increase,
+    expectedDecrease: source.decrease,
+    expectedOpeningValue: source.openingValue,
+    expectedClosingValue: source.closingValue,
+    acknowledgment: "Synthetic regional ledger and duplicate-posting evidence",
+  };
+  // Synthetic UI fixtures establish interaction only; these totals are not human financial approval.
+  const form = panel.getByRole("form", { name: "Prepare stock cost handoff" });
+  await form
+    .getByLabel("Cost batch reference", { exact: true })
+    .fill(input.batchRef);
+  await form
+    .getByLabel("Inventory account code", { exact: true })
+    .fill(input.inventoryAccount);
+  await form
+    .getByLabel("Offset account mappings (JSON)", { exact: true })
+    .fill(JSON.stringify(mappings));
+  for (const [label, value] of [
+    ["Independent movement count", input.expectedMovements],
+    ["Independent cost increase (cents)", input.expectedIncrease],
+    ["Independent cost decrease (cents)", input.expectedDecrease],
+    ["Independent opening stock value (cents)", input.expectedOpeningValue],
+    ["Independent closing stock value (cents)", input.expectedClosingValue],
+  ] as const)
+    await form.getByLabel(label, { exact: true }).fill(String(value));
+  await form
+    .getByLabel("Regional receiver and duplicate-posting review evidence", {
+      exact: true,
+    })
+    .fill(input.acknowledgment);
+  const keys: string[] = [];
+  let lost = false;
+  await page.route("**/api/commands/accounting.cost.prepare", async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]!);
+    if (!lost) {
+      lost = true;
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await form
+    .getByRole("button", { name: "Prepare cost handoff", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await form
+    .getByRole("button", { name: "Prepare cost handoff", exact: true })
+    .click();
+  const review = panel.getByRole("region", {
+    name: "Saved cost review",
+    exact: true,
+  });
+  await expect(
+    review.getByRole("heading", {
+      name: "Saved cost review: BROWSER-COST",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(keys[0]).toBe(keys[1]);
+  expect(
+    (
+      await (await page.request.get("/api/accounting/costs")).json()
+    ).items.filter((p: any) => p.batchRef === "BROWSER-COST"),
+  ).toHaveLength(1);
+  const before = await (await page.request.get("/api/dashboard")).json();
+  for (let i = 0; i < 23; i++) {
+    const response = await page.request.post(
+      "/api/commands/accounting.cost.prepare",
+      {
+        headers: { ...headers, "idempotency-key": `cost-history-${i}` },
+        data: { ...input, batchRef: `BROWSER-HISTORY-${i}` },
+      },
+    );
+    expect(response.status()).toBe(200);
+  }
+  await page.reload();
+  await nav(page, "Billing");
+  await panel
+    .getByRole("button", { name: "Load stock cost review", exact: true })
+    .click();
+  const history = panel.getByRole("table", {
+    name: "Saved stock cost handoffs",
+    exact: true,
+  });
+  await expect(history.locator("tbody tr")).toHaveCount(20);
+  let lostHistory = false;
+  await page.route(
+    "**/api/accounting/costs?limit=20&before=*",
+    async (route) => {
+      if (!lostHistory) {
+        lostHistory = true;
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await panel
+    .getByRole("button", { name: "Load older cost handoffs", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toBeVisible();
+  await expect(history.locator("tbody tr")).toHaveCount(20);
+  await panel
+    .getByRole("button", { name: "Load older cost handoffs", exact: true })
+    .click();
+  await expect(history.locator("tbody tr")).toHaveCount(24);
+  await panel
+    .getByRole("button", { name: "Review BROWSER-COST", exact: true })
+    .click();
+  const decision = review.getByRole("form", {
+    name: "Decide stock cost handoff",
+  });
+  await decision
+    .getByLabel("Cost review decision", { exact: true })
+    .selectOption("approve");
+  await decision
+    .getByLabel("Cost decision reason", { exact: true })
+    .fill("Synthetic frozen cutoff review");
+  await decision
+    .getByRole("button", { name: "Record cost decision", exact: true })
+    .click();
+  await expect(
+    review.getByRole("heading", {
+      name: "Saved cost review: BROWSER-COST",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const packet = (
+    await (await page.request.get("/api/accounting/costs")).json()
+  ).items;
+  const saved = await (
+    await page.request.get(
+      `/api/accounting/costs/${(await (await page.request.get("/api/accounting/costs?limit=100")).json()).items.find((p: any) => p.batchRef === "BROWSER-COST").id}`,
+    )
+  ).json();
+  expect(packet).toHaveLength(20);
+  expect(saved.state).toBe("reviewed");
+  expect(saved.receipt).toBeNull();
+  const downloadEvent = page.waitForEvent("download");
+  await review
+    .getByRole("button", { name: "Download reviewed cost file", exact: true })
+    .click();
+  const download = await downloadEvent,
+    path = await download.path();
+  expect(path).not.toBeNull();
+  const bytes = await readFile(path!);
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+    saved.contentHash,
+  );
+  expect(JSON.parse(bytes.toString()).report.journal).toEqual(
+    saved.report.journal,
+  );
+  const acceptance = review.getByRole("form", {
+    name: "Record stock cost receiver acceptance",
+  });
+  for (const [label, value] of [
+    ["Accepted file SHA-256", saved.contentHash],
+    ["Regional ledger receiver reference", "synthetic-ca-ledger"],
+    ["External acceptance reference", "BROWSER-IMPORT-1"],
+    ["Independent receiver debit total (cents)", String(saved.controls.debit)],
+    [
+      "Independent receiver credit total (cents)",
+      String(saved.controls.credit),
+    ],
+    [
+      "Receiver acceptance evidence",
+      "Synthetic receiver verified exact file and totals",
+    ],
+  ])
+    await acceptance.getByLabel(label!, { exact: true }).fill(value!);
+  await acceptance
+    .getByLabel("Receiver region", { exact: true })
+    .selectOption(source.region);
+  await acceptance
+    .getByRole("button", {
+      name: "Record cost receiver acceptance",
+      exact: true,
+    })
+    .click();
+  await expect(
+    review.getByRole("heading", {
+      name: "Saved cost review: BROWSER-COST",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(review.getByRole("status")).toContainText(
+    "Receiver acceptance recorded:",
+  );
+  const accepted = await (
+    await page.request.get(`/api/accounting/costs/${saved.id}`)
+  ).json();
+  expect(accepted.state).toBe("accepted");
+  const after = await (await page.request.get("/api/dashboard")).json();
+  for (const key of ["stock", "invoices", "orders", "shipments"])
+    expect(after[key]).toEqual(before[key]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    review.getByRole("button", {
+      name: "Download reviewed cost file",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  const buyerContext = await browser.newContext();
+  const buyer = await buyerContext.newPage();
+  try {
+    await buyer.goto("/");
+    await buyer
+      .getByLabel("Email", { exact: true })
+      .fill("refund-buyer@example.test");
+    await buyer
+      .getByLabel("Password", { exact: true })
+      .fill("long-notice-test-password");
+    await buyer.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      buyer.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+    await nav(buyer, "Billing");
+    await expect(
+      buyer.getByRole("region", {
+        name: "Stock cost accounting handoffs",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    expect(
+      (await buyer.request.get("/api/accounting/cost-source")).status(),
+    ).toBe(403);
+  } finally {
+    await buyerContext.close();
+  }
+  expect(errors).toEqual([]);
+});

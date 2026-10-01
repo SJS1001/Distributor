@@ -110,6 +110,7 @@ export class Application {
       this.platform,
       this.identity,
       this.billing,
+      this.inventory,
     );
     this.migration = new Migration(
       this.database,

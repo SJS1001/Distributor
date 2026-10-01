@@ -123,3 +123,44 @@ async function downloadPdf(path: string, payload: unknown, storageKey: string) {
   sessionStorage.removeItem(storageKey);
   return receipt;
 }
+
+export async function downloadCostFile(packetId: string, expectedHash: string) {
+  const response = await fetch(
+    `/api/accounting/costs/${encodeURIComponent(packetId)}/file`,
+    { credentials: "same-origin" },
+  );
+  if (!response.ok) {
+    const result = await response.json();
+    throw Error(
+      `${result.message ?? "Cost file download failed"} (${result.code ?? response.status})`,
+    );
+  }
+  const bytes = await response.arrayBuffer();
+  const hash = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    (v) => v.toString(16).padStart(2, "0"),
+  ).join("");
+  if (
+    bytes.byteLength > 4 * 1024 * 1024 ||
+    !response.headers.get("content-type")?.startsWith("application/json") ||
+    hash !== expectedHash ||
+    hash !== response.headers.get("x-document-sha256")
+  )
+    throw Error(
+      "Cost file integrity check failed. Retry the reviewed download.",
+    );
+  const filename = response.headers
+    .get("content-disposition")
+    ?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1];
+  if (!filename) throw Error("Cost file name is missing.");
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}

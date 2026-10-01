@@ -37,7 +37,55 @@ type Spec = {
   run: (actor: Actor, key: string, payload: any) => unknown;
 }; // Schemas validate this boundary before domain dispatch.
 export function commands(app: Application): Record<string, Spec> {
+  const costNumber: Schema = {
+    type: "integer",
+    minimum: 0,
+    maximum: Number.MAX_SAFE_INTEGER,
+  };
   return {
+    "accounting.cost.prepare": {
+      schema: obj({
+        version: { const: 1, type: "integer" },
+        batchRef: str,
+        afterSequence: costNumber,
+        throughSequence: costNumber,
+        inventoryAccount: str,
+        mappings: {
+          type: "array",
+          maxItems: 30,
+          items: obj({ type: str, offsetAccount: str }),
+        },
+        expectedMovements: { type: "integer", minimum: 1, maximum: 500 },
+        expectedIncrease: costNumber,
+        expectedDecrease: costNumber,
+        expectedOpeningValue: costNumber,
+        expectedClosingValue: costNumber,
+        acknowledgment: str,
+      }),
+      run: (a, k, p) => app.integration.costs.prepare(a, k, p),
+    },
+    "accounting.cost.decide": {
+      schema: obj({
+        packetId: str,
+        reviewHash: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.decide(a, k, p),
+    },
+    "accounting.cost.accept": {
+      schema: obj({
+        packetId: str,
+        contentHash: str,
+        receiverRef: str,
+        receiverRegion: choice("CA", "US"),
+        externalRef: str,
+        debit: costNumber,
+        credit: costNumber,
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.accept(a, k, p),
+    },
     "billing.portal.publish": {
       schema: obj({ downloadId: str, reason: str }),
       run: (a, k, p) => app.billing.delivery.publish(a, k, p),
@@ -1198,6 +1246,59 @@ export async function createHttp(app: Application, options: HttpOptions) {
         'attachment; filename="distributor-accounting.csv"',
       )
       .send(app.integration.accountingCsv(actor(request))),
+  );
+  http.get("/api/accounting/cost-source", async (request) =>
+    app.integration.costs.source(actor(request)),
+  );
+  http.get<{ Querystring: { before?: string; limit?: string } }>(
+    "/api/accounting/costs",
+    {
+      schema: {
+        querystring: obj(
+          {
+            before: { type: "string", pattern: "^[1-9][0-9]{0,15}$" },
+            limit: { type: "string", pattern: "^[1-9][0-9]{0,2}$" },
+          },
+          ["before", "limit"],
+        ),
+      },
+    },
+    async (request) =>
+      app.integration.costs.list(actor(request), {
+        before:
+          request.query.before === undefined
+            ? undefined
+            : Number(request.query.before),
+        limit:
+          request.query.limit === undefined
+            ? undefined
+            : Number(request.query.limit),
+      }),
+  );
+  http.get<{ Params: { packetId: string } }>(
+    "/api/accounting/costs/:packetId",
+    { schema: { params: obj({ packetId: str }) } },
+    async (request) =>
+      app.integration.costs.detail(actor(request), request.params.packetId),
+  );
+  http.get<{ Params: { packetId: string } }>(
+    "/api/accounting/costs/:packetId/file",
+    { schema: { params: obj({ packetId: str }) } },
+    async (request, reply) => {
+      const file = app.integration.costs.download(
+        actor(request),
+        request.params.packetId,
+      );
+      return reply
+        .type("application/json")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${file.filename}"`,
+        )
+        .header("x-document-sha256", file.hash)
+        .header("Cache-Control", "no-store")
+        .send(file.bytes);
+    },
   );
   for (const [name, spec] of Object.entries(commands(app)))
     http.post(

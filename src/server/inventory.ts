@@ -13,6 +13,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Catalog } from "./catalog.ts";
 import { Platform } from "./platform.ts";
+import { InventoryCosts } from "./inventory-costs.ts";
 export type Unit = {
   id: string;
   org_id: string;
@@ -101,12 +102,14 @@ type Count = {
 };
 export class Inventory {
   private store: Store;
+  readonly costs: InventoryCosts;
   constructor(
     database: Database,
     private platform: Platform,
     private catalog: Catalog,
   ) {
     this.store = database.owned("inventory");
+    this.costs = new InventoryCosts(this.store);
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS inventory_warehouses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT;
@@ -114,6 +117,9 @@ export class Inventory {
       CREATE TABLE IF NOT EXISTS inventory_replacements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('reserved','cancelled','handed_over'))) STRICT;
       CREATE UNIQUE INDEX IF NOT EXISTS inventory_replacement_reserved ON inventory_replacements(org_id,unit_id) WHERE state='reserved';
       CREATE TABLE IF NOT EXISTS inventory_movements(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,type TEXT NOT NULL,quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,reference TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS inventory_cost_sequences(sequence INTEGER PRIMARY KEY,org_id TEXT NOT NULL,movement_id TEXT NOT NULL UNIQUE) STRICT;
+      CREATE TABLE IF NOT EXISTS inventory_cost_clock(id INTEGER PRIMARY KEY CHECK(id=1),last_sequence INTEGER NOT NULL) STRICT;
+      CREATE INDEX IF NOT EXISTS inventory_cost_sequence_org ON inventory_cost_sequences(org_id,sequence);
       CREATE TABLE IF NOT EXISTS inventory_transfers(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_id TEXT NOT NULL,destination_id TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('transit','received')),created_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_transfer_lines(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,transfer_id TEXT NOT NULL,unit_id TEXT NOT NULL,received INTEGER NOT NULL DEFAULT 0,UNIQUE(transfer_id,unit_id)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_transfer_origins(line_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,source_unit_id TEXT NOT NULL) STRICT;
@@ -127,6 +133,16 @@ export class Inventory {
         FROM inventory_transfer_lines l JOIN inventory_units u ON u.id=l.unit_id AND u.org_id=l.org_id
         JOIN inventory_movements m ON m.org_id=l.org_id AND m.unit_id=l.unit_id AND m.reference=l.transfer_id AND m.type='transfer.dispatch' AND m.quantity<0;
     `);
+    database.transaction(() => {
+      if (!this.store.get("SELECT id FROM inventory_cost_clock WHERE id=1")) {
+        this.store.run(
+          "INSERT INTO inventory_cost_sequences(org_id,movement_id) SELECT org_id,id FROM inventory_movements ORDER BY rowid",
+        );
+        this.store.run(
+          "INSERT INTO inventory_cost_clock VALUES(1,(SELECT COALESCE(MAX(sequence),0) FROM inventory_cost_sequences))",
+        );
+      }
+    });
   }
   warehouses(actor: Actor) {
     return this.store
@@ -375,9 +391,10 @@ export class Inventory {
     reference: string,
     reason: string,
   ) {
+    const movementId = id();
     this.store.run(
       "INSERT INTO inventory_movements VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-      id(),
+      movementId,
       actor.orgId,
       unit.id,
       unit.warehouse_id,
@@ -388,6 +405,20 @@ export class Inventory {
       reason,
       actor.id,
       now(),
+    );
+    const clock = this.store.get<{ last_sequence: number }>(
+      "UPDATE inventory_cost_clock SET last_sequence=last_sequence+1 WHERE id=1 RETURNING last_sequence",
+    );
+    check(
+      clock && Number.isSafeInteger(clock.last_sequence),
+      "COST_RANGE",
+      "Stock movement sequence exceeds the exact supported range.",
+    );
+    this.store.run(
+      "INSERT INTO inventory_cost_sequences VALUES(?,?,?)",
+      clock.last_sequence,
+      actor.orgId,
+      movementId,
     );
     this.platform.event(actor, `inventory.${type}`, reference, {
       unitId: unit.id,

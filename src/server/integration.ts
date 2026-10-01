@@ -18,6 +18,8 @@ import {
   type AccountingBalance,
 } from "./integration-accounting-balances.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
+import { IntegrationCosts } from "./integration-costs.ts";
+import { Inventory } from "./inventory.ts";
 import { IntegrationRefundCallbacks } from "./integration-refund-callbacks.ts";
 import { IntegrationRefunds } from "./integration-refunds.ts";
 import {
@@ -96,6 +98,7 @@ export type Callback = {
 export class Integration {
   private store: Store;
   readonly balances: IntegrationAccountingBalances;
+  readonly costs: IntegrationCosts;
   readonly refunds: IntegrationRefunds;
   readonly refundCallbacks: IntegrationRefundCallbacks;
   private readonly operations: IntegrationOperations;
@@ -104,8 +107,10 @@ export class Integration {
     private platform: Platform,
     private identity: Identity,
     private billing: Billing,
+    inventory: Inventory,
   ) {
     this.store = database.owned("integration");
+    this.costs = new IntegrationCosts(database, platform, identity, inventory);
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS integration_effects(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,provider TEXT NOT NULL,kind TEXT NOT NULL,reference TEXT NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','running','unknown','completed','rejected','blocked')),external_ref TEXT,result TEXT,created_at TEXT NOT NULL,residency_version INTEGER NOT NULL,started_at INTEGER,error TEXT,UNIQUE(org_id,provider,kind,reference)) STRICT;
     CREATE TABLE IF NOT EXISTS integration_inbox(provider TEXT NOT NULL,event_id TEXT NOT NULL,hash TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(provider,event_id)) STRICT;

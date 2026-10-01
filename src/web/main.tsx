@@ -8,6 +8,7 @@ import {
   downloadStockLabel,
   downloadInboxDocument,
 } from "./api.ts";
+import { AccountingCosts } from "./accounting-costs.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
@@ -1784,6 +1785,7 @@ function App() {
         )}
         {page === "Billing" && (
           <>
+            {can("finance") && <AccountingCosts />}
             <div className="actions">
               {can("finance") && (
                 <a className="button secondary" href="/api/accounting.csv">
