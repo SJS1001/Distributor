@@ -10,6 +10,7 @@ import {
   type Actor,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
+import type { SQLInputValue } from "node:sqlite";
 import { Identity } from "./iam.ts";
 import { Inventory } from "./inventory.ts";
 import { Orders } from "./orders.ts";
@@ -49,6 +50,11 @@ type DeliveryObservation = {
   source: string;
 };
 type PackedLine = { allocationId: string; quantity: number };
+type ShipmentView = Shipment & {
+  delivery_revision: number | null;
+  delivery_state: string | null;
+  delivery_observed_at: string | null;
+};
 type ShortPick = {
   id: string;
   org_id: string;
@@ -77,6 +83,9 @@ export class Fulfillment {
     CREATE TABLE IF NOT EXISTS fulfillment_delivery_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,shipment_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),state TEXT NOT NULL CHECK(state IN('in_transit','delayed','lost','returned','delivered')),reference TEXT NOT NULL,reference_key TEXT NOT NULL,evidence TEXT NOT NULL,observed_at TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('operator','legacy')),UNIQUE(org_id,shipment_id,revision),UNIQUE(org_id,shipment_id,reference_key)) STRICT;
     CREATE TABLE IF NOT EXISTS fulfillment_short_picks(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,allocation_id TEXT NOT NULL,held_unit_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
     CREATE INDEX IF NOT EXISTS fulfillment_short_pick_history ON fulfillment_short_picks(org_id,order_id,created_at,id);
+    CREATE INDEX IF NOT EXISTS fulfillment_shipment_history ON fulfillment_shipments(org_id,created_at DESC,id DESC);
+    CREATE INDEX IF NOT EXISTS fulfillment_shipment_account_history ON fulfillment_shipments(org_id,account_id,created_at DESC,id DESC);
+    CREATE INDEX IF NOT EXISTS fulfillment_shipment_site_history ON fulfillment_shipments(org_id,warehouse_id,created_at DESC,id DESC);
   `);
     // Keep the compatibility receipt, importing its recorded fact only once.
     for (const legacy of this.store.all<{
@@ -117,23 +126,95 @@ export class Fulfillment {
     return row;
   }
   shipments(actor: Actor) {
+    return this.shipmentRows(this.shipmentReader(actor)).map((s) =>
+      this.shipmentView(s),
+    );
+  }
+  shipmentPage(actor: Actor, after?: string) {
+    actor = this.shipmentReader(actor);
+    const scope = this.shipmentScope(actor);
+    const cursor =
+      after === undefined
+        ? undefined
+        : this.store.get<Shipment>(
+            `SELECT s.* FROM fulfillment_shipments s WHERE ${scope.where} AND s.id=?`,
+            ...scope.params,
+            text(after, "Shipment cursor", 128),
+          );
+    check(
+      after === undefined || cursor,
+      "CURSOR",
+      "Shipment cursor is unavailable in your current scope.",
+      400,
+    );
+    const rows = this.shipmentRows(actor, cursor, 21);
+    const items = rows.slice(0, 20).map((s) => this.shipmentView(s));
+    return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
+  }
+  private shipmentReader(actor: Actor) {
     actor = this.identity.currentActor(actor);
-    return this.store
-      .all<Shipment>(
-        "SELECT * FROM fulfillment_shipments WHERE org_id=? ORDER BY created_at DESC",
-        actor.orgId,
-      )
-      .filter(
-        (s) =>
-          (actor.role !== "buyer" || s.account_id === actor.accountId) &&
-          (actor.role !== "warehouse" || actor.sites.includes(s.warehouse_id)),
-      )
-      .map((s) => ({
-        ...s,
-        lines: JSON.parse(s.lines),
-        units: JSON.parse(s.units),
-        delivery: this.deliverySummary(s),
-      }));
+    permit(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+      "buyer",
+    ]);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing shipments.",
+      403,
+    );
+    return actor;
+  }
+  private shipmentScope(actor: Actor) {
+    const params: SQLInputValue[] = [actor.orgId];
+    let where = "s.org_id=?";
+    if (actor.role === "buyer") {
+      where += " AND s.account_id=?";
+      params.push(actor.accountId);
+    }
+    if (actor.role === "warehouse") {
+      where += actor.sites.length
+        ? ` AND s.warehouse_id IN(${actor.sites.map(() => "?").join(",")})`
+        : " AND 0";
+      params.push(...actor.sites);
+    }
+    return { where, params };
+  }
+  private shipmentRows(actor: Actor, cursor?: Shipment, limit?: number) {
+    const scope = this.shipmentScope(actor);
+    if (cursor) {
+      scope.where += " AND (s.created_at<? OR (s.created_at=? AND s.id<?))";
+      scope.params.push(cursor.created_at, cursor.created_at, cursor.id);
+    }
+    // The unique revision index selects at most one history row per shipment.
+    return this.store.all<ShipmentView>(
+      `SELECT s.*,h.revision AS delivery_revision,h.state AS delivery_state,h.observed_at AS delivery_observed_at FROM fulfillment_shipments s LEFT JOIN fulfillment_delivery_history h ON s.state='shipped' AND h.org_id=s.org_id AND h.shipment_id=s.id AND h.revision=(SELECT MAX(latest.revision) FROM fulfillment_delivery_history latest WHERE latest.org_id=s.org_id AND latest.shipment_id=s.id) WHERE ${scope.where} ORDER BY s.created_at DESC,s.id DESC${limit === undefined ? "" : " LIMIT ?"}`,
+      ...scope.params,
+      ...(limit === undefined ? [] : [limit]),
+    );
+  }
+  private shipmentView(s: ShipmentView) {
+    const { delivery_revision, delivery_state, delivery_observed_at, ...row } =
+      s;
+    return {
+      ...row,
+      lines: JSON.parse(s.lines),
+      units: JSON.parse(s.units),
+      delivery:
+        s.state === "shipped"
+          ? {
+              revision: delivery_revision ?? 0,
+              state:
+                delivery_state ??
+                (s.mode === "carrier" ? "handed_over" : "collected"),
+              observedAt: delivery_observed_at ?? s.shipped_at,
+            }
+          : null,
+    };
   }
   picks(actor: Actor, orderId: string) {
     permit(actor, ["warehouse", "commercial"]);
@@ -535,15 +616,6 @@ export class Fulfillment {
         return { id: s.id };
       },
     );
-  }
-  private deliverySummary(s: Shipment) {
-    if (s.state !== "shipped") return null;
-    const row = this.latestDelivery(s.org_id, s.id);
-    return {
-      revision: row?.revision ?? 0,
-      state: row?.state ?? (s.mode === "carrier" ? "handed_over" : "collected"),
-      observedAt: row?.observed_at ?? s.shipped_at,
-    };
   }
   private latestDelivery(orgId: string, shipmentId: string) {
     return this.store.get<DeliveryObservation>(

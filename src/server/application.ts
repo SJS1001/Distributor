@@ -127,6 +127,8 @@ export class Application {
     );
   }
   dashboard(actor: Actor) {
+    actor = this.identity.currentActor(actor);
+    const shipments = this.fulfillment.shipmentPage(actor);
     return {
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
@@ -134,7 +136,8 @@ export class Application {
       products: this.catalog.products(actor),
       warehouses: this.inventory.warehouses(actor),
       orders: this.orders.list(actor),
-      shipments: this.fulfillment.shipments(actor),
+      shipments: shipments.items,
+      shipmentNext: shipments.next,
       invoices: [
         "admin",
         "finance",

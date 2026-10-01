@@ -68,12 +68,20 @@ function App() {
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
   const evidenceOpener = useRef<HTMLElement | null>(null);
+  const shipmentEpoch = useRef(0);
+  const shipmentRequest = useRef<number | null>(null);
+  const shipmentHeading = useRef<HTMLHeadingElement | null>(null);
+  const [shipmentsLoading, setShipmentsLoading] = useState(false);
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    const epoch = ++shipmentEpoch.current;
+    shipmentRequest.current = null;
+    setShipmentsLoading(false);
     const d = await request("/api/dashboard");
+    if (shipmentEpoch.current !== epoch) return;
     setData(d);
     const e: Item = {};
     if (
@@ -138,7 +146,46 @@ function App() {
     if (["admin", "finance"].includes(actor?.role ?? ""))
       e.billingProfiles = await request("/api/billing/profiles");
     e.security = await request("/api/security");
-    setExtra(e);
+    if (shipmentEpoch.current === epoch) setExtra(e);
+  };
+  const loadShipments = async () => {
+    if (!data?.shipmentNext || shipmentRequest.current !== null) return;
+    const epoch = shipmentEpoch.current,
+      after = data.shipmentNext;
+    shipmentRequest.current = epoch;
+    setShipmentsLoading(true);
+    setError("");
+    try {
+      const result = await request(
+        `/api/shipments/page?after=${encodeURIComponent(after)}`,
+      );
+      if (shipmentEpoch.current !== epoch) return;
+      setData((current) =>
+        current &&
+        shipmentEpoch.current === epoch &&
+        current.shipmentNext === after
+          ? {
+              ...current,
+              shipments: [
+                ...current.shipments,
+                ...result.items.filter(
+                  (s: Item) =>
+                    !current.shipments.some((old: Item) => old.id === s.id),
+                ),
+              ],
+              shipmentNext: result.next,
+            }
+          : current,
+      );
+      if (!result.next) shipmentHeading.current?.focus();
+    } catch (e) {
+      if (shipmentEpoch.current === epoch) setError((e as Error).message);
+    } finally {
+      if (shipmentEpoch.current === epoch) {
+        shipmentRequest.current = null;
+        setShipmentsLoading(false);
+      }
+    }
   };
   useEffect(() => {
     void request("/api/session")
@@ -154,6 +201,9 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired]);
   const clearSession = (message = "") => {
+    shipmentEpoch.current++;
+    shipmentRequest.current = null;
+    setShipmentsLoading(false);
     setEvidenceClaim(null);
     evidenceOpener.current = null;
     setActor(null);
@@ -1068,115 +1118,134 @@ function App() {
                 </div>,
               ],
             )}
-            <h2>Shipments</h2>
-            {table(
-              ["Shipment", "Destination", "Units", "Status", "Actions"],
-              data.shipments,
-              (s: Item) => [
-                s.id.slice(0, 8),
-                s.address,
-                s.lines.reduce(
-                  (total: number, l: Item) => total + l.quantity,
-                  0,
-                ),
-                `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
-                <div className="actions">
-                  {s.state === "shipped" &&
-                    button("View delivery history", () =>
-                      showShipmentDelivery(s.id).catch((e) =>
-                        setError(e.message),
-                      ),
-                    )}
-                  {s.state === "shipped" &&
-                    s.mode === "carrier" &&
-                    !["delivered", "returned"].includes(s.delivery?.state) &&
-                    can("warehouse", "commercial") &&
-                    button("Record delivery outcome", () =>
-                      open(
-                        "Record shipment delivery outcome",
-                        [
-                          {
-                            name: "state",
-                            label: "Delivery outcome",
-                            options: [
-                              { value: "in_transit", label: "In transit" },
-                              { value: "delayed", label: "Delayed" },
-                              { value: "lost", label: "Lost" },
-                              {
-                                value: "returned",
-                                label: "Returned to sender",
-                              },
-                              { value: "delivered", label: "Delivered" },
-                            ],
-                            value: "in_transit",
-                          },
-                          {
-                            name: "observedAt",
-                            label: "Observed time (UTC ISO)",
-                            value: new Date().toISOString(),
-                          },
-                          {
-                            name: "reference",
-                            label: "Delivery evidence reference",
-                          },
-                          {
-                            name: "evidence",
-                            label: "Delivery observation",
-                            type: "textarea",
-                          },
-                        ],
-                        (v) =>
-                          command("fulfillment.delivery.update", {
-                            ...v,
-                            shipmentId: s.id,
-                            revision: s.delivery?.revision ?? 0,
-                          }),
-                        "Record the carrier observation. Loss or return does not restock goods, replace equipment or create credit/refund; use a separately approved return or remedy.",
-                        "Record outcome",
-                      ),
-                    )}
-                  {s.state === "packed" &&
-                    can("warehouse") &&
-                    button(
-                      s.mode === "collection"
-                        ? "Confirm collection"
-                        : "Confirm shipment",
-                      () =>
-                        simple(
-                          "Confirm handover",
+            <section aria-label="Shipment history">
+              <h2 ref={shipmentHeading} tabIndex={-1}>
+                Shipments
+              </h2>
+              <p>
+                Newest first. Loaded: {data.shipments.length}. Saved changes or
+                refresh reload the newest page.
+              </p>
+              {table(
+                ["Shipment", "Destination", "Units", "Status", "Actions"],
+                data.shipments,
+                (s: Item) => [
+                  s.id.slice(0, 8),
+                  s.address,
+                  s.lines.reduce(
+                    (total: number, l: Item) => total + l.quantity,
+                    0,
+                  ),
+                  `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
+                  <div className="actions">
+                    {s.state === "shipped" &&
+                      button("View delivery history", () =>
+                        showShipmentDelivery(s.id).catch((e) =>
+                          setError(e.message),
+                        ),
+                      )}
+                    {s.state === "shipped" &&
+                      s.mode === "carrier" &&
+                      !["delivered", "returned"].includes(s.delivery?.state) &&
+                      can("warehouse", "commercial") &&
+                      button("Record delivery outcome", () =>
+                        open(
+                          "Record shipment delivery outcome",
                           [
-                            ...(s.mode === "carrier"
-                              ? ([
-                                  { name: "carrier", label: "Carrier" },
-                                  {
-                                    name: "tracking",
-                                    label: "Tracking / consignment",
-                                  },
-                                ] as Field[])
-                              : []),
                             {
-                              name: "handoverEvidence",
-                              label: "Handover evidence",
+                              name: "state",
+                              label: "Delivery outcome",
+                              options: [
+                                { value: "in_transit", label: "In transit" },
+                                { value: "delayed", label: "Delayed" },
+                                { value: "lost", label: "Lost" },
+                                {
+                                  value: "returned",
+                                  label: "Returned to sender",
+                                },
+                                { value: "delivered", label: "Delivered" },
+                              ],
+                              value: "in_transit",
+                            },
+                            {
+                              name: "observedAt",
+                              label: "Observed time (UTC ISO)",
+                              value: new Date().toISOString(),
+                            },
+                            {
+                              name: "reference",
+                              label: "Delivery evidence reference",
+                            },
+                            {
+                              name: "evidence",
+                              label: "Delivery observation",
                               type: "textarea",
                             },
                           ],
-                          "fulfillment.ship",
+                          (v) =>
+                            command("fulfillment.delivery.update", {
+                              ...v,
+                              shipmentId: s.id,
+                              revision: s.delivery?.revision ?? 0,
+                            }),
+                          "Record the carrier observation. Loss or return does not restock goods, replace equipment or create credit/refund; use a separately approved return or remedy.",
+                          "Record outcome",
+                        ),
+                      )}
+                    {s.state === "packed" &&
+                      can("warehouse") &&
+                      button(
+                        s.mode === "collection"
+                          ? "Confirm collection"
+                          : "Confirm shipment",
+                        () =>
+                          simple(
+                            "Confirm handover",
+                            [
+                              ...(s.mode === "carrier"
+                                ? ([
+                                    { name: "carrier", label: "Carrier" },
+                                    {
+                                      name: "tracking",
+                                      label: "Tracking / consignment",
+                                    },
+                                  ] as Field[])
+                                : []),
+                              {
+                                name: "handoverEvidence",
+                                label: "Handover evidence",
+                                type: "textarea",
+                              },
+                            ],
+                            "fulfillment.ship",
+                            (v) => ({ ...v, shipmentId: s.id }),
+                          ),
+                      )}
+                    {s.state === "packed" &&
+                      can("warehouse") &&
+                      button("Void packing", () =>
+                        simple(
+                          "Void packed shipment",
+                          [reason],
+                          "fulfillment.void",
                           (v) => ({ ...v, shipmentId: s.id }),
                         ),
-                    )}
-                  {s.state === "packed" &&
-                    can("warehouse") &&
-                    button("Void packing", () =>
-                      simple(
-                        "Void packed shipment",
-                        [reason],
-                        "fulfillment.void",
-                        (v) => ({ ...v, shipmentId: s.id }),
-                      ),
-                    )}
-                </div>,
-              ],
-            )}
+                      )}
+                  </div>,
+                ],
+              )}
+              {data.shipmentNext && (
+                <button
+                  type="button"
+                  disabled={busy || shipmentsLoading}
+                  onClick={() => void loadShipments()}
+                >
+                  {shipmentsLoading
+                    ? "Loading shipments…"
+                    : "Load more shipments"}
+                </button>
+              )}
+            </section>
             {extra.carts?.length > 0 && (
               <>
                 <h2>Saved carts</h2>

@@ -367,9 +367,22 @@ a {
     height: auto;
     padding: 1rem;
   }
-  .workspace,
-  .sidebar-bottom {
+  .workspace {
     display: none;
+  }
+  .sidebar-bottom {
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .sidebar-bottom span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .sidebar-bottom button {
+    flex-shrink: 0;
   }
   nav {
     flex-direction: row;

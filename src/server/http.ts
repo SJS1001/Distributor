@@ -1225,6 +1225,19 @@ export async function createHttp(app: Application, options: HttpOptions) {
     after: query.after === undefined ? undefined : Number(query.after),
     limit: query.limit === undefined ? undefined : Number(query.limit),
   });
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/shipments/page",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.fulfillment.shipmentPage(actor(request), request.query.after),
+  );
   http.get<{ Params: { shipmentId: string }; Querystring: { after?: string } }>(
     "/api/shipments/:shipmentId/delivery/history",
     {

@@ -4,6 +4,14 @@ Local implementation, 2026-10-01. All tasks and product gates remain NOT VERIFIE
 
 Warehouse staff at a granted site can pick serial/bulk allocations, pack selected quantities, void packing, and record collection or shipment handover. Handover consumes allocated stock and creates the original invoice; packing alone does neither. Actual carriers, labels, devices and physical handover remain to be qualified.
 
+## Browse shipments
+
+Orders loads the newest 20 shipments. **Load more shipments** adds the next page; failed requests preserve the loaded rows and cursor for retry. Refresh or a saved change reloads the newest page. Shipments created after the first page appear on refresh. Delayed continuation responses cannot append after refresh or sign-out. The Sign out button remains accessible in the phone layout.
+
+`GET /api/shipments/page?after=…` returns `{items,next}` with at most 20 rows in descending creation-time/ID order. Omit `after` for the first page; otherwise use the last returned opaque shipment ID. Invalid, unknown or currently inaccessible cursors are refused. Current actual active principal, role, buyer account, warehouse sites and password-change restrictions are checked before paging. Buyer and warehouse predicates precede the limit; other staff retain provisional organization-wide reads. Private delivery evidence is absent from the latest state/time/revision summary.
+
+The dashboard now supplies only the first shipment page and `shipmentNext`; clients needing further shipments must use the endpoint. The internal full-list method remains for compatibility and is not a production-capacity claim. Each page requests up to 21 SQL rows with joined latest delivery summaries, without per-row application history requests. Three indexes support organization, account and site ordering. SQLite scan/sort/index construction time, multi-site plans, other unpaged dashboard collections, aggregate memory and production workloads remain unqualified. See [the shipment page receipt](evidence/LOCAL-SHIPMENT-PAGES-2026-10-01.md) for the tested behavior and limits.
+
 ## Ordinary carrier delivery observations
 
 After shipment handover, the Orders shipment row shows **Delivery: handed_over · v0**. Warehouse or commercial staff at a currently granted site, and administrators under the existing administrator policy, can choose **Record delivery outcome**. Enter in_transit, delayed, lost, returned or delivered, an evidence reference, observation text and canonical UTC ISO time (for example `2026-10-01T10:00:00.000Z`). The time must be no earlier than handover or the previous observation, and no later than the server clock. Unique evidence references are permanent per shipment after trim/NFKC/case normalization. These are manual observations; the application does not contact or qualify a carrier.

@@ -7086,3 +7086,216 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("browser: shipment pages retain rows after failure and discard continuations after refresh or sign-out", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  const session = await (await page.request.get("/api/session")).json();
+  const cmd = async (name: string, payload: any) => {
+    const response = await page.request.post(`/api/commands/${name}`, {
+      data: payload,
+      headers: {
+        origin: "http://127.0.0.1:3117",
+        "x-csrf-token": session.csrf,
+        "idempotency-key": crypto.randomUUID(),
+      },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    return response.json();
+  };
+  const dashboard = async () =>
+    (await page.request.get("/api/dashboard")).json();
+  const account = await cmd("account.create", {
+    name: "Paging browser customer",
+    tier: "standard",
+    creditLimit: 1000000,
+  });
+  const product = await cmd("product.create", {
+    sku: "PAGES-BROWSER",
+    name: "Paging bulk equipment",
+    serialized: false,
+    unitPrice: 100,
+    taxBasisPoints: 1300,
+  });
+  const warehouseId = (await dashboard()).warehouses[0].id;
+  const purchases = await (await page.request.get("/api/purchases")).json();
+  const po = await cmd("purchase.create", {
+    supplierId: purchases.suppliers[0].id,
+    warehouseId,
+    lines: [{ productId: product.id, quantity: 23, unitCost: 60 }],
+  });
+  const purchase = await (await page.request.get("/api/purchases")).json();
+  await cmd("purchase.receive", {
+    poId: po.id,
+    lineId: purchase.orders.find((p: any) => p.id === po.id).lines[0].id,
+    deliveryRef: "PAGES-DELIVERY",
+    quantity: 23,
+    serials: [],
+    bin: "PAGES",
+    quarantine: false,
+  });
+  const cart = await cmd("cart.save", {
+    accountId: account.id,
+    warehouseId,
+    revision: 0,
+    lines: [{ productId: product.id, quantity: 23 }],
+  });
+  const quote = await cmd("cart.quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
+  const order = await cmd("order.accept", {
+    quoteId: quote.id,
+    allowBackorder: false,
+  });
+  const picks = await (
+    await page.request.get(`/api/orders/${order.id}/picks`)
+  ).json();
+  expect(picks).toHaveLength(1);
+  await cmd("fulfillment.pick", {
+    orderId: order.id,
+    allocationId: picks[0].id,
+    serial: null,
+  });
+  const revision = (await dashboard()).orders.find(
+    (o: any) => o.id === order.id,
+  ).revision;
+  const packedIds: string[] = [];
+  for (let i = 0; i < 23; i++) {
+    const packed = await cmd("fulfillment.pack", {
+      orderId: order.id,
+      revision,
+      mode: "carrier",
+      address: `Page shipment ${String(i).padStart(2, "0")}`,
+      lines: [{ allocationId: picks[0].id, quantity: 1 }],
+    });
+    packedIds.push(packed.id);
+  }
+  const before = await dashboard();
+  const expected: any[] = [];
+  let cursor: string | null = null;
+  do {
+    const result = await (
+      await page.request.get(
+        `/api/shipments/page${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`,
+      )
+    ).json();
+    expected.push(...result.items);
+    cursor = result.next;
+  } while (cursor);
+  expect(expected.filter((s) => packedIds.includes(s.id))).toHaveLength(23);
+  await page.reload();
+  await nav(page, "Orders");
+  const panel = page.getByRole("region", {
+    name: "Shipment history",
+    exact: true,
+  });
+  const more = () =>
+    panel.getByRole("button", { name: "Load more shipments", exact: true });
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  let fail = true;
+  await page.route("**/api/shipments/page?after=*", async (route) => {
+    if (fail) {
+      fail = false;
+      await route.fulfill({
+        status: 503,
+        json: { code: "TEST", message: "Synthetic shipment page failure" },
+      });
+    } else await route.continue();
+  });
+  await more().click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Synthetic shipment page failure",
+  );
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  let loaded = 20;
+  while (loaded < expected.length) {
+    await more().click();
+    loaded = Math.min(loaded + 20, expected.length);
+    await expect(panel.locator("tbody tr")).toHaveCount(loaded);
+  }
+  await expect(more()).toHaveCount(0);
+  await expect(
+    panel.getByRole("heading", { name: "Shipments", exact: true }),
+  ).toBeFocused();
+  expect(
+    await panel.locator("tbody tr td:nth-child(2)").allTextContents(),
+  ).toEqual(expected.map((s) => s.address));
+  await page.unroute("**/api/shipments/page?after=*");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(panel.locator("tbody tr")).toHaveCount(20);
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeEnabled();
+  for (const action of ["Refresh", "Sign out"] as const) {
+    let release!: () => void;
+    let captured!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      captured = resolve;
+    });
+    await page.route("**/api/shipments/page?after=*", async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      captured();
+      await gate;
+      await route.fulfill({ response });
+    });
+    await more().click();
+    await ready;
+    await page.getByRole("button", { name: action, exact: true }).click();
+    if (action === "Refresh") {
+      await expect(
+        page.getByRole("button", { name: "Refresh", exact: true }),
+      ).toBeEnabled();
+      await expect(panel.locator("tbody tr")).toHaveCount(20);
+    } else
+      await expect(
+        page.getByRole("button", { name: "Sign in", exact: true }),
+      ).toBeVisible();
+    const delivered = page.waitForResponse((r) =>
+      r.url().includes("/api/shipments/page?after="),
+    );
+    release();
+    await delivered;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    if (action === "Refresh")
+      await expect(panel.locator("tbody tr")).toHaveCount(20);
+    else await expect(panel).toHaveCount(0);
+    await page.unroute("**/api/shipments/page?after=*");
+  }
+  const after = await page.request.post("/api/login", {
+    data: { email: "admin@example.test", password: "long-test-only-password" },
+    headers: { origin: "http://127.0.0.1:3117" },
+  });
+  // Browsing/refresh/sign-out change no native stock, order or invoice facts.
+  expect(after.status()).toBe(200);
+  const final = await dashboard();
+  for (const key of ["stock", "orders", "invoices"])
+    expect(final[key]).toEqual(before[key]);
+  expect(errors).toEqual([]);
+});
