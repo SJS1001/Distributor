@@ -30,6 +30,8 @@ import {
   type CarrierReview,
   type CanadaPostGroupView,
   type CanadaPostManifestIdentity,
+  type CarrierClaimTarget,
+  type CarrierClaimReview,
 } from "../shared/carrier-booking.ts";
 
 export type CarrierIntent = CarrierPrepare & {
@@ -1349,6 +1351,204 @@ export class CarrierBookings {
           orgId ?? null,
           orgId ?? null,
         ).changes,
+    );
+  }
+  private claimTarget(actor: Actor, target: CarrierClaimTarget) {
+    actor = this.principal(actor);
+    permit(actor, ["admin"]);
+    check(
+      target && typeof target === "object",
+      "VALIDATION",
+      "Supply a carrier claim target.",
+      400,
+    );
+    if (target.kind === "booking") {
+      exactFields(target, ["kind", "bookingId"]);
+      const booking = this.booking(actor, target.bookingId);
+      const intent = this.intent(booking);
+      check(
+        intent.provider !== "canada-post",
+        "CARRIER_MISMATCH",
+        "Canada Post claims belong to their group.",
+      );
+      return {
+        actor,
+        row: booking,
+        claimPhaseValid: true,
+        identity: { bookingId: booking.id, reviewHash: booking.review_hash },
+      };
+    }
+    check(
+      target.kind === "member" || target.kind === "manifest",
+      "VALIDATION",
+      "Unsupported carrier claim target.",
+      400,
+    );
+    exactFields(
+      target,
+      target.kind === "member"
+        ? ["kind", "groupId", "bookingId"]
+        : ["kind", "groupId"],
+    );
+    const { group, members } = this.canadaPostGroup(actor, target.groupId);
+    const member =
+      target.kind === "member"
+        ? members.find((m) => m.booking_id === target.bookingId)
+        : undefined;
+    if (target.kind === "member")
+      check(member, "NOT_FOUND", "Canada Post member not found.", 404);
+    return {
+      actor,
+      row: member ?? group,
+      claimPhaseValid: member
+        ? ["creating", "unknown"].includes(group.state) &&
+          group.token === null &&
+          group.started_at === null &&
+          group.observation === null
+        : members.every((m) => m.state === "created" && m.token === null) &&
+          group.observation !== null,
+      identity: {
+        groupId: group.id,
+        groupReviewHash: group.review_hash,
+        groupState: group.state,
+        configurationHash: group.configuration_hash,
+        ...(member
+          ? { bookingId: member.booking_id, reviewHash: member.review_hash }
+          : { observation: group.observation }),
+      },
+    };
+  }
+  reviewClaim(
+    actor: Actor,
+    target: CarrierClaimTarget,
+    minimumAgeMs: number,
+  ): CarrierClaimReview {
+    integer(minimumAgeMs, "Minimum claim age", 1, 86_400_000);
+    const { row, identity, claimPhaseValid } = this.claimTarget(actor, target);
+    const states =
+      target.kind === "booking"
+        ? ["running", "unknown"]
+        : target.kind === "member"
+          ? ["creating", "unknown"]
+          : ["transmitting", "unknown"];
+    check(
+      claimPhaseValid &&
+        states.includes(row.state) &&
+        typeof row.token === "string" &&
+        row.token.length > 0 &&
+        Number.isSafeInteger(row.started_at) &&
+        row.started_at! >= 0 &&
+        row.started_at! <= Number.MAX_SAFE_INTEGER - minimumAgeMs,
+      "STATE",
+      "This record has no active claim to release.",
+    );
+    return {
+      target,
+      state: row.state,
+      startedAt: row.started_at!,
+      minimumAgeMs,
+      eligibleAt: row.started_at! + minimumAgeMs,
+      claimHash: digest(
+        canonical({
+          target,
+          identity,
+          state: row.state,
+          token: row.token,
+          startedAt: row.started_at,
+          minimumAgeMs,
+        }),
+      ),
+    };
+  }
+  releaseClaim(
+    actor: Actor,
+    key: string,
+    input: {
+      target: CarrierClaimTarget;
+      minimumAgeMs: number;
+      claimHash: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "carrier.claim.release",
+      key,
+      input,
+      () => {
+        exactFields(input, ["target", "minimumAgeMs", "claimHash", "reason"]);
+        integer(input.minimumAgeMs, "Minimum claim age", 1, 86_400_000);
+        text(input.reason, "Claim release reason", 160);
+        check(
+          typeof input.claimHash === "string" &&
+            /^[a-f0-9]{64}$/.test(input.claimHash),
+          "VALIDATION",
+          "Supply the exact claim review hash.",
+          400,
+        );
+        actor = this.claimTarget(actor, input.target).actor;
+      },
+      () => {
+        const review = this.reviewClaim(
+          actor,
+          input.target,
+          input.minimumAgeMs,
+        );
+        check(
+          review.claimHash === input.claimHash,
+          "STALE_REVIEW",
+          "Carrier claim changed. Review its current outcome before release.",
+        );
+        check(
+          Date.now() >= review.eligibleAt,
+          "CLAIM_ACTIVE",
+          "The reviewed minimum claim age has not elapsed.",
+        );
+        const target = input.target;
+        if (target.kind === "booking")
+          this.store.run(
+            "UPDATE integration_carrier_bookings SET state='unknown',token=NULL,started_at=NULL,error=? WHERE org_id=? AND id=?",
+            "Reviewed claim released. Reconcile by lookup; never resend.",
+            actor.orgId,
+            target.bookingId,
+          );
+        else if (target.kind === "manifest")
+          this.store.run(
+            "UPDATE integration_canada_post_groups SET state='unknown',token=NULL,started_at=NULL WHERE org_id=? AND id=?",
+            actor.orgId,
+            target.groupId,
+          );
+        else {
+          this.store.run(
+            "UPDATE integration_canada_post_members SET state='unknown',token=NULL,started_at=NULL WHERE org_id=? AND group_id=? AND booking_id=?",
+            actor.orgId,
+            target.groupId,
+            target.bookingId,
+          );
+          this.store.run(
+            "UPDATE integration_canada_post_groups SET state='unknown' WHERE org_id=? AND id=?",
+            actor.orgId,
+            target.groupId,
+          );
+        }
+        this.platform.audit(
+          actor,
+          "carrier.claim.released",
+          target.kind === "booking" ? target.bookingId : target.groupId,
+          {
+            target,
+            minimumAgeMs: input.minimumAgeMs,
+            startedAt: review.startedAt,
+            claimHash: review.claimHash,
+            reason: input.reason.trim(),
+          },
+        );
+        return {
+          target,
+          state: "unknown" as const,
+          claimHash: review.claimHash,
+        };
+      },
     );
   }
   private confirmedManifest(actor: Actor, groupId: string) {

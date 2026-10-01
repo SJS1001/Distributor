@@ -73,3 +73,16 @@ export type CanadaPostManifestIdentity = {
   customerReference: string;
   shipmentIds: string[];
 };
+
+export type CarrierClaimTarget =
+  | { kind: "booking"; bookingId: string }
+  | { kind: "member"; groupId: string; bookingId: string }
+  | { kind: "manifest"; groupId: string };
+export type CarrierClaimReview = {
+  target: CarrierClaimTarget;
+  state: string;
+  startedAt: number;
+  minimumAgeMs: number;
+  eligibleAt: number;
+  claimHash: string;
+};

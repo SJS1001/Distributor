@@ -96,6 +96,25 @@ export function commands(
       }),
       run: (a, k, p) => app.carriers.cancelCanadaPostGroup(a, k, p),
     },
+    "carrier.claim.release": {
+      schema: obj({
+        target: {
+          anyOf: [
+            obj({ kind: { const: "booking", type: "string" }, bookingId: str }),
+            obj({
+              kind: { const: "member", type: "string" },
+              groupId: str,
+              bookingId: str,
+            }),
+            obj({ kind: { const: "manifest", type: "string" }, groupId: str }),
+          ],
+        },
+        minimumAgeMs: { type: "integer", minimum: 1, maximum: 86400000 },
+        claimHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: str,
+      }),
+      run: (a, k, p) => app.carriers.releaseClaim(a, k, p),
+    },
     "carrier.prepare": {
       schema: obj({
         shipmentId: str,
@@ -1887,6 +1906,53 @@ export async function createHttp(app: Application, options: HttpOptions) {
       app.carriers.canadaPostGroupForBooking(
         actor(request),
         request.params.bookingId,
+      ),
+  );
+  const claimAgeQuery = obj({
+    minimumAgeMs: { type: "string", pattern: "^[1-9][0-9]{0,7}$" },
+  });
+  http.get<{
+    Params: { bookingId: string };
+    Querystring: { minimumAgeMs: string };
+  }>(
+    "/api/carrier/:bookingId/claim",
+    { schema: { params: obj({ bookingId: str }), querystring: claimAgeQuery } },
+    async (request) =>
+      app.carriers.reviewClaim(
+        actor(request),
+        { kind: "booking", bookingId: request.params.bookingId },
+        Number(request.query.minimumAgeMs),
+      ),
+  );
+  http.get<{
+    Params: { groupId: string; bookingId: string };
+    Querystring: { minimumAgeMs: string };
+  }>(
+    "/api/canada-post/groups/:groupId/members/:bookingId/claim",
+    {
+      schema: {
+        params: obj({ groupId: str, bookingId: str }),
+        querystring: claimAgeQuery,
+      },
+    },
+    async (request) =>
+      app.carriers.reviewClaim(
+        actor(request),
+        { kind: "member", ...request.params },
+        Number(request.query.minimumAgeMs),
+      ),
+  );
+  http.get<{
+    Params: { groupId: string };
+    Querystring: { minimumAgeMs: string };
+  }>(
+    "/api/canada-post/groups/:groupId/manifest/claim",
+    { schema: { params: obj({ groupId: str }), querystring: claimAgeQuery } },
+    async (request) =>
+      app.carriers.reviewClaim(
+        actor(request),
+        { kind: "manifest", groupId: request.params.groupId },
+        Number(request.query.minimumAgeMs),
       ),
   );
   http.get<{ Params: { groupId: string } }>(
