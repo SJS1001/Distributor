@@ -10127,3 +10127,307 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   }
   expect(errors).toEqual([]);
 });
+
+test("browser: phone checkout history pages frozen observations, preserves retries and aborts scoped reads", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const login = async (
+    p: Page,
+    email: string,
+    password = "long-test-only-password",
+  ) => {
+    await p.goto("/");
+    await p.getByLabel("Email", { exact: true }).fill(email);
+    await p.getByLabel("Password", { exact: true }).fill(password);
+    await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(
+      p.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  };
+  await login(page, "checkout-buyer@example.test");
+  const effects = await (await page.request.get("/api/effects")).json();
+  // When a prior journey prepared a successor, either generation reads the
+  // same invoice-wide history; this assertion also runs after the full suite.
+  for (const predecessor of effects.filter(
+    (effect: any) => effect.checkout?.state === "superseded",
+  )) {
+    const successor = effects.find(
+      (effect: any) =>
+        effect.id !== predecessor.id &&
+        effect.checkout?.invoiceId === predecessor.checkout.invoiceId,
+    );
+    expect(successor).toBeTruthy();
+    const previous = await (
+      await page.request.get(`/api/effects/${predecessor.id}/checkout/history`)
+    ).json();
+    const current = await (
+      await page.request.get(`/api/effects/${successor.id}/checkout/history`)
+    ).json();
+    expect(previous).toEqual(current);
+    expect(
+      current.items.some((item: any) => item.effectId === predecessor.id),
+    ).toBe(true);
+  }
+  let target: any;
+  let first: any;
+  for (const effect of effects) {
+    const reply = await page.request.get(
+      `/api/effects/${effect.id}/checkout/history`,
+    );
+    expect(reply.ok(), await reply.text()).toBeTruthy();
+    const history = await reply.json();
+    if (history.next) {
+      target = effect;
+      first = history;
+      break;
+    }
+  }
+  expect(target).toBeTruthy();
+  expect(first.items).toHaveLength(20);
+  const path = `/api/effects/${target.id}/checkout/history`;
+  const older = await (
+    await page.request.get(`${path}?after=${encodeURIComponent(first.next)}`)
+  ).json();
+  expect(older.items.length).toBeGreaterThan(0);
+  const all = [...first.items, ...older.items];
+  for (const item of all) {
+    expect(Object.keys(item).sort()).toEqual(
+      [
+        "id",
+        "effectId",
+        "invoiceId",
+        "observedAt",
+        "source",
+        "outcome",
+        "reference",
+        "amount",
+        "currency",
+        "status",
+        "paymentStatus",
+        "expiresAt",
+      ].sort(),
+    );
+  }
+  expect(JSON.stringify(all)).not.toMatch(
+    /https:|checkoutUrl|actor_id|account_id|metadata/,
+  );
+  await nav(page, "Billing");
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: "stripe · checkout" })
+    .filter({ hasText: target.checkout.invoiceNumber })
+    .first();
+  const opener = row.getByRole("button", {
+    name: "View checkout history",
+    exact: true,
+  });
+  await opener.click();
+  const region = row.getByRole("region", {
+    name: "Checkout history",
+    exact: true,
+  });
+  await expect(
+    region.getByRole("heading", { name: "Checkout history", exact: true }),
+  ).toBeFocused();
+  await expect(region.getByRole("listitem")).toHaveCount(20);
+  await expect(region).toContainText(first.items[0].observedAt);
+  await expect(region).toContainText(first.items[0].reference);
+  await expect(region).toContainText(first.items[0].effectId);
+  await expect(region).toContainText(first.items[0].currency);
+  await expect(region).toContainText("Verified");
+  await expect(region).toContainText(
+    new Intl.NumberFormat("en", {
+      style: "currency",
+      currency: first.items[0].currency,
+    }).format(first.items[0].amount / 100),
+  );
+  await expect(region).toContainText(first.items[0].status);
+  await expect(region).toContainText(first.items[0].paymentStatus);
+  await expect(region.getByText("refresh", { exact: true })).toHaveCount(20);
+  expect(await region.getByRole("link").count()).toBe(0);
+  expect(await region.innerText()).not.toMatch(/https:|checkout\.stripe\.com/);
+  const pattern = `**${path}*`;
+  let fail = true;
+  await page.route(pattern, async (route) => {
+    if (fail) {
+      fail = false;
+      await route.fulfill({
+        status: 503,
+        json: { message: "Synthetic history interruption" },
+      });
+    } else await route.continue();
+  });
+  await region
+    .getByRole("button", {
+      name: "Load older checkout observations",
+      exact: true,
+    })
+    .click();
+  await expect(region.getByRole("alert")).toContainText(
+    "Synthetic history interruption",
+  );
+  await expect(region.getByRole("listitem")).toHaveCount(20);
+  const continued = page.waitForRequest((r) =>
+    r.url().includes(`${path}?after=`),
+  );
+  await region
+    .getByRole("button", { name: "Retry checkout history", exact: true })
+    .click();
+  expect(new URL((await continued).url()).searchParams.get("after")).toBe(
+    first.next,
+  );
+  await expect(region.getByRole("listitem")).toHaveCount(all.length);
+  fail = true;
+  await region
+    .getByRole("button", { name: "Reload checkout history", exact: true })
+    .click();
+  await expect(region.getByRole("alert")).toBeVisible();
+  await expect(region.getByRole("listitem")).toHaveCount(all.length);
+  const reloaded = page.waitForRequest((r) => r.url().endsWith(path));
+  await region
+    .getByRole("button", { name: "Retry checkout history", exact: true })
+    .click();
+  await reloaded;
+  await expect(region.getByRole("listitem")).toHaveCount(20);
+  await page.unroute(pattern);
+  // Whitelisted partial/unverified and not-found snapshots render without inferred status.
+  await page.route(pattern, (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            ...first.items[0],
+            id: "synthetic-unverified",
+            effectId: "previous-checkout-generation",
+            outcome: "unverified",
+            reference: null,
+            status: null,
+            paymentStatus: null,
+            expiresAt: null,
+          },
+          {
+            ...first.items[0],
+            id: "synthetic-not-found",
+            outcome: "not_found",
+            reference: null,
+            status: null,
+            paymentStatus: null,
+            expiresAt: null,
+          },
+        ],
+        next: null,
+      },
+    }),
+  );
+  await region
+    .getByRole("button", { name: "Reload checkout history", exact: true })
+    .click();
+  await expect(region.getByRole("listitem")).toHaveCount(2);
+  await expect(region).toContainText("Unverified");
+  await expect(region).toContainText("Not found");
+  await expect(region).toContainText("previous-checkout-generation");
+  await expect(
+    region
+      .getByRole("listitem")
+      .first()
+      .getByText("Unavailable", { exact: true }),
+  ).toHaveCount(4);
+  expect(await region.getByRole("link").count()).toBe(0);
+  await page.unroute(pattern);
+  await page.route(pattern, (route) =>
+    route.fulfill({ json: { items: [], next: null } }),
+  );
+  await region
+    .getByRole("button", { name: "Reload checkout history", exact: true })
+    .click();
+  await expect(region).toContainText(
+    "No retained checkout observations. Older observations were not backfilled.",
+  );
+  await page.unroute(pattern);
+  await region
+    .getByRole("button", { name: "Close checkout history", exact: true })
+    .click();
+  await expect(opener).toBeFocused();
+  await expect(region).toHaveCount(0);
+
+  // Every exit aborts its pending browser fetch and late responses cannot restore it.
+  for (const exit of ["close", "revision", "navigation", "signout"] as const) {
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let handled!: () => void;
+    const done = new Promise<void>((resolve) => {
+      handled = resolve;
+    });
+    await page.route(pattern, async () => {
+      await held;
+      handled();
+    });
+    const started = page.waitForRequest((r) => r.url().endsWith(path));
+    const aborted = page.waitForEvent("requestfailed", {
+      predicate: (r) => r.url().endsWith(path),
+    });
+    await opener.click();
+    await started;
+    if (exit === "close")
+      await region
+        .getByRole("button", { name: "Close checkout history", exact: true })
+        .click();
+    else if (exit === "revision") {
+      await page.route("**/api/effects", async (route) => {
+        const response = await route.fetch();
+        const current = await response.json();
+        await route.fulfill({
+          response,
+          json: current.map((effect: any) =>
+            effect.id === target.id
+              ? {
+                  ...effect,
+                  checkout: {
+                    ...effect.checkout,
+                    reviewVersion: "synthetic-new-review",
+                  },
+                }
+              : effect,
+          ),
+        });
+      });
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    } else if (exit === "navigation") await nav(page, "Overview");
+    else
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await aborted;
+    finish();
+    await done;
+    await page.unroute(pattern);
+    if (exit === "revision") await page.unroute("**/api/effects");
+    await expect(
+      page.getByRole("region", { name: "Checkout history", exact: true }),
+    ).toHaveCount(0);
+    if (exit === "navigation") await nav(page, "Billing");
+  }
+  const foreignContext = await context
+    .browser()!
+    .newContext({ baseURL: "http://127.0.0.1:3117" });
+  try {
+    const foreign = await foreignContext.newPage();
+    await login(
+      foreign,
+      "refund-buyer@example.test",
+      "long-notice-test-password",
+    );
+    const denied = await foreign.request.get(
+      `${path}?after=${encodeURIComponent(first.next)}`,
+    );
+    expect(denied.status()).toBe(403);
+    expect(await denied.text()).not.toContain(first.items[0].reference);
+  } finally {
+    await foreignContext.close();
+  }
+  expect(errors).toEqual([]);
+});

@@ -267,6 +267,19 @@ export class IntegrationOperations {
             effectId,
           );
         }
+        this.integration.checkouts.recordObservation(
+          actor,
+          effect,
+          token,
+          closeCheckout
+            ? "close"
+            : refreshCheckout
+              ? "refresh"
+              : send
+                ? "send"
+                : "reconcile",
+          result,
+        );
         this.store.run(
           "UPDATE integration_operation_leases SET token=NULL,started_at=NULL WHERE effect_id=?",
           effectId,

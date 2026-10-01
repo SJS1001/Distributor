@@ -479,6 +479,14 @@ for (let i = 0; i < 3; i++) {
       execute: async (e) => checkoutResult(e),
       lookup: async (e) => checkoutResult(e),
     });
+  // Retain enough immutable observations for paging without changing the current
+  // open checkout projection or creating orders in the shared buyer account.
+  if (i === 0)
+    for (let observation = 0; observation < 24; observation++)
+      await f.app.integration.refreshCheckout(f.actor, effect.id, {
+        execute: async (e) => checkoutResult(e),
+        lookup: async (e) => checkoutResult(e),
+      });
 }
 const refundResult = (
   effect: import("../src/server/integration.ts").Effect,

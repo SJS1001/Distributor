@@ -4,14 +4,21 @@ import {
   digest,
   DomainError,
   permit,
+  id,
+  now,
+  text,
   type Actor,
 } from "./core.ts";
 import type { Database, Store } from "./database.ts";
 import type { Billing } from "./billing.ts";
 import type { Identity } from "./iam.ts";
 import type { Platform } from "./platform.ts";
-import type { Effect, Integration } from "./integration.ts";
-import { checkoutUrl } from "../shared/checkout.ts";
+import type { Effect, EffectResult, Integration } from "./integration.ts";
+import {
+  checkoutUrl,
+  type CheckoutObservation,
+  type CheckoutHistoryPage,
+} from "../shared/checkout.ts";
 
 // Native money and current permission govern access to a retained provider link.
 // Opening a link performs no provider request and never records a payment.
@@ -27,7 +34,123 @@ export class IntegrationCheckouts {
     this.store = database.owned("integration");
     this.store
       .migrate(`CREATE TABLE IF NOT EXISTS integration_checkout_renewals(successor_id TEXT PRIMARY KEY REFERENCES integration_effects(id),org_id TEXT NOT NULL,invoice_id TEXT NOT NULL,predecessor_id TEXT NOT NULL UNIQUE REFERENCES integration_effects(id),reason TEXT NOT NULL,review_version TEXT NOT NULL,created_at TEXT NOT NULL) STRICT;
-      CREATE INDEX IF NOT EXISTS integration_checkout_renewal_invoice ON integration_checkout_renewals(org_id,invoice_id);`);
+      CREATE INDEX IF NOT EXISTS integration_checkout_renewal_invoice ON integration_checkout_renewals(org_id,invoice_id);
+      CREATE TABLE IF NOT EXISTS integration_checkout_observations(
+        sequence INTEGER PRIMARY KEY,id TEXT NOT NULL UNIQUE,
+        org_id TEXT NOT NULL,account_id TEXT NOT NULL,invoice_id TEXT NOT NULL,
+        effect_id TEXT NOT NULL REFERENCES integration_effects(id),
+        claim_token TEXT NOT NULL UNIQUE,actor_id TEXT NOT NULL,
+        snapshot TEXT NOT NULL,hash TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS integration_checkout_observation_invoice ON integration_checkout_observations(org_id,invoice_id,sequence);`);
+  }
+  // Called only within the operation's fenced completion transaction. Store a
+  // public whitelist without raw provider responses, URLs or private claim tokens.
+  recordObservation(
+    actor: Actor,
+    effect: Effect,
+    token: string,
+    source: CheckoutObservation["source"],
+    result: EffectResult | null,
+  ) {
+    if (effect.provider !== "stripe" || effect.kind !== "checkout") return;
+    const invoice = this.assertIdentity(actor, effect);
+    const payload = JSON.parse(effect.payload);
+    const proof = result
+      ? this.proof({
+          ...effect,
+          external_ref: result.reference,
+          result: canonical(result.result),
+        })
+      : null;
+    const reference = result?.reference ?? effect.external_ref;
+    const snapshot: CheckoutObservation = {
+      id: id(),
+      effectId: effect.id,
+      invoiceId: invoice.id,
+      observedAt: now(),
+      source,
+      outcome: result ? (proof ? "verified" : "unverified") : "not_found",
+      reference: /^cs_test_[a-zA-Z0-9_]+$/.test(reference ?? "")
+        ? reference
+        : null,
+      amount: payload.amount,
+      currency: invoice.currency,
+      status: proof ? (proof.status as CheckoutObservation["status"]) : null,
+      paymentStatus: proof
+        ? (proof.paymentStatus as CheckoutObservation["paymentStatus"])
+        : null,
+      expiresAt: proof ? (proof.expiresAt as number) : null,
+    };
+    const encoded = canonical(snapshot);
+    this.store.run(
+      "INSERT INTO integration_checkout_observations(id,org_id,account_id,invoice_id,effect_id,claim_token,actor_id,snapshot,hash) VALUES(?,?,?,?,?,?,?,?,?)",
+      snapshot.id,
+      effect.org_id,
+      effect.account_id,
+      invoice.id,
+      effect.id,
+      token,
+      actor.id,
+      encoded,
+      digest(encoded),
+    );
+  }
+  history(actor: Actor, effectId: string, after?: string): CheckoutHistoryPage {
+    actor = this.principal(actor);
+    const effect = this.integration.effect(
+      actor,
+      text(effectId, "Checkout", 128),
+    );
+    const invoice = this.assertIdentity(actor, effect);
+    // invoiceId also enforces checkout kind/provider; buyer scope comes from
+    // both owning invoice access and the account-scoped effect lookup above.
+    const cursor =
+      after === undefined
+        ? undefined
+        : this.store.get<{ sequence: number }>(
+            "SELECT sequence FROM integration_checkout_observations WHERE org_id=? AND account_id=? AND invoice_id=? AND id=?",
+            actor.orgId,
+            invoice.account_id,
+            invoice.id,
+            text(after, "Checkout history cursor", 128),
+          );
+    check(
+      after === undefined || cursor,
+      "CURSOR",
+      "Checkout history cursor is not available for this invoice.",
+      400,
+    );
+    const rows = this.store.all<{
+      sequence: number;
+      id: string;
+      effect_id: string;
+      snapshot: string;
+      hash: string;
+    }>(
+      "SELECT sequence,id,effect_id,snapshot,hash FROM integration_checkout_observations WHERE org_id=? AND account_id=? AND invoice_id=? AND sequence<? ORDER BY sequence DESC LIMIT 21",
+      actor.orgId,
+      invoice.account_id,
+      invoice.id,
+      cursor?.sequence ?? Number.MAX_SAFE_INTEGER,
+    );
+    const items = rows.slice(0, 20).map((row) => {
+      check(
+        digest(row.snapshot) === row.hash,
+        "CHECKOUT_HISTORY_INTEGRITY",
+        "Retained checkout verification integrity check failed.",
+      );
+      const snapshot = JSON.parse(row.snapshot) as CheckoutObservation;
+      check(
+        snapshot.id === row.id &&
+          snapshot.effectId === row.effect_id &&
+          snapshot.invoiceId === invoice.id,
+        "CHECKOUT_HISTORY_INTEGRITY",
+        "Retained checkout verification identity changed.",
+      );
+      return snapshot;
+    });
+    return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
   }
   invoiceId(effect: Effect): string {
     check(
@@ -84,9 +207,11 @@ export class IntegrationCheckouts {
       result.amount === payload.amount &&
       result.currency === payload.currency &&
       /^cs_test_[a-zA-Z0-9_]+$/.test(effect.external_ref ?? "") &&
-      ["open", "complete", "expired"].includes(String(result.status)) &&
+      typeof result.status === "string" &&
+      ["open", "complete", "expired"].includes(result.status) &&
+      typeof result.paymentStatus === "string" &&
       ["unpaid", "paid", "no_payment_required"].includes(
-        String(result.paymentStatus),
+        result.paymentStatus,
       ) &&
       Number.isSafeInteger(result.expiresAt) &&
       Number(result.expiresAt) > 0
@@ -296,9 +421,11 @@ export class IntegrationCheckouts {
       result.amount !== payload.amount ||
       result.currency !== payload.currency ||
       !/^cs_test_[a-zA-Z0-9_]+$/.test(effect.external_ref ?? "") ||
-      !["open", "complete", "expired"].includes(String(result.status)) ||
+      typeof result.status !== "string" ||
+      !["open", "complete", "expired"].includes(result.status) ||
+      typeof result.paymentStatus !== "string" ||
       !["unpaid", "paid", "no_payment_required"].includes(
-        String(result.paymentStatus),
+        result.paymentStatus,
       ) ||
       typeof result.expiresAt !== "number" ||
       !Number.isSafeInteger(result.expiresAt) ||

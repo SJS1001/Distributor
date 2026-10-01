@@ -21,7 +21,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Decisions and inputs](docs/DECISIONS.md) | Confirmed direction, proposed choices and unanswered business questions |
 | [Reuse assessment](docs/REUSE.md) | OPUS extraction, open-source shortlist, licensing and UB readiness |
 | [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
-| [Invoice checkout access](docs/CHECKOUT.md) | Fresh scoped payment links, reviewed closure/replacement and native balance checks |
+| [Invoice checkout access](docs/CHECKOUT.md) | Fresh scoped payment links, reviewed closure/replacement, retained verification history and native balance checks |
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |

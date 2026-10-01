@@ -1690,6 +1690,29 @@ export async function createHttp(app: Application, options: HttpOptions) {
     async (request) =>
       app.integration.checkouts.open(actor(request), request.params.effectId),
   );
+  http.get<{
+    Params: { effectId: string };
+    Querystring: { after?: string };
+  }>(
+    "/api/effects/:effectId/checkout/history",
+    {
+      schema: {
+        params: obj({
+          effectId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.integration.checkouts.history(
+        actor(request),
+        request.params.effectId,
+        request.query.after,
+      ),
+  );
   const providers = () => {
     check(
       options.providers,

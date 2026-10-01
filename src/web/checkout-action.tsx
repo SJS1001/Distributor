@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { request } from "./api.ts";
+import { CheckoutHistory } from "./checkout-history.tsx";
 import { checkoutUrl } from "../shared/checkout.ts";
 type Checkout = {
+  reviewVersion: string;
   state: string;
   message: string;
   invoiceNumber: string;
@@ -16,6 +18,10 @@ export function CheckoutAction({
   effectId: string;
   checkout: Checkout;
 }) {
+  const historyId = useId();
+  const opener = useRef<HTMLButtonElement>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => setHistoryOpen(false), [effectId, checkout.reviewVersion]);
   const active = useRef<AbortController | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -26,7 +32,7 @@ export function CheckoutAction({
       active.current?.abort();
       active.current = null;
     };
-  }, [effectId, checkout.state]);
+  }, [effectId, checkout.state, checkout.reviewVersion]);
   const open = async () => {
     if (active.current) return;
     const controller = new AbortController();
@@ -75,6 +81,25 @@ export function CheckoutAction({
         </button>
       )}
       {error && <small role="alert">{error}</small>}
+      <button
+        ref={opener}
+        aria-expanded={historyOpen}
+        aria-controls={historyOpen ? historyId : undefined}
+        onClick={() => setHistoryOpen(true)}
+      >
+        View checkout history
+      </button>
+      {historyOpen && (
+        <CheckoutHistory
+          key={`${effectId}:${checkout.reviewVersion}`}
+          id={historyId}
+          effectId={effectId}
+          close={() => {
+            setHistoryOpen(false);
+            opener.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }
