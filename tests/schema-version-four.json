@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "6256cc7",
+  "hashes": {
+    "enabled": "d8b3868bc1286a05a84f715b5969c98f02dc07fa24e5f7afa82c267fc811adbb",
+    "disabled": "7c010b1ae9e831eca517497f0d1f5274ac428c898441b00397aebfd14bf44063"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "integration_credit_cancellations",
+      "tbl_name": "integration_credit_cancellations",
+      "sql": "CREATE TABLE integration_credit_cancellations(effect_id TEXT PRIMARY KEY REFERENCES integration_credit_applications(effect_id),org_id TEXT NOT NULL,actor_id TEXT NOT NULL,reason TEXT NOT NULL,review_version TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>0),created_at TEXT NOT NULL) STRICT"
+    }
+  ]
+}

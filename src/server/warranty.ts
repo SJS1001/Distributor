@@ -1,3 +1,5 @@
+import { CLAIM_COVERAGE_INITIALIZE_DDL } from "./claim-coverage-schema.ts";
+import { coverageDate, coverageDays } from "./coverage-policy.ts";
 import {
   account,
   check,
@@ -18,7 +20,12 @@ import { Fulfillment } from "./fulfillment.ts";
 import { Billing } from "./billing.ts";
 import { WarrantyEvidence } from "./warranty-evidence.ts";
 import type { WarrantyDecisionPage } from "../shared/warranty-decisions.ts";
-import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
+import type {
+  ClaimCoverage,
+  ClaimCoverageSnapshot,
+  CoveragePolicy,
+  WarrantyCoverage,
+} from "../shared/warranty-coverage.ts";
 import type { SoldSerial, SoldSerialPage } from "../shared/sold-serials.ts";
 export type Claim = {
   id: string;
@@ -111,6 +118,7 @@ export class Warranty {
     CREATE UNIQUE INDEX IF NOT EXISTS warranty_manufacturer_pending ON warranty_manufacturer_cases(org_id,claim_id) WHERE state='pending';
     CREATE TABLE IF NOT EXISTS warranty_manufacturer_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,case_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(case_id,revision)) STRICT;
   `);
+    this.store.migrate(CLAIM_COVERAGE_INITIALIZE_DDL);
     this.evidence = new WarrantyEvidence(
       database,
       platform,
@@ -875,6 +883,8 @@ export class Warranty {
         ),
         source: "replacement_inherited" as const,
         provisionalDays: null,
+        policy: this.claimCoverageRecord(c).snapshot?.policy ?? null,
+        inheritedFromClaimId: c.id,
       };
     }
     const sale = this.fulfillment.soldUnit(
@@ -883,14 +893,13 @@ export class Warranty {
       accountId,
       custody.reference,
     );
-    const days = JSON.parse(
-      this.identity.organization(actor).policy,
-    ).coverageDays;
-    check(
-      Number.isSafeInteger(days) && days >= 0 && days <= 36500,
-      "COVERAGE_POLICY",
-      "Provisional coverage duration must be a whole number of days from 0 to 36500.",
-    );
+    const selected = this.identity.coveragePolicy(actor),
+      policy: CoveragePolicy = {
+        revision: selected.revision,
+        days: selected.days,
+        configuredAt: selected.configuredAt,
+      },
+      days = policy.days;
     const shippedAt = this.coverageDate(sale.shipment.shipped_at);
     const end = new Date(Date.parse(shippedAt) + days * 86400000);
     check(
@@ -904,18 +913,124 @@ export class Warranty {
       coverageEnd: end.toISOString(),
       shippedAt,
       source: "current_provisional_policy" as const,
-      provisionalDays: days as number,
+      provisionalDays: days,
+      policy,
+      inheritedFromClaimId: null,
     };
   }
-  private coverageDate(value: unknown): string {
-    check(
-      typeof value === "string" &&
-        Number.isFinite(Date.parse(value)) &&
-        new Date(value).toISOString() === value,
-      "COVERAGE_DATE",
-      "Coverage requires a valid retained UTC date.",
+  private coverageDate(value: unknown) {
+    return coverageDate(value);
+  }
+  private claimCoverageRecord(c: Claim): ClaimCoverage {
+    const row = this.store.get<{ snapshot: string }>(
+      "SELECT snapshot FROM warranty_claim_coverage WHERE org_id=? AND claim_id=?",
+      c.org_id,
+      c.id,
     );
-    return value;
+    let snapshot: ClaimCoverageSnapshot | null = null;
+    if (row) {
+      const saved = JSON.parse(row.snapshot) as ClaimCoverageSnapshot;
+      check(
+        saved && typeof saved === "object" && !Array.isArray(saved),
+        "COVERAGE_POLICY",
+        "Retained coverage snapshot is invalid.",
+      );
+      const policy = saved.policy;
+      if (policy !== null) {
+        check(
+          policy && typeof policy === "object" && !Array.isArray(policy),
+          "COVERAGE_POLICY",
+          "Retained coverage policy is invalid.",
+        );
+        integer(policy.revision, "retained coverage policy revision", 1);
+        coverageDays(policy.days);
+        check(
+          policy.revision === 1
+            ? policy.configuredAt === null
+            : !!policy.configuredAt,
+          "COVERAGE_POLICY",
+          "Retained coverage policy version is invalid.",
+        );
+        if (policy.configuredAt !== null) coverageDate(policy.configuredAt);
+      }
+      check(
+        (saved.source === "current_provisional_policy" &&
+          policy !== null &&
+          saved.inheritedFromClaimId === null) ||
+          (saved.source === "replacement_inherited" &&
+            typeof saved.inheritedFromClaimId === "string" &&
+            saved.inheritedFromClaimId.length > 0),
+        "COVERAGE_POLICY",
+        "Retained coverage provenance is invalid.",
+      );
+      coverageDate(saved.shippedAt);
+      coverageDate(saved.capturedAt);
+      coverageDate(saved.coverageEnd);
+      check(
+        saved.coverageEnd === c.coverage_end,
+        "COVERAGE_POLICY",
+        "Retained claim and coverage dates differ.",
+      );
+      if (policy !== null)
+        check(
+          Date.parse(saved.shippedAt) + policy.days * 86400000 ===
+            Date.parse(saved.coverageEnd),
+          "COVERAGE_POLICY",
+          "Retained coverage duration and dates differ.",
+        );
+      if (saved.source === "replacement_inherited") {
+        const predecessor = this.store.get<Claim>(
+          "SELECT * FROM warranty_claims WHERE org_id=? AND id=?",
+          c.org_id,
+          saved.inheritedFromClaimId!,
+        );
+        const replacement = this.store.get<Replacement>(
+          "SELECT * FROM warranty_replacements WHERE org_id=? AND claim_id=? AND new_unit_id=? AND state='handed_over'",
+          c.org_id,
+          saved.inheritedFromClaimId!,
+          c.unit_id,
+        );
+        check(
+          predecessor &&
+            replacement &&
+            predecessor.id !== c.id &&
+            predecessor.account_id === c.account_id &&
+            predecessor.shipment_id === c.shipment_id &&
+            predecessor.invoice_id === c.invoice_id &&
+            predecessor.coverage_end === saved.coverageEnd &&
+            replacement.coverage_end === saved.coverageEnd,
+          "COVERAGE_POLICY",
+          "Retained replacement coverage lineage is invalid.",
+        );
+      }
+      snapshot = {
+        policy:
+          policy === null
+            ? null
+            : {
+                revision: policy.revision,
+                days: policy.days,
+                configuredAt: policy.configuredAt,
+              },
+        source: saved.source,
+        shippedAt: saved.shippedAt,
+        coverageEnd: saved.coverageEnd,
+        inheritedFromClaimId: saved.inheritedFromClaimId,
+        capturedAt: saved.capturedAt,
+      };
+    }
+    return {
+      claimId: c.id,
+      coverageEnd: this.coverageDate(c.coverage_end),
+      snapshot,
+      coveragePolicyApproved: false,
+      eligibility: "requires_review",
+    };
+  }
+  claimCoverage(actor: Actor, claimId: string): ClaimCoverage {
+    return this.database.transaction(() =>
+      this.claimCoverageRecord(this.claimRecord(actor, claimId)),
+    );
   }
   coverage(actor: Actor, unitId: string, accountId: string): WarrantyCoverage {
     return this.database.transaction(() => {
@@ -935,7 +1050,13 @@ export class Warranty {
         unitId,
         serial: unit.serial,
         accountId,
-        ...entitlement,
+        shipmentId: entitlement.shipmentId,
+        invoiceId: entitlement.invoiceId,
+        shippedAt: entitlement.shippedAt,
+        coverageEnd: entitlement.coverageEnd,
+        source: entitlement.source,
+        provisionalDays: entitlement.provisionalDays,
+        policy: entitlement.policy,
         assessedAt,
         datePosition:
           Date.parse(assessedAt) < Date.parse(entitlement.shippedAt)
@@ -1242,6 +1363,7 @@ export class Warranty {
       accountId: string;
       unitId: string;
       type: "warranty" | "return";
+      policyRevision?: number;
       issue: string;
       evidence: string;
     },
@@ -1282,6 +1404,19 @@ export class Warranty {
           "ACTIVE_CLAIM",
           "Unit already has an active claim.",
         );
+        const policy = entitlement.policy;
+        check(
+          input.policyRevision === undefined
+            ? policy === null || policy.revision === 1
+            : policy !== null &&
+                integer(
+                  input.policyRevision,
+                  "reviewed coverage policy revision",
+                  1,
+                ) === policy.revision,
+          "REVISION",
+          "Coverage policy changed or was not reviewed; recheck the coverage dates before submitting.",
+        );
         const coverageEnd = entitlement.coverageEnd,
           claimId = id(),
           issue = text(input.issue, "issue", 2000),
@@ -1300,6 +1435,20 @@ export class Warranty {
           evidence,
           coverageEnd,
           now(),
+        );
+        const snapshot: ClaimCoverageSnapshot = {
+          policy,
+          source: entitlement.source,
+          shippedAt: entitlement.shippedAt,
+          coverageEnd,
+          inheritedFromClaimId: entitlement.inheritedFromClaimId,
+          capturedAt: now(),
+        };
+        this.store.run(
+          "INSERT INTO warranty_claim_coverage VALUES(?,?,?)",
+          claimId,
+          actor.orgId,
+          JSON.stringify(snapshot),
         );
         this.recordActivity(actor, claimId, "submitted", issue);
         return { id: claimId, coverageEnd, coveragePolicyApproved: false };

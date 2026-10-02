@@ -1,3 +1,5 @@
+import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
+import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
 import React, { useEffect, useState, useRef } from "react";
 import { providerChoices, providerNames } from "../shared/provider-choices.ts";
 import { createRoot } from "react-dom/client";
@@ -157,6 +159,8 @@ function App() {
       )
     )
       e.purchases = await request("/api/purchases");
+    if (actor?.role === "admin")
+      e.coveragePolicy = await request("/api/warranty/coverage-policy");
     if (["admin", "commercial", "buyer"].includes(actor?.role ?? ""))
       e.carts = await request("/api/carts");
     if (["admin", "warehouse", "support"].includes(actor?.role ?? "")) {
@@ -3849,10 +3853,45 @@ function App() {
         )}
         {page === "Returns" && (
           <>
+            {admin && extra.coveragePolicy && (
+              <section>
+                <h2>Warranty coverage policy</h2>
+                <p>
+                  Policy version {extra.coveragePolicy.revision}:{" "}
+                  {extra.coveragePolicy.days} whole UTC days after shipment.
+                  Settings are provisional; eligibility requires review.
+                </p>
+                {extra.coveragePolicy.reason && (
+                  <p>{extra.coveragePolicy.reason}</p>
+                )}
+                {button("Configure warranty coverage", () =>
+                  open(
+                    "Configure warranty coverage policy",
+                    [
+                      {
+                        name: "days",
+                        label: "Coverage duration in days",
+                        type: "number",
+                        value: extra.coveragePolicy.days,
+                      },
+                      reason,
+                    ],
+                    (v) =>
+                      command("warranty.policy", {
+                        ...v,
+                        revision: extra.coveragePolicy.revision,
+                      }),
+                    "This changes current ordinary-sale assessments and new claims immediately. Existing claim snapshots and inherited replacement dates remain retained. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
+                  ),
+                )}
+              </section>
+            )}
+
             <div className="actions">
               {can("warranty", "commercial", "buyer") &&
                 button("Submit claim / return", () => {
                   let selected: SoldSerial | null = data.soldUnits[0] ?? null;
+                  let reviewed: WarrantyCoverage | null = null;
                   open(
                     "Request return or warranty review",
                     [
@@ -3860,17 +3899,14 @@ function App() {
                         name: "unitId",
                         label: "Sold serial",
                         content: (
-                          <SoldSerialSelect
+                          <ClaimSerialReview
                             initial={{
                               items: data.soldUnits,
                               next: data.soldUnitNext,
                             }}
-                            name="unitId"
-                            label="Sold serial"
-                            required
-                            chooseFirst
-                            onSelectionChange={(unit) => {
+                            onChange={(unit, coverage) => {
                               selected = unit;
+                              reviewed = coverage;
                             }}
                           />
                         ),
@@ -3899,9 +3935,16 @@ function App() {
                         throw new Error(
                           "Select a currently loaded sold serial.",
                         );
+                      if (!reviewed)
+                        throw new Error(
+                          "Load and review the claim coverage dates before submitting.",
+                        );
                       return command("warranty.submit", {
                         ...v,
                         accountId: selected.accountId,
+                        ...(reviewed.policy
+                          ? { policyRevision: reviewed.policy.revision }
+                          : {}),
                       });
                     },
                   );
@@ -3936,6 +3979,11 @@ function App() {
                 c.issue,
                 c.state,
                 <div className="actions">
+                  <RetainedClaimCoverage
+                    key={`${c.id}:${eventViewEpoch}`}
+                    claimId={c.id}
+                  />
+
                   <button
                     className="secondary"
                     onClick={(event) => {

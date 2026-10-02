@@ -22,6 +22,7 @@ import { fixture, accept, ship } from "./fixtures.ts";
 import baseline from "../src/server/schema-baseline.json" with { type: "json" };
 
 import versionTwo from "./schema-version-two.json" with { type: "json" };
+import versionFour from "./schema-version-four.json" with { type: "json" };
 import versionThree from "./schema-version-three.json" with { type: "json" };
 
 const metadata = "platform_schema_version";
@@ -132,6 +133,35 @@ function frozenVersionThree(
     db.exec("COMMIT");
   });
 }
+function frozenVersionFour(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionThree(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionFour.additions) {
+      db.exec(object.sql!);
+      if (object.type !== "table") continue;
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=4,schema_hash=?",
+    ).run(
+      eventReports ? versionFour.hashes.enabled : versionFour.hashes.disabled,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -182,7 +212,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -197,10 +227,13 @@ function conservedUpgrade(
     "integration_canada_post_members",
     "integration_credential_revocations",
     "integration_credit_cancellations",
+    "warranty_claim_coverage",
   ]) {
     if (sourceVersion >= 2 && name.startsWith("integration_canada_post"))
       continue;
     if (sourceVersion >= 3 && name === "integration_credential_revocations")
+      continue;
+    if (sourceVersion >= 4 && name === "integration_credit_cancellations")
       continue;
     assert.deepEqual(
       after[name],
@@ -264,7 +297,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const sourceVersion of [1, 2, 3])
+for (const sourceVersion of [1, 2, 3, 4])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
       test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
@@ -274,6 +307,17 @@ for (const sourceVersion of [1, 2, 3])
         };
         const f = fixture(t, security, region);
         const invoice = ship(f, accept(f).id).invoiceId;
+        const historicalClaim = f.app.warranty.submit(
+          f.actor,
+          "historical-claim",
+          {
+            accountId: f.buyer,
+            unitId: f.app.inventory.trace(f.actor, "S1").unit.id,
+            type: "warranty",
+            issue: "Synthetic historical warranty",
+            evidence: "Synthetic frozen previous-version evidence",
+          },
+        );
         const session = f.app.identity.login(
           "admin@example.test",
           "long-test-only-password",
@@ -293,7 +337,7 @@ for (const sourceVersion of [1, 2, 3])
         });
         const dir = directory(t),
           source = join(dir, `v${sourceVersion}.db`),
-          destination = join(dir, "v4.db");
+          destination = join(dir, "v5.db");
         if (sourceVersion >= 2) {
           // Retain a locally prepared group, without claiming a provider response.
           f.app.database
@@ -309,7 +353,7 @@ for (const sourceVersion of [1, 2, 3])
               "2026-09-30T12:34:56.000Z",
             );
         }
-        if (sourceVersion === 3) {
+        if (sourceVersion >= 3) {
           f.app.database
             .owned("integration")
             .run(
@@ -333,7 +377,9 @@ for (const sourceVersion of [1, 2, 3])
           ? frozenVersionOne
           : sourceVersion === 2
             ? frozenVersionTwo
-            : frozenVersionThree)(f.path, source, eventReports, region);
+            : sourceVersion === 3
+              ? frozenVersionThree
+              : frozenVersionFour)(f.path, source, eventReports, region);
         const before = snapshot(source),
           receipt = inspectSchema(source),
           sourceBytes = readFileSync(source);
@@ -346,13 +392,17 @@ for (const sourceVersion of [1, 2, 3])
                 ? versionOneHashes
                 : sourceVersion === 2
                   ? versionTwo.hashes
-                  : versionThree.hashes
+                  : sourceVersion === 3
+                    ? versionThree.hashes
+                    : versionFour.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
                 : sourceVersion === 2
                   ? versionTwo.hashes
-                  : versionThree.hashes
+                  : sourceVersion === 3
+                    ? versionThree.hashes
+                    : versionFour.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -381,10 +431,10 @@ for (const sourceVersion of [1, 2, 3])
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 4);
+        assert.equal(upgraded.version, 5);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 4);
+        assert.equal(inspection.version, 5);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);
@@ -392,6 +442,16 @@ for (const sourceVersion of [1, 2, 3])
         assert.deepEqual(inspectSchema(source), receipt);
         const clone = new Application(destination, region, security);
         try {
+          assert.deepEqual(
+            clone.warranty.claimCoverage(f.actor, historicalClaim.id),
+            {
+              claimId: historicalClaim.id,
+              coverageEnd: historicalClaim.coverageEnd,
+              snapshot: null,
+              coveragePolicyApproved: false,
+              eligibility: "requires_review",
+            },
+          );
           assert.deepEqual(
             clone.identity.session(session.token),
             f.app.identity.session(session.token),

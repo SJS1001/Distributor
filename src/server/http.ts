@@ -941,14 +941,22 @@ export function commands(
       schema: obj({ refundId: str, reference: str, reason: str }),
       run: (a, k, p) => app.billing.manualRefund(a, k, p),
     },
+    "warranty.policy": {
+      schema: obj({ days: num, revision: num, reason: str }),
+      run: (a, k, p) => app.identity.configureCoverage(a, k, p),
+    },
     "warranty.submit": {
-      schema: obj({
-        accountId: str,
-        unitId: str,
-        type: choice("warranty", "return"),
-        issue: str,
-        evidence: str,
-      }),
+      schema: obj(
+        {
+          accountId: str,
+          unitId: str,
+          type: choice("warranty", "return"),
+          issue: str,
+          evidence: str,
+          policyRevision: num,
+        },
+        ["policyRevision"],
+      ),
       run: (a, k, p) => app.warranty.submit(a, k, p),
     },
     "warranty.review": {
@@ -1578,6 +1586,30 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     },
     async (request) => app.warranty.soldUnitPage(actor(request), request.query),
+  );
+  http.get(
+    "/api/warranty/coverage-policy",
+    { schema: { querystring: obj({}) } },
+    async (request) =>
+      app.database.transaction(() => {
+        const current = app.identity.currentActor(actor(request)),
+          policy = app.identity.coveragePolicy(current);
+        return current.role === "admin"
+          ? policy
+          : {
+              revision: policy.revision,
+              days: policy.days,
+              configuredAt: policy.configuredAt,
+            };
+      }),
+  );
+  http.get<{ Params: { claimId: string } }>(
+    "/api/warranty/claims/:claimId/coverage",
+    {
+      schema: { params: obj({ claimId: str }), querystring: obj({}) },
+    },
+    async (request) =>
+      app.warranty.claimCoverage(actor(request), request.params.claimId),
   );
   http.get<{ Params: { unitId: string }; Querystring: { accountId: string } }>(
     "/api/warranty/sold-units/:unitId/coverage",

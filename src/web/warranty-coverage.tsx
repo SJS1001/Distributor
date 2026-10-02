@@ -110,6 +110,11 @@ export function SoldCoverage({
               : `Current provisional duration: ${coverage.provisionalDays} days after shipment.`}
           </p>
           <p>
+            {coverage.policy
+              ? `Policy version ${coverage.policy.revision}.`
+              : "Historical policy version is unavailable."}
+          </p>
+          <p>
             {coverage.datePosition === "elapsed"
               ? "Calculated end date has elapsed."
               : coverage.datePosition === "before_start"

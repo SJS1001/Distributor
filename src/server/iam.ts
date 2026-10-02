@@ -1,3 +1,4 @@
+import { coverageDays, readCoveragePolicy } from "./coverage-policy.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
 import {
   countReviewMode,
@@ -259,6 +260,67 @@ export class Identity {
           previous: prior,
           selected,
         });
+        return selected;
+      },
+    );
+  }
+  coveragePolicy(actor: Actor) {
+    actor = this.currentActor(actor);
+    permit(actor, ["warranty", "commercial", "buyer"]);
+    check(
+      !this.passwordChangeRequired(actor.id),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing warranty coverage.",
+      403,
+    );
+    return readCoveragePolicy(JSON.parse(this.organization(actor).policy));
+  }
+  configureCoverage(
+    actor: Actor,
+    key: string,
+    input: { days: number; revision: number; reason: string },
+  ) {
+    return this.platform.command(
+      actor,
+      "warranty.policy",
+      key,
+      input,
+      () => {
+        actor = this.currentActor(actor);
+        permit(actor, []);
+        this.coveragePolicy(actor);
+      },
+      () => {
+        const policy = JSON.parse(this.organization(actor).policy) as Record<
+          string,
+          unknown
+        >;
+        const prior = readCoveragePolicy(policy);
+        check(
+          integer(input.revision, "coverage policy revision", 1) ===
+            prior.revision,
+          "REVISION",
+          "Coverage policy changed; refresh before saving.",
+        );
+        const selected = {
+          days: coverageDays(input.days),
+          revision: prior.revision + 1,
+          reason: text(input.reason, "coverage policy review reason", 1000),
+          configuredBy: actor.id,
+          configuredAt: now(),
+        };
+        policy.warrantyCoverage = selected;
+        this.store.run(
+          "UPDATE iam_organizations SET policy=? WHERE id=?",
+          canonical(policy),
+          actor.orgId,
+        );
+        this.platform.event(
+          actor,
+          "WarrantyCoveragePolicyChanged",
+          actor.orgId,
+          { previous: prior, selected },
+        );
         return selected;
       },
     );
