@@ -1,4 +1,5 @@
 import { operationsHealthBrowser } from "./operations-health-browser-fixture.ts";
+import { binRelocationBrowser } from "./bin-relocation-browser-fixture.ts";
 import { supplierReturnQueueBrowser } from "./supplier-return-queue-browser-fixture.ts";
 import { purchaseEntryBrowser } from "./purchase-entry-browser-fixture.ts";
 import { catalogLifecycleBrowser } from "./catalog-lifecycle-browser-fixture.ts";
@@ -932,6 +933,7 @@ const reconciliationHttp = await reconciliationBrowser((fn) =>
 const operationsHealthHttp = await operationsHealthBrowser((fn) =>
   cleanup.push(fn),
 );
+const binRelocationHttp = await binRelocationBrowser((fn) => cleanup.push(fn));
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -972,6 +974,7 @@ const stop = async () => {
   await purchaseEntryHttp.close();
   await reconciliationHttp.close();
   await operationsHealthHttp.close();
+  await binRelocationHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);

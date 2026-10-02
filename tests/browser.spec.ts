@@ -1,4 +1,5 @@
 import "./operations-health-browser-journey.ts";
+import "./bin-relocation-browser-journey.ts";
 import "./supplier-return-queue-browser-journey.ts";
 import "./catalog-lifecycle-browser-journey.ts";
 import "./react-render-browser-journey.ts";

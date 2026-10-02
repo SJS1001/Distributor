@@ -26,6 +26,7 @@ export const movementSigns: Record<
   "supplier.return": "negative",
   count: "either",
   inspection: "zero",
+  relocation: "zero",
   "shortpick.hold": "zero",
   "serial.loss": "negative",
   "serial.recovery": "positive",

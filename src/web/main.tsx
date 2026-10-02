@@ -2265,6 +2265,46 @@ function App() {
                   {can("warehouse") &&
                     u.state === "stock" &&
                     u.quantity > 0 &&
+                    u.reserved === 0 &&
+                    button("Move to bin", () =>
+                      open(
+                        "Move stock within warehouse",
+                        [
+                          {
+                            name: "sourceBin",
+                            label: "Confirm current bin",
+                            scan: "single",
+                          },
+                          {
+                            name: "bin",
+                            label: "Destination bin in this warehouse",
+                            scan: "single",
+                          },
+                          ...(u.serial
+                            ? [
+                                {
+                                  name: "serial",
+                                  label: "Scan stock serial",
+                                  scan: "single" as const,
+                                },
+                              ]
+                            : []),
+                          reason,
+                        ],
+                        (v) =>
+                          command("stock.relocate", {
+                            ...v,
+                            unitId: u.id,
+                            revision: u.revision,
+                            serial: u.serial ? v.serial : null,
+                          }),
+                        `Move all ${u.quantity} units of ${productName(u.product_id)}${u.serial ? `, serial ${u.serial}` : " in this bulk lot"} from ${warehouseName(u.warehouse_id)} / ${u.bin}. Confirm both bins and the physical stock. The warehouse, original cost and condition remain the same. Reserved stock cannot move. For another warehouse, use Transfer.`,
+                        "Confirm bin move",
+                      ),
+                    )}
+                  {can("warehouse") &&
+                    u.state === "stock" &&
+                    u.quantity > 0 &&
                     button("Inspect", () =>
                       simple(
                         "Inspect stock",

@@ -932,6 +932,103 @@ export class Inventory {
       };
     });
   }
+  relocate(
+    actor: Actor,
+    key: string,
+    input: {
+      unitId: string;
+      revision: number;
+      sourceBin: string;
+      bin: string;
+      serial: string | null;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "stock.relocate",
+      key,
+      input,
+      (cached) => {
+        actor = this.custodyActor(actor, ["warehouse"]);
+        site(
+          actor,
+          cached?.warehouseId ?? this.unit(actor, input.unitId).warehouse_id,
+        );
+      },
+      () => {
+        const u = this.unit(actor, text(input.unitId, "stock record")),
+          sourceBin = text(input.sourceBin, "source bin"),
+          bin = text(input.bin, "destination bin"),
+          serial = input.serial === null ? null : text(input.serial, "serial"),
+          reason = text(input.reason, "relocation reason", 1000);
+        integer(input.revision, "stock revision", 0);
+        check(
+          u.revision === input.revision && u.bin === sourceBin,
+          "REVISION",
+          "Stock or source bin changed; refresh before moving it.",
+        );
+        check(
+          u.state === "stock" && u.quantity > 0 && this.reserved(u.id) === 0,
+          "STATE",
+          "Only present, unallocated stock can move between bins.",
+        );
+        check(
+          serial === u.serial,
+          "SERIAL",
+          "Scan the exact stock serial; bulk stock requires a blank serial.",
+        );
+        check(
+          bin !== sourceBin,
+          "VALIDATION",
+          "Select another bin in this warehouse.",
+          400,
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM inventory_serial_reviews WHERE org_id=? AND unit_id=? AND state='submitted' LIMIT 1",
+            actor.orgId,
+            u.id,
+          ),
+          "STATE",
+          "Resolve the pending missing-serial review before moving this stock.",
+        );
+        const relocationId = id(),
+          result = {
+            id: u.id,
+            relocationId,
+            warehouseId: u.warehouse_id,
+            fromBin: sourceBin,
+            bin,
+            serial,
+            quantity: u.quantity,
+            unitCost: u.cost,
+            condition: u.condition,
+            revision: u.revision + 1,
+          };
+        this.store.run(
+          "UPDATE inventory_units SET bin=?,revision=revision+1 WHERE org_id=? AND id=?",
+          bin,
+          actor.orgId,
+          u.id,
+        );
+        this.movement(
+          actor,
+          u,
+          "relocation",
+          0,
+          relocationId,
+          `${JSON.stringify(sourceBin)} → ${JSON.stringify(bin)}: ${reason}`,
+        );
+        this.platform.audit(actor, "stock.relocated", relocationId, {
+          ...result,
+          beforeRevision: u.revision,
+          reason,
+        });
+        return result;
+      },
+    );
+  }
   inspect(
     actor: Actor,
     key: string,
