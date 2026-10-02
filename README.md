@@ -38,6 +38,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Bulk count review duties](docs/COUNT-REVIEWS.md) | Saved organization policy, independent approval, stale review and immutable decision history |
 | [Warranty and replacements](docs/WARRANTY.md) | Native returns, replacement collection/dispatch, manufacturer evidence and remaining qualification |
 | [Runtime installation](docs/RUNTIME.md) | Production dependencies, required package inputs and isolated local startup checks |
+| [Load and recovery rehearsal](docs/LOAD-RECOVERY.md) | Configurable synthetic concurrent writers/readers, cutoff restore and measured local limits |
 | [Schema startup and upgrades](docs/SCHEMA-UPGRADES.md) | Atomic initialization, exact supported versions and reviewed fresh-file clones |
 | [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets, optional/required role MFA and session revocation |
 | [Local event reporting](docs/EVENTS.md) | Bounded optional report processing, scoped diagnostics and reviewed failure recovery |

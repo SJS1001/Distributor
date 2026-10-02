@@ -10,6 +10,8 @@ New TypeScript modular application, Node 24.16, native SQLite with WAL and FULL 
 
 SQLite is an initial single-node implementation choice, not a demonstrated production capacity claim. Recovery, load targets, deployment region, independent review and operator qualification remain required. The [schema upgrade runbook](SCHEMA-UPGRADES.md) specifies atomic versioned startup and an operator-reviewed fresh-file clone of the exact previous baseline or current supported layout. Earlier/destructive migrations, rolling compatibility and actual cutover remain unqualified.
 
+The [synthetic load/recovery rehearsal](LOAD-RECOVERY.md) adds configurable independent native writers, authenticated HTTP readers, stock/money fixture calculations and encrypted cutoff restore with pending-order completion and exact replay. It records local latency and backup/restore duration in fresh private CA/US stores. This is partial D-036/D-039 engineering coverage; approved peak/RPO/RTO targets, physical residency, actual providers, cutover and full CH-10/G8 acceptance remain outstanding.
+
 ## Owner targets and residency
 
 US and Canada; USD/CAD with no implicit exchange or cross-currency allocations. Each runtime has one declared residency region and each organization belongs to that region. Canadian and US stores/backups/logs must be deployed separately within their approved region; a code flag alone cannot prove infrastructure residency. Synthetic local fixtures do not establish production hosting location.

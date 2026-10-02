@@ -20,11 +20,12 @@
     "bootstrap": "tsx src/server/cli.ts bootstrap",
     "demo": "tsx src/server/cli.ts demo",
     "verify:plan": "python3 scripts/verify_plan.py",
-    "format:check": "prettier --check src tests vite.config.ts playwright.config.ts tsconfig.json package.json index.html scripts/verify_runtime.mjs",
+    "format:check": "prettier --check src tests vite.config.ts playwright.config.ts tsconfig.json package.json index.html scripts/verify_runtime.mjs scripts/rehearsal*.ts",
     "test:e2e": "npm run build && playwright test",
     "provider:credentials": "tsx src/server/provider-credentials-cli.ts",
     "provider:authorize": "tsx src/server/quickbooks-authorization-cli.ts",
-    "verify:runtime": "node scripts/verify_runtime.mjs"
+    "verify:runtime": "node scripts/verify_runtime.mjs",
+    "verify:load-recovery": "tsx scripts/rehearsal.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
