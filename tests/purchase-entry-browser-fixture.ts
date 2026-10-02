@@ -4,6 +4,13 @@ import { createHttp } from "../src/server/http.ts";
 export async function purchaseEntryBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   for (let n = 0; n < 43; n++)
+    f.app.procurement.supplier(f.actor, `search-supplier-${n}`, {
+      name: `Z Supplier ${String(n).padStart(2, "0")}`,
+    });
+  f.app.procurement.supplier(f.actor, "literal-supplier", {
+    name: "Z%_ Supplier literal",
+  });
+  for (let n = 0; n < 43; n++)
     f.app.catalog.create(f.actor, `purchase-product-${n}`, {
       sku: `BUY-${String(n).padStart(2, "0")}`,
       name: `Purchase fixture ${n}`,

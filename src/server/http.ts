@@ -1628,9 +1628,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/purchases", async (request) => {
     const current = actor(request),
       page = app.procurement.orderPage(current),
-      returns = app.procurement.returnPage(current);
+      returns = app.procurement.returnPage(current),
+      suppliers = app.procurement.supplierPage(current);
     return {
-      suppliers: app.procurement.suppliers(current),
+      suppliers: suppliers.items,
+      supplierNext: suppliers.next,
       orders: page.items,
       orderNext: page.next,
       receipts: app.procurement.receipts(current),
@@ -1639,6 +1641,28 @@ export async function createHttp(app: Application, options: HttpOptions) {
       drafts: app.procurement.drafts.list(current),
     };
   });
+  http.get<{ Querystring: { q?: string; after?: string } }>(
+    "/api/purchases/suppliers/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            q: { type: "string", maxLength: 120 },
+            after: { type: "string", minLength: 1, maxLength: 1024 },
+          },
+          ["q", "after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.procurement.supplierPage(actor(request), request.query),
+  );
+  http.get<{ Params: { supplierId: string } }>(
+    "/api/purchases/suppliers/:supplierId",
+    { schema: { params: obj({ supplierId: str }) } },
+    async (request) =>
+      app.procurement.supplierChoice(actor(request), request.params.supplierId),
+  );
   http.get<{ Querystring: { after?: string; state?: PurchaseQueueState } }>(
     "/api/purchases/orders/page",
     {

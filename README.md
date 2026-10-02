@@ -25,7 +25,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Order queue](docs/ORDER-QUEUES.md) | Scoped twenty-header pages, live state filters, full open-order counts and retry/history controls |
 | [Catalog lifecycle](docs/CATALOG-LIFECYCLE.md) | Reviewed retirement/reactivation, staff search, retained history and customer-ordering effects |
 | [Customer pricing](docs/CUSTOMER-PRICING.md) | Current assigned-customer prices, selected-account quantity editing, fresh quotes and saved cart recovery |
-| [Purchase order entry](docs/PURCHASE-ENTRY.md) | Multi-product review, explicit original costs and retained exact-attempt recovery |
+| [Purchase order entry](docs/PURCHASE-ENTRY.md) | Paged supplier/product selection, explicit original costs and retained exact-attempt recovery |
 | [Purchase order queue](docs/PURCHASE-QUEUES.md) | Scoped twenty-header pages, live state filters and saved receipt drafts independent of visible orders |
 | [Invoice queue](docs/INVOICE-QUEUES.md) | Scoped twenty-header pages, current balance filters, full receivable totals and credit publication independent of visible invoices |
 | [Stock and replacement search](docs/STOCK-QUEUES.md) | Scoped twenty-record stock pages, full availability totals and independent eligible replacement serial search |

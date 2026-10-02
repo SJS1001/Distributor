@@ -1,4 +1,8 @@
 import type { SQLInputValue } from "node:sqlite";
+import type {
+  SupplierChoice,
+  SupplierPage,
+} from "../shared/supplier-search.ts";
 import {
   purchaseQueueStates,
   type PurchaseQueueState,
@@ -197,11 +201,91 @@ export class Procurement {
     return { warehouseId: po.warehouse_id };
   }
   suppliers(actor: Actor) {
+    return this.supplierPage(actor).items;
+  }
+  supplierChoice(actor: Actor, supplierId: string): SupplierChoice {
     actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
-    return this.store.all(
-      "SELECT * FROM procurement_suppliers WHERE org_id=?",
+    const row = this.store.get<SupplierChoice>(
+      "SELECT id,name FROM procurement_suppliers WHERE org_id=? AND id=?",
       actor.orgId,
+      text(supplierId, "Supplier ID", 128),
     );
+    check(row, "NOT_FOUND", "Supplier not found.", 404);
+    return row;
+  }
+  supplierPage(
+    actor: Actor,
+    input: { q?: string; after?: string } = {},
+  ): SupplierPage {
+    return this.database.transaction(() => {
+      actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
+      check(
+        input.q === undefined ||
+          (typeof input.q === "string" && input.q.length <= 120),
+        "VALIDATION",
+        "Supplier search must contain at most 120 characters.",
+        400,
+      );
+      const q = (input.q ?? "")
+        .trim()
+        .replace(/[A-Z]/g, (c) => c.toLowerCase());
+      let anchor: SupplierChoice | undefined;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Supplier cursor", 1024);
+        let cursor: unknown;
+        try {
+          const decoded = Buffer.from(encoded, "base64url");
+          check(
+            decoded.toString("base64url") === encoded,
+            "VALIDATION",
+            "Invalid supplier cursor.",
+            400,
+          );
+          cursor = JSON.parse(decoded.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid supplier cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 4 &&
+            cursor[0] === 1 &&
+            cursor[1] === actor.orgId &&
+            cursor[2] === q &&
+            typeof cursor[3] === "string" &&
+            cursor[3].length > 0 &&
+            cursor[3].length <= 128,
+          "VALIDATION",
+          "Supplier cursor does not match this organization and search.",
+          400,
+        );
+        anchor = this.supplierChoice(actor, cursor[3]);
+        check(
+          !q ||
+            anchor.name.replace(/[A-Z]/g, (c) => c.toLowerCase()).includes(q),
+          "CURSOR",
+          "Supplier cursor is no longer part of this search.",
+          400,
+        );
+      }
+      const rows = this.store.all<SupplierChoice>(
+        `SELECT id,name FROM procurement_suppliers WHERE org_id=? AND (?='' OR instr(lower(name),?)>0)
+         ${anchor ? "AND (name>? OR (name=? AND id>?))" : ""} ORDER BY name,id LIMIT 21`,
+        actor.orgId,
+        q,
+        q,
+        ...(anchor ? [anchor.name, anchor.name, anchor.id] : []),
+      );
+      const items = rows.slice(0, 20);
+      return {
+        items,
+        next:
+          rows.length > 20
+            ? Buffer.from(
+                JSON.stringify([1, actor.orgId, q, items[19]!.id]),
+              ).toString("base64url")
+            : null,
+      };
+    });
   }
   supplier(actor: Actor, key: string, input: { name: string }) {
     return this.platform.command(

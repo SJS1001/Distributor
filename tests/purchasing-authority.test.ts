@@ -90,6 +90,8 @@ function facts(f: ReturnType<typeof fixture>) {
 function reads(f: ReturnType<typeof fixture>, actor: Actor, draftId: string) {
   return [
     () => f.app.procurement.suppliers(actor),
+    () => f.app.procurement.supplierPage(actor),
+    () => f.app.procurement.supplierChoice(actor, f.supplier),
     () => f.app.procurement.orders(actor),
     () => f.app.procurement.receipts(actor),
     () => f.app.procurement.returns(actor),

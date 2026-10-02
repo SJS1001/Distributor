@@ -70,6 +70,36 @@ test("browser: multi-line purchase review retains off-page quantities, retries o
     else await route.fulfill({ response });
   });
   await open(page);
+  const suppliers = page.getByRole("region", {
+    name: "Purchase supplier search",
+    exact: true,
+  });
+  await expect(suppliers.getByRole("status")).toHaveText(
+    "20 suppliers on this page",
+  );
+  expect(before.suppliers).toHaveLength(20);
+  expect(before.supplierNext).toBeTruthy();
+  await suppliers
+    .getByRole("button", { name: "Next purchase suppliers", exact: true })
+    .click();
+  await suppliers
+    .getByLabel("Supplier", { exact: true })
+    .selectOption({ label: "Z Supplier 35" });
+  const selectedSupplier = await suppliers
+    .getByLabel("Supplier", { exact: true })
+    .inputValue();
+  await suppliers
+    .getByLabel("Purchase supplier search", { exact: true })
+    .fill("%_");
+  await suppliers
+    .getByRole("button", { name: "Search purchase suppliers", exact: true })
+    .click();
+  await expect(suppliers.getByRole("status")).toHaveText(
+    "1 supplier on this page",
+  );
+  await expect(suppliers.getByLabel("Supplier", { exact: true })).toHaveValue(
+    selectedSupplier,
+  );
   await expect(
     page.getByRole("status").filter({ hasText: "20 products on this page" }),
   ).toBeVisible();
@@ -96,6 +126,16 @@ test("browser: multi-line purchase review retains off-page quantities, retries o
     .click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Purchase total: CAD 29.03");
+  await expect(dialog).toContainText("Supplier: Z Supplier 35");
+  await page
+    .getByRole("button", { name: "Edit purchase lines", exact: true })
+    .click();
+  await expect(suppliers.getByLabel("Supplier", { exact: true })).toHaveValue(
+    selectedSupplier,
+  );
+  await page
+    .getByRole("button", { name: "Review purchase order", exact: true })
+    .click();
   await expect(dialog).toContainText("3 units × CAD 5.01 = CAD 15.03");
   expect(bodies).toHaveLength(0);
   expect((await purchases(page)).orders).toEqual(before.orders);
@@ -140,6 +180,7 @@ test("browser: multi-line purchase review retains off-page quantities, retries o
   );
   expect(added).toHaveLength(1);
   const po = added[0];
+  expect(po.supplier_id).toBe(selectedSupplier);
   expect(
     po.lines.map((line: any) => [line.quantity, line.unit_cost]).sort(),
   ).toEqual([
@@ -454,4 +495,135 @@ test("browser: a native invalid purchase line refuses atomically and permits cor
   );
   expect(added).toHaveLength(1);
   expect(added[0].lines[0].quantity).toBe(3);
+});
+
+test("browser: supplier paging retries the failed cursor and ignores superseded and closed editor replies", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await login(page);
+  await open(page);
+  const panel = page.getByRole("region", {
+    name: "Purchase supplier search",
+    exact: true,
+  });
+  await expect(panel.getByRole("status")).toHaveText(
+    "20 suppliers on this page",
+  );
+  const selected = await panel
+    .getByLabel("Supplier", { exact: true })
+    .inputValue();
+  const requests: string[] = [];
+  await page.route("**/api/purchases/suppliers/page?**", async (route) => {
+    requests.push(route.request().url());
+    if (requests.length === 1)
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: '{"message":"Synthetic supplier page outage"}',
+      });
+    else await route.continue();
+  });
+  await panel
+    .getByRole("button", { name: "Next purchase suppliers", exact: true })
+    .click();
+  await expect(panel.getByRole("alert")).toContainText(
+    "Synthetic supplier page outage",
+  );
+  await expect(
+    panel.getByLabel("Supplier", { exact: true }).locator("option"),
+  ).toHaveCount(2);
+  await expect(panel.getByLabel("Supplier", { exact: true })).toHaveValue(
+    selected,
+  );
+  await panel
+    .getByRole("button", { name: "Retry purchase suppliers", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toHaveText(
+    "20 suppliers on this page",
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toBe(requests[1]);
+  await panel
+    .getByLabel("Supplier", { exact: true })
+    .selectOption({ label: "Z Supplier 35" });
+  const offPage = await panel
+    .getByLabel("Supplier", { exact: true })
+    .inputValue();
+  await page.unrouteAll({ behavior: "wait" });
+  for (const abandon of ["search", "close"] as const) {
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/purchases/suppliers/page?**", async (route) => {
+      const q = new URL(route.request().url()).searchParams.get("q");
+      if (q !== "held") {
+        await route.continue();
+        return;
+      }
+      const native = await route.fetch();
+      entered();
+      await held;
+      await route
+        .fulfill({
+          response: native,
+          json: {
+            items: [{ id: "abandoned", name: "ABANDONED-SUPPLIER" }],
+            next: null,
+          },
+        })
+        .catch(() => {});
+    });
+    await panel
+      .getByLabel("Purchase supplier search", { exact: true })
+      .fill("held");
+    await panel
+      .getByRole("button", { name: "Search purchase suppliers", exact: true })
+      .click();
+    await started;
+    if (abandon === "search") {
+      await panel
+        .getByLabel("Purchase supplier search", { exact: true })
+        .fill("%_");
+      await panel
+        .getByRole("button", { name: "Search purchase suppliers", exact: true })
+        .click();
+      await expect(panel.getByRole("status")).toHaveText(
+        "1 supplier on this page",
+      );
+      await expect(panel.getByLabel("Supplier", { exact: true })).toHaveValue(
+        offPage,
+      );
+    } else {
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+    await expect(
+      page.getByText("ABANDONED-SUPPLIER", { exact: false }),
+    ).toHaveCount(0);
+  }
+  await open(page);
+  await expect(panel.getByRole("status")).toHaveText(
+    "20 suppliers on this page",
+  );
+  expect(
+    await panel
+      .getByLabel("Supplier", { exact: true })
+      .locator("option")
+      .count(),
+  ).toBeLessThanOrEqual(22);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
 });

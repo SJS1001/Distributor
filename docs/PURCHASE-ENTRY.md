@@ -2,11 +2,21 @@
 
 Status: partial local engineering, 2026-10-02. All product tasks and gates remain NOT VERIFIED.
 
-Commercial staff and administrators can open **Purchasing → Purchase order**, choose a supplier and warehouse, and search catalog products by SKU or name. The search returns twenty products per page. Selected quantities and costs survive search and paging; a selected product cannot be added twice. Remove a line to return keyboard focus to search. Enter one to 100 different products, whole quantities from 1 to 100,000 and explicit unit costs from 0 to 1,000,000,000 cents in the organization's CAD or USD currency. A zero cost must be entered explicitly. Selling prices do not prefill purchase costs.
+Commercial staff and administrators can open **Purchasing → Purchase order**, search suppliers by name, choose a warehouse, and search catalog products by SKU or name. Both searches return twenty descriptors per page. The chosen supplier, selected quantities and costs survive search and paging; a selected product cannot be added twice. Remove a line to return keyboard focus to search. Enter one to 100 different products, whole quantities from 1 to 100,000 and explicit unit costs from 0 to 1,000,000,000 cents in the organization's CAD or USD currency. A zero cost must be entered explicitly. Selling prices do not prefill purchase costs.
 
 **Review purchase order** shows supplier, warehouse, individual quantities and costs, and an exact total of the entered line costs. Tax, freight and supplier payments are not added. **Edit purchase lines** returns to the same quantities before submission. Canceling an unsubmitted review creates no order. **Create reviewed purchase order** invokes the existing native purchasing command. Creating an order does not receive stock; use separate receipt/scanning controls for partial deliveries, inspection and original-cost movements.
 
 The catalog includes products retired for customer ordering and labels them accordingly. Retirement currently prevents new customer quotes/acceptance; it is not an approved supplier purchasing discontinuation rule. Saved receipt drafts retain their existing active-product/SKU checks. An operator must resolve any retired-product receiving restriction before using that draft workflow; this editor does not change it.
+
+## Find a supplier
+
+Enter a name in **Purchase supplier search**, then choose **Search purchase suppliers** or press Enter. Search accepts at most 120 characters, trims surrounding whitespace and folds ASCII case; `%` and `_` are literal characters. **Next purchase suppliers** fetches the next twenty results. Searching again starts at the first page. The initial choice comes from the first bounded dashboard page; review it explicitly before creating the order.
+
+The selected supplier remains available when it is outside the displayed page or search. The select contains at most twenty page results plus that retained choice. A failed page removes unavailable page choices, keeps the selected supplier and offers **Retry purchase suppliers** for the same query and cursor. Superseded or closed-editor responses are discarded. Review/edit preserves an off-page supplier; submitted recovery retains its exact identifier and description independently of subsequent searches.
+
+Native `supplierPage` and `GET /api/purchases/suppliers/page?q=…&after=…` return only `id`, `name` and a next cursor. Cursors bind the organization, normalized query and current anchor; they are neither authorization nor a snapshot. Native `supplierChoice` and `GET /api/purchases/suppliers/:supplierId` resolve one supplier within current organization authority, including suppliers outside the dashboard page. Current warehouse/commercial/finance/admin authority and password restrictions apply before reads; HTTP responses use `no-store`. The directory is organization-wide; native purchasing and receiving commands still enforce their own warehouse and business permissions.
+
+The legacy `suppliers` operation and the `suppliers` field of `GET /api/purchases` now return the first twenty descriptors; the HTTP dashboard also exposes `supplierNext`. Clients requiring more suppliers must traverse the page operation. These reads create no order, stock or money effect.
 
 ## Recover a submitted attempt
 
@@ -22,4 +32,6 @@ A native validation/not-found refusal (HTTP 400/404) clears the uncommitted atte
 
 See [the local engineering receipt](evidence/LOCAL-PURCHASE-ENTRY-2026-10-02.md). Synthetic browser checks cover page/search-independent quantities, explicit blank/zero costs, review/edit/cancel, phone bounds, lost-response reload and sign-out, cross-tab adoption, damaged storage, atomic native refusal, separate partial receipts, duplicate/over-receipt refusal and original stock costs. These are direct workstation checks using production browser assets and native HTTP/SQLite fixtures.
 
-No backend, schema, dependency or Actions workflow changes are required. Supplier/warehouse choices and legacy dashboard reads remain unbounded. Browser recovery does not coordinate different browsers, devices or cleared/copied storage; no offline purchasing contract is claimed. Live catalog traversal is not a snapshot, and search SQL costs and concurrent workload remain unqualified. Actual providers, devices, residency, production operations and human acceptance remain pending.
+The [supplier search receipt](evidence/LOCAL-SUPPLIER-PAGING-2026-10-02.md) records the subsequent bounded native supplier reads, authority checks, persisted-row conservation, phone paging/retry/cancellation and off-page exact-attempt recovery. No schema, dependency or Actions workflow change is required.
+
+Warehouse choices, receipts and other legacy dashboard reads remain unbounded. Browser recovery does not coordinate different browsers, devices or cleared/copied storage; no offline purchasing contract is claimed. Live supplier/catalog traversal is not a snapshot; restart the search after directory changes. Search SQL scan/sort costs and concurrent workload remain unqualified. Actual providers, devices, residency, production operations and human acceptance remain pending.

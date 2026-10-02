@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Modal } from "./modal.tsx";
 import { request, RequestError } from "./api.ts";
+import { SupplierPicker } from "./supplier-picker.tsx";
+import type { SupplierChoice } from "../shared/supplier-search.ts";
 import type {
   CatalogPage,
   CatalogProduct,
@@ -198,7 +200,9 @@ export function PurchaseEntry({
   const [review, setReview] = useState<Review | null>(
     recovery.pending?.review ?? null,
   );
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
+  const [supplier, setSupplier] = useState<SupplierChoice | null>(
+    suppliers[0] ?? null,
+  );
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [lines, setLines] = useState<Line[]>([]);
   const [search, setSearch] = useState("");
@@ -222,8 +226,7 @@ export function PurchaseEntry({
     if (submitting.current || recovery.error) return;
     setError("");
     if (!review) {
-      const supplier = suppliers.find((s) => s.id === supplierId),
-        warehouse = warehouses.find((w) => w.id === warehouseId);
+      const warehouse = warehouses.find((w) => w.id === warehouseId);
       if (!supplier || !warehouse || !lines.length) {
         setError("Choose a supplier, warehouse and at least one product.");
         return;
@@ -261,7 +264,7 @@ export function PurchaseEntry({
           quantity: String(input[i]!.quantity),
           unitCost: String(input[i]!.unitCost),
         })),
-        payload: { supplierId, warehouseId, lines: input },
+        payload: { supplierId: supplier.id, warehouseId, lines: input },
       });
       return;
     }
@@ -338,24 +341,7 @@ export function PurchaseEntry({
   };
   const edit = (
     <>
-      <label>
-        Supplier
-        <select
-          aria-label="Supplier"
-          required
-          value={supplierId}
-          onChange={(e) => setSupplierId(e.target.value)}
-        >
-          <option value="" disabled>
-            Select…
-          </option>
-          {suppliers.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SupplierPicker selected={supplier} choose={setSupplier} />
       <label>
         Warehouse
         <select
