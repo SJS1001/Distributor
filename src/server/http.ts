@@ -1,4 +1,8 @@
 import {
+  purchaseQueueStates,
+  type PurchaseQueueState,
+} from "../shared/purchase-queue.ts";
+import {
   orderQueueStates,
   type OrderQueueState,
 } from "../shared/order-queue.ts";
@@ -1478,13 +1482,39 @@ export async function createHttp(app: Application, options: HttpOptions) {
       ),
   );
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));
-  http.get("/api/purchases", async (request) => ({
-    suppliers: app.procurement.suppliers(actor(request)),
-    orders: app.procurement.orders(actor(request)),
-    receipts: app.procurement.receipts(actor(request)),
-    returns: app.procurement.returns(actor(request)),
-    drafts: app.procurement.drafts.list(actor(request)),
-  }));
+  http.get("/api/purchases", async (request) => {
+    const current = actor(request),
+      page = app.procurement.orderPage(current);
+    return {
+      suppliers: app.procurement.suppliers(current),
+      orders: page.items,
+      orderNext: page.next,
+      receipts: app.procurement.receipts(current),
+      returns: app.procurement.returns(current),
+      drafts: app.procurement.drafts.list(current),
+    };
+  });
+  http.get<{ Querystring: { after?: string; state?: PurchaseQueueState } }>(
+    "/api/purchases/orders/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 512 },
+            state: choice(...purchaseQueueStates),
+          },
+          ["after", "state"],
+        ),
+      },
+    },
+    async (request) => app.procurement.orderPage(actor(request), request.query),
+  );
+  http.get<{ Params: { orderId: string } }>(
+    "/api/purchases/orders/:orderId",
+    { schema: { params: obj({ orderId: str }) } },
+    async (request) =>
+      app.procurement.order(actor(request), request.params.orderId),
+  );
   http.get<{ Params: { returnId: string }; Querystring: { after?: string } }>(
     "/api/purchases/returns/:returnId/history",
     {

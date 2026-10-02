@@ -1,3 +1,4 @@
+import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
 import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
@@ -102,6 +103,11 @@ function App() {
     data?.orderNext,
     page === "Orders" && !!actor && !busy,
   );
+  const purchaseQueue = usePurchaseQueue(
+    extra.purchases?.orders,
+    extra.purchases?.orderNext,
+    page === "Purchasing" && !!actor && !busy,
+  );
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -151,6 +157,7 @@ function App() {
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
     orderQueue.stop();
+    purchaseQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
@@ -342,6 +349,7 @@ function App() {
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
     orderQueue.stop();
+    purchaseQueue.stop();
     claimQueue.stop();
     setCoverageOpen(false);
     coverageOpener.current = null;
@@ -383,6 +391,7 @@ function App() {
   };
   const signOut = () => {
     orderQueue.stop();
+    purchaseQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
@@ -978,6 +987,7 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 orderQueue.stop();
+                purchaseQueue.stop();
                 claimQueue.stop();
                 setPage(p);
                 setDialog((current) =>
@@ -2569,11 +2579,12 @@ function App() {
                   ),
                 )}
             </div>
+            <PurchaseQueueControls queue={purchaseQueue} />
             {table(
               ["Purchase order", "Warehouse", "Lines", "Status", "Actions"],
-              extra.purchases?.orders ?? [],
+              purchaseQueue.items,
               (po: Item) => [
-                po.id.slice(0, 8),
+                <span title={po.id}>{po.id.slice(0, 8)}</span>,
                 warehouseName(po.warehouse_id),
                 po.lines.map((l: Item) => (
                   <div key={l.id}>
@@ -2611,12 +2622,9 @@ function App() {
                   {draft.state === "draft" && can("warehouse") && (
                     <>
                       {button("Resume scans", () =>
-                        receiptDraft(
-                          extra.purchases.orders.find(
-                            (po: Item) => po.id === draft.po_id,
-                          ),
-                          draft,
-                        ),
+                        // The draft already owns the exact purchase and line IDs;
+                        // resuming never depends on the visible queue page.
+                        receiptDraft({ id: draft.po_id }, draft),
                       )}
                       {button("Review and receive", () =>
                         open(
@@ -2806,13 +2814,7 @@ function App() {
                                   (p: Item) =>
                                     p.po_id !== r.po_id &&
                                     p.supplier_id === r.supplier_id &&
-                                    extra.purchases.orders
-                                      .find((o: Item) => o.id === p.po_id)
-                                      ?.lines.some(
-                                        (l: Item) =>
-                                          l.id === p.line_id &&
-                                          l.product_id === r.result.productId,
-                                      ),
+                                    p.product_id === r.result.productId,
                                 ),
                                 (p) =>
                                   `${p.delivery_ref} · ${p.quantity} received`,
@@ -4530,6 +4532,7 @@ function App() {
                     onCanadaPost={(warehouseId) => {
                       if (!warehouseId) return;
                       orderQueue.stop();
+                      purchaseQueue.stop();
                       claimQueue.stop();
                       setPage("Orders");
                       setCanadaPostWarehouse(warehouseId);

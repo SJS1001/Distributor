@@ -1,3 +1,8 @@
+import type { SQLInputValue } from "node:sqlite";
+import {
+  purchaseQueueStates,
+  type PurchaseQueueState,
+} from "../shared/purchase-queue.ts";
 import {
   canonical,
   check,
@@ -41,6 +46,7 @@ type PurchaseReceipt = {
   created_at: string;
   warehouse_id: string;
   supplier_id: string;
+  product_id: string;
 };
 type SupplierReturnResult = {
   id: string;
@@ -77,7 +83,7 @@ export class Procurement {
   readonly drafts: ReceiptDrafts;
   readonly followups: SupplierFollowups;
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private catalog: Catalog,
     private inventory: Inventory,
@@ -288,25 +294,128 @@ export class Procurement {
       },
     );
   }
+  private orderScope(actor: Actor) {
+    const params: SQLInputValue[] = [actor.orgId];
+    let where = "org_id=?";
+    if (actor.role === "warehouse") {
+      where += actor.sites.length
+        ? ` AND warehouse_id IN(${actor.sites.map(() => "?").join(",")})`
+        : " AND 0";
+      params.push(...actor.sites);
+    }
+    return { where, params };
+  }
+  private orderRecord(actor: Actor, orderId: string) {
+    const scope = this.orderScope(actor);
+    const row = this.store.get<PurchaseOrder>(
+      `SELECT * FROM procurement_orders WHERE ${scope.where} AND id=?`,
+      ...scope.params,
+      text(orderId, "Purchase order ID", 128),
+    );
+    check(
+      row,
+      "NOT_FOUND",
+      "Purchase order is unavailable in your current scope.",
+      404,
+    );
+    return row;
+  }
+  private orderView(actor: Actor, row: PurchaseOrder) {
+    return {
+      ...row,
+      lines: this.store.all(
+        "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=? ORDER BY id",
+        actor.orgId,
+        row.id,
+      ),
+    };
+  }
+  order(actor: Actor, orderId: string) {
+    return this.database.transaction(() => {
+      actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
+      return this.orderView(actor, this.orderRecord(actor, orderId));
+    });
+  }
+  // Full projection retained for owning-module controls and local fixtures.
+  // HTTP/operator queues use orderPage and explicit off-page order detail.
   orders(actor: Actor) {
     actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
+    const scope = this.orderScope(actor);
     return this.store
       .all<PurchaseOrder>(
-        "SELECT * FROM procurement_orders WHERE org_id=? ORDER BY created_at DESC",
-        actor.orgId,
+        `SELECT * FROM procurement_orders WHERE ${scope.where} ORDER BY created_at DESC,id DESC`,
+        ...scope.params,
       )
-      .filter(
-        (po) =>
-          actor.role !== "warehouse" || actor.sites.includes(po.warehouse_id),
-      )
-      .map((po) => ({
-        ...po,
-        lines: this.store.all(
-          "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=?",
-          actor.orgId,
-          po.id,
-        ),
-      }));
+      .map((row) => this.orderView(actor, row));
+  }
+  orderPage(
+    actor: Actor,
+    input: { after?: string; state?: PurchaseQueueState } = {},
+  ) {
+    return this.database.transaction(() => {
+      actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
+      const state = input.state ?? null;
+      check(
+        state === null || purchaseQueueStates.includes(state),
+        "VALIDATION",
+        "Choose a supported purchase order state.",
+        400,
+      );
+      const scope = this.orderScope(actor);
+      let anchor: PurchaseOrder | undefined;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Purchase cursor", 512);
+        let cursor: unknown;
+        try {
+          const decoded = Buffer.from(encoded, "base64url");
+          check(
+            decoded.toString("base64url") === encoded,
+            "VALIDATION",
+            "Invalid purchase cursor.",
+            400,
+          );
+          cursor = JSON.parse(decoded.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid purchase cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 3 &&
+            cursor[0] === 1 &&
+            cursor[1] === state &&
+            typeof cursor[2] === "string" &&
+            cursor[2].length > 0 &&
+            cursor[2].length <= 128,
+          "VALIDATION",
+          "Purchase cursor does not match this queue.",
+          400,
+        );
+        // Reauthorize the anchor before filtering; completing it does not invalidate traversal.
+        anchor = this.orderRecord(actor, cursor[2]);
+      }
+      if (state !== null) {
+        scope.where += " AND state=?";
+        scope.params.push(state);
+      }
+      if (anchor) {
+        scope.where += " AND (created_at<? OR (created_at=? AND id<?))";
+        scope.params.push(anchor.created_at, anchor.created_at, anchor.id);
+      }
+      const rows = this.store.all<PurchaseOrder>(
+        `SELECT * FROM procurement_orders WHERE ${scope.where} ORDER BY created_at DESC,id DESC LIMIT 21`,
+        ...scope.params,
+      );
+      const items = rows.slice(0, 20).map((row) => this.orderView(actor, row));
+      return {
+        items,
+        next:
+          rows.length > 20
+            ? Buffer.from(JSON.stringify([1, state, items[19]!.id])).toString(
+                "base64url",
+              )
+            : null,
+      };
+    });
   }
   receive(actor: Actor, key: string, input: ReceiptInput) {
     return this.platform.command(
@@ -407,7 +516,7 @@ export class Procurement {
     }));
     return this.store
       .all<PurchaseReceipt>(
-        "SELECT r.*,p.warehouse_id,p.supplier_id FROM procurement_receipts r JOIN procurement_orders p ON p.org_id=r.org_id AND p.id=r.po_id WHERE r.org_id=? ORDER BY r.created_at DESC,r.id",
+        "SELECT r.*,p.warehouse_id,p.supplier_id,l.product_id FROM procurement_receipts r JOIN procurement_orders p ON p.org_id=r.org_id AND p.id=r.po_id JOIN procurement_lines l ON l.org_id=r.org_id AND l.po_id=r.po_id AND l.id=r.line_id WHERE r.org_id=? ORDER BY r.created_at DESC,r.id",
         actor.orgId,
       )
       .filter(
