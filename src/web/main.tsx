@@ -4,6 +4,7 @@ import {
 } from "./supplier-return-queue.tsx";
 import { useStockQueue, StockQueueControls } from "./stock-queue.tsx";
 import { StockHistory } from "./stock-history.tsx";
+import { BinRelocation, type BinSelection } from "./bin-relocation.tsx";
 import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
@@ -131,6 +132,7 @@ function App() {
     serial?: string;
   } | null>(null);
   const stockHistoryOpener = useRef<HTMLElement | null>(null);
+  const [binSelection, setBinSelection] = useState<BinSelection | null>(null);
   const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -185,6 +187,7 @@ function App() {
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
     setStockHistory(null);
+    setBinSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
@@ -416,6 +419,7 @@ function App() {
     setProviderHistoryAccount(null);
     setSupplierHistoryId(null);
     setStockHistory(null);
+    setBinSelection(null);
     stockHistoryOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
@@ -441,6 +445,7 @@ function App() {
   };
   const signOut = () => {
     setStockHistory(null);
+    setBinSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopCatalogRead();
@@ -1251,6 +1256,7 @@ function App() {
                 claimQueue.stop();
                 setPage(p);
                 setStockHistory(null);
+                setBinSelection(null);
                 stockHistoryOpener.current = null;
                 setPurchaseEntryOpen(false);
                 setDialog((current) =>
@@ -2190,6 +2196,21 @@ function App() {
                 }}
               />
             )}
+            {can("warehouse") && (
+              <BinRelocation
+                key={`${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                selection={binSelection}
+                close={() => setBinSelection(null)}
+                saved={async () => {
+                  await refresh();
+                  setNotice(
+                    "Bin move confirmed. Review current Inventory before further physical work.",
+                  );
+                }}
+              />
+            )}
             <StockQueueControls
               queue={stockQueue}
               products={data.products}
@@ -2303,49 +2324,11 @@ function App() {
                     u.quantity > 0 &&
                     u.reserved === 0 &&
                     button("Move to bin", () =>
-                      open(
-                        "Move stock within warehouse",
-                        [
-                          {
-                            name: "sourceBin",
-                            label: "Confirm current bin",
-                            scan: "single",
-                          },
-                          {
-                            name: "bin",
-                            label: "Destination bin in this warehouse",
-                            scan: "single",
-                          },
-                          ...(u.serial
-                            ? [
-                                {
-                                  name: "serial",
-                                  label: "Scan stock serial",
-                                  scan: "single" as const,
-                                },
-                              ]
-                            : [
-                                {
-                                  name: "quantity",
-                                  label: "Units to move",
-                                  type: "number" as const,
-                                  value: u.quantity,
-                                  min: 1,
-                                  max: u.quantity,
-                                },
-                              ]),
-                          reason,
-                        ],
-                        (v) =>
-                          command("stock.relocate", {
-                            ...v,
-                            unitId: u.id,
-                            revision: u.revision,
-                            serial: u.serial ? v.serial : null,
-                          }),
-                        `Move all ${u.quantity} units of ${productName(u.product_id)}${u.serial ? `, serial ${u.serial}` : " in this bulk lot, or select a smaller quantity to leave the remainder in its current bin"} from ${warehouseName(u.warehouse_id)} / ${u.bin}. Confirm both bins and the physical stock. The warehouse, original cost and condition remain the same. Reserved stock cannot move. For another warehouse, use Transfer.`,
-                        "Confirm bin move",
-                      ),
+                      setBinSelection({
+                        stock: u as BinSelection["stock"],
+                        product: productName(u.product_id),
+                        warehouse: warehouseName(u.warehouse_id),
+                      }),
                     )}
                   {can("warehouse") &&
                     u.state === "stock" &&

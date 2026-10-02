@@ -91,7 +91,7 @@ test("browser: phone bin relocation refuses wrong serial then recovers an identi
     .click();
   await expect(dialog(page).getByRole("alert")).toBeVisible();
   await dialog(page)
-    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .getByRole("button", { name: "Retry exact bin move", exact: true })
     .click();
   await expect(dialog(page)).toHaveCount(0);
   expect(attempts).toHaveLength(2);
@@ -177,7 +177,7 @@ test("browser: bin review rejects changed stock, cancellation conserves facts an
   await expect(bulkRow).toContainText("6 / 0 / 0");
 });
 
-test("browser: phone partial bulk putaway leaves four units and recovers the same two-unit move after a lost response", async ({
+test("browser: phone partial bulk putaway leaves four units and recovers the same two-unit move after reload and sign-out following a lost response", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -216,8 +216,36 @@ test("browser: phone partial bulk putaway leaves four units and recovers the sam
     .getByRole("button", { name: "Confirm bin move", exact: true })
     .click();
   await expect(dialog(page).getByRole("alert")).toBeVisible();
+  await expect(
+    dialog(page).getByLabel("Units to move", { exact: true }),
+  ).toHaveCount(0);
   await dialog(page)
-    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.reload();
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Inventory", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Review retained bin move", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signIn(page, "admin@example.test");
+  await expect(
+    page.getByRole("button", { name: "Review retained bin move", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signIn(page, "warehouse@example.test");
+  await page
+    .getByRole("button", { name: "Review retained bin move", exact: true })
+    .click();
+  await expect(dialog(page)).toContainText("PARTIAL-PHONE");
+  await expect(dialog(page)).toContainText(
+    "Synthetic physically checked bin move",
+  );
+  await dialog(page)
+    .getByRole("button", { name: "Retry exact bin move", exact: true })
     .click();
   await expect(dialog(page)).toHaveCount(0);
   expect(attempts).toHaveLength(2);
@@ -250,4 +278,236 @@ test("browser: phone partial bulk putaway leaves four units and recovers the sam
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("browser: bin move locks competing tabs and recovers one retained command from another tab", async ({
+  page,
+  context,
+}) => {
+  await signIn(page, "warehouse@example.test");
+  const before = (await stock(page)).find((u) => u.serial === "S1")!;
+  const other = await context.newPage();
+  await other.goto(origin);
+  await other
+    .getByRole("navigation")
+    .getByRole("button", { name: "Inventory", exact: true })
+    .click();
+  await other
+    .getByRole("row")
+    .filter({ hasText: "S2 · stock" })
+    .getByRole("button", { name: "Move to bin", exact: true })
+    .click();
+  const second = (await stock(page)).find((u) => u.serial === "S2")!;
+  await fill(other, second.bin, "OTHER-TAB-REFUSED", "S2");
+  let release!: () => void, reached!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  let original: { key: string; payload: unknown }, result: unknown;
+  await page.route("**/api/commands/stock.relocate", async (route) => {
+    original = {
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    };
+    reached();
+    await gate;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    result = await response.json();
+    await route.abort("failed");
+  });
+  await page
+    .getByRole("row")
+    .filter({ hasText: "S1 · stock" })
+    .getByRole("button", { name: "Move to bin", exact: true })
+    .click();
+  await fill(page, before.bin, "CROSS-TAB-BIN", "S1");
+  await dialog(page)
+    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .click();
+  await started;
+  let calls = 0;
+  await other.route("**/api/commands/stock.relocate", async (route) => {
+    calls++;
+    expect({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    }).toEqual(original);
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toEqual(result);
+    await route.fulfill({ response });
+  });
+  try {
+    await expect(dialog(other)).toContainText("CROSS-TAB-BIN");
+    await expect(
+      dialog(other).getByLabel("Destination bin in this warehouse", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await dialog(other)
+      .getByRole("button", { name: "Retry exact bin move", exact: true })
+      .click();
+    await expect(dialog(other).getByRole("alert")).toContainText(
+      "Another tab is submitting",
+    );
+    expect(calls).toBe(0);
+  } finally {
+    release();
+  }
+  await expect(dialog(page).getByRole("alert")).toBeVisible();
+  await dialog(other)
+    .getByRole("button", { name: "Retry exact bin move", exact: true })
+    .click();
+  await expect(dialog(other)).toHaveCount(0);
+  expect(calls).toBe(1);
+  const after = await stock(other);
+  expect(after.find((u) => u.id === before.id)).toEqual({
+    ...before,
+    bin: "CROSS-TAB-BIN",
+    revision: before.revision + 1,
+  });
+  expect(after.find((u) => u.id === second.id)).toEqual(second);
+  await other.close();
+});
+
+test("browser: malformed bin recovery and storage failures block transport and preserve stock", async ({
+  page,
+}) => {
+  await signIn(page, "warehouse@example.test");
+  const before = await stock(page),
+    unit = before.find((u) => u.serial === "S1")!;
+  const key = await page.evaluate(async () => {
+    const session = await (await fetch("/api/session")).json();
+    return `distributor-bin-move:${session.actor.orgId}:${session.actor.id}`;
+  });
+  let calls = 0;
+  page.on("request", (r) => {
+    if (r.url().endsWith("/api/commands/stock.relocate")) calls++;
+  });
+  await page.evaluate((key) => localStorage.setItem(key, "{damaged"), key);
+  await page.reload();
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Inventory", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("region", { name: "Bin move recovery", exact: true })
+      .getByRole("alert"),
+  ).toContainText("Reconcile the previous attempt");
+  await page
+    .getByRole("row")
+    .filter({ hasText: "S1 · stock" })
+    .getByRole("button", { name: "Move to bin", exact: true })
+    .click();
+  await fill(page, unit.bin, "DAMAGED-STORAGE-BLOCKED", "S1");
+  await dialog(page)
+    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .click();
+  await expect(dialog(page).getByRole("alert")).toContainText(
+    "Reconcile the previous attempt",
+  );
+  expect(calls).toBe(0);
+  expect(await stock(page)).toEqual(before);
+  // Test-only repair after proving no transport; real operators must reconcile.
+  await page.evaluate((key) => localStorage.removeItem(key), key);
+  await page.reload();
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Inventory", exact: true })
+    .click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: "S1 · stock" })
+    .getByRole("button", { name: "Move to bin", exact: true })
+    .click();
+  await fill(page, unit.bin, "WRITE-STORAGE-BLOCKED", "S1");
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith("distributor-bin-move:"))
+        throw Error("Synthetic storage write refused");
+      original.call(this, key, value);
+    };
+  });
+  await dialog(page)
+    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .click();
+  await expect(dialog(page).getByRole("alert")).toContainText(
+    "Synthetic storage write refused",
+  );
+  expect(calls).toBe(0);
+  expect(await stock(page)).toEqual(before);
+});
+
+test("browser: malformed committed bin reply retains original details across navigation and exact recovery", async ({
+  page,
+}) => {
+  await signIn(page, "warehouse@example.test");
+  const before = (await stock(page)).find((u) => u.serial === "S2")!;
+  let result: any;
+  const attempts: { key: string; payload: unknown }[] = [];
+  await page.route("**/api/commands/stock.relocate", async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    if (attempts.length === 1) {
+      result = body;
+      await route.fulfill({
+        response,
+        json: { ...body, bin: "UNREVIEWED-REPLY-BIN" },
+      });
+    } else {
+      expect(body).toEqual(result);
+      await route.fulfill({ response });
+    }
+  });
+  await page
+    .getByRole("row")
+    .filter({ hasText: "S2 · stock" })
+    .getByRole("button", { name: "Move to bin", exact: true })
+    .click();
+  await fill(page, before.bin, "CONFIRMED-REPLY-BIN", "S2");
+  await dialog(page)
+    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .click();
+  await expect(dialog(page).getByRole("alert")).toContainText(
+    "reply could not be confirmed",
+  );
+  await expect(dialog(page)).toContainText("CONFIRMED-REPLY-BIN");
+  await expect(dialog(page)).not.toContainText("UNREVIEWED-REPLY-BIN");
+  await dialog(page)
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Overview", exact: true })
+    .click();
+  await expect(dialog(page)).toHaveCount(0);
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Inventory", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Review retained bin move", exact: true })
+    .click();
+  await dialog(page)
+    .getByRole("button", { name: "Retry exact bin move", exact: true })
+    .click();
+  await expect(dialog(page)).toHaveCount(0);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect((await stock(page)).find((u) => u.id === before.id)).toEqual({
+    ...before,
+    bin: "CONFIRMED-REPLY-BIN",
+    revision: before.revision + 1,
+  });
 });
