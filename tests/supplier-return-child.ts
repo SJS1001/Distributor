@@ -1,7 +1,8 @@
 import { Application } from "../src/server/application.ts";
 import type { Actor } from "../src/server/core.ts";
+import type { Region } from "../src/server/iam.ts";
 let app: Application;
-let input: { path: string; actor: Actor; key: string } & (
+let input: { path: string; actor: Actor; key: string; region?: Region } & (
   | {
       operation: "return";
       payload: Parameters<Application["procurement"]["returnStock"]>[2];
@@ -14,7 +15,7 @@ let input: { path: string; actor: Actor; key: string } & (
 process.on("message", (message: any) => {
   if (message.action === "init") {
     input = message.input;
-    app = new Application(input.path);
+    app = new Application(input.path, input.region ?? "CA");
     process.send?.({ ready: true });
     return;
   }

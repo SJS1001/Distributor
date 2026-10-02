@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — split-stock downstream qualification, 2026-10-02
+
+- Resumed published parent `16612546e27047017bb6a397f45d1a880768faf7` on `codex/local-distributor-checkpoint` under the owner's source/test/documentation push authorization. Fresh GitHub checks confirm the matching remote, push permission and zero workflows/runs. No CI runner, delegated session, provider request, PR, merge or deployment is started.
+- Added eight CA/US native qualification checks for split stock across warehouse transfers, supplier handovers, count gains, original receipt capacity, current warehouse/administrator authority, original-cost accounting, supplier credits and restart/exact retries. Two independent processes contest different descendants of the same receipt; exactly one commits when their combined handovers exceed that receipt. No production, schema, dependency, license or workflow change.
+- Fresh full native checks pass 1,955/1,955; focused native checks pass 52/52. TypeScript and formatting exit zero. No browser, build or React scan rerun is claimed for this test-only change. Commands, tested input hashes and private log hashes are recorded in [the downstream receipt](evidence/LOCAL-PARTIAL-BIN-DOWNSTREAM-2026-10-02.md) and its machine companion.
+- Self-review covers current authority before cached results, receipt capacity across distinct lots, original quantity/cost lineage, warehouse visibility, immutable accounting files, separate supplier-credit differences and independent-process races. Tests use owning native operations and synthetic records; no internal SQL assertions or provider mocks establish these outcomes.
+- The bounded native downstream gap left by the partial-bin checkpoint is covered. Continue supplier discontinuation policy and broader receiving/warehouse qualification. Browser downstream journeys, bin directory/capacity, actual devices/custody, production load/security/residency/providers and operator acceptance remain open. All 44 tasks and 10 gates remain NOT VERIFIED; the full system is incomplete.
+
 ## Latest continuation — partial bulk-bin moves, 2026-10-02
 
 - Resumed published parent `7060f3f6568dbcbfc00405fc83b732e676995b32` on `codex/local-distributor-checkpoint`. Owner authorized committing and pushing the current Distributor snapshot. GitHub push permission and zero workflows are freshly confirmed; no CI runner, delegated session, provider request, PR, merge or deployment is started.

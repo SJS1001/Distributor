@@ -2,6 +2,8 @@
 
 2026-09-30: full system implementation authorized after the planning package. Product gates remain NOT VERIFIED. Historical planning receipts describe earlier content; preserve them.
 
+2026-10-02: [split-stock downstream qualification](evidence/LOCAL-PARTIAL-BIN-DOWNSTREAM-2026-10-02.md) covers shared original receipt capacity, warehouse transfer/loss/recovery lineage, current authority, original-cost accounting and supplier-credit differences in eight new CA/US native checks. The fresh full native suite passes 1,955 tests; these bounded synthetic results do not verify any full product gate or production operation.
+
 The [local event runbook](EVENTS.md) and [event delivery receipt](evidence/LOCAL-EVENT-DELIVERY-2026-10-01.md) add bounded optional metadata processing, permanent receipts, fenced attempts, redacted scoped diagnostics and reviewed retries. Synthetic process termination/restart and competing workers exercise one local effect per original event. Production scheduling, retention/load/clock/recovery/residency, mutable aggregate contracts and full gate qualification remain open.
 
 ## Technical foundation
