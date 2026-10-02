@@ -215,6 +215,7 @@ export class Inventory {
       );
   }
   warehouse(actor: Actor, warehouseId: string) {
+    actor = this.custodyReader(actor);
     return this.configurationWarehouse(actor.orgId, warehouseId);
   }
   // Trusted startup validation; no invented user principal or provider I/O.
@@ -271,6 +272,7 @@ export class Inventory {
     );
   }
   unit(actor: Actor, unitId: string) {
+    actor = this.custodyReader(actor);
     const row = this.store.get<Unit>(
       "SELECT * FROM inventory_units WHERE org_id=? AND id=?",
       actor.orgId,
@@ -317,6 +319,7 @@ export class Inventory {
       }));
   }
   availability(actor: Actor, productId: string, warehouseId: string) {
+    actor = this.custodyReader(actor);
     this.catalog.product(actor, productId);
     this.warehouse(actor, warehouseId);
     return this.store
@@ -374,7 +377,7 @@ export class Inventory {
     },
     reference: string,
   ) {
-    permit(actor, []);
+    actor = this.custodyActor(actor, []);
     const u = this.unit(actor, input.unitId);
     site(actor, u.warehouse_id);
     check(
@@ -454,7 +457,7 @@ export class Inventory {
   }
   // Internal sales controls from inventory-owned allocations and shipment deductions.
   salesEvidence(actor: Actor): InventorySalesEvidence {
-    permit(actor, ["finance"]);
+    actor = this.custodyActor(actor, ["finance"]);
     return {
       allocations: this.store.all(
         `SELECT a.id,a.order_id AS "order",a.product_id AS product,a.warehouse_id AS warehouse,
@@ -483,8 +486,9 @@ export class Inventory {
       ),
     };
   }
-  // Internal owning operation: Application.reconciliation supplies authority and snapshot.
+  // Internal owning operation: Application.reconciliation supplies the snapshot; recheck finance authority here.
   controlTotals(actor: Actor) {
+    actor = this.custodyActor(actor, ["finance"]);
     return stockControls(this.store, actor);
   }
   private movement(
@@ -531,7 +535,7 @@ export class Inventory {
     });
   }
   assertNewSerials(actor: Actor, serials: string[]) {
-    permit(actor, ["warehouse"]);
+    actor = this.custodyActor(actor, ["warehouse"]);
     for (const serial of serials)
       check(
         !this.store.get(
@@ -556,7 +560,7 @@ export class Inventory {
     },
     reference: string,
   ) {
-    permit(actor, ["warehouse"]);
+    actor = this.custodyActor(actor, ["warehouse"]);
     site(actor, input.warehouseId);
     this.warehouse(actor, input.warehouseId);
     const product = this.catalog.product(actor, input.productId);
@@ -623,7 +627,7 @@ export class Inventory {
     return unitIds;
   }
   validateOpening(actor: Actor, input: unknown): OpeningRow {
-    permit(actor, []);
+    actor = this.custodyActor(actor, []);
     check(
       input && typeof input === "object" && !Array.isArray(input),
       "VALIDATION",
@@ -715,6 +719,7 @@ export class Inventory {
     reference: string,
     reason: string,
   ) {
+    actor = this.custodyActor(actor, []);
     // The migration owner invokes this in its reviewed batch transaction. Recheck all rows before any insertion.
     const checked = rows.map((row) => this.validateOpening(actor, row));
     return checked.map((row) => {
@@ -891,6 +896,19 @@ export class Inventory {
             : (c.observed_quantity - c.expected_quantity) * c.unit_cost,
         result: decision_result ? JSON.parse(decision_result) : null,
       }));
+  }
+  // Internal projections feed owning modules, which resolve customer entitlement
+  // and business/site context before exposing them. Destination-only transfer
+  // receivers must still resolve a unit whose recorded warehouse is the source.
+  private custodyReader(actor: Actor) {
+    return this.custodyActor(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "buyer",
+      "support",
+    ]);
   }
   private custodyActor(actor: Actor, roles: Actor["role"][]) {
     const current = this.identity.currentActor(actor);
@@ -1499,6 +1517,7 @@ export class Inventory {
     warehouseId: string,
     requested: number,
   ): number {
+    actor = this.custodyActor(actor, ["commercial", "buyer"]);
     const units = this.store.all<Unit>(
       "SELECT * FROM inventory_units WHERE org_id=? AND product_id=? AND warehouse_id=? AND condition='usable' AND state='stock' ORDER BY rowid",
       actor.orgId,
@@ -1525,6 +1544,7 @@ export class Inventory {
     return requested - remaining;
   }
   allocations(actor: Actor, orderId: string) {
+    actor = this.custodyReader(actor);
     return this.store.all<Allocation>(
       "SELECT * FROM inventory_allocations WHERE org_id=? AND order_id=? ORDER BY rowid",
       actor.orgId,
@@ -1532,6 +1552,7 @@ export class Inventory {
     );
   }
   pick(actor: Actor, allocationId: string, serial: string | null) {
+    actor = this.custodyActor(actor, ["warehouse"]);
     const row = this.store.get<Allocation>(
       "SELECT * FROM inventory_allocations WHERE org_id=? AND id=?",
       actor.orgId,
@@ -1557,6 +1578,7 @@ export class Inventory {
     return row;
   }
   unpick(actor: Actor, allocationId: string) {
+    actor = this.custodyActor(actor, ["warehouse"]);
     const row = this.store.get<Allocation>(
       "SELECT * FROM inventory_allocations WHERE org_id=? AND id=?",
       actor.orgId,
@@ -1582,7 +1604,7 @@ export class Inventory {
     },
     reference: string,
   ) {
-    permit(actor, ["warehouse"]);
+    actor = this.custodyActor(actor, ["warehouse"]);
     const a = this.store.get<Allocation>(
       "SELECT * FROM inventory_allocations WHERE org_id=? AND id=?",
       actor.orgId,
@@ -1672,6 +1694,7 @@ export class Inventory {
     return { heldUnitId: heldId, productId: a.product_id, quantity };
   }
   release(actor: Actor, orderId: string, productId: string, quantity: number) {
+    actor = this.custodyActor(actor, ["commercial", "buyer"]);
     if (quantity === 0) return 0;
     const allocations = this.allocations(actor, orderId).filter(
       (a) => a.product_id === productId,
@@ -1711,6 +1734,7 @@ export class Inventory {
     lines: { allocationId: string; quantity: number }[],
     shipmentId: string,
   ) {
+    actor = this.custodyActor(actor, ["warehouse"]);
     const seen = new Set<string>();
     return lines.map((line) => {
       check(
@@ -2564,7 +2588,7 @@ export class Inventory {
   }
   // Called by Warranty inside the shared business transaction; Inventory owns custody.
   replacementCustody(actor: Actor, reference: string) {
-    permit(actor, ["warehouse"]);
+    actor = this.custodyActor(actor, ["warehouse"]);
     const hold = this.store.get<{
       id: string;
       org_id: string;
@@ -2591,7 +2615,7 @@ export class Inventory {
     unitId: string,
     productId: string,
   ) {
-    permit(actor, ["warranty"]);
+    actor = this.custodyActor(actor, ["warranty"]);
     const u = this.unit(actor, unitId);
     site(actor, u.warehouse_id);
     check(
@@ -2620,7 +2644,7 @@ export class Inventory {
     );
   }
   releaseReplacement(actor: Actor, reference: string, reason: string) {
-    permit(actor, ["warranty"]);
+    actor = this.custodyActor(actor, ["warranty"]);
     const r = this.store.get(
       "SELECT * FROM inventory_replacements WHERE org_id=? AND id=?",
       actor.orgId,
@@ -2652,7 +2676,7 @@ export class Inventory {
     serial: string,
     evidence: string,
   ) {
-    permit(actor, ["warehouse"]);
+    actor = this.custodyActor(actor, ["warehouse"]);
     const r = this.store.get(
       "SELECT * FROM inventory_replacements WHERE org_id=? AND id=?",
       actor.orgId,
@@ -2698,6 +2722,7 @@ export class Inventory {
   // Internal candidates only: the warranty owner resolves current customer
   // entitlement before returning any of these records to an API caller.
   soldSerialCandidates(actor: Actor, query: string, after?: string) {
+    actor = this.custodyActor(actor, ["warranty", "commercial", "buyer"]);
     const where =
       "org_id=? AND state='sold' AND quantity=0 AND serial IS NOT NULL AND instr(lower(serial),lower(?))>0";
     const cursor =
@@ -2725,6 +2750,7 @@ export class Inventory {
     );
   }
   shipmentReference(actor: Actor, unitId: string): string | null {
+    actor = this.custodyReader(actor);
     this.unit(actor, unitId);
     return (
       this.store.get<{ reference: string }>(
@@ -2735,6 +2761,7 @@ export class Inventory {
     );
   }
   soldCustody(actor: Actor, unitId: string) {
+    actor = this.custodyReader(actor);
     const u = this.unit(actor, unitId);
     check(
       u.serial && u.state === "sold" && u.quantity === 0,
@@ -2756,6 +2783,7 @@ export class Inventory {
     bin: string,
     reference: string,
   ) {
+    actor = this.custodyActor(actor, ["warehouse"]);
     site(actor, warehouseId);
     this.warehouse(actor, warehouseId);
     const u = this.unit(actor, unitId);
@@ -2786,6 +2814,7 @@ export class Inventory {
     reference: string,
     reason: string,
   ) {
+    actor = this.custodyActor(actor, ["warehouse", "warranty"]);
     const u = this.unit(actor, unitId);
     site(actor, u.warehouse_id);
     check(
