@@ -83,6 +83,14 @@ Approval of the required-role policy, actual authenticator qualification, extern
 Design reference: OWASP [authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html), [session management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) [password recovery](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html) and [MFA](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html) guidance informed current-password checks, session invalidation and the explicit recovery gap; no compliance certification is claimed.
 
 
+## Current catalog authority
+
+Product lookup, the active product list, account-price lookup, administrator SKU mapping and catalog import review/application reload the active persisted user and required password state. Supplied role, account and warehouse fields do not grant access. Buyers may resolve account prices only for their currently assigned account; reassignment takes effect on the next call even when an older actor object is reused. Existing staff pricing visibility remains provisional organization-wide policy, and the product list retains its existing base-price projection.
+
+Product creation and tier-price changes require current administrator/commercial authority inside the existing command transaction, before returning a saved retry or applying an effect. Deactivation, role revocation and forced password changes refuse both old and new keys. Identical authorized retries retain their original result. Tier/default pricing and currency checks are unchanged; later price edits do not rewrite accepted order prices.
+
+Catalog import application is an owning operation within the migration caller's transaction. Catalog checks do not establish that every migration or other module cache boundary has been reviewed. Read lists remain unbounded and separate authority/data/dashboard queries do not form a single coherent snapshot. Production scope/volume/security and operator approval remain unqualified. See the [local catalog authority receipt](evidence/LOCAL-CATALOG-AUTHORITY-2026-10-02.md); all tasks and gates remain NOT VERIFIED.
+
 ## Audit history
 
 After any required password change, current administrators and support staff can open Audit history. It shows organization-wide recorded time, actor ID, action and reference in pages of 20. Actor IDs are stable identifiers, not resolved names/emails. This staff visibility is the existing provisional organization policy; site-specific support restrictions still require operator approval. Buyers and other staff roles cannot read this view. Current active identity, organization, role and password status are rechecked on every read, including the older audit/event compatibility reads.

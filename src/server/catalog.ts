@@ -7,6 +7,7 @@ import {
   permit,
   text,
   type Actor,
+  type Role,
 } from "./core.ts";
 import {
   importFields,
@@ -40,7 +41,29 @@ export class Catalog {
       CREATE TABLE IF NOT EXISTS catalog_prices(org_id TEXT NOT NULL,product_id TEXT NOT NULL,tier TEXT NOT NULL,unit_price INTEGER NOT NULL CHECK(unit_price>=0),PRIMARY KEY(org_id,product_id,tier)) STRICT;
     `);
   }
+  private catalogActor(actor: Actor, roles: Role[]) {
+    actor = this.identity.currentActor(actor);
+    permit(actor, roles);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing the catalog.",
+      403,
+    );
+    return actor;
+  }
+  private catalogReader(actor: Actor) {
+    return this.catalogActor(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+      "buyer",
+    ]);
+  }
   product(actor: Actor, productId: string): Product {
+    actor = this.catalogReader(actor);
     const row = this.store.get<Product>(
       "SELECT * FROM catalog_products WHERE org_id=? AND id=?",
       actor.orgId,
@@ -50,13 +73,14 @@ export class Catalog {
     return row;
   }
   products(actor: Actor) {
+    actor = this.catalogReader(actor);
     return this.store.all<Product>(
       "SELECT * FROM catalog_products WHERE org_id=? AND active=1 ORDER BY sku",
       actor.orgId,
     );
   }
   productBySku(actor: Actor, sku: string) {
-    permit(actor, []);
+    actor = this.catalogActor(actor, []);
     const product = this.store.get<Product>(
       "SELECT * FROM catalog_products WHERE org_id=? AND sku=?",
       actor.orgId,
@@ -71,6 +95,7 @@ export class Catalog {
     return product;
   }
   price(actor: Actor, productId: string, accountId: string) {
+    actor = this.catalogReader(actor);
     const product = this.product(actor, productId),
       customer = this.identity.customer(actor, accountId);
     check(
@@ -90,7 +115,7 @@ export class Catalog {
     };
   }
   reviewImport(actor: Actor, raw: unknown): MasterReview {
-    permit(actor, []);
+    actor = this.catalogActor(actor, []);
     const r = importFields(raw, [
       "sourceId",
       "targetId",
@@ -143,6 +168,7 @@ export class Catalog {
   }
   // Owning operation inside the migration command's transaction.
   applyImport(actor: Actor, raw: unknown): MasterMapping {
+    actor = this.catalogActor(actor, []);
     const reviewed = this.reviewImport(actor, raw),
       r = raw as Record<string, unknown>;
     const targetId = reviewed.targetId ?? id();
@@ -181,7 +207,9 @@ export class Catalog {
       "product.create",
       key,
       input,
-      () => permit(actor, ["commercial"]),
+      () => {
+        actor = this.catalogActor(actor, ["commercial"]);
+      },
       () => {
         check(
           typeof input.serialized === "boolean",
@@ -217,7 +245,7 @@ export class Catalog {
       key,
       input,
       () => {
-        permit(actor, ["commercial"]);
+        actor = this.catalogActor(actor, ["commercial"]);
         this.product(actor, input.productId);
       },
       () => {

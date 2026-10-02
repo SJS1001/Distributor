@@ -584,6 +584,22 @@ async function compete(
   f: ReturnType<typeof fixture>,
   batches: { id: string; reviewHash: string }[],
 ) {
+  const reviewers = batches.map((_, i) => {
+    const email = `document-reviewer-${i}@example.test`;
+    const existing = f.app.identity
+      .users(f.actor)
+      .find((u) => u.email === email);
+    const userId =
+      existing?.id ??
+      f.app.identity.createUser(f.actor, `document-reviewer-${i}`, {
+        name: `Synthetic document reviewer ${i}`,
+        email,
+        password: "long-document-reviewer-password",
+        role: "admin",
+        sites: [f.w1, f.w2],
+      }).id;
+    return f.app.identity.currentActor({ ...f.actor, id: userId });
+  });
   const children = batches.map(() =>
     fork(new URL("./migration-child.ts", import.meta.url), {
       execArgv: ["--import", "tsx"],
@@ -604,7 +620,7 @@ async function compete(
             action: "init",
             input: {
               path: f.path,
-              actor: { ...f.actor, id: `reviewer-${i}` },
+              actor: reviewers[i],
               key: `review-${i}`,
               documents: true,
               payload: approved(batches[i]!),
