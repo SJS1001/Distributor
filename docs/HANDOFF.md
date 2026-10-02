@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Requested GitHub publication checkpoint — 2026-10-02
+
+- Published parent is `8bb201f687ca1594c20d6a75c08d3a3731ac7f5d` on `codex/local-distributor-checkpoint`. The owner's request is to commit all remaining work to GitHub. Read-only checks confirm push permission, matching remote parent, zero workflows and zero Actions runs. No CI runner, PR, merge, deployment or provider request is authorized or started.
+- Preserve the new `src/web/transfer-loss.tsx` as an explicitly unfinished draft. It proposes retained exact-attempt reviews for transit loss approval and found-stock recovery, but no application file imports or mounts it. The application still uses its existing generic loss/recovery dialogs. No completed feature or browser behavior is claimed for this draft.
+- Fresh direct workstation TypeScript and production build checks pass; the existing large-bundle warning remains. These checks establish compilation only: production bundling excludes this unused module. No fresh native or browser test result is claimed for this publication checkpoint. Historical verification receipts remain unchanged.
+- Next engineering work: integrate administrator-only loss/recovery selections and reset/remount behavior in `src/web/main.tsx`; add synthetic browser fixtures and fault journeys for lost replies, immutable replay, account isolation, fresh authority, storage/lock failure, changed evidence, malformed replies, cleanup and abandoned responses; review and verify before claiming the feature works. All 44 tasks and 10 gates remain NOT VERIFIED; the full system is incomplete.
+- Fresh formatting and planning/link checks pass. Changed-source React diagnostics include the untracked draft and report no issues in the one scanned file; this does not verify runtime behavior or the full project. Publication review covers the original draft and this handoff only. Private runtime files, credentials, generated assets and raw logs stay excluded. The normal authorized branch push follows; verify exact remote HEAD after pushing.
+
 ## Latest continuation — transfer dispatch recovery and requested GitHub commit, 2026-10-02
 
 - Resumed published parent `772222acdd845fa95d52993f31ae03a126cd3cbf` on `codex/local-distributor-checkpoint` under snapshot publication authorization. Fresh checks confirm matching remote parent, push permission and zero workflows/Actions runs. Direct workstation checks only; no CI runner, delegated/cloud session, provider IO, PR, merge or deployment.
