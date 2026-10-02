@@ -73,3 +73,18 @@ The installed dijkstrajs notice identifies Wyatt Baldwin's copyright and MIT lic
 
 
 The ZPL checkpoint changes only dependency classification: exact package versions, resolution URLs and integrity values remain unchanged. Installed pdfjs-dist and canvas license texts were re-read and match the retained notices. A production-only offline install and native rendering are checked on macOS arm64; Linux, Windows, other architectures and full transitive/native distribution provenance remain unqualified. No deployment or publication is authorized.
+
+
+## TypeScript runtime execution — 2026-10-01
+
+The API and foreground CLI scripts require tsx after a production-only installation. This checkpoint moves the existing exact tsx 4.23.15 release from development to runtime dependencies; lockfile versions, resolution URLs and integrity values remain unchanged. Its installed package declares esbuild ~0.28.0 (locked 0.28.2) and optional fsevents ~2.3.3. No get-tsconfig or resolve-pkg-maps dependency exists in this exact release.
+
+Actual installed files were read and copied unchanged before runtime classification:
+
+| Exact component | Observed notice | Retained actual text |
+| --- | --- | --- |
+| tsx 4.23.15 | MIT, Copyright Hiroki Osame | [MIT text](licenses/runtime/tsx-MIT.txt) |
+| esbuild 0.28.2 | MIT, Copyright 2020 Evan Wallace | [MIT text](licenses/runtime/esbuild-MIT.txt) |
+| fsevents 2.3.3, optional on macOS | MIT, Copyright 2010–2020 Philipp Dunkel, Ben Noordhuis, Elan Shankar, Paul Miller | [MIT text](licenses/runtime/fsevents-MIT.txt) |
+
+The installed @esbuild/darwin-arm64 0.28.2 package metadata declares MIT; no separate LICENSE file was present in that installed platform package. esbuild's executable and applicable optional platform package are required at runtime. Native platform/source provenance, complete transitive dependency notices and redistribution qualification remain open; the inventory does not select a product license or authorize publishing/deploying binaries. The [runtime runbook](RUNTIME.md) describes the isolated workstation installation check.

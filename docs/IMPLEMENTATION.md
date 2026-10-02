@@ -31,6 +31,8 @@ npm start
 
 The explicit demo command initializes an empty database with synthetic equipment, two warehouses and a customer. It prints generated local demo credentials; keep these local. Open http://127.0.0.1:3000. A populated database rejects bootstrap rather than resetting existing records. For an empty installation without fixtures, use `npm run bootstrap` with administrator credentials supplied through stdin or environment. See `.env.example`; the scripts read exported environment variables and do not automatically load that file. Region defaults to CA/CAD. Use a separate database/runtime for US/USD. Providers remain disabled.
 
+Production-only installs must retain `tsx` and its platform executable, the complete source/font/schema files and the separately built browser assets. See [runtime installation and verification](RUNTIME.md); `npm run verify:runtime` checks an isolated offline runtime install with synthetic CA/US stores, actual server restarts and authenticated PDF/ZPL downloads. This is packaging evidence only; production environments and product gates remain unqualified.
+
 ## Implementation coverage
 
 All acceptance tasks remain unverified. The following is code coverage, not task completion or gate approval.
