@@ -51,4 +51,4 @@ Reviewed ordinary carrier booking coordination and its default-disabled adapter 
 
 Ordinary carrier bookings now retain [reviewed account/service/date configuration](docs/CARRIER-BOOKINGS.md#reviewed-ordinary-carrier-configuration), refuse drift before I/O and show warehouse review/history controls. Local synthetic verification does not qualify actual carriers, devices or product gates.
 
-The [DHL test client](docs/CARRIER-BOOKINGS.md#dhl-express-test-client) retains transport, waybill and customs invoice pages together and checks the exact reviewed companies, goods and tender time. Its warehouse declaration form remains to be implemented; local fixtures do not qualify customs or actual provider behavior.
+The [DHL test client](docs/CARRIER-BOOKINGS.md#dhl-express-test-client) retains transport, waybill and customs invoice pages together and checks the exact reviewed companies, goods and tender time. Its warehouse form now collects explicit company, tender and packed-goods declarations and displays retained history; see [the local UI receipt](docs/evidence/LOCAL-DHL-UI-2026-10-01.md). Synthetic fixtures do not qualify customs or actual provider behavior.

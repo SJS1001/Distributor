@@ -11,6 +11,11 @@ import {
   type CanadaPostGroupView,
 } from "../shared/carrier-booking.ts";
 import { providerChoices } from "../shared/provider-choices.ts";
+import {
+  DhlDeclarationFields,
+  DhlDeclarationDetail,
+  readDhlDeclaration,
+} from "./dhl-declaration.tsx";
 
 type Review = CarrierReview & {
   enabled?: boolean;
@@ -27,7 +32,15 @@ const addressFields = [
   ["postalCode", "Postal / ZIP code"],
   ["phone", "Phone"],
 ] as const;
-function AddressFields({ kind }: { kind: "origin" | "destination" }) {
+function AddressFields({
+  kind,
+  country,
+  onCountry,
+}: {
+  kind: "origin" | "destination";
+  country: string;
+  onCountry: (value: string) => void;
+}) {
   return (
     <fieldset style={{ minWidth: 0 }}>
       <legend>
@@ -47,7 +60,12 @@ function AddressFields({ kind }: { kind: "origin" | "destination" }) {
       ))}
       <label>
         Country
-        <select name={`${kind}.country`} required defaultValue="">
+        <select
+          name={`${kind}.country`}
+          required
+          value={country}
+          onChange={(event) => onCountry(event.target.value)}
+        >
           <option value="" disabled>
             Choose country
           </option>
@@ -115,6 +133,7 @@ function BookingMetadata({ booking }: { booking: CarrierBookingView }) {
       )}
       {booking.tracking && <p>Tracking: {booking.tracking}</p>}
       {booking.error && <p>Last booking observation: {booking.error}</p>}
+      {booking.dhl && <DhlDeclarationDetail declaration={booking.dhl} />}
     </div>
   );
 }
@@ -139,6 +158,8 @@ export function CarrierBooking({
   const historyRead = useRef<AbortController | null>(null);
   const writing = useRef(false);
   const [provider, setProvider] = useState("");
+  const [originCountry, setOriginCountry] = useState("");
+  const [destinationCountry, setDestinationCountry] = useState("");
   const [review, setReview] = useState<Review | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -303,6 +324,18 @@ export function CarrierBooking({
       reviewedDestination: packedDestination,
       acknowledgment: value("acknowledgment"),
     };
+    if (input.provider === "dhl-express") {
+      try {
+        input.dhl = readDhlDeclaration(
+          form,
+          review.packedGoods,
+          input.origin.country !== input.destination.country,
+        );
+      } catch (e) {
+        setError((e as Error).message);
+        return;
+      }
+    }
     void perform(() => command("carrier.prepare", input));
   };
   const booking = review?.booking;
@@ -603,8 +636,16 @@ export function CarrierBooking({
                 gap: "1rem",
               }}
             >
-              <AddressFields kind="origin" />
-              <AddressFields kind="destination" />
+              <AddressFields
+                kind="origin"
+                country={originCountry}
+                onCountry={setOriginCountry}
+              />
+              <AddressFields
+                kind="destination"
+                country={destinationCountry}
+                onCountry={setDestinationCountry}
+              />
             </div>
             <fieldset style={{ minWidth: 0 }}>
               <legend>Parcel measurements</legend>
@@ -629,6 +670,13 @@ export function CarrierBooking({
                 </label>
               ))}
             </fieldset>
+            {provider === "dhl-express" && (
+              <DhlDeclarationFields
+                goods={review.packedGoods}
+                originCountry={originCountry}
+                destinationCountry={destinationCountry}
+              />
+            )}
             <label
               style={{
                 display: "flex",

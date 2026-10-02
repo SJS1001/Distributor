@@ -134,6 +134,38 @@ export class Fulfillment {
     if (actor.role === "warehouse") site(actor, row.warehouse_id);
     return row;
   }
+  // Packing owns the quantities; order descriptions and serials are read through
+  // their owning operations. No prices or inferred customs values are returned.
+  packedGoods(actor: Actor, shipmentId: string) {
+    actor = this.shipmentReader(actor);
+    permit(actor, ["warehouse"]);
+    const shipment = this.shipment(actor, shipmentId);
+    site(actor, shipment.warehouse_id);
+    const allocations = this.inventory.allocations(actor, shipment.order_id),
+      descriptions = this.orders.lines(actor, shipment.order_id);
+    return (JSON.parse(shipment.lines) as PackedLine[]).map((line) => {
+      const allocation = allocations.find((a) => a.id === line.allocationId);
+      check(
+        allocation,
+        "CARRIER_MISMATCH",
+        "Packed allocation is unavailable.",
+      );
+      const description = descriptions.find(
+        (entry) => entry.product_id === allocation.product_id,
+      );
+      check(
+        description,
+        "CARRIER_MISMATCH",
+        "Packed order description is unavailable.",
+      );
+      return {
+        allocationId: line.allocationId,
+        quantity: line.quantity,
+        description: description.description,
+        serial: this.inventory.unit(actor, allocation.unit_id).serial,
+      };
+    });
+  }
   shipments(actor: Actor) {
     return this.shipmentRows(this.shipmentReader(actor)).map((s) =>
       this.shipmentView(s),

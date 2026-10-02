@@ -284,7 +284,11 @@ export class CarrierBookings {
     actor = this.principal(actor);
     this.shipment(actor, shipmentId);
     const booking = this.latest(actor.orgId, shipmentId);
-    return { shipmentId, booking: booking ? this.view(booking) : null };
+    return {
+      shipmentId,
+      packedGoods: this.fulfillment.packedGoods(actor, shipmentId),
+      booking: booking ? this.view(booking) : null,
+    };
   }
   providerForBooking(actor: Actor, bookingId: string): CarrierName {
     actor = this.principal(actor);

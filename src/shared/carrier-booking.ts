@@ -98,6 +98,12 @@ export type CarrierBookingView = {
 export type CarrierReview = {
   configurations?: readonly CarrierConfiguration[];
   shipmentId: string;
+  packedGoods: readonly {
+    allocationId: string;
+    quantity: number;
+    description: string;
+    serial: string | null;
+  }[];
   booking: CarrierBookingView | null;
 };
 
