@@ -39,6 +39,7 @@ type DraftRow = {
 type ReceiptResult = { id: string; unitIds: string[] };
 type DraftResult = ReceiptResult & { draftId: string; draftRevision: number };
 type Owners = {
+  currentActor: (actor: Actor) => Actor;
   authorize: (actor: Actor, poId: string) => void;
   context: (
     actor: Actor,
@@ -81,6 +82,7 @@ export class ReceiptDrafts {
     };
   }
   list(actor: Actor) {
+    actor = this.owners.currentActor(actor);
     permit(actor, ["warehouse", "commercial", "finance"]);
     return this.store
       .all<DraftRow>(
@@ -94,6 +96,7 @@ export class ReceiptDrafts {
       .map((d) => this.summary(d));
   }
   history(actor: Actor, draftId: string) {
+    actor = this.owners.currentActor(actor);
     permit(actor, ["warehouse", "commercial", "finance"]);
     this.row(actor, draftId);
     return this.store
@@ -140,6 +143,7 @@ export class ReceiptDrafts {
       key,
       input,
       () => {
+        actor = this.owners.currentActor(actor);
         permit(actor, ["warehouse"]);
         if (input.draftId !== null) this.row(actor, input.draftId);
         else this.owners.authorize(actor, input.poId);
@@ -248,6 +252,7 @@ export class ReceiptDrafts {
       key,
       input,
       () => {
+        actor = this.owners.currentActor(actor);
         permit(actor, ["warehouse"]);
         this.row(actor, input.draftId);
       },
@@ -309,6 +314,7 @@ export class ReceiptDrafts {
       key,
       input,
       () => {
+        actor = this.owners.currentActor(actor);
         permit(actor, ["warehouse"]);
         this.row(actor, input.draftId);
       },

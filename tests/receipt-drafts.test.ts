@@ -71,11 +71,30 @@ test("incomplete receipt scans survive restart without stock; reviewed confirmat
     drafts().confirm(f.actor, "confirm", { draftId: saved.id, revision: 2 }),
     result,
   );
+  assert.throws(
+    () =>
+      drafts().confirm({ ...f.actor, id: "other" }, "fresh-key", {
+        draftId: saved.id,
+        revision: 2,
+      }),
+    { code: "FORBIDDEN" },
+  );
+  const other = f.app.identity.createUser(f.actor, "other-worker", {
+    email: "other-worker@example.test",
+    name: "Other warehouse worker",
+    password: "long-test-only-password",
+    role: "warehouse",
+    sites: [f.w1],
+  });
   assert.deepEqual(
-    drafts().confirm({ ...f.actor, id: "other" }, "fresh-key", {
-      draftId: saved.id,
-      revision: 2,
-    }),
+    drafts().confirm(
+      f.app.identity.currentActor({ ...f.actor, id: other.id }),
+      "fresh-key",
+      {
+        draftId: saved.id,
+        revision: 2,
+      },
+    ),
     result,
   );
   assert.deepEqual(
@@ -105,7 +124,14 @@ test("incomplete receipt scans survive restart without stock; reviewed confirmat
     assert.equal(trace.unit.condition, "quarantine");
     assert.equal(trace.movements.filter((m) => m.type === "receipt").length, 1);
   }
-  const denied = { ...f.actor, role: "warehouse" as const, sites: [f.w2] };
+  const deniedUser = f.app.identity.createUser(f.actor, "other-site", {
+    email: "other-site@example.test",
+    name: "Other site worker",
+    password: "long-test-only-password",
+    role: "warehouse",
+    sites: [f.w2],
+  });
+  const denied = f.app.identity.currentActor({ ...f.actor, id: deniedUser.id });
   assert.throws(
     () =>
       drafts().confirm(denied, "confirm", { draftId: saved.id, revision: 2 }),
@@ -120,7 +146,7 @@ test("incomplete receipt scans survive restart without stock; reviewed confirmat
   assert.equal(drafts().list(denied).length, 0);
   assert.throws(
     () => drafts().history({ ...f.actor, orgId: "foreign" }, saved.id),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
 });
 

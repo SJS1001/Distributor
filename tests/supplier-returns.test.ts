@@ -62,13 +62,9 @@ function bulk(f: ReturnType<typeof fixture>) {
 test("supplier serial return preserves purchase and external custody evidence through restart/new-key retry without customer credit or duplicate stock removal", (t) => {
   const f = fixture(t),
     input = serialReturn(f);
+  const warehouse = warehouseReader(f, f.w1);
   assert.throws(
-    () =>
-      f.app.procurement.returnStock(
-        { ...f.actor, role: "warehouse", sites: [f.w1] },
-        "denied",
-        input,
-      ),
+    () => f.app.procurement.returnStock(warehouse, "denied", input),
     { code: "FORBIDDEN" },
   );
   assert.throws(
@@ -86,7 +82,7 @@ test("supplier serial return preserves purchase and external custody evidence th
         "foreign",
         input,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   const result = f.app.procurement.returnStock(f.actor, "return", input);
   assert.equal(result.value, 6000);
@@ -110,11 +106,31 @@ test("supplier serial return preserves purchase and external custody evidence th
   assert.equal(f.app.billing.credits(f.actor).length, 0);
   f.app.close();
   f.app = new Application(f.path);
+  const other = f.app.identity.createUser(f.actor, "other-admin", {
+    email: "other-admin@example.test",
+    name: "Other administrator",
+    password: "long-test-only-password",
+    role: "admin",
+    sites: [],
+  });
+  assert.throws(
+    () =>
+      f.app.procurement.returnStock(
+        { ...f.actor, id: "absent-admin" },
+        "other",
+        input,
+      ),
+    { code: "FORBIDDEN" },
+  );
   assert.deepEqual(
-    f.app.procurement.returnStock({ ...f.actor, id: "other-admin" }, "other", {
-      ...input,
-      returnRef: " RETURN-S3 ",
-    }),
+    f.app.procurement.returnStock(
+      f.app.identity.currentActor({ ...f.actor, id: other.id }),
+      "other",
+      {
+        ...input,
+        returnRef: " RETURN-S3 ",
+      },
+    ),
     result,
   );
   assert.deepEqual(
@@ -137,12 +153,7 @@ test("supplier serial return preserves purchase and external custody evidence th
     { code: "RECEIPT_CONFLICT" },
   );
   assert.throws(
-    () =>
-      f.app.procurement.returnStock(
-        { ...f.actor, role: "finance" },
-        "return",
-        input,
-      ),
+    () => f.app.procurement.returnStock(warehouse, "return", input),
     { code: "FORBIDDEN" },
   );
   assert.throws(
@@ -154,7 +165,19 @@ test("supplier serial return preserves purchase and external custody evidence th
       }),
     { code: "STOCK" },
   );
-  assert.equal(f.app.procurement.returns(warehouseReader(f, f.w2)).length, 0);
+  const row = f.app.identity.users(f.actor).find((u) => u.id === warehouse.id)!;
+  f.app.identity.updateUser(f.actor, "move-reader", {
+    userId: warehouse.id,
+    revision: Number(row.revision),
+    name: warehouse.name,
+    email: String(row.email),
+    role: "warehouse",
+    sites: [f.w2],
+    active: true,
+    currentPassword: "long-test-only-password",
+    reason: "Synthetic site change",
+  });
+  assert.equal(f.app.procurement.returns(warehouse).length, 0);
 });
 
 test("bulk supplier returns follow original purchase lineage through split dispatch, partial arrival and recovered loss at original cost", (t) => {

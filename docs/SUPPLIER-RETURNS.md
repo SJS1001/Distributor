@@ -4,7 +4,7 @@ Local engineering workflow, 2026-10-01. All acceptance tasks and product gates r
 
 ## Physical handover
 
-In Purchasing, an administrator reviews the exact purchase receipt and current held stock, scans a serialized unit where applicable, and confirms return quantity, reason and handover evidence. The command rechecks current custody, revision, reservations and original purchase lineage. Inventory removes only the handed-over quantity at its original cost. Original purchased/received totals remain intact. A zero-quantity serial retains its identity and permanent history. Historical split lots without explicit purchase origin need reconciliation before return.
+In Purchasing, an administrator reviews the exact purchase receipt and current held stock, scans a serialized unit where applicable, and confirms return quantity, reason and handover evidence. The owning command reloads the active persisted administrator and refuses a required password change before a new handover or any cached result. It then rechecks current custody, revision, reservations and original purchase lineage. Supplied role/site fields cannot increase permission; an absent, foreign or deactivated principal is denied. See [purchasing authorization evidence](evidence/LOCAL-PURCHASING-AUTHORITY-2026-10-02.md). Inventory removes only the handed-over quantity at its original cost. Original purchased/received totals remain intact. A zero-quantity serial retains its identity and permanent history. Historical split lots without explicit purchase origin need reconciliation before return.
 
 ## Record and review the supplier outcome
 

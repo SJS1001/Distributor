@@ -9,6 +9,7 @@ import {
   site,
   text,
   type Actor,
+  type Role,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { Catalog } from "./catalog.ts";
@@ -80,7 +81,7 @@ export class Procurement {
     private platform: Platform,
     private catalog: Catalog,
     private inventory: Inventory,
-    identity: Identity,
+    private identity: Identity,
   ) {
     this.store = database.owned("procurement");
     this.store.migrate(`
@@ -92,12 +93,25 @@ export class Procurement {
   `);
     this.followups = new SupplierFollowups(database, platform, identity);
     this.drafts = new ReceiptDrafts(database, platform, {
+      currentActor: (actor) =>
+        this.authorize(actor, ["warehouse", "commercial", "finance"]),
       authorize: (actor, poId) => {
         this.receiptOrder(actor, poId);
       },
       context: (actor, input, ready) => this.draftContext(actor, input, ready),
       receive: (actor, input) => this.receiveStock(actor, input),
     });
+  }
+  private authorize(actor: Actor, roles: Role[]) {
+    const current = this.identity.currentActor(actor);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing purchasing.",
+      403,
+    );
+    permit(current, roles);
+    return current;
   }
   private receiptOrder(actor: Actor, poId: string) {
     permit(actor, ["warehouse"]);
@@ -177,7 +191,7 @@ export class Procurement {
     return { warehouseId: po.warehouse_id };
   }
   suppliers(actor: Actor) {
-    permit(actor, ["warehouse", "commercial", "finance"]);
+    actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
     return this.store.all(
       "SELECT * FROM procurement_suppliers WHERE org_id=?",
       actor.orgId,
@@ -189,7 +203,9 @@ export class Procurement {
       "supplier.create",
       key,
       input,
-      () => permit(actor, ["commercial"]),
+      () => {
+        actor = this.authorize(actor, ["commercial"]);
+      },
       () => {
         const supplierId = id();
         this.store.run(
@@ -216,7 +232,9 @@ export class Procurement {
       "purchase.create",
       key,
       input,
-      () => permit(actor, ["commercial"]),
+      () => {
+        actor = this.authorize(actor, ["commercial"]);
+      },
       () => {
         check(
           this.store.get(
@@ -271,7 +289,7 @@ export class Procurement {
     );
   }
   orders(actor: Actor) {
-    permit(actor, ["warehouse", "commercial", "finance"]);
+    actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
     return this.store
       .all<PurchaseOrder>(
         "SELECT * FROM procurement_orders WHERE org_id=? ORDER BY created_at DESC",
@@ -297,6 +315,7 @@ export class Procurement {
       key,
       input,
       () => {
+        actor = this.authorize(actor, ["warehouse"]);
         this.receiptOrder(actor, input.poId);
       },
       () => this.receiveStock(actor, input),
@@ -378,7 +397,7 @@ export class Procurement {
     return { id: receiptId, unitIds: units };
   }
   receipts(actor: Actor) {
-    permit(actor, ["warehouse", "commercial", "finance"]);
+    actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
     const stock = this.inventory
       .stock(actor)
       .filter((u) => u.state === "stock" && u.quantity > u.reserved);
@@ -447,7 +466,7 @@ export class Procurement {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.authorize(actor, []);
         check(
           this.store.get(
             "SELECT id FROM procurement_receipts WHERE org_id=? AND id=?",
