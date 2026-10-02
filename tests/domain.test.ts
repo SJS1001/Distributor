@@ -220,7 +220,23 @@ test("scopes, table ownership and cached receipts reauthorize current actor gran
   assert.throws(() => f.app.orders.order(buyer, order.id), {
     code: "FORBIDDEN",
   });
-  assert.equal(f.app.orders.list(buyer).length, 0);
+  assert.throws(() => f.app.orders.list(buyer), { code: "FORBIDDEN" });
+  const persistedBuyer = f.app.identity.createUser(f.actor, "scoped-buyer", {
+    name: "Scoped buyer",
+    email: "scoped-buyer@example.test",
+    password: "long-test-only-password",
+    role: "buyer",
+    accountId: foreign,
+    sites: [],
+  });
+  const authorizedBuyer = f.app.identity.currentActor({
+    ...f.actor,
+    id: persistedBuyer.id,
+  });
+  assert.throws(() => f.app.orders.order(authorizedBuyer, order.id), {
+    code: "FORBIDDEN",
+  });
+  assert.equal(f.app.orders.list(authorizedBuyer).length, 0);
   assert.throws(
     () =>
       f.app.database.owned("inventory").all("SELECT * FROM billing_invoices"),

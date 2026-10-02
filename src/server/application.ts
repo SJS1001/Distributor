@@ -235,6 +235,7 @@ export class Application {
   }
   dashboard(actor: Actor) {
     actor = this.identity.currentActor(actor);
+    const orders = this.orders.orderPage(actor);
     const shipments = this.fulfillment.shipmentPage(actor);
     const sold = ["admin", "warranty", "commercial", "buyer"].includes(
       actor.role,
@@ -261,7 +262,9 @@ export class Application {
       providerDisclosures: this.identity.residency.current(actor),
       products: this.catalog.products(actor),
       warehouses: this.inventory.warehouses(actor),
-      orders: this.orders.list(actor),
+      orders: orders.items,
+      orderNext: orders.next,
+      orderCounts: this.orders.orderCounts(actor),
       shipments: shipments.items,
       shipmentNext: shipments.next,
       invoices: [

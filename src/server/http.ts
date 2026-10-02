@@ -1,3 +1,7 @@
+import {
+  orderQueueStates,
+  type OrderQueueState,
+} from "../shared/order-queue.ts";
 import Fastify from "fastify";
 import { providerNames } from "../shared/provider-choices.ts";
 import { type FastifyError } from "fastify";
@@ -1403,6 +1407,27 @@ export async function createHttp(app: Application, options: HttpOptions) {
   }
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
+  http.get<{ Querystring: { after?: string; state?: OrderQueueState } }>(
+    "/api/orders/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 128 },
+            state: choice(...orderQueueStates),
+          },
+          ["after", "state"],
+        ),
+      },
+    },
+    async (request) =>
+      app.orders.orderPage(
+        actor(request),
+        request.query.after,
+        request.query.state,
+      ),
+  );
+
   http.get("/api/provider-disclosures", async (request) =>
     app.identity.residency.current(actor(request)),
   );

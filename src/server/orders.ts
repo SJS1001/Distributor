@@ -1,3 +1,8 @@
+import type { SQLInputValue } from "node:sqlite";
+import {
+  orderQueueStates,
+  type OrderQueueState,
+} from "../shared/order-queue.ts";
 import type { OrderSalesEvidence } from "./sales-evidence.ts";
 import {
   account,
@@ -65,7 +70,7 @@ type ReservationHistory = {
 export class Orders {
   private store: Store;
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private identity: Identity,
     private catalog: Catalog,
@@ -129,23 +134,109 @@ export class Orders {
       orderId,
     );
   }
+  // Full projection retained for internal controls; operator queues use orderPage.
   list(actor: Actor) {
+    actor = this.orderReader(actor);
+    const scope = this.orderScope(actor);
     return this.store
       .all<Order>(
-        "SELECT * FROM orders_orders WHERE org_id=? AND (? IS NULL OR account_id=?) ORDER BY created_at DESC",
-        actor.orgId,
-        actor.role === "buyer" ? actor.accountId : null,
-        actor.accountId,
+        `SELECT * FROM orders_orders WHERE ${scope.where} ORDER BY created_at DESC,id DESC`,
+        ...scope.params,
       )
-      .filter(
-        (o) =>
-          actor.role !== "warehouse" || actor.sites.includes(o.warehouse_id),
-      )
-      .map((o) => ({
-        ...o,
-        lines: this.lines(actor, o.id),
-        reservation: this.reservationStatus(actor, o.id),
-      }));
+      .map((order) => this.orderView(actor, order));
+  }
+  orderPage(actor: Actor, after?: string, state?: OrderQueueState) {
+    return this.database.transaction(() => {
+      actor = this.orderReader(actor);
+      check(
+        state === undefined || orderQueueStates.includes(state),
+        "VALIDATION",
+        "Choose a supported order state.",
+        400,
+      );
+      const scope = this.orderScope(actor);
+      const cursor =
+        after === undefined
+          ? undefined
+          : this.store.get<Order>(
+              `SELECT * FROM orders_orders WHERE ${scope.where} AND id=?`,
+              ...scope.params,
+              text(after, "Order cursor", 128),
+            );
+      check(
+        after === undefined || cursor,
+        "CURSOR",
+        "Order cursor is unavailable in your current scope.",
+        400,
+      );
+      if (state !== undefined) {
+        scope.where += " AND state=?";
+        scope.params.push(state);
+      }
+      if (cursor) {
+        scope.where += " AND (created_at<? OR (created_at=? AND id<?))";
+        scope.params.push(cursor.created_at, cursor.created_at, cursor.id);
+      }
+      const rows = this.store.all<Order>(
+        `SELECT * FROM orders_orders WHERE ${scope.where} ORDER BY created_at DESC,id DESC LIMIT 21`,
+        ...scope.params,
+      );
+      const items = rows
+        .slice(0, 20)
+        .map((order) => this.orderView(actor, order));
+      return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
+    });
+  }
+  orderCounts(actor: Actor) {
+    return this.database.transaction(() => {
+      actor = this.orderReader(actor);
+      const scope = this.orderScope(actor);
+      const counts = this.store.get<{ total: number; open: number }>(
+        `SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN state='open' THEN 1 ELSE 0 END),0) AS open FROM orders_orders WHERE ${scope.where}`,
+        ...scope.params,
+      )!;
+      return { total: counts.total, open: counts.open };
+    });
+  }
+  private orderReader(actor: Actor) {
+    actor = this.identity.currentActor(actor);
+    permit(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+      "buyer",
+    ]);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing orders.",
+      403,
+    );
+    return actor;
+  }
+  private orderScope(actor: Actor) {
+    const params: SQLInputValue[] = [actor.orgId];
+    let where = "org_id=?";
+    if (actor.role === "buyer") {
+      where += " AND account_id=?";
+      params.push(actor.accountId);
+    }
+    if (actor.role === "warehouse") {
+      where += actor.sites.length
+        ? ` AND warehouse_id IN(${actor.sites.map(() => "?").join(",")})`
+        : " AND 0";
+      params.push(...actor.sites);
+    }
+    return { where, params };
+  }
+  private orderView(actor: Actor, order: Order) {
+    return {
+      ...order,
+      lines: this.lines(actor, order.id),
+      reservation: this.reservationStatus(actor, order.id),
+    };
   }
   carts(actor: Actor) {
     permit(actor, ["commercial", "buyer"]);

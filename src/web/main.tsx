@@ -1,3 +1,4 @@
+import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
@@ -96,6 +97,11 @@ function App() {
     data?.claimNext,
     page === "Returns" && !!actor && !busy,
   );
+  const orderQueue = useOrderQueue(
+    data?.orders,
+    data?.orderNext,
+    page === "Orders" && !!actor && !busy,
+  );
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -144,6 +150,7 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    orderQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
@@ -334,6 +341,7 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    orderQueue.stop();
     claimQueue.stop();
     setCoverageOpen(false);
     coverageOpener.current = null;
@@ -374,6 +382,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    orderQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
@@ -968,6 +977,7 @@ function App() {
               key={p}
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
+                orderQueue.stop();
                 claimQueue.stop();
                 setPage(p);
                 setDialog((current) =>
@@ -1074,10 +1084,7 @@ function App() {
           <>
             <div className="metrics">
               {[
-                [
-                  "Open orders",
-                  data.orders.filter((o: Item) => o.state === "open").length,
-                ],
+                ["Open orders", data.orderCounts.open],
                 [
                   "Invoice balance",
                   money(
@@ -1144,13 +1151,14 @@ function App() {
               {can("commercial", "buyer") &&
                 button("Prepare order", () => placeOrder())}
             </div>
+            <OrderQueueControls queue={orderQueue} />
             {table(
               ["Customer / order", "Warehouse", "Lines", "Status", "Actions"],
-              data.orders,
+              orderQueue.items,
               (o: Item) => [
                 <>
                   <strong>{accountName(o.account_id)}</strong>
-                  <small>{o.id.slice(0, 8)}</small>
+                  <small title={o.id}>{o.id.slice(0, 8)}</small>
                 </>,
                 warehouseName(o.warehouse_id),
                 o.lines.map((l: Item) => (
@@ -1570,13 +1578,16 @@ function App() {
               ],
             )}
             {reservationOrderId &&
-              data.orders.some((o: Item) => o.id === reservationOrderId) && (
+              orderQueue.items.some(
+                (o: Item) => o.id === reservationOrderId,
+              ) && (
                 <OrderReservations
                   key={`${reservationOrderId}:${eventViewEpoch}`}
                   orderId={reservationOrderId}
                   lines={
-                    data.orders.find((o: Item) => o.id === reservationOrderId)!
-                      .lines
+                    orderQueue.items.find(
+                      (o: Item) => o.id === reservationOrderId,
+                    )!.lines
                   }
                   onClose={() => {
                     setReservationOrderId(null);
@@ -1586,13 +1597,14 @@ function App() {
                 />
               )}
             {amendmentOrderId &&
-              data.orders.some((o: Item) => o.id === amendmentOrderId) && (
+              orderQueue.items.some((o: Item) => o.id === amendmentOrderId) && (
                 <OrderAmendments
                   key={`${amendmentOrderId}:${eventViewEpoch}`}
                   orderId={amendmentOrderId}
                   lines={
-                    data.orders.find((o: Item) => o.id === amendmentOrderId)!
-                      .lines
+                    orderQueue.items.find(
+                      (o: Item) => o.id === amendmentOrderId,
+                    )!.lines
                   }
                   currency={currency}
                   onClose={() => {
@@ -4517,6 +4529,7 @@ function App() {
                     }
                     onCanadaPost={(warehouseId) => {
                       if (!warehouseId) return;
+                      orderQueue.stop();
                       claimQueue.stop();
                       setPage("Orders");
                       setCanadaPostWarehouse(warehouseId);

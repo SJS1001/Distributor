@@ -1,3 +1,4 @@
+import { orderQueueBrowser } from "./order-queue-browser-fixture.ts";
 import { replacementCarrierBrowser } from "./replacement-carrier-browser-fixture.ts";
 import { shipmentCoverageBrowser } from "./shipment-coverage-browser-fixture.ts";
 import { reconciliationBrowser } from "./reconciliation-browser-fixture.ts";
@@ -899,6 +900,7 @@ const shipmentCoverageHttp = await shipmentCoverageBrowser((fn) =>
   cleanup.push(fn),
 );
 const queueHttp = await claimQueueBrowser((fn) => cleanup.push(fn));
+const orderQueueHttp = await orderQueueBrowser((fn) => cleanup.push(fn));
 const reconciliationHttp = await reconciliationBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -930,6 +932,7 @@ const stop = async () => {
   await coveragePolicyHttp.close();
   await shipmentCoverageHttp.close();
   await queueHttp.close();
+  await orderQueueHttp.close();
   await reconciliationHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());
