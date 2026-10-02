@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — supplier concurrency and encrypted recovery, 2026-10-02
+
+- Resumed published parent `7f8960254770148ea31c4361d98557ee8640ddfe` on `codex/local-distributor-checkpoint`. Fresh read-only GitHub checks confirm push permission, matching remote parent, zero workflows and zero Actions runs. Current owner authorization covers the Distributor snapshot push. No CI runner, delegated/cloud session, provider IO, PR, merge or deployment.
+- Added ten CA/US native checks with actual independent process barriers, exact/conflicting request keys, revision races, suspension versus purchasing and live encrypted cutoff restoration. Independent read-only table snapshots verify all captured business/command/event/audit facts before restored application startup. All 43 changes and original receipts survive; later writes are absent, copied sessions are invalidated and provider hold persists. Original receiving retains cost and source isolation.
+- Fresh full native suite passes 1,976/1,976; focused verification passes 10/10. TypeScript and formatting pass. [Local receipt](evidence/LOCAL-SUPPLIER-AVAILABILITY-RECOVERY-2026-10-02.md) and its machine companion bind final inputs and private logs. No browser/build/React scan rerun is claimed for this test-only change. No runtime source, schema, dependency, license or workflow changes. The companion's initial JSON-format failure was corrected; its diagnostic remains private.
+- Self-review checks clean bounded child completion, single winning reason/revision/evidence, no refused purchase effect, legal race outcomes, original-cost commitments, cutoff equality before constructors, history paging, retained optional profile, session invalidation and provider hold. Broader warehouse workflows, production contention/crash/load/recovery targets, residency, real providers/devices, browser retention and human acceptance remain open. All 44 tasks and 10 gates NOT VERIFIED; full system incomplete.
+- Finish final document/whitespace and staged publication checks, local commit and the owner-authorized normal branch push; verify exact remote HEAD and clean checkout. Preserve historical receipts and failures. Continue remaining full-system qualification separately.
+
 ## Latest continuation — supplier browser controls and requested GitHub commit, 2026-10-02
 
 - Resumed published parent `7953511f1d243abdc3aae92668e7f6c0a5936fbf` on `codex/local-distributor-checkpoint`. The owner's current source/test/documentation publication authorization applies. Read-only GitHub checks confirm push permission, matching remote parent and zero workflows/runs. Direct workstation verification only; no CI runner, delegated/cloud session, provider IO, PR, merge or deployment.
