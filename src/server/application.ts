@@ -19,6 +19,7 @@ import { ProviderCredentials } from "./provider-credentials.ts";
 import { Migration } from "./migration.ts";
 import { EventDelivery } from "./event-delivery.ts";
 import { EventReport } from "./event-report.ts";
+import type { OperationsHealth } from "../shared/operations-health.ts";
 
 export class Application {
   database: Database;
@@ -191,6 +192,31 @@ export class Application {
       this.database.close();
       throw error;
     }
+  }
+  operationsHealth(actor: Actor): OperationsHealth {
+    return this.database.transaction(() => {
+      const current = this.identity.currentActor(actor);
+      permit(current, ["support"]);
+      check(
+        !this.identity.security(current).passwordChangeRequired,
+        "PASSWORD_CHANGE_REQUIRED",
+        "Change your password before continuing.",
+        403,
+      );
+      const clock = Date.now();
+      return {
+        version: 1,
+        checkedAt: new Date(clock).toISOString(),
+        region: this.identity.region,
+        recoveryHold: !!this.platform.recoveryHold(),
+        queues: [
+          this.billing.health(current),
+          ...this.integration.health(current, clock),
+          ...this.carriers.health(current),
+          this.eventDelivery.health(current, "event-report", clock),
+        ],
+      };
+    });
   }
   reconciliation(actor: Actor) {
     return this.database.transaction(() => {

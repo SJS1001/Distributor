@@ -2837,6 +2837,10 @@ export async function createHttp(app: Application, options: HttpOptions) {
         ),
     );
   });
+  http.get("/api/operations/health", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return app.operationsHealth(actor(request));
+  });
   http.get("/api/operations/reconciliation", async (request) =>
     app.reconciliation(actor(request)),
   );

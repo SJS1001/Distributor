@@ -23,6 +23,7 @@ import type {
   CanadaPostManifestObservation,
 } from "./canada-post-test.ts";
 import { CANADA_POST_INITIALIZE_DDL } from "./canada-post-schema.ts";
+import type { QueueObservation } from "../shared/operations-health.ts";
 import {
   carrierNames,
   type CarrierAddress,
@@ -236,6 +237,48 @@ export class CarrierBookings {
         "Dispatch requires the unchanged replacement, reviewed recipient/address and exact booked carrier/tracking reference.",
       );
     });
+  }
+  health(actor: Actor): QueueObservation[] {
+    actor = this.identity.currentActor(actor);
+    permit(actor, ["support"]);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before continuing.",
+      403,
+    );
+    const queues = [
+      {
+        id: "carrier-bookings",
+        label: "Carrier bookings",
+        table: "integration_carrier_bookings",
+      },
+      {
+        id: "canada-post-groups",
+        label: "Canada Post groups",
+        table: "integration_canada_post_groups",
+      },
+    ].map(({ id, label, table }) => ({
+      id,
+      label,
+      states: this.store.all<QueueObservation["states"][number]>(
+        `SELECT state,COUNT(*) AS count,MIN(created_at) AS oldestCreatedAt FROM ${table} WHERE org_id=? GROUP BY state ORDER BY state`,
+        actor.orgId,
+      ),
+    }));
+    return [
+      ...queues,
+      {
+        id: "canada-post-members",
+        label: "Active Canada Post shipments",
+        states: this.store.all<QueueObservation["states"][number]>(
+          `SELECT m.state,COUNT(*) AS count,MIN(g.created_at) AS oldestCreatedAt
+         FROM integration_canada_post_members m JOIN integration_canada_post_groups g ON g.id=m.group_id AND g.org_id=m.org_id
+         WHERE m.org_id=? AND m.active=1 GROUP BY m.state ORDER BY m.state`,
+          actor.orgId,
+        ),
+      },
+    ];
   }
   private principal(actor: Actor) {
     actor = this.identity.currentActor(actor);

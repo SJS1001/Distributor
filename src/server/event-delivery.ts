@@ -13,6 +13,7 @@ import {
 import { type Database, type Store } from "./database.ts";
 import { type Identity } from "./iam.ts";
 import { type Platform } from "./platform.ts";
+import type { QueueObservation } from "../shared/operations-health.ts";
 
 // Version 1 is the existing native outbox contract. It has no aggregate revision
 // or correlation envelope; consumers must not treat it as a mutable state feed.
@@ -391,6 +392,46 @@ export class EventDelivery {
     result.quarantined = batch.quarantined;
     for (const claim of batch.claims) result[this.deliver(claim)]++;
     return result;
+  }
+  health(actor: Actor, consumerId: string, clock: number): QueueObservation {
+    actor = this.operator(actor);
+    consumerId = text(consumerId, "Consumer", 64);
+    const states = this.store.all<QueueObservation["states"][number]>(
+      `SELECT state,COUNT(*) AS count,MIN(created_at) AS oldestCreatedAt FROM platform_deliveries WHERE org_id=? AND consumer_id=? GROUP BY state ORDER BY state`,
+      actor.orgId,
+      consumerId,
+    );
+    const pending = this.store.get<{
+      count: number;
+      oldestCreatedAt: string | null;
+    }>(
+      `SELECT COUNT(*) AS count,MIN(e.created_at) AS oldestCreatedAt FROM platform_events e LEFT JOIN platform_deliveries d ON d.event_id=e.id AND d.consumer_id=? WHERE e.org_id=? AND d.event_id IS NULL`,
+      consumerId,
+      actor.orgId,
+    )!;
+    const due = this.store.get<{
+      count: number;
+      expired: number;
+      completed: string | null;
+    }>(
+      `SELECT COALESCE(SUM(CASE WHEN state='retry' AND available_at<=? OR state='leased' AND lease_until<=? THEN 1 ELSE 0 END),0) AS count,
+        COALESCE(SUM(CASE WHEN state='leased' AND lease_until<=? THEN 1 ELSE 0 END),0) AS expired,MAX(completed_at) AS completed
+        FROM platform_deliveries WHERE org_id=? AND consumer_id=?`,
+      clock,
+      clock,
+      clock,
+      actor.orgId,
+      consumerId,
+    )!;
+    return {
+      id: "event-report",
+      label: "Local event reporting",
+      registered: this.consumers.has(consumerId),
+      states: [{ state: "unclaimed", ...pending }, ...states],
+      due: pending.count + due.count,
+      expiredLeases: due.expired,
+      lastCompletedAt: due.completed,
+    };
   }
   diagnostics(actor: Actor, consumerId: string, after?: string) {
     const current = this.operator(actor);

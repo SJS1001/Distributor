@@ -258,6 +258,21 @@ export class Billing {
       ),
     };
   }
+  health(actor: Actor) {
+    actor = this.current(actor, ["support"]);
+    return {
+      id: "native-refunds",
+      label: "Native refunds",
+      states: this.store.all<{
+        state: string;
+        count: number;
+        oldestCreatedAt: string | null;
+      }>(
+        "SELECT state,COUNT(*) AS count,MIN(created_at) AS oldestCreatedAt FROM billing_refunds WHERE org_id=? GROUP BY state ORDER BY state",
+        actor.orgId,
+      ),
+    };
+  }
   // Internal owning operation: Application.reconciliation supplies authority and snapshot.
   controlTotals(actor: Actor, currency: string) {
     actor = this.current(actor, ["finance"]);

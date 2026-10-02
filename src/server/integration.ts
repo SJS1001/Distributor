@@ -31,6 +31,7 @@ import {
   type RecordedCredit,
 } from "./billing.ts";
 import type { ProviderName } from "../shared/provider-choices.ts";
+import type { QueueObservation } from "../shared/operations-health.ts";
 export type Effect = {
   id: string;
   org_id: string;
@@ -289,6 +290,70 @@ export class Integration {
             ? this.accountingRefundStatus(actor, e)
             : undefined,
       }));
+  }
+  health(actor: Actor, clock: number): QueueObservation[] {
+    actor = this.principal(actor, ["support"]);
+    const states = (query: string, ...parameters: (string | number)[]) =>
+      this.store.all<QueueObservation["states"][number]>(query, ...parameters);
+    const effects = ["stripe", "quickbooks", "other"].map((provider) => ({
+      id: `effects-${provider}`,
+      label:
+        provider === "other"
+          ? "Other provider effects"
+          : `${provider === "stripe" ? "Stripe" : "QuickBooks"} effects`,
+      states: states(
+        `SELECT state,COUNT(*) AS count,MIN(created_at) AS oldestCreatedAt FROM integration_effects WHERE org_id=? AND ${provider === "other" ? "provider NOT IN ('stripe','quickbooks')" : "provider=?"} GROUP BY state ORDER BY state`,
+        actor.orgId,
+        ...(provider === "other" ? [] : [provider]),
+      ),
+    }));
+    const callbacks = [
+      "integration_callbacks",
+      "integration_refund_callbacks",
+    ].map((table) => ({
+      id:
+        table === "integration_callbacks"
+          ? "payment-callbacks"
+          : "refund-callbacks",
+      label:
+        table === "integration_callbacks"
+          ? "Payment callbacks"
+          : "Refund callbacks",
+      states: states(
+        `SELECT state,COUNT(*) AS count,MIN(created_at) AS oldestCreatedAt FROM ${table} WHERE org_id=? GROUP BY state ORDER BY state`,
+        actor.orgId,
+      ),
+      due: Number(
+        this.store.get<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM ${table} WHERE org_id=? AND state IN ('pending','waiting') AND retry_at<=?`,
+          actor.orgId,
+          clock,
+        )!.count,
+      ),
+    }));
+    // A completed provider request can still represent an unsettled refund.
+    // Include it without returning provider references, payloads or poll tokens.
+    const refunds = {
+      id: "refund-outcomes",
+      label: "Refund outcome checks",
+      states: states(
+        `SELECT json_extract(e.result,'$.status') AS state,COUNT(*) AS count,MIN(e.created_at) AS oldestCreatedAt
+         FROM integration_effects e WHERE e.org_id=? AND e.provider='stripe' AND e.kind='refund' AND e.state='completed'
+         AND CASE WHEN json_valid(e.result) THEN json_extract(e.result,'$.status') IN ('pending','requires_action') ELSE 0 END
+         GROUP BY state ORDER BY state`,
+        actor.orgId,
+      ),
+      due: Number(
+        this.store.get<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM integration_refund_polls p JOIN integration_effects e ON e.id=p.effect_id AND e.org_id=p.org_id
+         WHERE e.org_id=? AND e.provider='stripe' AND e.kind='refund' AND e.state='completed' AND p.token IS NULL AND p.retry_at<=?
+         AND CASE WHEN json_valid(e.result) THEN json_extract(e.result,'$.status') IN ('pending','requires_action') ELSE 0 END`,
+          actor.orgId,
+          clock,
+        )!.count,
+      ),
+    };
+    return [...effects, ...callbacks, refunds];
   }
   pending(actor: Actor, limit = 20) {
     actor = this.principal(actor, ["finance", "support"]);
