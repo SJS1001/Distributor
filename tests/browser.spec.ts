@@ -1,3 +1,4 @@
+import "./shipment-coverage-browser-journey.ts";
 import "./claim-queue-browser-journey.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { totp } from "../src/server/totp.ts";
@@ -12149,9 +12150,7 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
     panel.getByRole("status", { name: "Coverage status" }),
   ).toHaveText("Coverage dates loaded");
   expect(reads[0]).toBe(reads[1]);
-  await expect(panel).toContainText(
-    "Current provisional duration: 365 days after shipment.",
-  );
+  await expect(panel).toContainText("Duration retained at shipment: 365 days.");
   await expect(panel).toContainText("Eligibility requires review.");
   await select.selectOption({ label: "COV-S2" });
   await expect(panel).not.toContainText("Serial COV-S1");

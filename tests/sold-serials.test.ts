@@ -283,7 +283,7 @@ test("current replacement custody replaces original sale and a resale does not e
   );
   assert.equal(
     f.app.warranty.coverage(resale, oldId, other).source,
-    "current_provisional_policy",
+    "shipment_policy",
   );
   assert.deepEqual(facts(f), before);
 });

@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "7fb1118683c7975bb4c849259361d61a71fa2648",
+  "hashes": {
+    "enabled": "43fde7c68f1ec4b632c3b1acaa39f8dc52f6c4e113262454f0ce1972c3caa303",
+    "disabled": "c0d44130f813ad8bc8554fb07ff4fa32cd73a21b6965839c2978439a81e66baa"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "warranty_claim_coverage",
+      "tbl_name": "warranty_claim_coverage",
+      "sql": "CREATE TABLE warranty_claim_coverage(claim_id TEXT PRIMARY KEY REFERENCES warranty_claims(id),org_id TEXT NOT NULL,snapshot TEXT NOT NULL) STRICT"
+    }
+  ]
+}

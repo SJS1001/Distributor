@@ -107,7 +107,9 @@ export function SoldCoverage({
           <p>
             {coverage.source === "replacement_inherited"
               ? "Replacement retains the original coverage end; replacement handover does not restart coverage."
-              : `Current provisional duration: ${coverage.provisionalDays} days after shipment.`}
+              : coverage.source === "shipment_policy"
+                ? `Duration retained at shipment: ${coverage.provisionalDays} days. Later policy changes do not change these dates.`
+                : `Historical shipment policy is unavailable. Current provisional duration: ${coverage.provisionalDays} days after shipment.`}
           </p>
           <p>
             {coverage.policy

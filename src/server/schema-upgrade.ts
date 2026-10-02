@@ -1,3 +1,4 @@
+import { SHIPMENT_COVERAGE_DDL } from "./shipment-coverage-schema.ts";
 import { CLAIM_COVERAGE_DDL } from "./claim-coverage-schema.ts";
 import { backup, DatabaseSync } from "node:sqlite";
 import { lstatSync } from "node:fs";
@@ -190,6 +191,7 @@ export async function upgradeSchema(
         copied.exec(QUICKBOOKS_REVOCATION_DDL);
         copied.exec(ACCOUNTING_CANCELLATION_DDL);
         copied.exec(CLAIM_COVERAGE_DDL);
+        copied.exec(SHIPMENT_COVERAGE_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -203,7 +205,8 @@ export async function upgradeSchema(
         if (before.version === 1) copied.exec(CANADA_POST_DDL);
         if (before.version! <= 2) copied.exec(QUICKBOOKS_REVOCATION_DDL);
         if (before.version! <= 3) copied.exec(ACCOUNTING_CANCELLATION_DDL);
-        copied.exec(CLAIM_COVERAGE_DDL);
+        if (before.version! <= 4) copied.exec(CLAIM_COVERAGE_DDL);
+        copied.exec(SHIPMENT_COVERAGE_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

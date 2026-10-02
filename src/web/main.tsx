@@ -3891,7 +3891,7 @@ function App() {
                         ...v,
                         revision: extra.coveragePolicy.revision,
                       }),
-                    "This changes current ordinary-sale assessments and new claims immediately. Existing claim snapshots and inherited replacement dates remain retained. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
+                    "This applies to future shipments and provisional assessments of historical sales without a retained shipment policy. Previously retained shipment dates, claim snapshots and inherited replacement dates remain unchanged. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
                   ),
                 )}
               </section>

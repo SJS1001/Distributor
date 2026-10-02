@@ -9,6 +9,10 @@ const start = "2024-02-29T12:00:00.000Z";
 const end = "2025-02-28T12:00:00.000Z";
 function sold(f: Fixture) {
   const shipment = ship(f, accept(f).id);
+  // Simulate a pre-version-six sale: no historical handover policy was retained.
+  f.app.database
+    .owned("fulfillment")
+    .run("DELETE FROM fulfillment_coverage WHERE shipment_id=?", shipment.id);
   // Synthetic business timestamp fixture; local command logs retain actual recording dates.
   f.app.database
     .owned("fulfillment")
@@ -159,7 +163,7 @@ test("provisional policy changes affect current-sale preview while retained clai
     code: "NOT_FOUND",
   });
   const resale = f.app.warranty.coverage(f.actor, unitId, other);
-  assert.equal(resale.source, "current_provisional_policy");
+  assert.equal(resale.source, "shipment_policy");
   assert.notEqual(resale.shipmentId, inherited.shipmentId);
   assert.notEqual(resale.invoiceId, inherited.invoiceId);
   assert.notEqual(resale.shippedAt, start);

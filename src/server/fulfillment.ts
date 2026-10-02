@@ -16,6 +16,9 @@ import { Inventory } from "./inventory.ts";
 import { Orders } from "./orders.ts";
 import { Billing } from "./billing.ts";
 import { Platform } from "./platform.ts";
+import { SHIPMENT_COVERAGE_INITIALIZE_DDL } from "./shipment-coverage-schema.ts";
+import { coverageDate, coverageDays } from "./coverage-policy.ts";
+import type { ShipmentCoverageSnapshot } from "../shared/warranty-coverage.ts";
 export type Shipment = {
   id: string;
   org_id: string;
@@ -95,6 +98,7 @@ export class Fulfillment {
     CREATE INDEX IF NOT EXISTS fulfillment_shipment_history ON fulfillment_shipments(org_id,created_at DESC,id DESC);
     CREATE INDEX IF NOT EXISTS fulfillment_shipment_account_history ON fulfillment_shipments(org_id,account_id,created_at DESC,id DESC);
     CREATE INDEX IF NOT EXISTS fulfillment_shipment_site_history ON fulfillment_shipments(org_id,warehouse_id,created_at DESC,id DESC);
+    ${SHIPMENT_COVERAGE_INITIALIZE_DDL};
   `);
     // Keep the compatibility receipt, importing its recorded fact only once.
     for (const legacy of this.store.all<{
@@ -587,6 +591,21 @@ export class Fulfillment {
           text(input.tracking, "tracking/reference");
         }
         this.carrierGuard?.(actor, shipment, "commit", input);
+        // Same native command transaction as stock, invoice and custody. Policy
+        // changes serialize with handover; retries retain the original snapshot.
+        const policy = this.identity.shipmentCoveragePolicy(
+          actor,
+          shipment.warehouse_id,
+        );
+        const shippedAt = coverageDate(now());
+        const coverageEnd = new Date(
+          Date.parse(shippedAt) + policy.days * 86400000,
+        );
+        check(
+          Number.isFinite(coverageEnd.getTime()),
+          "COVERAGE_DATE",
+          "Calculated coverage end is outside the supported date range.",
+        );
         const packed = this.packedQuantities(actor, shipment.order_id);
         for (const a of this.inventory.allocations(actor, shipment.order_id))
           check(
@@ -624,8 +643,19 @@ export class Fulfillment {
           input.carrier ?? null,
           JSON.stringify(units),
           invoice.id,
-          now(),
+          shippedAt,
           shipment.id,
+        );
+        const snapshot: ShipmentCoverageSnapshot = {
+          policy,
+          shippedAt,
+          coverageEnd: coverageEnd.toISOString(),
+        };
+        this.store.run(
+          "INSERT INTO fulfillment_coverage VALUES(?,?,?)",
+          shipment.id,
+          actor.orgId,
+          JSON.stringify(snapshot),
         );
         this.platform.audit(actor, "fulfillment.handover", shipment.id, {
           evidence: input.handoverEvidence,
@@ -915,6 +945,65 @@ export class Fulfillment {
     );
   }
   // Resolve a named custody receipt without walking the shipment collection.
+  shipmentCoverage(
+    actor: Actor,
+    shipmentId: string,
+  ): ShipmentCoverageSnapshot | null {
+    actor = this.shipmentReader(actor);
+    permit(actor, ["warehouse", "commercial", "warranty", "buyer"]);
+    const shipment = this.shipment(actor, shipmentId);
+    check(
+      shipment.state === "shipped",
+      "STATE",
+      "Coverage requires a committed shipment.",
+    );
+    const row = this.store.get<{ snapshot: string }>(
+      "SELECT snapshot FROM fulfillment_coverage WHERE org_id=? AND shipment_id=?",
+      actor.orgId,
+      shipment.id,
+    );
+    if (!row) return null;
+    const saved = JSON.parse(row.snapshot) as ShipmentCoverageSnapshot;
+    check(
+      saved &&
+        typeof saved === "object" &&
+        !Array.isArray(saved) &&
+        saved.policy &&
+        typeof saved.policy === "object" &&
+        !Array.isArray(saved.policy),
+      "COVERAGE_POLICY",
+      "Retained shipment coverage is invalid.",
+    );
+    const policy = saved.policy;
+    integer(policy.revision, "retained shipment policy revision", 1);
+    coverageDays(policy.days);
+    check(
+      policy.revision === 1
+        ? policy.configuredAt === null
+        : typeof policy.configuredAt === "string",
+      "COVERAGE_POLICY",
+      "Retained shipment policy version is invalid.",
+    );
+    if (policy.configuredAt !== null) coverageDate(policy.configuredAt);
+    const shippedAt = coverageDate(saved.shippedAt),
+      coverageEnd = coverageDate(saved.coverageEnd);
+    check(
+      shippedAt === shipment.shipped_at &&
+        Date.parse(shippedAt) + policy.days * 86400000 ===
+          Date.parse(coverageEnd),
+      "COVERAGE_POLICY",
+      "Retained shipment coverage and custody dates differ.",
+    );
+    return {
+      policy: {
+        revision: policy.revision,
+        days: policy.days,
+        configuredAt: policy.configuredAt,
+      },
+      shippedAt,
+      coverageEnd,
+    };
+  }
   soldSerial(actor: Actor, shipmentId: string, unitId: string) {
     actor = this.shipmentReader(actor);
     const shipment = this.store.get<Shipment>(

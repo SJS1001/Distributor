@@ -9,11 +9,17 @@ export type CoveragePolicyReview = CoveragePolicy & {
 };
 export type ClaimCoverageSnapshot = {
   policy: CoveragePolicy | null;
-  source: "current_provisional_policy" | "replacement_inherited";
+  source:
+    "current_provisional_policy" | "shipment_policy" | "replacement_inherited";
   shippedAt: string;
   coverageEnd: string;
   inheritedFromClaimId: string | null;
   capturedAt: string;
+};
+export type ShipmentCoverageSnapshot = {
+  policy: CoveragePolicy;
+  shippedAt: string;
+  coverageEnd: string;
 };
 export type ClaimCoverage = {
   claimId: string;
@@ -32,7 +38,8 @@ export type WarrantyCoverage = {
   coverageEnd: string;
   assessedAt: string;
   datePosition: "before_start" | "within_dates" | "elapsed";
-  source: "current_provisional_policy" | "replacement_inherited";
+  source:
+    "current_provisional_policy" | "shipment_policy" | "replacement_inherited";
   provisionalDays: number | null;
   policy: CoveragePolicy | null;
   coveragePolicyApproved: false;

@@ -13,6 +13,10 @@ import type { Actor } from "../src/server/core.ts";
 type F = ReturnType<typeof fixture>;
 function sold(f: F) {
   const shipment = ship(f, accept(f).id);
+  // Simulate a pre-version-six sale: no historical handover policy was retained.
+  f.app.database
+    .owned("fulfillment")
+    .run("DELETE FROM fulfillment_coverage WHERE shipment_id=?", shipment.id);
   f.app.database
     .owned("fulfillment")
     .run(

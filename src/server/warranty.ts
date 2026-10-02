@@ -985,6 +985,16 @@ export class Warranty {
       accountId,
       custody.reference,
     );
+    const locked = this.fulfillment.shipmentCoverage(actor, sale.shipment.id);
+    if (locked)
+      return {
+        shipmentId: sale.shipment.id,
+        invoiceId: sale.shipment.invoice_id!,
+        ...locked,
+        source: "shipment_policy" as const,
+        provisionalDays: locked.policy.days,
+        inheritedFromClaimId: null,
+      };
     const selected = this.identity.coveragePolicy(actor),
       policy: CoveragePolicy = {
         revision: selected.revision,
@@ -1046,7 +1056,9 @@ export class Warranty {
         if (policy.configuredAt !== null) coverageDate(policy.configuredAt);
       }
       check(
-        (saved.source === "current_provisional_policy" &&
+        (["current_provisional_policy", "shipment_policy"].includes(
+          saved.source,
+        ) &&
           policy !== null &&
           saved.inheritedFromClaimId === null) ||
           (saved.source === "replacement_inherited" &&

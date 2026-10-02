@@ -21,6 +21,7 @@ import {
   integer,
   now,
   permit,
+  site,
   text,
   type Actor,
   type Role,
@@ -274,6 +275,25 @@ export class Identity {
       403,
     );
     return readCoveragePolicy(JSON.parse(this.organization(actor).policy));
+  }
+  shipmentCoveragePolicy(actor: Actor, warehouseId: string) {
+    actor = this.currentActor(actor);
+    permit(actor, ["warehouse"]);
+    site(actor, warehouseId);
+    check(
+      !this.passwordChangeRequired(actor.id),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before handover.",
+      403,
+    );
+    const selected = readCoveragePolicy(
+      JSON.parse(this.organization(actor).policy),
+    );
+    return {
+      revision: selected.revision,
+      days: selected.days,
+      configuredAt: selected.configuredAt,
+    };
   }
   configureCoverage(
     actor: Actor,

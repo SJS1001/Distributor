@@ -67,3 +67,8 @@ Actual bin/lot procedures, physical serial custody/writeoff/recovery, approval d
 ## Reviewed ordinary carrier bookings
 
 The [carrier booking runbook](CARRIER-BOOKINGS.md) describes reviewed structured origin/destination/parcel intents, pending cancellation, fenced unknown-outcome recovery and exact confirmed binding before native handover. Send/reconciliation is disabled without an explicitly injected sandbox adapter; none is supplied by the normal runtime. Preparation and provider observations change no stock, invoice or cash. Actual carriers/devices and all product gates remain unqualified.
+
+
+## Warranty policy at handover — 2026-10-02
+
+Each successful native handover retains the current provisional warranty duration/version and exact shipment/end UTC dates in the same transaction as stock, invoice and custody. Later organization changes do not rewrite these dates. Packing or booking a carrier does not select the policy; separately committed partial shipments can retain different versions. A failed snapshot write rolls back the native handover, and an authorized exact retry returns its original receipt. Existing shipments upgraded from older versions retain no invented policy. See [warranty dates and qualification limits](WARRANTY.md#sold-serial-coverage-lookup).

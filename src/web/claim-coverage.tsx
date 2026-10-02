@@ -90,6 +90,11 @@ export function ClaimSerialReview({
           {coverage.policy
             ? `Policy version ${coverage.policy.revision}: ${coverage.policy.days} days after the original shipment.`
             : "Original replacement end retained; historical policy version is unavailable."}{" "}
+          {coverage.source === "shipment_policy"
+            ? "Duration retained at shipment; later policy changes do not change these dates."
+            : coverage.source === "current_provisional_policy"
+              ? "Historical shipment policy is unavailable; these dates use the current provisional policy."
+              : "Replacement inherits the original coverage end."}{" "}
           Eligibility requires review.
         </p>
       )}
@@ -207,6 +212,18 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
                       ? `Policy version ${result.snapshot.policy.revision}: ${result.snapshot.policy.days} days after the original shipment.`
                       : "Historical policy version is unavailable."}
                   </p>
+                  {result.snapshot.source === "shipment_policy" && (
+                    <p>
+                      Policy retained at original shipment; later changes do not
+                      change these dates.
+                    </p>
+                  )}
+                  {result.snapshot.source === "current_provisional_policy" && (
+                    <p>
+                      Historical shipment policy is unavailable. This snapshot
+                      used the provisional policy at claim submission.
+                    </p>
+                  )}
                   {result.snapshot.source === "replacement_inherited" && (
                     <p>
                       Inherited from the preceding claim. Replacement handover

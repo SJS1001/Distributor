@@ -3,6 +3,10 @@ import { createHttp } from "../src/server/http.ts";
 export async function coveragePolicyBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   const shipment = ship(f, accept(f).id);
+  // Simulate a pre-version-six sale: no historical handover policy was retained.
+  f.app.database
+    .owned("fulfillment")
+    .run("DELETE FROM fulfillment_coverage WHERE shipment_id=?", shipment.id);
   f.app.database
     .owned("fulfillment")
     .run(
