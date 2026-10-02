@@ -277,7 +277,12 @@ export class Application {
         providerReviews: this.identity.residency.status(actor, customer),
       })),
       providerDisclosures: this.identity.residency.current(actor),
-      products: this.catalog.products(actor),
+      products:
+        actor.role === "buyer"
+          ? actor.accountId
+            ? this.catalog.customerProducts(actor, actor.accountId)
+            : []
+          : this.catalog.products(actor),
       warehouses: this.inventory.warehouses(actor),
       orders: orders.items,
       orderNext: orders.next,

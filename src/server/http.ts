@@ -1419,6 +1419,18 @@ export async function createHttp(app: Application, options: HttpOptions) {
   }
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
+  http.get<{ Querystring: { accountId: string } }>(
+    "/api/catalog/customer-products",
+    {
+      schema: {
+        querystring: obj({
+          accountId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request) =>
+      app.catalog.customerProducts(actor(request), request.query.accountId),
+  );
   http.get<{ Querystring: { after?: string; state?: OrderQueueState } }>(
     "/api/orders/page",
     {

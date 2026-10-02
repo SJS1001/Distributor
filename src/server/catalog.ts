@@ -5,6 +5,7 @@ import {
   id,
   integer,
   permit,
+  tax,
   text,
   type Actor,
   type Role,
@@ -17,6 +18,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
 import { Platform } from "./platform.ts";
+import type { CustomerProduct } from "../shared/customer-products.ts";
 export type Product = {
   id: string;
   org_id: string;
@@ -31,7 +33,7 @@ export type Product = {
 export class Catalog {
   private store: Store;
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private identity: Identity,
   ) {
@@ -78,6 +80,35 @@ export class Catalog {
       "SELECT * FROM catalog_products WHERE org_id=? AND active=1 ORDER BY sku",
       actor.orgId,
     );
+  }
+  customerProducts(actor: Actor, accountId: string): CustomerProduct[] {
+    return this.database.transaction(() => {
+      actor = this.catalogActor(actor, ["commercial", "buyer"]);
+      const customer = this.identity.customer(
+        actor,
+        text(accountId, "Customer ID", 128),
+      );
+      const products = this.store.all<Omit<CustomerProduct, "unit_tax">>(
+        `SELECT p.id,p.sku,p.name,p.serialized,
+         COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
+         FROM catalog_products p LEFT JOIN catalog_prices t
+         ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
+         WHERE p.org_id=? AND p.active=1 ORDER BY p.sku,p.id`,
+        customer.tier,
+        actor.orgId,
+      );
+      return products.map((product) => {
+        check(
+          product.currency === customer.currency,
+          "CURRENCY",
+          "Cross-currency ordering is not supported.",
+        );
+        return {
+          ...product,
+          unit_tax: tax(product.unit_price, product.tax_bp),
+        };
+      });
+    });
   }
   productBySku(actor: Actor, sku: string) {
     actor = this.catalogActor(actor, []);

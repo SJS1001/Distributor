@@ -1,0 +1,27 @@
+# Customer prices when preparing an order
+
+Status: local engineering, 2026-10-02. All 44 tasks and 10 product gates remain NOT VERIFIED.
+
+## Ordering procedure
+
+Choose **Prepare order**, select the customer and warehouse, then continue. The quantity editor loads that customer's current prices and saved quantities. Each product shows its unit price, unit tax and currency. A buyer can select only their assigned customer; administrators and commercial staff can prepare an order for a customer they are permitted to read.
+
+Continue to save quantities and obtain a fresh quote. The price shown while editing can change before this step; review the quote's lines and total before accepting. An accepted order retains the quoted prices and taxes even if the catalog price subsequently changes. Zero quantities remove a product. Canceling the quote preserves the saved cart, so reopening loads its quantities with newly read prices.
+
+A failed preparation keeps the customer and warehouse selection for retry. Closing the dialog, navigation, dashboard refresh and sign-out cancel preparation reads and prevent their late responses from reopening the editor. This fence applies to preparation reads; it is not a general cancellation guarantee for submitted order commands.
+
+## Price and access contract
+
+`Catalog.customerProducts(actor, accountId)` refreshes persisted identity, role, required-password restrictions, customer assignment and customer tier in one database transaction. Administrator, commercial and buyer roles are permitted; finance, warehouse, warranty and support are refused. Buyers cannot choose another account, and stale or forged caller grants do not expand access. These checks precede even an empty catalog result.
+
+The catalog joins only its own product and tier-price tables within the current organization. Each active product uses the selected customer's tier price, falling back to its base price when that tier has no override. A zero override remains zero. Unit tax uses the same exact integer, half-up calculation as native quotes. A product in a different currency refuses the projection; no implicit conversion occurs.
+
+The public projection contains exactly `id`, `sku`, `name`, `serialized`, `unit_price`, `unit_tax`, `tax_bp` and `currency`. It excludes other tier prices and internal organization/activity fields. A buyer's dashboard uses this projection for their current assigned customer. Staff dashboards retain their existing base catalog projection; staff quantity editing fetches the selected customer's projection separately. Internal catalog APIs retain their existing business responsibilities.
+
+`GET /api/catalog/customer-products?accountId=...` requires a current session, accepts only the required account identifier (1–128 characters), rejects extra query fields and returns no-store responses. Denied HTTP access retains the existing authorization-denial audit; catalog/cart/order business facts remain unchanged. Buyer assignment changes revoke existing sessions. An unassigned buyer's full dashboard currently fails closed in the existing sold-unit reader; this checkpoint does not add an unassigned-buyer experience.
+
+## Qualification limits
+
+The product list and saved cart collection remain unbounded. Each pricing read is transaction-consistent, but cart, pricing and dashboard reads are separate and may become stale. Immediate read transactions, SQL cost, full catalog editing at scale and inactive saved-cart lines remain unqualified. Native quote and acceptance commands remain authoritative for account, currency, stock, credit, reservation and immutable price evidence.
+
+The [local receipt](evidence/LOCAL-CUSTOMER-PRICING-2026-10-02.md) records synthetic CA/US cases, phone-width Chromium workflows, retained failures and tested inputs. It does not establish country-specific tax obligations, actual provider/device behavior, infrastructure residency, production load/security/recovery or operator acceptance. This is partial D-008/D-018/D-019/D-020 and REQ-03/REQ-12/REQ-13 engineering; it does not pass G3 or any other product gate.

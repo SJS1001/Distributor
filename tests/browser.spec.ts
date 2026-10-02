@@ -1,4 +1,5 @@
 import { stockFactsDashboard } from "./stock-browser-facts.ts";
+import "./customer-pricing-browser-journey.ts";
 import "./stock-queue-browser-journey.ts";
 import "./invoice-queue-browser-journey.ts";
 import "./purchase-queue-browser-journey.ts";

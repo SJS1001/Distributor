@@ -6,6 +6,7 @@ import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
+import type { CustomerProduct } from "../shared/customer-products.ts";
 import React, { useEffect, useState, useRef } from "react";
 import { providerChoices, providerNames } from "../shared/provider-choices.ts";
 import { createRoot } from "react-dom/client";
@@ -156,6 +157,11 @@ function App() {
   const canadaPostOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const dashboardEpoch = useRef(0);
+  const orderEntryRead = useRef<AbortController | null>(null);
+  const stopOrderEntryRead = () => {
+    orderEntryRead.current?.abort();
+    orderEntryRead.current = null;
+  };
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
   const shipmentRequest = useRef<number | null>(null);
   const shipmentHeading = useRef<HTMLHeadingElement | null>(null);
@@ -169,6 +175,7 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    stopOrderEntryRead();
     orderQueue.stop();
     purchaseQueue.stop();
     invoiceQueue.stop();
@@ -368,6 +375,7 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    stopOrderEntryRead();
     orderQueue.stop();
     purchaseQueue.stop();
     invoiceQueue.stop();
@@ -412,6 +420,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    stopOrderEntryRead();
     orderQueue.stop();
     purchaseQueue.stop();
     invoiceQueue.stop();
@@ -421,6 +430,9 @@ function App() {
       [
         "Request return or warranty review",
         "Approve replacement reservation",
+        "Prepare an order",
+        "Edit order quantities",
+        "Review and accept order",
       ].includes(current?.title ?? "")
         ? null
         : current,
@@ -447,6 +459,7 @@ function App() {
         clearSession("Saved. Your sessions have ended. Sign in again.");
         return result;
       }
+      if ((result as Item)?.skipRefresh) return result;
       if (refreshAfter) await refresh();
       setNotice("Saved.");
       return result;
@@ -762,13 +775,19 @@ function App() {
     );
     return { keepDialog: true };
   };
-  const editCart = (accountId: string, warehouseId: string, old?: Item) => {
+  const editCart = (
+    accountId: string,
+    warehouseId: string,
+    products: CustomerProduct[],
+    old?: Item,
+  ) => {
     open(
       "Edit order quantities",
-      data!.products.map((p: Item) => ({
+      products.map((p) => ({
         name: p.id,
         label: `${p.sku} · ${p.name}`,
         type: "number",
+        help: `Customer price ${money(p.unit_price, p.currency)} + ${money(p.unit_tax, p.currency)} tax per unit (${p.currency}).`,
         value:
           old?.lines.find((l: Item) => l.productId === p.id)?.quantity ?? 0,
       })),
@@ -777,13 +796,13 @@ function App() {
           accountId,
           warehouseId,
           revision: old?.revision ?? 0,
-          lines: data!.products
-            .map((p: Item) => ({ productId: p.id, quantity: v[p.id] }))
+          lines: products
+            .map((p) => ({ productId: p.id, quantity: v[p.id] }))
             .filter((l: Item) => l.quantity > 0),
         });
         return reviewCart(cart);
       },
-      "Set the quantity for each product. Zero removes a product. Saved quantities are loaded before editing. If another session changes this cart, reopen it to review the latest quantities.",
+      "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If another session changes this cart, reopen it to review the latest quantities.",
     );
   };
   const placeOrder = (
@@ -810,16 +829,44 @@ function App() {
         ),
       ],
       async (v) => {
-        const carts = await request("/api/carts");
-        editCart(
-          v.accountId,
-          v.warehouseId,
-          carts.find(
-            (c: Item) =>
-              c.account_id === v.accountId && c.warehouse_id === v.warehouseId,
-          ),
-        );
-        return { keepDialog: true };
+        stopOrderEntryRead();
+        const controller = new AbortController();
+        orderEntryRead.current = controller;
+        try {
+          const [carts, products] = await Promise.all([
+            request<Item[]>("/api/carts", { signal: controller.signal }),
+            request<CustomerProduct[]>(
+              `/api/catalog/customer-products?accountId=${encodeURIComponent(v.accountId)}`,
+              { signal: controller.signal },
+            ),
+          ]);
+          if (
+            !controller.signal.aborted &&
+            orderEntryRead.current === controller
+          )
+            editCart(
+              v.accountId,
+              v.warehouseId,
+              products,
+              carts.find(
+                (c) =>
+                  c.account_id === v.accountId &&
+                  c.warehouse_id === v.warehouseId,
+              ),
+            );
+          return { keepDialog: true, skipRefresh: true };
+        } catch (error) {
+          if (
+            controller.signal.aborted ||
+            orderEntryRead.current !== controller
+          )
+            return { keepDialog: true, skipRefresh: true };
+          throw error;
+        } finally {
+          if (orderEntryRead.current === controller)
+            orderEntryRead.current = null;
+          controller.abort();
+        }
       },
     );
   const table = (
@@ -1015,6 +1062,7 @@ function App() {
               key={p}
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
+                stopOrderEntryRead();
                 orderQueue.stop();
                 purchaseQueue.stop();
                 invoiceQueue.stop();
@@ -1025,6 +1073,9 @@ function App() {
                   [
                     "Request return or warranty review",
                     "Approve replacement reservation",
+                    "Prepare an order",
+                    "Edit order quantities",
+                    "Review and accept order",
                   ].includes(current?.title ?? "")
                     ? null
                     : current,
@@ -5818,7 +5869,10 @@ function App() {
           dialog={dialog}
           busy={busy}
           error={error}
-          close={() => setDialog(null)}
+          close={() => {
+            stopOrderEntryRead();
+            setDialog(null);
+          }}
           submit={async (values) => {
             try {
               const result = await run(() => dialog.perform(values));
