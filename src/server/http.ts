@@ -1627,13 +1627,15 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));
   http.get("/api/purchases", async (request) => {
     const current = actor(request),
-      page = app.procurement.orderPage(current);
+      page = app.procurement.orderPage(current),
+      returns = app.procurement.returnPage(current);
     return {
       suppliers: app.procurement.suppliers(current),
       orders: page.items,
       orderNext: page.next,
       receipts: app.procurement.receipts(current),
-      returns: app.procurement.returns(current),
+      returns: returns.items,
+      returnNext: returns.next,
       drafts: app.procurement.drafts.list(current),
     };
   });
@@ -1657,6 +1659,22 @@ export async function createHttp(app: Application, options: HttpOptions) {
     { schema: { params: obj({ orderId: str }) } },
     async (request) =>
       app.procurement.order(actor(request), request.params.orderId),
+  );
+  http.get<{ Querystring: { after?: string; q?: string } }>(
+    "/api/purchases/returns/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 512 },
+            q: { type: "string", maxLength: 160 },
+          },
+          ["after", "q"],
+        ),
+      },
+    },
+    async (request) =>
+      app.procurement.returnPage(actor(request), request.query),
   );
   http.get<{ Params: { returnId: string }; Querystring: { after?: string } }>(
     "/api/purchases/returns/:returnId/history",

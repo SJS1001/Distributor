@@ -555,6 +555,89 @@ export class Procurement {
         followup: this.followups.summary(actor, r.id),
       }));
   }
+  returnPage(actor: Actor, input: { after?: string; q?: string } = {}) {
+    return this.database.transaction(() => {
+      actor = this.followups.authorize(actor);
+      check(
+        input.q === undefined ||
+          (typeof input.q === "string" && input.q.length <= 160),
+        "VALIDATION",
+        "Supplier return search must contain at most 160 characters.",
+        400,
+      );
+      const q = (input.q ?? "")
+        .trim()
+        .replace(/[A-Z]/g, (c) => c.toLowerCase());
+      const scope = this.orderScope(actor);
+      let anchor: SupplierReturn | undefined;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Supplier return cursor", 512);
+        let cursor: unknown;
+        try {
+          const decoded = Buffer.from(encoded, "base64url");
+          check(
+            decoded.toString("base64url") === encoded,
+            "VALIDATION",
+            "Invalid supplier return cursor.",
+            400,
+          );
+          cursor = JSON.parse(decoded.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid supplier return cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 3 &&
+            cursor[0] === 1 &&
+            cursor[1] === q &&
+            typeof cursor[2] === "string" &&
+            cursor[2].length > 0 &&
+            cursor[2].length <= 128,
+          "VALIDATION",
+          "Supplier return cursor does not match this search.",
+          400,
+        );
+        anchor = this.store.get<SupplierReturn>(
+          `SELECT * FROM procurement_returns WHERE ${scope.where} AND id=?`,
+          ...scope.params,
+          cursor[2],
+        );
+        check(
+          anchor,
+          "NOT_FOUND",
+          "Supplier return is unavailable in your current scope.",
+          404,
+        );
+      }
+      if (q) {
+        scope.where +=
+          " AND (instr(lower(return_ref),?)>0 OR instr(lower(COALESCE(serial,'')),?)>0 OR instr(lower(reason),?)>0)";
+        scope.params.push(q, q, q);
+      }
+      if (anchor) {
+        scope.where += " AND (created_at<? OR (created_at=? AND id<?))";
+        scope.params.push(anchor.created_at, anchor.created_at, anchor.id);
+      }
+      const rows = this.store.all<SupplierReturn>(
+        `SELECT * FROM procurement_returns WHERE ${scope.where} ORDER BY created_at DESC,id DESC LIMIT 21`,
+        ...scope.params,
+      );
+      const items = rows.slice(0, 20).map(({ input_hash, result, ...r }) => ({
+        ...r,
+        result: JSON.parse(result) as SupplierReturnResult,
+        followup: this.followups.summary(actor, r.id),
+      }));
+      return {
+        items,
+        next:
+          rows.length > 20
+            ? Buffer.from(JSON.stringify([1, q, items[19]!.id])).toString(
+                "base64url",
+              )
+            : null,
+      };
+    });
+  }
   returnStock(
     actor: Actor,
     key: string,
