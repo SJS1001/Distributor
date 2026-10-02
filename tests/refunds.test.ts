@@ -567,6 +567,14 @@ test("refund queue retries require current consent, recovery clearance and finan
 
 test("revoked actor during provider I/O leaves native refund unknown for later qualified reconciliation", async (t) => {
   const f = setup(t);
+  const observerId = f.app.identity.createUser(f.actor, "refund-observer", {
+    name: "Synthetic finance observer",
+    email: "refund-observer@example.test",
+    password: "long-synthetic-observer-password",
+    role: "finance",
+    sites: [],
+  }).id;
+  const observer = f.app.identity.currentActor({ ...f.actor, id: observerId });
   const a: Adapter = {
     ...adapter(),
     execute: async (e) => {
@@ -577,7 +585,10 @@ test("revoked actor during provider I/O leaves native refund unknown for later q
     },
   };
   await assert.rejects(f.app.integration.execute(f.actor, f.effect.id, a));
-  assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 0);
+  assert.throws(() => f.app.billing.totals(f.actor, f.invoiceId), {
+    code: "FORBIDDEN",
+  });
+  assert.equal(f.app.billing.totals(observer, f.invoiceId).refunded, 0);
   f.app.database
     .owned("iam")
     .run("UPDATE iam_users SET active=1 WHERE id=?", f.actor.id);

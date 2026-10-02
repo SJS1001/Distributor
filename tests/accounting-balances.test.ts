@@ -68,8 +68,18 @@ function facts(f: Awaited<ReturnType<typeof setup>>) {
         "SELECT * FROM orders_lines WHERE org_id=? ORDER BY id",
         f.actor.orgId,
       ),
-    invoices: f.app.billing.invoices(f.actor),
-    credits: f.app.billing.credits(f.actor),
+    invoices: f.app.database
+      .owned("billing")
+      .all(
+        "SELECT * FROM billing_invoices WHERE org_id=? ORDER BY id",
+        f.actor.orgId,
+      ),
+    credits: f.app.database
+      .owned("billing")
+      .all(
+        "SELECT * FROM billing_credits WHERE org_id=? ORDER BY id",
+        f.actor.orgId,
+      ),
     payments: f.app.database
       .owned("billing")
       .all(
@@ -502,6 +512,12 @@ test("completion rechecks consent, credential status and restore isolation, and 
         code: "PASSWORD_CHANGE_REQUIRED",
       });
       assert.throws(() => f.app.orders.list(f.actor), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
+      assert.throws(() => f.app.billing.invoices(f.actor), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
+      assert.throws(() => f.app.billing.credits(f.actor), {
         code: "PASSWORD_CHANGE_REQUIRED",
       });
       assert.throws(() => f.app.billing.refunds.list(f.actor), {

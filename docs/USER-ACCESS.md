@@ -118,3 +118,12 @@ Shipment details, picking projections and internal sales controls now reload act
 Packing reloads current warehouse/admin authority inside the existing command transaction before returning a saved result or applying an effect. Existing pick, shortage, handover, void and delivery guards retain current role/site/password checks before saved/new results. A revoked packing retry is refused even when the shipment has subsequently been voided or shipped; an authorized identical retry retains its original result. Packing still consumes no stock and creates no invoice. Handover, coverage and delivery retain their native quantity/money/receipt rules.
 
 See the [local fulfillment authority evidence](evidence/LOCAL-FULFILLMENT-AUTHORITY-2026-10-02.md). Separate reads do not establish one coherent snapshot, compatibility collections/internal projections remain unbounded, and other module authorization plus production security/volume/operator acceptance remain open. All tasks and gates remain NOT VERIFIED.
+
+
+## Current billing authority
+
+Billing invoice details/lines/balances, invoice/credit collections, recorded payment/credit details, account exposure and internal finance controls reload the active persisted principal and required-password state before reads. Supplied roles/account assignments cannot increase or reduce actual grants. Buyers see only the currently assigned account; a missing assignment returns empty invoice/credit collections. Collection queries apply buyer scope before materializing rows.
+
+Manual payment, standalone credit, refund request and bank refund verification reauthorize current finance/admin access inside the native command transaction before saved results or effects. Owning shipment invoicing requires current warehouse/admin access; exposure operations retain commercial/buyer or warehouse permissions as appropriate. Owning warranty credits require current warranty/finance/admin access and verified provider payments require current finance/admin access. Buyer exposure release checks the held order's account. Existing native money, credit limits and retry rules remain in force.
+
+See [local billing evidence](evidence/LOCAL-BILLING-AUTHORITY-2026-10-02.md). Organization-wide staff visibility remains provisional; warehouse invoice detail is an existing owning fulfillment requirement, not site-qualified billing access. Unbounded collections, separate read snapshots, other module boundaries and production security acceptance remain open. All tasks/gates remain NOT VERIFIED.

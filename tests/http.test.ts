@@ -621,6 +621,16 @@ test("HTTP supplier handover rejects caller-supplied cost/identity and revoked r
   assert.equal(history.receipts[0].unit_ids, undefined);
   assert.equal(history.receipts[0].returnedQuantity, 1);
   assert.equal(f.app.inventory.unit(f.actor, unit.id).quantity, 0);
-  assert.equal(f.app.billing.invoices(f.actor).length, 0);
-  assert.equal(f.app.billing.credits(f.actor).length, 0);
+  assert.throws(() => f.app.billing.invoices(f.actor), { code: "FORBIDDEN" });
+  assert.throws(() => f.app.billing.credits(f.actor), { code: "FORBIDDEN" });
+  for (const table of ["invoices", "credits"])
+    assert.equal(
+      f.app.database
+        .owned("billing")
+        .get<{ count: number }>(
+          `SELECT count(*) count FROM billing_${table} WHERE org_id=?`,
+          f.actor.orgId,
+        )!.count,
+      0,
+    );
 });

@@ -523,11 +523,24 @@ test("current organization/role and fingerprint guard reviews and replays; chang
     () => f.app.migration.documents.decide(warehouse, "clean", approved(clean)),
     { code: "FORBIDDEN" },
   );
-  const wrongBuyer = {
-    ...f.actor,
-    role: "buyer" as const,
-    accountId: "foreign",
-  };
+  const otherAccount = f.app.identity.createCustomer(
+    f.actor,
+    "other-billing-account",
+    {
+      name: "Other synthetic account",
+      tier: "standard",
+      creditLimit: 1000000,
+    },
+  ).id;
+  const buyerId = f.app.identity.createUser(f.actor, "other-billing-buyer", {
+    name: "Other synthetic buyer",
+    email: "other-billing-buyer@example.test",
+    password: "long-synthetic-buyer-password",
+    role: "buyer",
+    sites: [],
+    accountId: otherAccount,
+  }).id;
+  const wrongBuyer = f.app.identity.currentActor({ ...f.actor, id: buyerId });
   assert.throws(
     () =>
       f.app.billing.invoice(

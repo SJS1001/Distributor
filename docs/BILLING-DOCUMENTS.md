@@ -66,3 +66,12 @@ The Billing screen loads recorded cash payments in pages of 20. **Load older pay
 `GET /api/billing/payments/page` and `GET /api/billing/invoices/:invoiceId/payments/page` accept only optional `after` (1–128 characters) and return `{items,next}`. Up to 20 whitelisted summaries are returned from a query that materializes at most 21 rows. Both routes and the compatibility list recheck current active organization/finance/support/password authority before payment reads. Invoice selection checks the scoped original invoice; continuation checks the cursor's organization and, when selected, invoice. Missing or foreign cursors share a generic error; all HTTP reads are authenticated and no-store.
 
 Ordering is descending recorded time then ID. Later newer payments appear after Refresh; permitted older insertions can appear during continuation, so this is not a frozen snapshot. Compatibility payments and other dashboard collections remain unbounded. Returned-row limits do not qualify SQLite scan/sort/locking cost, production indexing/load/retention, history deletion, actual providers/cash reconciliation, residency or operator acceptance. See [local evidence](evidence/LOCAL-PAYMENT-PAGES-2026-10-01.md). All tasks/gates remain NOT VERIFIED.
+
+
+## Current billing access
+
+Invoice, line and balance reads use current persisted identity/password authority and buyer account assignment. Invoice/credit collection queries scope buyers before materialization; buyers without an account see empty collections. Recorded payment/credit details retain finance/support/admin access. Finance controls require current finance/admin access. A caller's captured role or account cannot replace current grants.
+
+Manual payments, standalone credits, refund requests and bank refund confirmations check current finance/admin authority before returning saved retries or changing money. Deactivation, demotion or required password changes therefore block completed retries as well as new commands. Owning shipment and warranty operations retain their native permissions and business checks; verified payments use an actual persisted finance/admin worker principal.
+
+See [access instructions](USER-ACCESS.md#current-billing-authority) and [local verification](evidence/LOCAL-BILLING-AUTHORITY-2026-10-02.md). Staff visibility, site-qualified invoice access, unbounded collections/coherent read snapshots and production/provider/operator acceptance remain unqualified. All product gates remain NOT VERIFIED.

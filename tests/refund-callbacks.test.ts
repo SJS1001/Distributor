@@ -420,6 +420,17 @@ test("current grants and recovery are checked after I/O and failed completion ro
     const f = setup(t);
     await f.runtime.execute(f.actor, f.effect.id);
     const c = f.receive();
+    const observerId = f.app.identity.createUser(f.actor, "callback-observer", {
+      name: "Synthetic finance observer",
+      email: "callback-observer@example.test",
+      password: "long-synthetic-observer-password",
+      role: "finance",
+      sites: [],
+    }).id;
+    const observer = f.app.identity.currentActor({
+      ...f.actor,
+      id: observerId,
+    });
     let reads = 0;
     const a: Adapter = {
       execute: async () => {
@@ -452,11 +463,15 @@ test("current grants and recovery are checked after I/O and failed completion ro
     };
     await f.app.integration.refundCallbacks.run(f.actor, c.id, a);
     assert.equal(reads, 1);
-    assert.equal(f.app.billing.totals(f.actor, f.invoiceId).refunded, 11300);
-    if (change === "password")
+    assert.equal(f.app.billing.totals(observer, f.invoiceId).refunded, 11300);
+    if (change === "password") {
+      assert.throws(() => f.app.billing.totals(f.actor, f.invoiceId), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
       assert.throws(() => f.app.billing.refunds.list(f.actor), {
         code: "PASSWORD_CHANGE_REQUIRED",
       });
+    }
     assert.equal(
       f.app.database
         .owned("billing")

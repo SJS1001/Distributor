@@ -8,6 +8,7 @@ import {
   permit,
   text,
   type Actor,
+  type Role,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
@@ -72,6 +73,11 @@ export type RecordedCredit = {
   created_at: string;
   lines: (CommercialLine & { invoiceLineId: string })[];
 };
+type CreditRow = Omit<RecordedCredit, "lines"> & {
+  org_id: string;
+  reference: string;
+  reason: string;
+};
 export class Billing {
   private store: Store;
   readonly opening: BillingOpening;
@@ -118,6 +124,27 @@ export class Billing {
       this.documents,
     );
   }
+  private current(
+    actor: Actor,
+    roles: Role[] = [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+      "buyer",
+    ],
+  ) {
+    actor = this.identity.currentActor(actor);
+    permit(actor, roles);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing billing.",
+      403,
+    );
+    return actor;
+  }
   private number(actor: Actor, prefix: string): string {
     while (true) {
       this.store.run(
@@ -141,6 +168,7 @@ export class Billing {
     }
   }
   invoice(actor: Actor, invoiceId: string): Invoice {
+    actor = this.current(actor);
     const row = this.store.get<InvoiceRow>(
       "SELECT * FROM billing_invoices WHERE org_id=? AND id=?",
       actor.orgId,
@@ -186,7 +214,7 @@ export class Billing {
   }
   // Opening provenance, rather than an ID prefix, distinguishes historical documents.
   salesEvidence(actor: Actor): BillingSalesEvidence {
-    permit(actor, ["finance"]);
+    actor = this.current(actor, ["finance"]);
     return {
       invoices: this.store.all(
         `SELECT i.id,i.order_id AS "order",i.shipment_id AS shipment,i.account_id AS account,i.currency,
@@ -205,6 +233,7 @@ export class Billing {
   }
   // Internal owning operation: Application.reconciliation supplies authority and snapshot.
   controlTotals(actor: Actor, currency: string) {
+    actor = this.current(actor, ["finance"]);
     return billingControls(this.store, actor, currency);
   }
   totals(actor: Actor, invoiceId: string) {
@@ -243,6 +272,7 @@ export class Billing {
     };
   }
   exposure(actor: Actor, accountId: string) {
+    actor = this.current(actor);
     this.identity.customer(actor, accountId);
     const holds = Number(
       this.store.get(
@@ -269,6 +299,7 @@ export class Billing {
     orderId: string,
     amount: number,
   ) {
+    actor = this.current(actor, ["commercial", "buyer"]);
     const customer = this.identity.customer(actor, accountId);
     check(!customer.held, "CREDIT_HOLD", "Account is on hold.");
     check(
@@ -285,11 +316,13 @@ export class Billing {
     );
   }
   releaseExposure(actor: Actor, orderId: string, amount: number) {
+    actor = this.current(actor, ["commercial", "buyer", "warehouse"]);
     const hold = this.store.get(
-      "SELECT amount FROM billing_holds WHERE org_id=? AND order_id=?",
+      "SELECT account_id,amount FROM billing_holds WHERE org_id=? AND order_id=?",
       actor.orgId,
       orderId,
     );
+    if (hold) account(actor, String(hold.account_id));
     check(
       hold && Number(hold.amount) >= amount,
       "EXPOSURE",
@@ -308,6 +341,7 @@ export class Billing {
     orderId: string,
     amount: number,
   ) {
+    actor = this.current(actor, ["commercial", "buyer"]);
     integer(amount, "additional order exposure", 1, 1e12);
     const customer = this.identity.customer(actor, accountId),
       hold = this.store.get(
@@ -341,6 +375,7 @@ export class Billing {
     shipmentId: string,
     lines: CommercialLine[],
   ) {
+    actor = this.current(actor, ["warehouse"]);
     check(lines.length > 0, "VALIDATION", "Invoice requires lines.", 400);
     const customer = this.identity.customer(actor, accountId);
     const old = this.store.get<InvoiceRow>(
@@ -391,12 +426,18 @@ export class Billing {
     return { id: invoiceId, number };
   }
   invoices(actor: Actor) {
-    permit(actor, ["finance", "commercial", "buyer", "warranty", "support"]);
+    actor = this.current(actor, [
+      "finance",
+      "commercial",
+      "buyer",
+      "warranty",
+      "support",
+    ]);
     return this.store
       .all<InvoiceRow>(
-        "SELECT * FROM billing_invoices WHERE org_id=? AND (? IS NULL OR account_id=?) ORDER BY created_at DESC",
+        "SELECT * FROM billing_invoices WHERE org_id=? AND (?=0 OR account_id=?) ORDER BY created_at DESC",
         actor.orgId,
-        actor.role === "buyer" ? actor.accountId : null,
+        actor.role === "buyer" ? 1 : 0,
         actor.accountId,
       )
       .map((i) => ({
@@ -407,7 +448,7 @@ export class Billing {
       }));
   }
   recordedPayment(actor: Actor, paymentId: string): RecordedPayment {
-    permit(actor, ["finance", "support"]);
+    actor = this.current(actor, ["finance", "support"]);
     const payment = this.store.get<RecordedPayment>(
       "SELECT * FROM billing_payments WHERE org_id=? AND id=?",
       actor.orgId,
@@ -424,6 +465,7 @@ export class Billing {
     reason: string,
     lines: { lineId: string; quantity: number }[],
   ) {
+    actor = this.current(actor, ["finance", "warranty"]);
     const invoice = this.invoice(actor, invoiceId);
     text(reason, "credit reason", 1000);
     check(lines.length > 0, "VALIDATION", "Credit requires lines.", 400);
@@ -513,7 +555,7 @@ export class Billing {
       key,
       input,
       () => {
-        permit(actor, ["finance"]);
+        actor = this.current(actor, ["finance"]);
         this.invoice(actor, input.invoiceId);
       },
       () =>
@@ -533,6 +575,7 @@ export class Billing {
     provider: string,
     externalRef: string,
   ) {
+    actor = this.current(actor, ["finance"]);
     const invoice = this.invoice(actor, invoiceId);
     const old = this.store.get(
       "SELECT * FROM billing_payments WHERE org_id=? AND provider=? AND external_ref=?",
@@ -588,7 +631,7 @@ export class Billing {
       key,
       input,
       () => {
-        permit(actor, ["finance"]);
+        actor = this.current(actor, ["finance"]);
         this.invoice(actor, input.invoiceId);
       },
       () => {
@@ -620,7 +663,7 @@ export class Billing {
       key,
       input,
       () => {
-        permit(actor, ["finance"]);
+        actor = this.current(actor, ["finance"]);
         this.invoice(actor, input.invoiceId);
       },
       () => {
@@ -682,7 +725,9 @@ export class Billing {
       "billing.refund.manual",
       key,
       input,
-      () => permit(actor, ["finance"]),
+      () => {
+        actor = this.current(actor, ["finance"]);
+      },
       () => {
         const refund = this.store.get(
           "SELECT * FROM billing_refunds WHERE org_id=? AND id=?",
@@ -745,7 +790,7 @@ export class Billing {
     );
   }
   recordedCredit(actor: Actor, creditId: string): RecordedCredit {
-    permit(actor, ["finance", "support"]);
+    actor = this.current(actor, ["finance", "support"]);
     const credit = this.store.get<Omit<RecordedCredit, "lines">>(
       "SELECT id,invoice_id,number,net,tax,total,created_at FROM billing_credits WHERE org_id=? AND id=?",
       actor.orgId,
@@ -776,20 +821,20 @@ export class Billing {
     return { ...credit, lines };
   }
   credits(actor: Actor) {
-    permit(actor, ["finance", "commercial", "buyer", "warranty", "support"]);
+    actor = this.current(actor, [
+      "finance",
+      "commercial",
+      "buyer",
+      "warranty",
+      "support",
+    ]);
     return this.store
-      .all(
-        "SELECT * FROM billing_credits WHERE org_id=? ORDER BY created_at DESC",
+      .all<CreditRow>(
+        "SELECT c.* FROM billing_credits c JOIN billing_invoices i ON i.org_id=c.org_id AND i.id=c.invoice_id WHERE c.org_id=? AND (?=0 OR i.account_id=?) ORDER BY c.created_at DESC",
         actor.orgId,
+        actor.role === "buyer" ? 1 : 0,
+        actor.accountId,
       )
-      .filter((c) => {
-        const i = this.store.get<InvoiceRow>(
-          "SELECT * FROM billing_invoices WHERE org_id=? AND id=?",
-          actor.orgId,
-          String(c.invoice_id),
-        )!;
-        return actor.role !== "buyer" || i.account_id === actor.accountId;
-      })
       .map((c) => ({
         ...c,
         hasActivePublication: this.hasActivePublication(
