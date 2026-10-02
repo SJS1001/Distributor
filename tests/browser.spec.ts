@@ -1,3 +1,4 @@
+import "./invoice-queue-browser-journey.ts";
 import "./purchase-queue-browser-journey.ts";
 import "./order-queue-browser-journey.ts";
 import "./replacement-carrier-browser-journey.ts";

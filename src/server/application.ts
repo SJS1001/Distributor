@@ -254,6 +254,17 @@ export class Application {
     ].includes(actor.role)
       ? this.warranty.claimPage(actor)
       : { items: [], next: null };
+    const canReadInvoices = [
+      "admin",
+      "finance",
+      "commercial",
+      "buyer",
+      "warranty",
+      "support",
+    ].includes(actor.role);
+    const invoices = canReadInvoices
+      ? this.billing.invoicePage(actor)
+      : { items: [], next: null };
     return {
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
@@ -269,16 +280,11 @@ export class Application {
       orderCounts: this.orders.orderCounts(actor),
       shipments: shipments.items,
       shipmentNext: shipments.next,
-      invoices: [
-        "admin",
-        "finance",
-        "commercial",
-        "buyer",
-        "warranty",
-        "support",
-      ].includes(actor.role)
-        ? this.billing.invoices(actor)
-        : [],
+      invoices: invoices.items,
+      invoiceNext: invoices.next,
+      invoiceSummary: canReadInvoices
+        ? this.billing.invoiceSummary(actor)
+        : { total: 0, unpaid: 0, settled: 0, credit: 0, due: 0 },
       soldUnits: sold.items,
       soldUnitNext: sold.next,
       claims: claims.items,

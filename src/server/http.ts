@@ -1,4 +1,8 @@
 import {
+  invoiceQueueStates,
+  type InvoiceQueueState,
+} from "../shared/invoice-queue.ts";
+import {
   purchaseQueueStates,
   type PurchaseQueueState,
 } from "../shared/purchase-queue.ts";
@@ -1911,6 +1915,21 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .header("x-download-receipt", result.receipt.id)
         .send(result.bytes);
     },
+  );
+  http.get<{ Querystring: { after?: string; state?: InvoiceQueueState } }>(
+    "/api/billing/invoices/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 512 },
+            state: choice(...invoiceQueueStates),
+          },
+          ["after", "state"],
+        ),
+      },
+    },
+    async (request) => app.billing.invoicePage(actor(request), request.query),
   );
   http.get("/api/billing/payments", async (request) =>
     app.billing.refunds.payments(actor(request)),

@@ -1,3 +1,4 @@
+import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
 import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
@@ -103,6 +104,11 @@ function App() {
     data?.orderNext,
     page === "Orders" && !!actor && !busy,
   );
+  const invoiceQueue = useInvoiceQueue(
+    data?.invoices,
+    data?.invoiceNext,
+    page === "Billing" && !!actor && !busy,
+  );
   const purchaseQueue = usePurchaseQueue(
     extra.purchases?.orders,
     extra.purchases?.orderNext,
@@ -158,6 +164,7 @@ function App() {
   const refresh = async () => {
     orderQueue.stop();
     purchaseQueue.stop();
+    invoiceQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
@@ -350,6 +357,7 @@ function App() {
   const clearSession = (message = "") => {
     orderQueue.stop();
     purchaseQueue.stop();
+    invoiceQueue.stop();
     claimQueue.stop();
     setCoverageOpen(false);
     coverageOpener.current = null;
@@ -392,6 +400,7 @@ function App() {
   const signOut = () => {
     orderQueue.stop();
     purchaseQueue.stop();
+    invoiceQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
@@ -988,6 +997,7 @@ function App() {
               onClick={() => {
                 orderQueue.stop();
                 purchaseQueue.stop();
+                invoiceQueue.stop();
                 claimQueue.stop();
                 setPage(p);
                 setDialog((current) =>
@@ -1095,16 +1105,7 @@ function App() {
             <div className="metrics">
               {[
                 ["Open orders", data.orderCounts.open],
-                [
-                  "Invoice balance",
-                  money(
-                    data.invoices.reduce(
-                      (s: number, i: Item) => s + Math.max(0, i.balance),
-                      0,
-                    ),
-                    currency,
-                  ),
-                ],
+                ["Invoice balance", money(data.invoiceSummary.due, currency)],
                 [
                   "Open returns",
                   data.claims.filter(
@@ -2982,9 +2983,10 @@ function App() {
                 </a>
               )}
             </div>
+            <InvoiceQueueControls queue={invoiceQueue} />
             {table(
               ["Invoice", "Customer", "Total", "Balance", "Actions"],
-              data.invoices,
+              invoiceQueue.items,
               (i: Item) => [
                 <>
                   <strong>{i.number}</strong>
@@ -3156,9 +3158,8 @@ function App() {
                       );
                     return [
                       c.number,
-                      data.invoices.find((i: Item) => i.id === c.invoice_id)
-                        ?.number ?? c.invoice_id,
-                      money(c.total, currency),
+                      c.invoice_number,
+                      money(c.total, c.currency),
                       ...(can("finance") || can("support")
                         ? [
                             posted ? (
@@ -3252,9 +3253,7 @@ function App() {
                               "credit",
                               c.id,
                               c.number,
-                              data.invoices.find(
-                                (i: Item) => i.id === c.invoice_id,
-                              )?.account_id,
+                              c.account_id,
                             ),
                           )}
                       </div>,
@@ -4533,6 +4532,7 @@ function App() {
                       if (!warehouseId) return;
                       orderQueue.stop();
                       purchaseQueue.stop();
+                      invoiceQueue.stop();
                       claimQueue.stop();
                       setPage("Orders");
                       setCanadaPostWarehouse(warehouseId);

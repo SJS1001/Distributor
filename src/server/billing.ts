@@ -1,4 +1,9 @@
+import type { SQLInputValue } from "node:sqlite";
 import type { BillingSalesEvidence } from "./sales-evidence.ts";
+import {
+  invoiceQueueStates,
+  type InvoiceQueueState,
+} from "../shared/invoice-queue.ts";
 import {
   account,
   check,
@@ -91,7 +96,7 @@ export class Billing {
   readonly documents: BillingDocuments;
   readonly delivery: BillingDelivery;
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private identity: Identity,
     catalog: Catalog,
@@ -479,6 +484,145 @@ export class Billing {
         lines: this.lines(actor, i.id),
       }));
   }
+  private invoiceView(actor: Actor, invoiceId: string) {
+    return {
+      ...this.invoice(actor, invoiceId),
+      hasActivePublication: this.hasActivePublication(
+        actor,
+        "invoice",
+        invoiceId,
+      ),
+      ...this.totals(actor, invoiceId),
+      lines: this.lines(actor, invoiceId),
+    };
+  }
+  // Owning SQL projection uses the same native and opening facts as totals().
+  // Pending/unknown/rejected refunds never reduce the customer's credit balance.
+  private invoiceBalances() {
+    return `WITH balances AS (
+      SELECT i.*,
+        i.total-COALESCE(o.credited,0)-COALESCE(o.paid,0)+COALESCE(o.refunded,0)
+        -COALESCE((SELECT SUM(c.total) FROM billing_credits c WHERE c.org_id=i.org_id AND c.invoice_id=i.id),0)
+        -COALESCE((SELECT SUM(p.amount) FROM billing_payments p WHERE p.org_id=i.org_id AND p.invoice_id=i.id),0)
+        +COALESCE((SELECT SUM(r.amount) FROM billing_refunds r WHERE r.org_id=i.org_id AND r.invoice_id=i.id AND r.state='completed'),0)
+        AS balance
+      FROM billing_invoices i
+      LEFT JOIN billing_opening_documents o ON o.org_id=i.org_id AND o.invoice_id=i.id
+      WHERE i.org_id=? AND (?=0 OR i.account_id=?)
+    )`;
+  }
+  invoicePage(
+    actor: Actor,
+    input: { after?: string; state?: InvoiceQueueState } = {},
+  ) {
+    return this.database.transaction(() => {
+      actor = this.current(actor, [
+        "finance",
+        "commercial",
+        "buyer",
+        "warranty",
+        "support",
+      ]);
+      const state = input.state ?? null;
+      check(
+        state === null || invoiceQueueStates.includes(state),
+        "VALIDATION",
+        "Choose a supported invoice balance.",
+        400,
+      );
+      let anchor: Invoice | undefined;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Invoice cursor", 512);
+        let cursor: unknown;
+        try {
+          const decoded = Buffer.from(encoded, "base64url");
+          check(
+            decoded.toString("base64url") === encoded,
+            "VALIDATION",
+            "Invalid invoice cursor.",
+            400,
+          );
+          cursor = JSON.parse(decoded.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid invoice cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 3 &&
+            cursor[0] === 1 &&
+            cursor[1] === state &&
+            typeof cursor[2] === "string" &&
+            cursor[2].length > 0 &&
+            cursor[2].length <= 128,
+          "VALIDATION",
+          "Invoice cursor does not match this queue.",
+          400,
+        );
+        // A payment or credit may change an anchor's balance; its custody still applies.
+        anchor = this.invoice(actor, cursor[2]);
+      }
+      let where =
+        state === "unpaid"
+          ? "balance>0"
+          : state === "settled"
+            ? "balance=0"
+            : state === "credit"
+              ? "balance<0"
+              : "1=1";
+      const parameters = [
+        actor.orgId,
+        actor.role === "buyer" ? 1 : 0,
+        actor.accountId,
+      ] as SQLInputValue[];
+      if (anchor) {
+        where += " AND (created_at<? OR (created_at=? AND id<?))";
+        parameters.push(anchor.created_at, anchor.created_at, anchor.id);
+      }
+      const rows = this.store.all<InvoiceRow>(
+        `${this.invoiceBalances()} SELECT * FROM balances WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 21`,
+        ...parameters,
+      );
+      const items = rows
+        .slice(0, 20)
+        .map((row) => this.invoiceView(actor, row.id));
+      return {
+        items,
+        next:
+          rows.length > 20
+            ? Buffer.from(JSON.stringify([1, state, items[19]!.id])).toString(
+                "base64url",
+              )
+            : null,
+      };
+    });
+  }
+  invoiceSummary(actor: Actor) {
+    return this.database.transaction(() => {
+      actor = this.current(actor, [
+        "finance",
+        "commercial",
+        "buyer",
+        "warranty",
+        "support",
+      ]);
+      const row = this.store.get(
+        `${this.invoiceBalances()}
+        SELECT COUNT(*) AS total,COALESCE(SUM(balance>0),0) AS unpaid,
+        COALESCE(SUM(balance=0),0) AS settled,COALESCE(SUM(balance<0),0) AS credit,
+        COALESCE(SUM(MAX(0,balance)),0) AS due FROM balances`,
+        actor.orgId,
+        actor.role === "buyer" ? 1 : 0,
+        actor.accountId,
+      )!;
+      return {
+        total: Number(row.total),
+        unpaid: Number(row.unpaid),
+        settled: Number(row.settled),
+        credit: Number(row.credit),
+        due: Number(row.due),
+      };
+    });
+  }
   recordedPayment(actor: Actor, paymentId: string): RecordedPayment {
     actor = this.current(actor, ["finance", "support"]);
     const payment = this.store.get<RecordedPayment>(
@@ -861,8 +1005,14 @@ export class Billing {
       "support",
     ]);
     return this.store
-      .all<CreditRow>(
-        "SELECT c.* FROM billing_credits c JOIN billing_invoices i ON i.org_id=c.org_id AND i.id=c.invoice_id WHERE c.org_id=? AND (?=0 OR i.account_id=?) ORDER BY c.created_at DESC",
+      .all<
+        CreditRow & {
+          account_id: string;
+          invoice_number: string;
+          currency: string;
+        }
+      >(
+        "SELECT c.*,i.account_id,i.number AS invoice_number,i.currency FROM billing_credits c JOIN billing_invoices i ON i.org_id=c.org_id AND i.id=c.invoice_id WHERE c.org_id=? AND (?=0 OR i.account_id=?) ORDER BY c.created_at DESC",
         actor.orgId,
         actor.role === "buyer" ? 1 : 0,
         actor.accountId,
