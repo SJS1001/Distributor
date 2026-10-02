@@ -452,3 +452,8 @@ See [the warehouse procedure](CARRIER-BOOKINGS.md#dhl-warehouse-declaration-cont
 
 
 Original [Zebra ZPL stock-label exports](SCANNING.md#zebra-zpl-stock-identity-export) now provide explicit 8/12 dots-per-mm profiles, full Unicode identity/QR graphics, immutable prepared receipts and browser integrity/size refusal. PDF retry identity is preserved. See [local evidence](evidence/LOCAL-STOCK-ZPL-2026-10-01.md); physical printers, firmware, calibration, actual scans and D-017/product gates remain unqualified.
+
+
+## Protected QuickBooks token revocation — 2026-10-01
+
+Original integration-owned revocation code and protected operator CLI now disable local managed tokens/cancel OAuth claims before one outbound request, retain unresolved outcomes across crashes and refuse reconnect/key rotation until explicit review. Current authority/customer-choice/key/revision/restore checks fence late replies. Offline review retains distinct provider-response and operator-evidence confirmation sources; no token is reactivated. Schema version three adds owned receipt storage with explicit fresh-file upgrades from independently frozen version-one/version-two profiles; old encrypted archives remain refused. See the [operator runbook](QUICKBOOKS-REVOCATION.md) and [local evidence](evidence/LOCAL-QUICKBOOKS-REVOCATION-2026-10-01.md). No SDK source, package or license change; no actual Intuit request. Full provider/device/operating acceptance and all tasks/gates remain NOT VERIFIED.

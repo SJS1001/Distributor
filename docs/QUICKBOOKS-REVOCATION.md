@@ -1,0 +1,41 @@
+# Reviewed QuickBooks token revocation
+
+D-009/D-029/D-036/D-039 engineering work. All product tasks and gates remain NOT VERIFIED. Current authority permits local synthetic verification and commits only. The procedure below describes a capability for separately authorized provider operation; no Intuit request or provider qualification has occurred.
+
+## Choose the operation
+
+[Local disconnect](PROVIDERS.md#quickbooks-local-disconnect) removes locally usable credentials without contacting Intuit. Explicit upstream token revocation is a separate protected operator CLI operation. It captures the current ready refresh token in process memory, disables local credentials and cancels pending/exchanging authorization attempts in one native transaction before its sole outbound request. It changes no native stock, order, invoice, payment or shipment facts. Customer withdrawal does not automatically transmit a revocation request.
+
+A fresh request requires a current finance/administrator worker with completed password requirements, the fixed organization/company/client/binding and owning customer, the customer's current named QuickBooks processing choice, current encryption key and no recovery hold. A refreshing, unknown, absent or already disabled credential cannot supply the token. Resolve those states separately. Offline receipt inspection/review requires current worker/customer/binding authority but can operate after customer withdrawal, without a decryption key and during a restore hold. Deactivated-worker recovery remains unimplemented; do not edit grants or credential records to bypass it.
+
+## Protected operator interface
+
+Use Node 24.16.x and a version-three regional store. Earlier stores require the separate [fresh-file schema upgrade](SCHEMA-UPGRADES.md), with all old API/worker/operator processes stopped. Version-three checks cannot fence old binaries. Filesystem authority covers the entire store; the CLI is not an account administrator export or a browser endpoint.
+
+Export the exact `DATABASE_PATH`, `DATA_REGION`, `PROVIDER_BINDING_ID`, `PROVIDER_ORG_ID`, `PROVIDER_WORKER_USER_ID`, `PROVIDER_ACCOUNT_ID`, `QUICKBOOKS_REALM_ID` and `QUICKBOOKS_CLIENT_ID`. Respect the store's optional `EVENT_REPORTS` profile. A new outbound request additionally requires `PROVIDER_ENCRYPTION_KEY`, `QUICKBOOKS_CLIENT_SECRET` and explicitly `PROVIDERS_ENABLED=true`; the CLI refuses default-disabled or missing-secret configuration before opening the application. This flag does not grant permission to activate providers. Keep secrets in approved runtime configuration and supply operation JSON through protected noninteractive stdin, bounded to 32 KiB. Extra arguments, arrays, unknown revocation fields and invalid operation values reject. Never place tokens, client secrets, authorization codes or keys in arguments, history, repository files, logs or review evidence.
+
+| Command | Exact input fields | Meaning |
+| --- | --- | --- |
+| `npm run provider:credentials -- revoke` | `{ "receiptId": "unique-reviewed-operation", "revision": 1 }` | Require the inspected ready credential revision and create one durable request claim |
+| `npm run provider:credentials -- revocation-status` | `{ "receiptId": "unique-reviewed-operation" }` | Offline scoped receipt metadata; no token or response body |
+| `npm run provider:credentials -- revocation-review` | `{ "receiptId": "unique-reviewed-operation", "revision": 2, "resolution": "provider-confirmed", "evidence": "reference to separately retained operator verification" }` | Record an explicit outcome against current disabled credentials; `provider-unconfirmed` is the other allowed resolution |
+
+The numbers above are examples, not values to copy without inspection. Input must come from a protected file or stdin, not command arguments. Receipts are scoped to the original binding, company, client, worker and customer. Repeating the same receipt and original revision returns its recorded metadata without resending, including after credential replacement; a changed input or a new receipt for the same original revision conflicts. Use `revocation-status` when outbound access is disabled. Repeating `revoke` still requires its explicit CLI enablement/secret configuration even for a cached receipt.
+
+## Outcomes and operator review
+
+Only a bounded HTTP 200 response under the still-current claim, worker, customer choice version, key, disabled credential revision and restore clearance marks a receipt `confirmed` with `confirmationSource=provider-response`. The request uses the fixed Intuit revocation endpoint, Basic client authentication, JSON containing the captured refresh token, a 20-second timeout, redirects refused and a 64 KiB response bound. Response bytes are discarded rather than stored. Errors are redacted. The integration receipt stores identities, revisions, choice version, claim/times, outcome and optional review evidence; it stores no token, client secret or provider response body.
+
+A network failure, non-200 response, excessive/failed body read or late authority/claim change leaves `unknown`. A process crash can leave `sending`. Both fence token installation, authorization, managed token access and key rotation. Neither state causes automatic resend, including after a restart or lost reply. Local disable can still advance its own revision. A current unresolved receipt must be explicitly reviewed before reconnecting.
+
+Inspect the receipt and separately establish the actual provider outcome. An `unknown` receipt is immediately reviewable; a `sending` receipt is reviewable only after its 90-second claim deadline. Supply the current disabled credential revision, explicit resolution and bounded nonempty evidence reference. Review updates outcome and audit together. An identical terminal review is idempotent; a contradictory outcome/evidence conflicts. Review never reinstalls tokens, sends another request or clears a recovery hold. A late response cannot overwrite a reviewed receipt.
+
+`provider-confirmed` records `confirmed` with `confirmationSource=operator-evidence`; this is the operator's assertion, distinct from an observed HTTP response. `provider-unconfirmed` records `released` without claiming provider revocation. Both release the unresolved fence while keeping local credentials disabled. Any later connection requires a separately reviewed installation or authorization under current consent/key/restore authority. Releasing uncertainty without actually investigating it can leave an upstream grant usable; this tool cannot validate the truth of an operator's evidence.
+
+An isolated restore converts copied `sending` receipts to `unknown`, clears claims and disables/advances all copied managed credentials. Retained terminal receipts describe history, not permission to use current credentials. Restored provider access remains held; review uses the restored current disabled revision and does not resend or release that hold.
+
+## Qualification limits
+
+One accepted token-revocation response does not prove that every grant, access token, other process or connected application is inactive. Requests already sent and downstream accounting facts still require separate reconciliation. Token strings in process memory and older ciphertext in WAL/backups are not securely erased. Missing/unknown refresh credentials, full app/grant revocation, inactive principals, actual sandbox and production acceptance, incident response, key custody, region/vendor terms, old-archive migration, disk/power faults, load and independent operator/security acceptance remain unqualified.
+
+Protocol references: Intuit's [sandbox discovery](https://developer.intuit.com/.well-known/openid_sandbox_configuration) identifies the endpoint and its [official OAuth client](https://github.com/intuit/oauth-jsclient/blob/master/src/OAuthClient.js) describes JSON and client authentication. No SDK code was copied or dependency added. Local intercepted-fetch, protected-stdin, transaction, independent-process and encrypted-recovery checks establish only their tested boundaries. Both regional fixtures run on one workstation and do not prove physical data residency. No CI/cloud runner, provider request, push/PR, deployment, purchase or live data was used.

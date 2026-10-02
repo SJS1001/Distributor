@@ -31,6 +31,7 @@ assert.ok(
 const root = resolve(dirname(fileURLToPath(import.meta.url)), ".."),
   work = await mkdtemp(join(tmpdir(), "distributor-runtime-")),
   runtime = join(work, "application"),
+  browserBuild = join(work, "browser-build"),
   nodeBin = dirname(process.execPath),
   npm = join(nodeBin, "npm"),
   hash = (bytes) => createHash("sha256").update(bytes).digest("hex"),
@@ -175,8 +176,10 @@ async function command(
     clearTimeout(timer);
   }
 }
-async function capture(path, prefix = path) {
-  for (const item of await readdir(join(root, path), { withFileTypes: true })) {
+async function capture(path, prefix = path, sourceRoot = root) {
+  for (const item of await readdir(join(sourceRoot, path), {
+    withFileTypes: true,
+  })) {
     if (item.name === ".DS_Store") continue;
     const rel = join(path, item.name),
       target = join(prefix, item.name);
@@ -185,8 +188,8 @@ async function capture(path, prefix = path) {
       false,
       "Package inputs must not be symlinks.",
     );
-    if (item.isDirectory()) await capture(rel, target);
-    else receipt.inputs[target] = hash(await readFile(join(root, rel)));
+    if (item.isDirectory()) await capture(rel, target, sourceRoot);
+    else receipt.inputs[target] = hash(await readFile(join(sourceRoot, rel)));
   }
 }
 async function port() {
@@ -474,16 +477,26 @@ async function regionCheck(region) {
 }
 try {
   await mkdir(runtime, { mode: 0o700 });
-  // Build uses the workstation's dev tools; the copied app receives none of them.
-  await command(["run", "build"], root, { NODE_ENV: "development" });
+  // Installed development tools build a production bundle. Keep their output
+  // private so this check cannot replace another browser check's dist tree.
+  await command(
+    ["run", "build", "--", "--outDir", browserBuild, "--mode", "production"],
+    root,
+  );
+  receipt.browserBuild = {
+    nodeEnv: env.NODE_ENV,
+    mode: "production",
+    directory: browserBuild,
+  };
   for (const file of ["package.json", "package-lock.json"]) {
     const bytes = await readFile(join(root, file));
     receipt.inputs[file] = hash(bytes);
     await writeFile(join(runtime, file), bytes);
   }
   for (const directory of ["src", "dist"]) {
-    await capture(directory);
-    await cp(join(root, directory), join(runtime, directory), {
+    const source = directory === "dist" ? browserBuild : join(root, directory);
+    await capture(".", directory, source);
+    await cp(source, join(runtime, directory), {
       recursive: true,
       filter: (path) => basename(path) !== ".DS_Store",
     });

@@ -9,18 +9,45 @@ try {
   const [action] = process.argv.slice(2);
   check(
     process.argv.length === 3 &&
-      ["status", "install", "disable", "key-status", "rotate"].includes(
-        action ?? "",
-      ),
+      [
+        "status",
+        "install",
+        "disable",
+        "key-status",
+        "rotate",
+        "revoke",
+        "revocation-status",
+        "revocation-review",
+      ].includes(action ?? ""),
     "CLI",
-    "Usage: provider-credentials <status|install|disable|key-status|rotate>; mutation input must arrive through protected stdin.",
+    "Usage: provider-credentials <status|install|disable|key-status|rotate|revoke|revocation-status|revocation-review>; operation input must arrive through protected stdin.",
     400,
   );
   const required = (name: string) => {
     check(process.env[name], "PROVIDER_CONFIG", `Missing ${name}.`, 500);
     return process.env[name]!;
   };
-  const binding = ["status", "install", "disable"].includes(action!)
+  const revocationAction = [
+    "revoke",
+    "revocation-status",
+    "revocation-review",
+  ].includes(action!);
+  if (action === "revoke") {
+    check(
+      process.env.PROVIDERS_ENABLED === "true",
+      "PROVIDER_DISABLED",
+      "Outbound sandbox access is disabled.",
+    );
+    required("QUICKBOOKS_CLIENT_SECRET");
+  }
+  const binding = [
+    "status",
+    "install",
+    "disable",
+    "revoke",
+    "revocation-status",
+    "revocation-review",
+  ].includes(action!)
     ? {
         id: required("PROVIDER_BINDING_ID"),
         orgId: required("PROVIDER_ORG_ID"),
@@ -62,13 +89,52 @@ try {
       generation?: number;
       nextKey?: string;
       workers?: { orgId: string; workerUserId: string }[];
+      receiptId?: string;
+      resolution?: "provider-confirmed" | "provider-unconfirmed";
+      evidence?: string;
     };
     check(
       value && typeof value === "object" && !Array.isArray(value),
       "CREDENTIAL_INPUT",
       "Supply a credential operation object.",
     );
-    if (action === "rotate") {
+    if (revocationAction) {
+      const allowed =
+        action === "revoke"
+          ? ["receiptId", "revision"]
+          : action === "revocation-status"
+            ? ["receiptId"]
+            : ["receiptId", "revision", "resolution", "evidence"];
+      check(
+        Object.keys(value).every((name) => allowed.includes(name)),
+        "CREDENTIAL_INPUT",
+        "Unexpected revocation input.",
+      );
+      const revocationBinding = {
+        ...binding!,
+        accountId: required("PROVIDER_ACCOUNT_ID"),
+      };
+      if (action === "revoke")
+        result = await app.providerCredentials.revocation.revoke(
+          revocationBinding,
+          value.receiptId!,
+          value.revision,
+          process.env.QUICKBOOKS_CLIENT_SECRET!,
+        );
+      else if (action === "revocation-status")
+        result = app.providerCredentials.revocation.status(
+          revocationBinding,
+          value.receiptId!,
+        );
+      else
+        result = app.providerCredentials.revocation.review(
+          revocationBinding,
+          value.receiptId!,
+          value.revision,
+          value.resolution!,
+          value.evidence!,
+        );
+    } else if (action === "rotate") {
       check(
         Object.keys(value).every((name) =>
           ["generation", "nextKey", "workers"].includes(name),

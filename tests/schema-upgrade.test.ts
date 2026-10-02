@@ -21,6 +21,8 @@ import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept, ship } from "./fixtures.ts";
 import baseline from "../src/server/schema-baseline.json" with { type: "json" };
 
+import versionTwo from "./schema-version-two.json" with { type: "json" };
+
 const metadata = "platform_schema_version";
 // Independent historical DDL and literal fingerprints; do not derive this fixture
 // from the new schema inspector or current module constructors.
@@ -63,6 +65,35 @@ function frozenVersionOne(
       Number(eventReports),
       region,
       "2026-09-30T12:34:56.000Z",
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    db.exec("COMMIT");
+  });
+}
+function frozenVersionTwo(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionOne(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionTwo.additions) {
+      db.exec(object.sql);
+      if (object.type !== "table") continue;
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((name) => `"${name}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((name) => record[name]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=2,schema_hash=?",
+    ).run(
+      eventReports ? versionTwo.hashes.enabled : versionTwo.hashes.disabled,
     );
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
     db.exec("COMMIT");
@@ -118,16 +149,23 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
-function conservedUpgrade(path: string, before: ReturnType<typeof snapshot>) {
+function conservedUpgrade(
+  path: string,
+  before: ReturnType<typeof snapshot>,
+  sourceVersion = 1,
+) {
   const after = snapshot(path);
   for (const name of [
     "integration_canada_post_groups",
     "integration_canada_post_members",
+    "integration_credential_revocations",
   ]) {
+    if (sourceVersion === 2 && name !== "integration_credential_revocations")
+      continue;
     assert.deepEqual(
       after[name],
       [],
@@ -190,97 +228,125 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const region of ["CA", "US"] as const)
-  for (const eventReports of [false, true])
-    test(`independent version-one ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
-      const security = { eventReports, providerEncryptionKey: "ab".repeat(32) };
-      const f = fixture(t, security, region);
-      const invoice = ship(f, accept(f).id).invoiceId;
-      const session = f.app.identity.login(
-        "admin@example.test",
-        "long-test-only-password",
-      );
-      const binding = {
-        id: "synthetic-v1-binding",
-        orgId: f.actor.orgId,
-        workerUserId: f.actor.id,
-        realm: "1234",
-        clientId: "synthetic-v1-client",
-      };
-      f.app.providerCredentials.install(binding, 0, {
-        accessToken: "synthetic-v1-access",
-        refreshToken: "synthetic-v1-refresh",
-        accessExpiresAt: Date.now() + 3600000,
-        refreshExpiresAt: Date.now() + 86400000,
+for (const sourceVersion of [1, 2])
+  for (const region of ["CA", "US"] as const)
+    for (const eventReports of [false, true])
+      test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
+        const security = {
+          eventReports,
+          providerEncryptionKey: "ab".repeat(32),
+        };
+        const f = fixture(t, security, region);
+        const invoice = ship(f, accept(f).id).invoiceId;
+        const session = f.app.identity.login(
+          "admin@example.test",
+          "long-test-only-password",
+        );
+        const binding = {
+          id: "synthetic-v1-binding",
+          orgId: f.actor.orgId,
+          workerUserId: f.actor.id,
+          realm: "1234",
+          clientId: "synthetic-v1-client",
+        };
+        f.app.providerCredentials.install(binding, 0, {
+          accessToken: "synthetic-v1-access",
+          refreshToken: "synthetic-v1-refresh",
+          accessExpiresAt: Date.now() + 3600000,
+          refreshExpiresAt: Date.now() + 86400000,
+        });
+        const dir = directory(t),
+          source = join(dir, `v${sourceVersion}.db`),
+          destination = join(dir, "v3.db");
+        if (sourceVersion === 2) {
+          // Retain a locally prepared group, without claiming a provider response.
+          f.app.database
+            .owned("integration")
+            .run(
+              "INSERT INTO integration_canada_post_groups VALUES(?,?,?,?,?,?,'prepared',NULL,NULL,NULL,NULL,NULL,?)",
+              "synthetic-retained-group",
+              f.actor.orgId,
+              f.w1,
+              "a".repeat(64),
+              "synthetic-group",
+              "b".repeat(64),
+              "2026-09-30T12:34:56.000Z",
+            );
+        }
+        (sourceVersion === 1 ? frozenVersionOne : frozenVersionTwo)(
+          f.path,
+          source,
+          eventReports,
+          region,
+        );
+        const before = snapshot(source),
+          receipt = inspectSchema(source),
+          sourceBytes = readFileSync(source);
+        assert.equal(receipt.kind, "previous");
+        assert.equal(receipt.version, sourceVersion);
+        assert.equal(
+          receipt.schemaHash,
+          eventReports
+            ? (sourceVersion === 1 ? versionOneHashes : versionTwo.hashes)
+                .enabled
+            : (sourceVersion === 1 ? versionOneHashes : versionTwo.hashes)
+                .disabled,
+        );
+        let constructors = 0;
+        const original = Store.prototype.migrate;
+        const mock = t.mock.method(
+          Store.prototype,
+          "migrate",
+          function (this: Store, sql: string) {
+            constructors++;
+            return original.call(this, sql);
+          },
+        );
+        assert.throws(() => new Application(source, region, security), {
+          code: "SCHEMA_UPGRADE_REQUIRED",
+        });
+        mock.mock.restore();
+        assert.equal(
+          constructors,
+          0,
+          "previous stores reject before any module constructor writes",
+        );
+        const upgraded = await upgradeSchema(
+          source,
+          destination,
+          receipt.schemaHash,
+          region,
+        );
+        assert.equal(upgraded.sourceVersion, sourceVersion);
+        assert.equal(upgraded.version, 3);
+        const inspection = inspectSchema(destination);
+        assert.equal(inspection.kind, "current");
+        assert.equal(inspection.version, 3);
+        assert.equal(inspection.initializedAt, receipt.initializedAt);
+        assert.equal(inspection.eventReports, eventReports);
+        conservedUpgrade(destination, before, sourceVersion);
+        assert.deepEqual(readFileSync(source), sourceBytes);
+        assert.deepEqual(inspectSchema(source), receipt);
+        const clone = new Application(destination, region, security);
+        try {
+          assert.deepEqual(
+            clone.identity.session(session.token),
+            f.app.identity.session(session.token),
+          );
+          assert.deepEqual(
+            clone.providerCredentials.status(binding),
+            f.app.providerCredentials.status(binding),
+          );
+          assert.equal(clone.billing.invoices(f.actor)[0]!.id, invoice);
+          assert.deepEqual(
+            clone.inventory.stock(f.actor),
+            f.app.inventory.stock(f.actor),
+          );
+        } finally {
+          clone.close();
+        }
+        conservedUpgrade(destination, before, sourceVersion);
       });
-      const dir = directory(t),
-        source = join(dir, "v1.db"),
-        destination = join(dir, "v2.db");
-      frozenVersionOne(f.path, source, eventReports, region);
-      const before = snapshot(source),
-        receipt = inspectSchema(source),
-        sourceBytes = readFileSync(source);
-      assert.equal(receipt.kind, "previous");
-      assert.equal(receipt.version, 1);
-      assert.equal(
-        receipt.schemaHash,
-        eventReports ? versionOneHashes.enabled : versionOneHashes.disabled,
-      );
-      let constructors = 0;
-      const original = Store.prototype.migrate;
-      const mock = t.mock.method(
-        Store.prototype,
-        "migrate",
-        function (this: Store, sql: string) {
-          constructors++;
-          return original.call(this, sql);
-        },
-      );
-      assert.throws(() => new Application(source, region, security), {
-        code: "SCHEMA_UPGRADE_REQUIRED",
-      });
-      mock.mock.restore();
-      assert.equal(
-        constructors,
-        0,
-        "previous stores reject before any module constructor writes",
-      );
-      const upgraded = await upgradeSchema(
-        source,
-        destination,
-        receipt.schemaHash,
-        region,
-      );
-      assert.equal(upgraded.sourceVersion, 1);
-      assert.equal(upgraded.version, 2);
-      const inspection = inspectSchema(destination);
-      assert.equal(inspection.kind, "current");
-      assert.equal(inspection.version, 2);
-      assert.equal(inspection.initializedAt, receipt.initializedAt);
-      assert.equal(inspection.eventReports, eventReports);
-      conservedUpgrade(destination, before);
-      assert.deepEqual(readFileSync(source), sourceBytes);
-      assert.deepEqual(inspectSchema(source), receipt);
-      const clone = new Application(destination, region, security);
-      try {
-        assert.deepEqual(
-          clone.identity.session(session.token),
-          f.app.identity.session(session.token),
-        );
-        assert.deepEqual(
-          clone.providerCredentials.status(binding),
-          f.app.providerCredentials.status(binding),
-        );
-        assert.equal(clone.billing.invoices(f.actor)[0]!.id, invoice);
-        assert.deepEqual(
-          clone.inventory.stock(f.actor),
-          f.app.inventory.stock(f.actor),
-        );
-      } finally {
-        clone.close();
-      }
-      conservedUpgrade(destination, before);
-    });
 
 test("version-one receipt lies and partial new schema reject without mutation or publication", async (t) => {
   const f = fixture(t),
@@ -310,6 +376,40 @@ test("version-one receipt lies and partial new schema reject without mutation or
     assert.equal(existsSync(destination), false);
     assert.deepEqual(snapshot(source), before);
     assert.deepEqual(readFileSync(source), sourceBytes);
+    assert.equal(
+      readdirSync(dir).some((name) => name.startsWith(".schema-upgrade-")),
+      false,
+    );
+  }
+});
+
+test("version-two receipt lies and partial revocation schema reject without changing the source or publishing a clone", async (t) => {
+  const f = fixture(t),
+    dir = directory(t);
+  for (const [name, sql] of [
+    ["version", "UPDATE platform_schema_version SET version=3"],
+    [
+      "hash",
+      `UPDATE platform_schema_version SET schema_hash='${"0".repeat(64)}'`,
+    ],
+    [
+      "partial",
+      "CREATE TABLE integration_credential_revocations(id TEXT PRIMARY KEY) STRICT",
+    ],
+  ]) {
+    const source = join(dir, `${name}.db`),
+      destination = join(dir, `${name}-destination.db`);
+    frozenVersionTwo(f.path, source, true, "CA");
+    raw(source, (db) => db.exec(sql!));
+    const sourceBytes = readFileSync(source),
+      before = snapshot(source),
+      fingerprint = hash(source);
+    assert.throws(() => inspectSchema(source));
+    assert.throws(() => new Application(source));
+    await assert.rejects(upgradeSchema(source, destination, fingerprint, "CA"));
+    assert.equal(existsSync(destination), false);
+    assert.deepEqual(readFileSync(source), sourceBytes);
+    assert.deepEqual(snapshot(source), before);
     assert.equal(
       readdirSync(dir).some((name) => name.startsWith(".schema-upgrade-")),
       false,

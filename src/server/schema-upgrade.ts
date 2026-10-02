@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { check } from "./core.ts";
 import type { Region } from "./iam.ts";
 import { CANADA_POST_DDL } from "./canada-post-schema.ts";
+import { QUICKBOOKS_REVOCATION_DDL } from "./quickbooks-revocation-schema.ts";
 import {
   checkIntegrity,
   checkRegion,
@@ -184,6 +185,7 @@ export async function upgradeSchema(
         // add empty group storage and a receipt. No constructors or backfills.
         copied.exec(SCHEMA_DDL);
         copied.exec(CANADA_POST_DDL);
+        copied.exec(QUICKBOOKS_REVOCATION_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -194,7 +196,8 @@ export async function upgradeSchema(
             new Date().toISOString(),
           );
       } else if (before.kind === "previous") {
-        copied.exec(CANADA_POST_DDL);
+        if (before.version === 1) copied.exec(CANADA_POST_DDL);
+        copied.exec(QUICKBOOKS_REVOCATION_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

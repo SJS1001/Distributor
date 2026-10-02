@@ -6,7 +6,7 @@ Build the browser application in a development installation:
 
 ```sh
 npm ci
-npm run build
+NODE_ENV=production npm run build
 ```
 
 A separate runtime directory needs the matching `package.json`, `package-lock.json`, complete `src/` tree (including the schema baseline, shared contracts, static font and license), generated `dist/`, retained dependency/font notices and this runbook. Keep paths intact: server imports and font reads depend on their relative locations. Include `scripts/verify_runtime.mjs` if retaining the verification command, which requires development tools to rebuild the browser application. A runtime-only installation cannot run the Vite build, type checker or browser tests.
@@ -31,7 +31,7 @@ From a development checkout with locked dependencies and an already populated np
 npm run verify:runtime
 ```
 
-This foreground check rebuilds `dist/` locally, copies the required package inputs to a fresh private temporary directory, installs with `npm ci --omit=dev --offline`, then verifies that development tools are absent. Child processes receive a restricted environment and PATH, with provider/carrier processing disabled and no inherited database, credentials, Node preload options or workspace executable fallback. HTTP requests use only loopback. No customer store, provider, printer or CI runner is involved. npm install scripts from the existing locked dependencies still execute locally.
+This foreground check builds a production browser bundle in its own private temporary directory without modifying the checkout's `dist/`, copies the required package inputs to a fresh private temporary directory, installs with `npm ci --omit=dev --offline`, then verifies that development tools are absent. Child processes receive a restricted environment and PATH, with provider/carrier processing disabled and no inherited database, credentials, Node preload options or workspace executable fallback. HTTP requests use only loopback. No customer store, provider, printer or CI runner is involved. npm install scripts from the existing locked dependencies still execute locally.
 
 On the actual workstation platform it checks independent synthetic CA and US bootstrap, exact current schema inspection, disabled-provider and disabled-event-worker refusal, explicit bounded local event execution, credential/authorization CLI usage refusal, two `npm start` cycles, served browser asset hashes, authentication/session revocation, owning warehouse/catalog/procurement receipt commands and conserved stock. PDF and both ZPL densities must download through the authenticated API, match retained hashes and replay the same prepared identities after a real process restart. The runtime recovery CLI must create and restore a separately encrypted synthetic archive and expose the restored current schema/provider hold.
 

@@ -11,6 +11,7 @@ import { Platform } from "./platform.ts";
 import { type Effect } from "./integration.ts";
 import { QuickBooksAuthorization } from "./quickbooks-authorization.ts";
 import { exchangeQuickBooksToken } from "./quickbooks-oauth-protocol.ts";
+import { QuickBooksRevocation } from "./quickbooks-revocation.ts";
 
 export type CredentialBinding = {
   id: string;
@@ -43,6 +44,7 @@ export class ProviderCredentials {
   private key?: Buffer;
   private generation = 0;
   readonly authorization: QuickBooksAuthorization;
+  readonly revocation: QuickBooksRevocation;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -66,6 +68,34 @@ export class ProviderCredentials {
       singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL CHECK(generation>0),fingerprint TEXT NOT NULL
     ) STRICT;`);
     this.generation = this.keyRow()?.generation ?? 0;
+    this.revocation = new QuickBooksRevocation(
+      database,
+      this.store,
+      platform,
+      identity,
+      {
+        status: (binding) => this.status(binding),
+        currentKey: () => this.assertCurrentKey(),
+        capture: (binding, revision) => {
+          this.authorize(binding);
+          this.assertCurrentKey();
+          const row = this.row(binding);
+          check(
+            row && row.revision === revision,
+            "REVISION",
+            "Inspect the current credential revision before revocation.",
+          );
+          check(
+            row.state === "ready",
+            "CREDENTIAL_RECONNECT",
+            "Only a current ready token can be revoked; resolve interrupted refreshes separately.",
+            503,
+          );
+          return this.decrypt(row).refreshToken;
+        },
+        disable: (binding, revision) => this.writeDisable(binding, revision),
+      },
+    );
     this.authorization = new QuickBooksAuthorization(
       database,
       platform,
@@ -175,6 +205,7 @@ export class ProviderCredentials {
       const result = this.database.transaction(() => {
         this.assertCurrentKey();
         this.platform.assertProviderAccess();
+        this.revocation.assertRotationClear();
         check(
           (this.keyRow()?.generation ?? 0) === generation,
           "REVISION",
@@ -477,6 +508,7 @@ export class ProviderCredentials {
     integer(revision, "credential revision");
     const actor = this.authorize(binding),
       old = this.row(binding);
+    this.revocation.assertClear(binding);
     check(
       (old?.revision ?? 0) === revision,
       "REVISION",
@@ -542,6 +574,7 @@ export class ProviderCredentials {
   }
   // Snapshot refresh tokens may have rotated or been revoked after the cutoff.
   invalidateRestoredCredentials() {
+    this.revocation.invalidateRestored();
     this.authorization.invalidateRestoredAttempts();
     return Number(
       this.store.run(
@@ -556,6 +589,7 @@ export class ProviderCredentials {
   ): Promise<string> {
     const claim = this.database.transaction(() => {
       this.authorize(binding, effect);
+      this.revocation.assertClear(binding);
       const row = this.row(binding);
       check(
         row,

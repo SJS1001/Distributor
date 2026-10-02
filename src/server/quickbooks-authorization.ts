@@ -105,6 +105,7 @@ export class QuickBooksAuthorization {
       binding.workerUserId,
     );
     if (outbound) {
+      this.vault.revocation.assertClear(binding);
       this.platform.assertProviderAccess();
       this.vault.assertCurrentKey();
       check(
