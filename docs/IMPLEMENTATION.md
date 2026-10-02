@@ -572,3 +572,9 @@ See [access behavior](USER-ACCESS.md#current-catalog-authority) and [local evide
 ## Ordering authority checkpoint — 2026-10-02
 
 Order detail/line and cart reads now use current persisted grants, including account reassignment and warehouse site changes. Cart save, quote, acceptance and cancellation reauthorize before saved retries or native effects. Owning shipment completion and shortage updates require current warehouse/admin access; sales evidence requires current finance/admin access. Native accepted money, allocation/cancellation and reservation behavior retain their existing rules. See the [ordering receipt](evidence/LOCAL-ORDER-AUTHORITY-2026-10-02.md). This remains partial security engineering; production qualification and all product gates are open.
+
+## Fulfillment authority checkpoint — 2026-10-02
+
+Shipment detail reads, picking projections, internal finance sales evidence and packing now reload active persisted identity/grants/password state. Packing reauthorizes before cached command results in its native transaction. Serialized sale lookup enforces current warehouse site access; buyer scope and delivery-history privacy follow current account/role. Existing six other command guards retain their behavior. No schema, dependency, workflow or UI source change.
+
+See [access behavior](USER-ACCESS.md#current-fulfillment-authority), [operator procedure](FULFILLMENT.md#current-access-after-grant-changes--2026-10-02) and [local evidence](evidence/LOCAL-FULFILLMENT-AUTHORITY-2026-10-02.md). Partial D-008/D-026/D-028/D-030 and REQ-03/REQ-16 engineering only. Staff visibility, separate read snapshots/unbounded collections, other module boundaries and production/provider/device/operator qualification remain open. All 44 tasks and 10 product gates remain NOT VERIFIED; full-system work continues with workstation checks and local commits only.

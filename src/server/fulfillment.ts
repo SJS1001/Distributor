@@ -134,6 +134,7 @@ export class Fulfillment {
   }
   // Internal sales controls; never project addresses, tracking or serials to the report.
   salesEvidence(actor: Actor): FulfillmentSalesEvidence {
+    actor = this.shipmentReader(actor);
     permit(actor, ["finance"]);
     return this.store.all(
       `SELECT id,order_id AS "order",account_id AS account,warehouse_id AS warehouse,
@@ -143,6 +144,7 @@ export class Fulfillment {
     );
   }
   shipment(actor: Actor, shipmentId: string): Shipment {
+    actor = this.shipmentReader(actor);
     const row = this.store.get<Shipment>(
       "SELECT * FROM fulfillment_shipments WHERE org_id=? AND id=?",
       actor.orgId,
@@ -297,6 +299,7 @@ export class Fulfillment {
     };
   }
   picks(actor: Actor, orderId: string) {
+    actor = this.shipmentReader(actor);
     permit(actor, ["warehouse", "commercial"]);
     this.orders.order(actor, orderId);
     const packed = this.packedQuantities(actor, orderId);
@@ -518,6 +521,7 @@ export class Fulfillment {
       key,
       input,
       () => {
+        actor = this.shipmentReader(actor);
         permit(actor, ["warehouse"]);
         site(actor, this.orders.order(actor, input.orderId).warehouse_id);
       },
@@ -1049,6 +1053,7 @@ export class Fulfillment {
       ...(actor.role === "buyer" ? [actor.accountId!] : []),
     );
     if (!shipment) return null;
+    if (actor.role === "warehouse") site(actor, shipment.warehouse_id);
     const unit = (
       JSON.parse(shipment.units) as {
         unitId: string;

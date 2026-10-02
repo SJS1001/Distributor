@@ -82,3 +82,9 @@ The [carrier booking runbook](CARRIER-BOOKINGS.md) describes reviewed structured
 ## Warranty policy at handover — 2026-10-02
 
 Each successful native handover retains the current provisional warranty duration/version and exact shipment/end UTC dates in the same transaction as stock, invoice and custody. Later organization changes do not rewrite these dates. Packing or booking a carrier does not select the policy; separately committed partial shipments can retain different versions. A failed snapshot write rolls back the native handover, and an authorized exact retry returns its original receipt. Existing shipments upgraded from older versions retain no invented policy. See [warranty dates and qualification limits](WARRANTY.md#sold-serial-coverage-lookup).
+
+## Current access after grant changes — 2026-10-02
+
+Shipment detail, picking information, serialized sale/coverage lookup and packing now use persisted current user grants and password requirements. A former administrator cannot use a saved packing key after demotion; a warehouse operator cannot read serialized sale details after losing the shipment site. Current warehouse users retain valid picking/packing access when their supplied caller role is stale. Buyer account changes apply to shipment reads and private delivery history remains withheld.
+
+All seven fulfillment commands check current authority before returning a saved result or making a new effect. Native stock, invoice, short-pick, void, coverage and delivery rules retain their existing behavior. These local checks do not approve the provisional staff-wide visibility policy or qualify production security, read snapshots, volume, devices, carriers or operators. See [the local authority receipt](evidence/LOCAL-FULFILLMENT-AUTHORITY-2026-10-02.md); all product gates remain NOT VERIFIED.
