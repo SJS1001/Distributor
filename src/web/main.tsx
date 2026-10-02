@@ -2,6 +2,7 @@ import { useStockQueue, StockQueueControls } from "./stock-queue.tsx";
 import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
+import { PurchaseEntry } from "./purchase-entry.tsx";
 import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
@@ -111,6 +112,7 @@ function App() {
     page === "Purchasing" && !!actor && !busy,
   );
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
   const [decisionClaim, setDecisionClaim] = useState<string | null>(null);
@@ -163,6 +165,7 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setPurchaseEntryOpen(false);
     stopOrderEntryRead();
     orderQueue.stop();
     purchaseQueue.stop();
@@ -365,6 +368,7 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    setPurchaseEntryOpen(false);
     stopOrderEntryRead();
     orderQueue.stop();
     purchaseQueue.stop();
@@ -410,6 +414,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    setPurchaseEntryOpen(false);
     stopCatalogRead();
     stopOrderEntryRead();
     orderQueue.stop();
@@ -1213,6 +1218,7 @@ function App() {
                 stockQueue.stop();
                 claimQueue.stop();
                 setPage(p);
+                setPurchaseEntryOpen(false);
                 setDialog((current) =>
                   [
                     "Review product retirement",
@@ -2742,54 +2748,7 @@ function App() {
                   ),
                 )}
               {can("commercial") &&
-                button("Purchase order", () =>
-                  simple(
-                    "Create purchase order",
-                    [
-                      select(
-                        "supplierId",
-                        "Supplier",
-                        extra.purchases?.suppliers,
-                        (s) => s.name,
-                      ),
-                      select(
-                        "warehouseId",
-                        "Warehouse",
-                        data.warehouses,
-                        (w) => w.name,
-                      ),
-                      select(
-                        "productId",
-                        "Product",
-                        data.products,
-                        (p) => `${p.sku} · ${p.name}`,
-                      ),
-                      {
-                        name: "quantity",
-                        label: "Units",
-                        type: "number",
-                        value: 1,
-                      },
-                      {
-                        name: "unitCost",
-                        label: "Unit cost in cents",
-                        type: "number",
-                      },
-                    ],
-                    "purchase.create",
-                    (v) => ({
-                      supplierId: v.supplierId,
-                      warehouseId: v.warehouseId,
-                      lines: [
-                        {
-                          productId: v.productId,
-                          quantity: v.quantity,
-                          unitCost: v.unitCost,
-                        },
-                      ],
-                    }),
-                  ),
-                )}
+                button("Purchase order", () => setPurchaseEntryOpen(true))}
             </div>
             <PurchaseQueueControls queue={purchaseQueue} />
             {table(
@@ -5993,6 +5952,28 @@ function App() {
           </>
         )}
       </main>
+      {purchaseEntryOpen && page === "Purchasing" && can("commercial") && (
+        <PurchaseEntry
+          suppliers={extra.purchases?.suppliers ?? []}
+          warehouses={data.warehouses}
+          currency={data.organization.currency}
+          orgId={actor.orgId}
+          actorId={actor.id}
+          close={() => setPurchaseEntryOpen(false)}
+          created={(id) => {
+            setPurchaseEntryOpen(false);
+            void refresh()
+              .then(() =>
+                setNotice(`Purchase order ${id.slice(0, 8)} created.`),
+              )
+              .catch((e) =>
+                setError(
+                  `Purchase order ${id.slice(0, 8)} created; refresh failed: ${e.message}`,
+                ),
+              );
+          }}
+        />
+      )}
       {dialog && (
         <Modal
           dialog={dialog}

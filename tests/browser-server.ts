@@ -1,3 +1,4 @@
+import { purchaseEntryBrowser } from "./purchase-entry-browser-fixture.ts";
 import { catalogLifecycleBrowser } from "./catalog-lifecycle-browser-fixture.ts";
 import { catalogEntryBrowser } from "./catalog-entry-browser-fixture.ts";
 import { stockQueueBrowser } from "./stock-queue-browser-fixture.ts";
@@ -913,6 +914,7 @@ const stockQueueHttp = await stockQueueBrowser((fn) => cleanup.push(fn));
 const customerPricingHttp = await customerPricingBrowser((fn) =>
   cleanup.push(fn),
 );
+const purchaseEntryHttp = await purchaseEntryBrowser((fn) => cleanup.push(fn));
 const catalogLifecycleHttp = await catalogLifecycleBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -958,6 +960,7 @@ const stop = async () => {
   await cartRecoveryHttp.close();
   await catalogEntryHttp.close();
   await catalogLifecycleHttp.close();
+  await purchaseEntryHttp.close();
   await reconciliationHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());

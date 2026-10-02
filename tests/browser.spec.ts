@@ -7,6 +7,7 @@ import "./cart-recovery-browser-journey.ts";
 import "./stock-queue-browser-journey.ts";
 import "./invoice-queue-browser-journey.ts";
 import "./purchase-queue-browser-journey.ts";
+import "./purchase-entry-browser-journey.ts";
 import "./order-queue-browser-journey.ts";
 import "./replacement-carrier-browser-journey.ts";
 import "./shipment-coverage-browser-journey.ts";
@@ -3213,11 +3214,27 @@ test("browser: receipt scans save without stock, resume after reload, review cam
     .getByLabel("Warehouse", { exact: true })
     .selectOption({ label: "Toronto" });
   await page
-    .getByLabel("Product", { exact: true })
-    .selectOption({ label: "BROWSER-SCAN · Synthetic scanned equipment" });
-  await page.getByLabel("Units", { exact: true }).fill("2");
-  await page.getByLabel("Unit cost in cents", { exact: true }).fill("6000");
-  await next(page);
+    .getByLabel("Purchase product search", { exact: true })
+    .fill("BROWSER-SCAN");
+  await page
+    .getByRole("button", { name: "Search purchase products", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Add BROWSER-SCAN", exact: true })
+    .click();
+  await page.getByLabel("Units for BROWSER-SCAN", { exact: true }).fill("2");
+  await page
+    .getByLabel("Unit cost in cents for BROWSER-SCAN", { exact: true })
+    .fill("6000");
+  await page
+    .getByRole("button", { name: "Review purchase order", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Create reviewed purchase order",
+      exact: true,
+    })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const poRow = page
     .getByRole("row")

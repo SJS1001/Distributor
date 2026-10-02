@@ -672,3 +672,10 @@ The owner authorized committing and pushing all current Distributor source, test
 ## Catalog lifecycle — 2026-10-02
 
 Commercial/admin retirement and reactivation use a fresh product/history hash, retained reasons and native idempotency. Staff catalog search/status pages return twenty descriptors; buyer selection stays customer-priced. New quotes and previously unaccepted quote acceptance refuse retired products, while accepted orders remain fulfillable. Existing catalog/audit storage retains identifiers, prices and other module facts; no schema change. See [the procedure](CATALOG-LIFECYCLE.md) and [local receipt](evidence/LOCAL-CATALOG-LIFECYCLE-2026-10-02.md). This is partial catalog/ordering engineering, not task or gate acceptance. Purchasing discontinuation, production/provider/device/operator qualification and broader React diagnostics remain open. All tasks/gates NOT VERIFIED.
+
+
+## Multi-line purchasing — 2026-10-02
+
+Commercial/admin purchase entry now searches twenty catalog products per page, retains off-page quantities, requires explicit purchase costs and reviews up to 100 unique lines before submission. Exact totals use integer arithmetic; receipt and stock movement remain separate native commands. Submitted attempts persist in same-browser/account storage across reload and sign-out. Cross-tab submission locks prevent overwriting an uncertain attempt; native validation/not-found refusals permit correction, while unknown outcomes retain the exact key and details. See [the procedure](PURCHASE-ENTRY.md) and [local receipt](evidence/LOCAL-PURCHASE-ENTRY-2026-10-02.md).
+
+This is partial D-014 engineering. No backend/schema/dependency/workflow change. All tasks/gates remain NOT VERIFIED. Browser storage/capability and shared-device policies, different-browser reconciliation, unbounded supplier/site and legacy reads, purchasing discontinuation and actual provider/device/production/residency/operator qualification remain open. The owner authorized committing and pushing the current Distributor snapshot; no CI runners, PRs, merges or deployments are used.
