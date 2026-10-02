@@ -2171,6 +2171,13 @@ function App() {
               <StockHistory
                 key={JSON.stringify(stockHistory)}
                 selection={stockHistory}
+                canReviewSerial={[
+                  "admin",
+                  "warehouse",
+                  "commercial",
+                  "finance",
+                  "warranty",
+                ].includes(actor.role)}
                 currency={data.organization.currency}
                 productName={productName}
                 warehouseName={warehouseName}

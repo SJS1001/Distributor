@@ -10,18 +10,22 @@ import type {
   StockHistoryPage,
 } from "../shared/stock-history.ts";
 import { request } from "./api.ts";
+import { SerialDossier } from "./serial-dossier.tsx";
+import { StockMovementList } from "./stock-movement-list.tsx";
 
 export function StockHistory({
   selection,
   currency,
   productName,
   warehouseName,
+  canReviewSerial,
   onClose,
 }: {
   selection: Pick<StockHistoryInput, "unitId" | "serial">;
   currency: string;
   productName: (id: string) => string;
   warehouseName: (id: string) => string;
+  canReviewSerial: boolean;
   onClose: () => void;
 }) {
   const query = new URLSearchParams(
@@ -29,6 +33,7 @@ export function StockHistory({
   ).toString();
   const endpoint = `/api/stock/history?${query}`;
   const [page, setPage] = useState<StockHistoryPage | null>(null);
+  const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [trail, setTrail] = useState<(string | null)[]>([]);
@@ -77,6 +82,7 @@ export function StockHistory({
     [endpoint],
   );
   useEffect(() => {
+    if (selectedSerial) return;
     active.current = true;
     heading.current?.focus();
     void load(null, []);
@@ -86,12 +92,23 @@ export function StockHistory({
       pending.current = null;
       controller?.abort();
     };
-  }, [load]);
+  }, [load, selectedSerial]);
   const formatter = useMemo(
     () => new Intl.NumberFormat("en", { style: "currency", currency }),
     [currency],
   );
   const money = (value: number) => formatter.format(value / 100);
+  if (selectedSerial)
+    return (
+      <SerialDossier
+        serial={selectedSerial}
+        currency={currency}
+        productName={productName}
+        warehouseName={warehouseName}
+        onBack={() => setSelectedSerial(null)}
+        onClose={onClose}
+      />
+    );
   return (
     <section className="stock-history" aria-label="Stock movement history">
       <h2 ref={heading} tabIndex={-1}>
@@ -128,6 +145,14 @@ export function StockHistory({
       )}
       {page && (
         <>
+          {page.unit.serial && canReviewSerial && (
+            <button
+              type="button"
+              onClick={() => setSelectedSerial(page.unit.serial!)}
+            >
+              Review serial dossier
+            </button>
+          )}
           <p>
             <strong>{productName(page.unit.product_id)}</strong> ·{" "}
             {page.unit.serial ? `Serial ${page.unit.serial}` : "Bulk lot"} ·
@@ -143,25 +168,11 @@ export function StockHistory({
           {page.items.length === 0 && (
             <p>No movements are visible in this scope.</p>
           )}
-          <ol>
-            {page.items.map((m) => (
-              <li key={m.id}>
-                <p>
-                  <strong>{m.type}</strong> · {m.quantity} units · original unit
-                  cost {money(m.unit_cost)}
-                </p>
-                <p>
-                  {warehouseName(m.warehouse_id)} ·{" "}
-                  {new Date(m.created_at).toLocaleString()}
-                </p>
-                <p>{m.reason}</p>
-                <p>
-                  Reference <code>{m.reference}</code> · movement{" "}
-                  <code>{m.id}</code> · recorded by <code>{m.actor_id}</code>
-                </p>
-              </li>
-            ))}
-          </ol>
+          <StockMovementList
+            items={page.items}
+            money={money}
+            warehouseName={warehouseName}
+          />
           <div className="actions">
             {trail.length > 0 && (
               <button

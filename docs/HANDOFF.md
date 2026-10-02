@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — browser serial dossier, 2026-10-02
+
+- Resumed published parent ce970ac756d960f9c6f4604e43edddfaefdb38e1 on codex/local-distributor-checkpoint. The owner authorized committing the current Distributor snapshot to GitHub. Push permission, the matching public repository and zero workflows/runs are freshly checked. No CI runner, cloud session, delegated agent, provider request, PR, merge or deployment is started.
+- Inventory's serial movement history now opens current stock, original receipt, committed sales/whole invoice summaries, claims/replacement links and movements. Each older-section action preserves the other positions; previous, refresh and exact retry apply to the combined report. Loading/failure clear stale data; abort and response fences discard abandoned and superseded reads. Movement markup is shared with stock history.
+- Five focused production Chromium journeys pass, including three new dossier checks covering phone paging/focus, failed continuation, back/close/navigation/sign-out and late refresh responses. Complete native tests pass 1,935/1,935; TypeScript and formatting exit zero. The final changed-file React scan retains only the pre-existing App complexity warning. Fresh complete production Chromium passes 130/130; results and source hashes are recorded in docs/evidence/LOCAL-SERIAL-DOSSIER-UI-2026-10-02.md/.json.
+- Initial missing-UI failures and the corrected Canadian currency test expectation remain private under /tmp/distributor-serial-dossier-ui-checkpoint, with their traces preserved separately. Duplicate movement markup reported by React Doctor was extracted and both stock history regression journeys pass. No diagnostic suppression, backend, schema, dependency, license or workflow change.
+- Self-review covers hook order, role eligibility backed by native authorization, scope-qualified empty evidence, actual invoice currencies and whole totals, preserved independent cursors, exact failed retries, async fences, focus and private-data omission. Broader lineage and dedicated browser replacement/empty-scope scenarios remain open, alongside provider/device/production/residency/operator qualification. All 44 tasks and 10 gates remain NOT VERIFIED; the full system is incomplete.
+
 ## Latest continuation — serial dossier API publication, 2026-10-02
 
 - Resumed published parent 99d6eb6971092a2005714a1814258deb7e4c03eb on codex/local-distributor-checkpoint. Owner requested committing to GitHub. Fresh repository checks confirm push permission, the matching remote parent and zero Actions workflows. No CI runners, cloud sessions, delegated agents, provider requests, PRs, merges or deployments are started.

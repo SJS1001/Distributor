@@ -1,6 +1,10 @@
-# Serial dossier API
+# Serial dossier
 
-Partial serial traceability engineering, 2026-10-02. The browser dossier view remains pending; the existing stock movement history view is unchanged. All 44 tasks and 10 product gates remain NOT VERIFIED.
+Partial serial traceability engineering, 2026-10-02. The browser dossier view now accompanies the scoped API. All 44 tasks and 10 product gates remain NOT VERIFIED.
+
+In Inventory, use Find serial, open the movement history and select Review serial dossier. Authorized staff can review current stock position, original receipt, sales and whole invoice totals, claims and replacement links, and stock movements. Each history section shows up to twenty records. Older sales, Older claims and Older movements retain the other sections' positions; Previous dossier page returns to the preceding combination. Refresh serial dossier restarts every section.
+
+Loading or a failed read clears the preceding report. Retry serial dossier repeats the exact failed section positions. Back to movements reloads the movement history; closing restores the inventory control's focus. Back, close, navigation and sign-out abandon pending dossier reads, and late responses cannot replace a refreshed report. See the [browser engineering receipt](evidence/LOCAL-SERIAL-DOSSIER-UI-2026-10-02.md). These synthetic checks do not constitute operator acceptance.
 
 Authenticated staff can request `GET /api/serials/dossier?serial=S1`. Administrator, warehouse, commercial, finance and warranty access use current persisted identity, password and role checks. Warehouse grants govern both present custody and the visibility of original receipts, shipments and claims. Missing evidence in the result means no evidence visible within that scope, not proof that no historical record exists.
 
@@ -12,4 +16,4 @@ The application composes module-owned reads inside one native transaction. It do
 
 Native synthetic CA/US checks cover restart, row conservation, repeated sales/returns, paging, current access, strict HTTP fields and reserved/handed-over replacement lineage. See the [local engineering receipt](evidence/LOCAL-SERIAL-DOSSIER-2026-10-02.md). These checks do not qualify physical custody, actual providers, infrastructure residency or operator acceptance.
 
-SQL pages bound returned records and memory, not total scan cost. Shipment candidate search scans stored JSON text and then checks exact parsed unit membership; ownership enforcement remains intact. Claim filtering may scan beyond hidden records. SQLite snapshot reads reserve the writer. Indexing, contention, production latency, cancellation/replacement chains beyond the tested scenarios, delivery observations and the browser dossier experience remain unqualified. There is no schema, dependency or CI workflow change.
+SQL pages bound returned records and memory, not total scan cost. Shipment candidate search scans stored JSON text and then checks exact parsed unit membership; ownership enforcement remains intact. Claim filtering may scan beyond hidden records. SQLite snapshot reads reserve the writer. Indexing, contention, production latency, cancellation/replacement chains beyond the tested scenarios, delivery observations and operator qualification remain open. Browser replacement and empty-scope scenarios have no dedicated journey in this checkpoint. There is no schema, dependency or CI workflow change.

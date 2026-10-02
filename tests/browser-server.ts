@@ -1,6 +1,7 @@
 import { operationsHealthBrowser } from "./operations-health-browser-fixture.ts";
 import { binRelocationBrowser } from "./bin-relocation-browser-fixture.ts";
 import { stockHistoryBrowser } from "./stock-history-browser-fixture.ts";
+import { serialDossierBrowser } from "./serial-dossier-browser-fixture.ts";
 import { supplierReturnQueueBrowser } from "./supplier-return-queue-browser-fixture.ts";
 import { purchaseEntryBrowser } from "./purchase-entry-browser-fixture.ts";
 import { catalogLifecycleBrowser } from "./catalog-lifecycle-browser-fixture.ts";
@@ -936,6 +937,7 @@ const operationsHealthHttp = await operationsHealthBrowser((fn) =>
 );
 const binRelocationHttp = await binRelocationBrowser((fn) => cleanup.push(fn));
 const stockHistoryHttp = await stockHistoryBrowser((fn) => cleanup.push(fn));
+const serialDossierHttp = await serialDossierBrowser((fn) => cleanup.push(fn));
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -978,6 +980,7 @@ const stop = async () => {
   await operationsHealthHttp.close();
   await binRelocationHttp.close();
   await stockHistoryHttp.close();
+  await serialDossierHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);
