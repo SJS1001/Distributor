@@ -1837,6 +1837,30 @@ export async function createHttp(app: Application, options: HttpOptions) {
     async (request) =>
       app.inventory.trace(actor(request), request.params.serial),
   );
+  http.get<{
+    Querystring: {
+      serial: string;
+      movementAfter?: string;
+      shipmentAfter?: string;
+      claimAfter?: string;
+    };
+  }>(
+    "/api/serials/dossier",
+    {
+      schema: {
+        querystring: obj(
+          {
+            serial: { type: "string", minLength: 1, maxLength: 160 },
+            movementAfter: { type: "string", minLength: 1, maxLength: 4096 },
+            shipmentAfter: { type: "string", minLength: 1, maxLength: 4096 },
+            claimAfter: { type: "string", minLength: 1, maxLength: 4096 },
+          },
+          ["movementAfter", "shipmentAfter", "claimAfter"],
+        ),
+      },
+    },
+    async (request) => app.serialDossier(actor(request), request.query),
+  );
   http.get("/api/credits", async (request) =>
     app.billing.credits(actor(request)),
   );

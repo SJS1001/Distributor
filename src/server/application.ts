@@ -20,6 +20,10 @@ import { Migration } from "./migration.ts";
 import { EventDelivery } from "./event-delivery.ts";
 import { EventReport } from "./event-report.ts";
 import type { OperationsHealth } from "../shared/operations-health.ts";
+import type {
+  SerialDossier,
+  SerialDossierInput,
+} from "../shared/serial-dossier.ts";
 
 export class Application {
   database: Database;
@@ -38,6 +42,56 @@ export class Application {
   migration!: Migration;
   providerCredentials!: ProviderCredentials;
   eventDelivery!: EventDelivery;
+  serialDossier(actor: Actor, input: SerialDossierInput): SerialDossier {
+    return this.database.transaction(() => {
+      actor = this.identity.currentActor(actor);
+      permit(actor, ["warehouse", "commercial", "finance", "warranty"]);
+      const movements = this.inventory.stockHistoryEvidence(actor, {
+        serial: input.serial,
+        after: input.movementAfter,
+      });
+      const unitId = movements.unit.id;
+      const shipments = this.fulfillment.serialShipments(
+        actor,
+        unitId,
+        input.shipmentAfter,
+      );
+      return {
+        movements,
+        receipt: this.procurement.serialReceipt(actor, unitId),
+        shipments: {
+          ...shipments,
+          items: shipments.items.map((shipment) => {
+            const invoice = shipment.invoiceId
+              ? this.billing.invoice(actor, shipment.invoiceId)
+              : null;
+            check(
+              !invoice ||
+                (invoice.shipment_id === shipment.id &&
+                  invoice.order_id === shipment.orderId &&
+                  invoice.account_id === shipment.accountId),
+              "SERIAL_LINEAGE",
+              "Shipment and invoice lineage differ.",
+              409,
+            );
+            return {
+              ...shipment,
+              invoice: invoice
+                ? {
+                    id: invoice.id,
+                    number: invoice.number,
+                    currency: invoice.currency,
+                    total: invoice.total,
+                    createdAt: invoice.created_at,
+                  }
+                : null,
+            };
+          }),
+        },
+        claims: this.warranty.serialClaims(actor, unitId, input.claimAfter),
+      };
+    });
+  }
   constructor(
     path: string,
     region: Region = "CA",

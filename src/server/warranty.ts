@@ -1,4 +1,6 @@
 import { CLAIM_COVERAGE_INITIALIZE_DDL } from "./claim-coverage-schema.ts";
+import type { SerialClaim } from "../shared/serial-dossier.ts";
+import { serialCursor } from "./serial-dossier-cursor.ts";
 import { coverageDate, coverageDays } from "./coverage-policy.ts";
 import {
   account,
@@ -170,6 +172,63 @@ export class Warranty {
   }
   claim(actor: Actor, claimId: string): Claim {
     return this.database.transaction(() => this.claimRecord(actor, claimId));
+  }
+  serialClaims(actor: Actor, unitId: string, after?: string) {
+    actor = this.authority(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+    ]);
+    const unit = this.inventory.unit(actor, unitId);
+    check(unit.serial, "VALIDATION", "Claim lineage requires a serial.", 400);
+    if (actor.role === "warehouse") site(actor, unit.warehouse_id);
+    const cursor = serialCursor(actor, unitId, "claims", after);
+    const where = `c.org_id=? AND (c.unit_id=? OR EXISTS(SELECT 1 FROM warranty_replacements r WHERE r.org_id=c.org_id AND r.claim_id=c.id AND r.new_unit_id=?))`;
+    const params = [actor.orgId, unitId, unitId];
+    let before = Number.MAX_SAFE_INTEGER;
+    if (cursor.anchorId) {
+      const anchor = this.store.get<{ position: number }>(
+        `SELECT c.rowid AS position FROM warranty_claims c WHERE ${where} AND c.id=?`,
+        ...params,
+        cursor.anchorId,
+      );
+      check(
+        anchor,
+        "VALIDATION",
+        "Claim cursor is unavailable. Refresh the serial dossier.",
+        400,
+      );
+      this.claimRecord(actor, cursor.anchorId);
+      before = anchor.position;
+    }
+    const items: SerialClaim[] = [];
+    for (;;) {
+      const rows = this.store.all<SerialClaim & { position: number }>(
+        `SELECT c.rowid AS position,c.id,c.account_id AS accountId,c.unit_id AS unitId,c.shipment_id AS shipmentId,c.invoice_id AS invoiceId,c.type,c.state,c.issue,c.coverage_end AS coverageEnd,c.disposition,c.credit_id AS creditId,c.created_at AS createdAt,
+           CASE WHEN c.unit_id=? THEN 'claimed' ELSE 'replacement' END AS relationship,
+           (SELECT r.state FROM warranty_replacements r WHERE r.org_id=c.org_id AND r.claim_id=c.id AND r.new_unit_id=? ORDER BY r.rowid DESC LIMIT 1) AS replacementState
+           FROM warranty_claims c WHERE ${where} AND c.rowid<? ORDER BY c.rowid DESC LIMIT 21`,
+        unitId,
+        unitId,
+        ...params,
+        before,
+      );
+      for (const { position: _, ...row } of rows) {
+        if (
+          actor.role === "warehouse" &&
+          !actor.sites.includes(
+            this.inventory.unit(actor, row.unitId).warehouse_id,
+          )
+        )
+          continue;
+        if (items.length === 20)
+          return { items, next: cursor.next(items[19]!.id) };
+        items.push(row);
+      }
+      if (rows.length < 21) return { items, next: null };
+      before = rows.at(-1)!.position;
+    }
   }
   decisionHistory(
     actor: Actor,

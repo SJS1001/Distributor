@@ -1,5 +1,12 @@
 # Distributor setup handoff
 
+## Latest continuation — serial dossier API publication, 2026-10-02
+
+- Resumed published parent 99d6eb6971092a2005714a1814258deb7e4c03eb on codex/local-distributor-checkpoint. Owner requested committing to GitHub. Fresh repository checks confirm push permission, the matching remote parent and zero Actions workflows. No CI runners, cloud sessions, delegated agents, provider requests, PRs, merges or deployments are started.
+- Current checkpoint adds an authenticated serial dossier API and module-owned bounded lineage reads. Receipt, stock movements, committed sales/invoice summaries and original/replacement claims retain current identity/site checks and original business facts. Browser dossier implementation is pending. Six focused native checks pass, including CA/US restart, twenty-record continuations, authority changes, strict HTTP and reserved/handed-over replacement lineage.
+- Historical missing-implementation, nested-transaction, JSON-virtual-table ownership, route and audit-conservation failures remain private under /tmp/distributor-serial-dossier-checkpoint. Publication browser check initially failed to launch because direct Playwright invocation omitted npm's tsx PATH; retry uses npm exec. Final results and source hashes are recorded in docs/evidence/LOCAL-SERIAL-DOSSIER-2026-10-02.md/.json before publication.
+- Self-review covers module ownership, one snapshot, scoped cursor anchors, current warehouse visibility, exact shipment unit membership, invoice lineage, original/replacement distinction, omission of private evidence and business-fact conservation. No schema, dependency, license or workflow change. Continue with the browser dossier view and broader qualification after this checkpoint. All 44 tasks and 10 gates remain NOT VERIFIED; full system incomplete.
+
 Date: 2026-09-30. Original scope: local repository setup and planning. Full application engineering was subsequently authorized; historical entries are preserved below.
 
 ## Completed setup

@@ -1,4 +1,5 @@
 import type { SQLInputValue } from "node:sqlite";
+import type { SerialReceipt } from "../shared/serial-dossier.ts";
 import type {
   SupplierChoice,
   SupplierPage,
@@ -122,6 +123,39 @@ export class Procurement {
     );
     permit(current, roles);
     return current;
+  }
+  serialReceipt(actor: Actor, unitId: string): SerialReceipt | null {
+    actor = this.authorize(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+    ]);
+    const unit = this.inventory.unit(actor, unitId);
+    check(unit.serial, "VALIDATION", "Receipt lineage requires a serial.", 400);
+    if (actor.role === "warehouse") site(actor, unit.warehouse_id);
+    const reference = this.inventory.serialReceiptReference(actor, unitId);
+    if (reference === null) return null;
+    const row = this.store.get<SerialReceipt & { unitIds: string }>(
+      `SELECT r.id,r.po_id AS purchaseOrderId,p.warehouse_id AS warehouseId,p.supplier_id AS supplierId,
+       r.delivery_ref AS deliveryReference,r.created_at AS receivedAt,r.unit_ids AS unitIds
+       FROM procurement_receipts r JOIN procurement_orders p ON p.org_id=r.org_id AND p.id=r.po_id
+       WHERE r.org_id=? AND r.id=?
+       ${actor.role === "warehouse" ? `AND p.warehouse_id IN (${actor.sites.map(() => "?").join(",")})` : ""}
+       `,
+      actor.orgId,
+      reference,
+      ...(actor.role === "warehouse" ? actor.sites : []),
+    );
+    if (!row) return null;
+    check(
+      (JSON.parse(row.unitIds) as string[]).includes(unitId),
+      "SERIAL_LINEAGE",
+      "Serial and original purchase receipt differ.",
+      409,
+    );
+    const { unitIds: _, ...receipt } = row;
+    return receipt;
   }
   private receiptOrder(actor: Actor, poId: string) {
     permit(actor, ["warehouse"]);

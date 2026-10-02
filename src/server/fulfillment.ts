@@ -1,4 +1,6 @@
 import type { FulfillmentSalesEvidence } from "./sales-evidence.ts";
+import type { SerialShipment } from "../shared/serial-dossier.ts";
+import { serialCursor } from "./serial-dossier-cursor.ts";
 import {
   account,
   check,
@@ -251,6 +253,66 @@ export class Fulfillment {
       403,
     );
     return actor;
+  }
+  serialShipments(actor: Actor, unitId: string, after?: string) {
+    actor = this.shipmentReader(actor);
+    permit(actor, ["warehouse", "commercial", "finance", "warranty"]);
+    const unit = this.inventory.unit(actor, unitId);
+    check(
+      unit.serial,
+      "VALIDATION",
+      "Shipment lineage requires a serial.",
+      400,
+    );
+    if (actor.role === "warehouse") site(actor, unit.warehouse_id);
+    const cursor = serialCursor(actor, unitId, "shipments", after);
+    const scope = this.shipmentScope(actor);
+    // Coarse SQL candidates keep memory bounded; parsed membership is authoritative.
+    // Do not exempt JSON virtual tables from module ownership enforcement.
+    const where = `${scope.where} AND s.state='shipped' AND instr(s.units,?)>0`;
+    const params = [...scope.params, unitId];
+    let before = Number.MAX_SAFE_INTEGER;
+    if (cursor.anchorId) {
+      const anchor = this.store.get<{ position: number; units: string }>(
+        `SELECT s.rowid AS position,s.units FROM fulfillment_shipments s WHERE ${where} AND s.id=?`,
+        ...params,
+        cursor.anchorId,
+      );
+      check(
+        anchor &&
+          (JSON.parse(anchor.units) as { unitId: string }[]).some(
+            (u) => u.unitId === unitId,
+          ),
+        "VALIDATION",
+        "Shipment cursor is unavailable. Refresh the serial dossier.",
+        400,
+      );
+      before = anchor.position;
+    }
+    const items: Omit<SerialShipment, "invoice">[] = [];
+    for (;;) {
+      const rows = this.store.all<
+        Omit<SerialShipment, "invoice"> & { position: number; units: string }
+      >(
+        `SELECT s.rowid AS position,s.units,s.id,s.order_id AS orderId,s.account_id AS accountId,s.warehouse_id AS warehouseId,s.mode,s.carrier,s.tracking,s.shipped_at AS shippedAt,s.invoice_id AS invoiceId
+         FROM fulfillment_shipments s WHERE ${where} AND s.rowid<? ORDER BY s.rowid DESC LIMIT 21`,
+        ...params,
+        before,
+      );
+      for (const { position: _, units, ...row } of rows) {
+        if (
+          !(JSON.parse(units) as { unitId: string }[]).some(
+            (u) => u.unitId === unitId,
+          )
+        )
+          continue;
+        if (items.length === 20)
+          return { items, next: cursor.next(items[19]!.id) };
+        items.push(row);
+      }
+      if (rows.length < 21) return { items, next: null };
+      before = rows.at(-1)!.position;
+    }
   }
   private shipmentScope(actor: Actor) {
     const params: SQLInputValue[] = [actor.orgId];
