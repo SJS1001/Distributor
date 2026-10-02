@@ -33,6 +33,12 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
     "unavailable-staff",
     "unavailable-empty",
     "unavailable-review",
+    "durable",
+    "storage",
+    "tabs",
+    "malformed",
+    "changed-review",
+    "cleanup",
   ]) {
     const account = f.app.identity.createCustomer(f.actor, `cart-${name}`, {
       name: `Cart recovery ${name}`,

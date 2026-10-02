@@ -163,6 +163,8 @@ export function CartQuantities({
             .map(({ product, quantity }) => ({
               productId: product.id,
               quantity: Number(quantity),
+              sku: product.sku,
+              name: product.name,
             }))
             .filter((l) => l.quantity > 0)
             .sort((a, b) => a.productId.localeCompare(b.productId)),

@@ -668,3 +668,457 @@ test("browser: individual unavailable item reviews and active removals preserve 
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+async function ordersPage(page: Page) {
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Orders", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Orders", exact: true }),
+  ).toBeVisible();
+}
+async function recover(page: Page) {
+  await page
+    .getByRole("button", { name: "Review retained cart save", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", {
+      name: "Recover reviewed cart save",
+      exact: true,
+    }),
+  ).toBeVisible();
+}
+
+test("browser: durable cart save survives reload and sign-in without overwriting a newer native cart", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await login(page, "durable");
+  const session = await (
+    await page.request.get(`${origin}/api/session`)
+  ).json();
+  const scope = `distributor-cart-save:${session.actor.orgId}:${session.actor.id}`;
+  const attempts: { key: string; payload: any }[] = [];
+  let original: any;
+  let quotes = 0,
+    accepts = 0;
+  await page.route(quoteRoute, async (route) => {
+    quotes++;
+    await route.continue();
+  });
+  await page.route("**/api/commands/order.accept", async (route) => {
+    accepts++;
+    await route.continue();
+  });
+  await page.route(saveRoute, async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    if (attempts.length === 1) {
+      original = await response.json();
+      await route.abort("failed");
+    } else {
+      expect(await response.json()).toEqual(original);
+      await route.fulfill({ response });
+    }
+  });
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("1");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  expect((await carts(page))[0].revision).toBe(1);
+  expect(
+    await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), scope),
+  ).toMatchObject({ key: attempts[0]!.key, payload: attempts[0]!.payload });
+  await page.reload();
+  await ordersPage(page);
+  await recover(page);
+  await expect(page.getByRole("dialog")).toContainText(
+    "1 × EQ-1 · Synthetic equipment",
+  );
+  await expect(
+    page.getByRole("dialog").locator("input,select,textarea"),
+  ).toHaveCount(0);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  const csrf = await login(page, "admin");
+  await ordersPage(page);
+  await expect(
+    page.getByRole("button", {
+      name: "Review retained cart save",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  // Another authorized writer changes the cart after its original receipt.
+  const next = await page.request.post(`${origin}/api/commands/cart.save`, {
+    headers: {
+      origin,
+      "x-csrf-token": csrf,
+      "idempotency-key": "durable-newer-cart",
+    },
+    data: {
+      ...attempts[0]!.payload,
+      revision: 1,
+      lines: [
+        { productId: attempts[0]!.payload.lines[0].productId, quantity: 3 },
+      ],
+    },
+  });
+  expect(next.status()).toBe(200);
+  expect(await next.json()).toEqual({ id: original.id, revision: 2 });
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  await login(page, "durable");
+  await ordersPage(page);
+  await recover(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Recover exact cart save", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  const current = (await carts(page))[0];
+  expect(current.id).toBe(original.id);
+  expect(current.revision).toBe(2);
+  expect(current.lines).toEqual([
+    { productId: attempts[0]!.payload.lines[0].productId, quantity: 3 },
+  ]);
+  expect(quotes).toBe(0);
+  expect(accepts).toBe(0);
+  const dashboard = await (
+    await page.request.get(`${origin}/api/dashboard`)
+  ).json();
+  expect(dashboard.orders).toEqual([]);
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), scope),
+  ).toBeNull();
+  await prepare(page);
+  await expect(page.getByLabel(quantityLabel, { exact: true })).toHaveValue(
+    "3",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("browser: malformed and unwritable cart recovery storage refuse transport", async ({
+  page,
+}) => {
+  await login(page, "storage");
+  const session = await (
+    await page.request.get(`${origin}/api/session`)
+  ).json();
+  const scope = `distributor-cart-save:${session.actor.orgId}:${session.actor.id}`;
+  let saves = 0;
+  await page.route(saveRoute, async (route) => {
+    saves++;
+    await route.continue();
+  });
+  await page.evaluate((key) => localStorage.setItem(key, "{broken"), scope);
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("1");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "recovery evidence cannot be read",
+  );
+  expect(saves).toBe(0);
+  expect(await carts(page)).toEqual([]);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.evaluate((key) => {
+    localStorage.removeItem(key);
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, value) {
+      if (k === key)
+        throw new DOMException("Synthetic quota failure", "QuotaExceededError");
+      return original.call(this, k, value);
+    };
+  }, scope);
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("2");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Cart save was not sent",
+  );
+  expect(saves).toBe(0);
+  expect(await carts(page)).toEqual([]);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "locks", { value: undefined });
+  });
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("3");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "requires browser coordination",
+  );
+  expect(saves).toBe(0);
+  expect(await carts(page)).toEqual([]);
+});
+
+test("browser: competing cart tabs cannot replace or transport a retained save while its lock is held", async ({
+  page,
+  context,
+}) => {
+  await login(page, "tabs");
+  const other = await context.newPage();
+  await other.goto(origin);
+  await expect(
+    other.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const attempts: { key: string; payload: unknown }[] = [];
+  await page.route(saveRoute, async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    await held;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    await route.abort("failed");
+  });
+  let otherWrites = 0;
+  await other.route(saveRoute, async (route) => {
+    otherWrites++;
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    await route.continue();
+  });
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("1");
+  await proceed(page);
+  await expect.poll(() => attempts.length).toBe(1);
+  try {
+    await prepare(other);
+    await other.getByLabel(quantityLabel, { exact: true }).fill("3");
+    await proceed(other);
+    await expect(other.getByRole("dialog").getByRole("alert")).toContainText(
+      "Another tab is saving",
+    );
+    expect(otherWrites).toBe(0);
+    expect(await carts(other)).toEqual([]);
+    await other
+      .getByRole("dialog")
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await ordersPage(other);
+    await recover(other);
+    await expect(other.getByRole("dialog")).toContainText("1 × EQ-1");
+    await other
+      .getByRole("dialog")
+      .getByRole("button", { name: "Recover exact cart save", exact: true })
+      .click();
+    await expect(other.getByRole("dialog").getByRole("alert")).toContainText(
+      "Another tab is saving",
+    );
+    expect(otherWrites).toBe(0);
+  } finally {
+    release();
+  }
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await other
+    .getByRole("dialog")
+    .getByRole("button", { name: "Recover exact cart save", exact: true })
+    .click();
+  await expect(other.getByRole("dialog")).toHaveCount(0);
+  expect(otherWrites).toBe(1);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect((await carts(other))[0].revision).toBe(1);
+  expect((await carts(other))[0].lines[0].quantity).toBe(1);
+  const dashboard = await (
+    await other.request.get(`${origin}/api/dashboard`)
+  ).json();
+  expect(dashboard.orders).toEqual([]);
+});
+
+test("browser: malformed committed cart save replies retain the exact attempt for readonly recovery", async ({
+  page,
+}) => {
+  await login(page, "malformed");
+  const attempts: { key: string; payload: unknown }[] = [];
+  await page.route(saveRoute, async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    if (attempts.length === 1)
+      await route.fulfill({
+        json: { ...(await response.json()), revision: 999 },
+      });
+    else await route.fulfill({ response });
+  });
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("2");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "reply could not be verified",
+  );
+  expect((await carts(page))[0].revision).toBe(1);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await ordersPage(page);
+  await recover(page);
+  await expect(page.getByRole("dialog")).toContainText("2 × EQ-1");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Recover exact cart save", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect((await carts(page))[0].revision).toBe(1);
+  expect((await carts(page))[0].lines[0].quantity).toBe(2);
+});
+
+test("browser: cart recovery keeps an open review fixed and refuses a changed retained key before transport", async ({
+  page,
+  context,
+}) => {
+  await login(page, "changed-review");
+  const session = await (
+    await page.request.get(`${origin}/api/session`)
+  ).json();
+  const scope = `distributor-cart-save:${session.actor.orgId}:${session.actor.id}`;
+  let saves = 0;
+  await page.route(saveRoute, async (route) => {
+    saves++;
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    await route.abort("failed");
+  });
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("1");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await ordersPage(page);
+  await recover(page);
+  await expect(page.getByRole("dialog")).toContainText("1 × EQ-1");
+  const other = await context.newPage();
+  await other.goto(origin);
+  // Simulate recovery evidence being replaced while the original review is open.
+  // This fixture mutation grants no authority and must not trigger transport.
+  await other.evaluate((key) => {
+    const replacement = JSON.parse(localStorage.getItem(key)!);
+    replacement.key = crypto.randomUUID();
+    replacement.payload.lines[0].quantity = 5;
+    localStorage.setItem(key, JSON.stringify(replacement));
+  }, scope);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (key) =>
+          JSON.parse(localStorage.getItem(key)!).payload.lines[0].quantity,
+        scope,
+      ),
+    )
+    .toBe(5);
+  await expect(page.getByRole("dialog")).toContainText("1 × EQ-1");
+  await expect(page.getByRole("dialog")).not.toContainText("5 × EQ-1");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Recover exact cart save", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toContainText(
+    "Retained cart save changed",
+  );
+  expect(saves).toBe(1);
+  expect((await carts(page))[0].revision).toBe(1);
+  expect((await carts(page))[0].lines[0].quantity).toBe(1);
+  await recover(page);
+  await expect(page.getByRole("dialog")).toContainText("5 × EQ-1");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  expect(saves).toBe(1);
+});
+
+test("browser: cart recovery storage cleanup failure preserves the original committed save for exact retry", async ({
+  page,
+}) => {
+  await login(page, "cleanup");
+  const session = await (
+    await page.request.get(`${origin}/api/session`)
+  ).json();
+  const scope = `distributor-cart-save:${session.actor.orgId}:${session.actor.id}`;
+  const attempts: { key: string; payload: unknown }[] = [];
+  let quotes = 0;
+  await page.route(saveRoute, async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    await route.continue();
+  });
+  await page.route(quoteRoute, async (route) => {
+    quotes++;
+    await route.continue();
+  });
+  await page.evaluate((key) => {
+    const original = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function (k) {
+      if (k === key)
+        throw new DOMException("Synthetic cleanup refusal", "SecurityError");
+      return original.call(this, k);
+    };
+  }, scope);
+  await prepare(page);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("2");
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Synthetic cleanup refusal",
+  );
+  expect((await carts(page))[0].revision).toBe(1);
+  expect(quotes).toBe(0);
+  await page.reload();
+  await ordersPage(page);
+  await recover(page);
+  await expect(page.getByRole("dialog")).toContainText("2 × EQ-1");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Recover exact cart save", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect((await carts(page))[0].revision).toBe(1);
+  expect((await carts(page))[0].lines[0].quantity).toBe(2);
+  expect(
+    await page.evaluate((key) => localStorage.getItem(key), scope),
+  ).toBeNull();
+  expect(quotes).toBe(0);
+});

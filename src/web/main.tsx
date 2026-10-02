@@ -21,6 +21,12 @@ import type {
 import { CartQuantities } from "./cart-quantities.tsx";
 import { UnavailableCartItems } from "./unavailable-cart-items.tsx";
 import { SavedCarts } from "./saved-carts.tsx";
+import {
+  CartSaveRecovery,
+  cartRecoveryKey,
+  saveReviewedCart,
+  type CartSaveReview,
+} from "./cart-save-recovery.tsx";
 import React, { useEffect, useState, useRef } from "react";
 import { providerChoices, providerNames } from "../shared/provider-choices.ts";
 import { createRoot } from "react-dom/client";
@@ -169,7 +175,9 @@ function App() {
   const shipmentEpoch = useRef(0);
   const dashboardEpoch = useRef(0);
   const orderEntryRead = useRef<AbortController | null>(null);
+  const cartEditorEpoch = useRef(0);
   const stopOrderEntryRead = () => {
+    cartEditorEpoch.current++;
     orderEntryRead.current?.abort();
     orderEntryRead.current = null;
   };
@@ -864,11 +872,13 @@ function App() {
       })
       .catch(() => {});
   };
-  const reviewCart = async (cart: Item) => {
+  const reviewCart = async (cart: Item, current: () => boolean) => {
+    if (!current()) return { keepDialog: true, skipRefresh: true };
     const quote = await command("cart.quote", {
       cartId: cart.id,
       revision: cart.revision,
     });
+    if (!current()) return { keepDialog: true, skipRefresh: true };
     open(
       "Review and accept order",
       [
@@ -894,6 +904,8 @@ function App() {
     catalogPage: CustomerProductPage,
     entry: OrderEntry,
   ) => {
+    const editorVersion = cartEditorEpoch.current;
+    const current = () => cartEditorEpoch.current === editorVersion;
     const old = entry.cart;
     const unavailableIds = new Set(
       entry.products
@@ -906,6 +918,7 @@ function App() {
     let revision = old?.revision ?? 0;
     let savedCart: Item | undefined;
     let savedLines: string | undefined;
+    let pendingReview: CartSaveReview | undefined;
     let pendingSave:
       | {
           accountId: string;
@@ -920,15 +933,17 @@ function App() {
       // key survives a lost response; never assume that a failed response means
       // the original save did not commit.
       try {
-        savedCart = await command("cart.save", pendingSave);
+        savedCart = await saveReviewedCart(
+          cartRecoveryKey(actor!.orgId, actor!.id),
+          pendingSave,
+          pendingReview,
+        );
       } catch (error) {
         // A definite refusal can be corrected. A transport/server failure or
         // timeout retains the exact pending attempt for safe recovery.
         if (
           error instanceof RequestError &&
-          error.status >= 400 &&
-          error.status < 500 &&
-          error.status !== 408
+          ["VALIDATION", "REVISION"].includes(error.code ?? "")
         )
           pendingSave = undefined;
         throw error;
@@ -977,18 +992,34 @@ function App() {
               "Review removal of unavailable saved items before continuing.",
             );
         }
-        const lines = JSON.parse(v.basket) as {
+        const reviewedLines = JSON.parse(v.basket) as {
           productId: string;
           quantity: number;
+          sku: string;
+          name: string;
         }[];
+        const lines = reviewedLines.map(({ productId, quantity }) => ({
+          productId,
+          quantity,
+        }));
         await finishSave();
+        if (!current()) return { keepDialog: true, skipRefresh: true };
         if (!savedCart || savedLines !== JSON.stringify(lines)) {
           pendingSave = { accountId, warehouseId, revision, lines };
+          pendingReview = {
+            account: accountName(accountId),
+            warehouse: warehouseName(warehouseId),
+            products: reviewedLines.map(({ productId, sku, name }) => ({
+              id: productId,
+              sku,
+              name,
+            })),
+          };
           await finishSave();
         }
         // Quote retries reuse the observed saved revision rather than writing
         // again. A new native quote still refuses another session's newer cart.
-        return reviewCart(savedCart!);
+        return reviewCart(savedCart!, current);
       },
       "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If saving or quoting loses its response, retry to recover the saved attempt. If another session changes this cart, cancel and reopen it to review the latest quantities.",
     );
@@ -1422,6 +1453,14 @@ function App() {
         )}
         {page === "Orders" && (
           <>
+            {can("commercial", "buyer") && (
+              <CartSaveRecovery
+                key={`${actor!.orgId}:${actor!.id}`}
+                scope={cartRecoveryKey(actor!.orgId, actor!.id)}
+                disabled={busy || !!dialog}
+                recovered={refresh}
+              />
+            )}
             <div className="actions">
               {can("commercial", "buyer") &&
                 button("Prepare order", () => placeOrder())}
