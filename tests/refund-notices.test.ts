@@ -374,7 +374,13 @@ test("synthetic Billing exceptions backfill once without inventing earlier notic
       "DROP TABLE billing_refund_alert_reads; DROP TABLE billing_refund_alert_updates; DROP TABLE billing_refund_alerts;",
     );
   // Restore synthetic missing owned tables before startup validates the current schema.
-  new Billing(f.app.database, f.app.platform, f.app.identity, f.app.catalog);
+  new Billing(
+    f.app.database,
+    f.app.platform,
+    f.app.identity,
+    f.app.catalog,
+    (actor, source) => f.app.fulfillment.authorizeInvoiceSource(actor, source),
+  );
   f.app.close();
   f.app = new Application(f.path);
   const alerts = () => f.app.billing.refunds.alerts;

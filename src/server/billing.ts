@@ -27,6 +27,11 @@ export type CommercialLine = {
   unitPrice: number;
   unitTax: number;
 };
+export type InvoiceSource = {
+  accountId: string;
+  orderId: string;
+  shipmentId: string;
+};
 type InvoiceRow = {
   id: string;
   org_id: string;
@@ -90,6 +95,10 @@ export class Billing {
     private platform: Platform,
     private identity: Identity,
     catalog: Catalog,
+    private authorizeInvoiceSource: (
+      actor: Actor,
+      source: InvoiceSource,
+    ) => void,
   ) {
     this.store = database.owned("billing");
     this.store.migrate(`
@@ -177,6 +186,19 @@ export class Billing {
     check(row, "NOT_FOUND", "Invoice not found.", 404);
     account(actor, row.account_id);
     const opening = this.opening.snapshot(actor, invoiceId);
+    if (actor.role === "warehouse") {
+      check(
+        !opening && row.order_id && row.shipment_id,
+        "FORBIDDEN",
+        "Warehouse access requires a native shipment invoice.",
+        403,
+      );
+      this.authorizeInvoiceSource(actor, {
+        accountId: row.account_id,
+        orderId: row.order_id,
+        shipmentId: row.shipment_id,
+      });
+    }
     return {
       ...row,
       origin: opening ? "opening" : "native",
@@ -376,6 +398,9 @@ export class Billing {
     lines: CommercialLine[],
   ) {
     actor = this.current(actor, ["warehouse"]);
+    // The fulfillment owner checks current custody before saved results or
+    // invoice effects. Capture below runs inside its native handover transaction.
+    this.authorizeInvoiceSource(actor, { accountId, orderId, shipmentId });
     check(lines.length > 0, "VALIDATION", "Invoice requires lines.", 400);
     const customer = this.identity.customer(actor, accountId);
     const old = this.store.get<InvoiceRow>(
@@ -383,7 +408,14 @@ export class Billing {
       actor.orgId,
       shipmentId,
     );
-    if (old) return { id: old.id, number: old.number };
+    if (old) {
+      check(
+        old.account_id === accountId && old.order_id === orderId,
+        "INVOICE_SOURCE",
+        "Saved invoice does not match native shipment custody.",
+      );
+      return { id: old.id, number: old.number };
+    }
     const net = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0),
       tax = lines.reduce((sum, l) => sum + l.quantity * l.unitTax, 0),
       total = integer(net + tax, "invoice total", 0, 1e12),

@@ -121,6 +121,8 @@ export class Application {
             this.platform,
             this.identity,
             this.catalog,
+            (actor, source) =>
+              this.fulfillment.authorizeInvoiceSource(actor, source),
           );
           this.orders = new Orders(
             this.database,

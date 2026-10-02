@@ -15,7 +15,7 @@ import type { SQLInputValue } from "node:sqlite";
 import { Identity } from "./iam.ts";
 import { Inventory } from "./inventory.ts";
 import { Orders } from "./orders.ts";
-import { Billing } from "./billing.ts";
+import { Billing, type InvoiceSource } from "./billing.ts";
 import { Platform } from "./platform.ts";
 import { SHIPMENT_COVERAGE_INITIALIZE_DDL } from "./shipment-coverage-schema.ts";
 import { coverageDate, coverageDays } from "./coverage-policy.ts";
@@ -154,6 +154,21 @@ export class Fulfillment {
     account(actor, row.account_id);
     if (actor.role === "warehouse") site(actor, row.warehouse_id);
     return row;
+  }
+  // Billing resolves its own financial rows; fulfillment alone resolves custody.
+  // Packed sources are needed during native invoice capture, before handover
+  // updates the shipment. No business transaction is opened by this boundary.
+  authorizeInvoiceSource(actor: Actor, source: InvoiceSource) {
+    actor = this.shipmentReader(actor);
+    permit(actor, ["warehouse"]);
+    const shipment = this.shipment(actor, source.shipmentId);
+    check(
+      shipment.account_id === source.accountId &&
+        shipment.order_id === source.orderId &&
+        ["packed", "shipped"].includes(shipment.state),
+      "INVOICE_SOURCE",
+      "Invoice source does not match native shipment custody.",
+    );
   }
   // Packing owns the quantities; order descriptions and serials are read through
   // their owning operations. No prices or inferred customs values are returned.

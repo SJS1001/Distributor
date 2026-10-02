@@ -126,7 +126,7 @@ Billing invoice details/lines/balances, invoice/credit collections, recorded pay
 
 Manual payment, standalone credit, refund request and bank refund verification reauthorize current finance/admin access inside the native command transaction before saved results or effects. Owning shipment invoicing requires current warehouse/admin access; exposure operations retain commercial/buyer or warehouse permissions as appropriate. Owning warranty credits require current warranty/finance/admin access and verified provider payments require current finance/admin access. Buyer exposure release checks the held order's account. Existing native money, credit limits and retry rules remain in force.
 
-See [local billing evidence](evidence/LOCAL-BILLING-AUTHORITY-2026-10-02.md). Organization-wide staff visibility remains provisional; warehouse invoice detail is an existing owning fulfillment requirement, not site-qualified billing access. Unbounded collections, separate read snapshots, other module boundaries and production security acceptance remain open. All tasks/gates remain NOT VERIFIED.
+See [local billing evidence](evidence/LOCAL-BILLING-AUTHORITY-2026-10-02.md). Organization-wide non-warehouse staff visibility remains provisional. Warehouse invoice detail and issuance now use the [shipment custody checks below](#warehouse-invoice-custody). Unbounded collections, separate read snapshots, other module boundaries and production security acceptance remain open. All tasks/gates remain NOT VERIFIED.
 
 ## Current import authority
 
@@ -148,3 +148,12 @@ Inventory's owning-module reads and custody operations reload active persisted i
 These operations participate in their caller's native transaction without starting a nested transaction. An authorization change inside order acceptance refuses reservation and rolls back the whole acceptance. Read projections remain internal: ordering, fulfillment and warranty resolve customer entitlement and business/site context before exposing results. Destination-only transfer receivers can still resolve source/transit units; buyers can still order, cancel and read their own sold coverage.
 
 See [local inventory evidence](evidence/LOCAL-INVENTORY-INTERNAL-AUTHORITY-2026-10-02.md). This does not establish independent account/site restrictions on every raw internal projection, coherent snapshots across separate reads, bounded collections, approved staff visibility or production security/scale/operator acceptance. All tasks and gates remain NOT VERIFIED.
+
+
+## Warehouse invoice custody
+
+Native invoice details, lines and balances require the warehouse user's current persisted shipment-site grant. Billing asks fulfillment to resolve shipment custody through its owning API and verify the account, order and packed/shipped state. Empty grants, stale supplied roles/sites and independently revoked grants cannot retain access. Opening invoices have no native shipment entitlement and remain unavailable to warehouse users.
+
+Issuance checks that custody before returning a saved invoice or changing money; saved invoices must also match the source account/order. Packed custody is required while native handover captures immutable invoice facts, before fulfillment records shipped state. The check opens no transaction and preserves the handover's atomic stock, order and billing changes. This internal boundary does not independently establish invoice quantities or authorize direct external issuance.
+
+See [local invoice site evidence](evidence/LOCAL-INVOICE-SITE-2026-10-02.md). Other staff visibility remains provisional. Separate reads are not a coherent snapshot; broader APIs, scale, actual providers/devices and production/operator acceptance remain unqualified. All 44 tasks and 10 product gates remain NOT VERIFIED.
