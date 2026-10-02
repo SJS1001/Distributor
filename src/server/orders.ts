@@ -90,8 +90,9 @@ export class Orders {
     CREATE INDEX IF NOT EXISTS orders_reservation_history_page ON orders_reservation_history(org_id,order_id,revision);
   `);
   }
-  // Internal sales controls; the caller supplies fresh authority and a snapshot.
+  // Internal sales controls; the caller supplies the owning transaction snapshot.
   salesEvidence(actor: Actor): OrderSalesEvidence {
+    actor = this.orderReader(actor);
     permit(actor, ["finance"]);
     return {
       orders: this.store.all(
@@ -110,6 +111,7 @@ export class Orders {
     };
   }
   order(actor: Actor, orderId: string): Order {
+    actor = this.orderReader(actor);
     const row = this.store.get<Order>(
       "SELECT * FROM orders_orders WHERE org_id=? AND id=?",
       actor.orgId,
@@ -239,12 +241,12 @@ export class Orders {
     };
   }
   carts(actor: Actor) {
-    permit(actor, ["commercial", "buyer"]);
+    actor = this.amendmentActor(actor, true);
     return this.store
       .all<Cart>(
-        "SELECT * FROM orders_carts WHERE org_id=? AND (? IS NULL OR account_id=?)",
+        "SELECT * FROM orders_carts WHERE org_id=? AND (?=0 OR account_id=?)",
         actor.orgId,
-        actor.role === "buyer" ? actor.accountId : null,
+        actor.role === "buyer" ? 1 : 0,
         actor.accountId,
       )
       .map((row) => ({
@@ -271,7 +273,7 @@ export class Orders {
       key,
       input,
       () => {
-        permit(actor, ["commercial", "buyer"]);
+        actor = this.amendmentActor(actor, true);
         this.identity.customer(actor, input.accountId);
       },
       () => {
@@ -332,7 +334,7 @@ export class Orders {
       key,
       input,
       () => {
-        permit(actor, ["commercial", "buyer"]);
+        actor = this.amendmentActor(actor, true);
         const c = this.store.get(
           "SELECT * FROM orders_carts WHERE org_id=? AND id=?",
           actor.orgId,
@@ -416,7 +418,7 @@ export class Orders {
       key,
       input,
       () => {
-        permit(actor, ["commercial", "buyer"]);
+        actor = this.amendmentActor(actor, true);
         const q = this.store.get(
           "SELECT * FROM orders_quotes WHERE org_id=? AND id=?",
           actor.orgId,
@@ -1044,7 +1046,7 @@ export class Orders {
       key,
       input,
       () => {
-        permit(actor, ["commercial", "buyer"]);
+        actor = this.amendmentActor(actor, true);
         this.order(actor, input.orderId);
       },
       () => {
@@ -1097,6 +1099,8 @@ export class Orders {
     orderId: string,
     quantities: Map<string, number>,
   ): CommercialLine[] {
+    actor = this.orderReader(actor);
+    permit(actor, ["warehouse"]);
     const order = this.order(actor, orderId);
     check(order.state === "open", "STATE", "Order is closed.");
     const result: CommercialLine[] = [];
@@ -1138,6 +1142,7 @@ export class Orders {
     },
     reference: string,
   ) {
+    actor = this.orderReader(actor);
     permit(actor, ["warehouse"]);
     const o = this.order(actor, input.orderId);
     check(
