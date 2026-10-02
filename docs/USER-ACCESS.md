@@ -127,3 +127,9 @@ Billing invoice details/lines/balances, invoice/credit collections, recorded pay
 Manual payment, standalone credit, refund request and bank refund verification reauthorize current finance/admin access inside the native command transaction before saved results or effects. Owning shipment invoicing requires current warehouse/admin access; exposure operations retain commercial/buyer or warehouse permissions as appropriate. Owning warranty credits require current warranty/finance/admin access and verified provider payments require current finance/admin access. Buyer exposure release checks the held order's account. Existing native money, credit limits and retry rules remain in force.
 
 See [local billing evidence](evidence/LOCAL-BILLING-AUTHORITY-2026-10-02.md). Organization-wide staff visibility remains provisional; warehouse invoice detail is an existing owning fulfillment requirement, not site-qualified billing access. Unbounded collections, separate read snapshots, other module boundaries and production security acceptance remain open. All tasks/gates remain NOT VERIFIED.
+
+## Current import authority
+
+All import report lists and preview/approve/reject commands use current active persisted administrator grants and password state. A supplied administrator role cannot elevate a warehouse operator; a stale supplied lower role cannot deny a currently permitted administrator. Revoked grants, unavailable principals and required password changes refuse saved results as well as new requests. Existing approved/rejected outcomes remain available to authorized reviewers after restart without applying them again.
+
+See [the import procedure](IMPORTS.md#current-import-authority) and [local evidence](evidence/LOCAL-IMPORT-AUTHORITY-2026-10-02.md). These guards cover the three migration entry points, including both customer and catalog masters; they do not qualify all other internal owner APIs or production security/operating acceptance.

@@ -98,8 +98,20 @@ function customerMatch(
   };
 }
 test("customer and catalog dry runs are immutable; atomic creation preserves independent controls, strict residency and durable mappings through restart", (t) => {
-  const f = fixture(t),
-    before = f.app.dashboard(f.actor),
+  const f = fixture(t);
+  const reviewers = Object.fromEntries(
+    (["customer", "catalog"] as const).map((kind) => [
+      kind,
+      f.app.identity.createUser(f.actor, kind + "second-reviewer", {
+        name: "Second synthetic reviewer",
+        email: kind + "-second-import-reviewer@example.test",
+        password: "long-second-import-password",
+        role: "admin",
+        sites: [],
+      }).id,
+    ]),
+  );
+  const before = f.app.dashboard(f.actor),
     users = f.app.database.owned("iam").all("SELECT id FROM iam_users");
   for (const kind of ["customer", "catalog"] as const) {
     const input = source(kind, kind),
@@ -158,9 +170,19 @@ test("customer and catalog dry runs are immutable; atomic creation preserves ind
       f.app.migration.masters.decide(f.actor, kind, approved(batch)),
       result,
     );
+    assert.throws(
+      () =>
+        f.app.migration.masters.decide(
+          { ...f.actor, id: "second-admin" },
+          kind + "missing-reviewer",
+          approved(batch),
+        ),
+      { code: "FORBIDDEN" },
+    );
+    const reviewerId = reviewers[kind]!;
     assert.deepEqual(
       f.app.migration.masters.decide(
-        { ...f.actor, id: "second-admin" },
+        f.app.identity.currentActor({ ...f.actor, id: reviewerId }),
         kind + "new-key",
         approved(batch),
       ),
@@ -394,7 +416,7 @@ test("approval rechecks native creation, holds and residency revisions and rejec
         "foreign",
         approved(b),
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   f.app.identity.createCustomer(f.actor, "native", {
     name: "Imported customer A",
@@ -443,7 +465,17 @@ test("approval rechecks native creation, holds and residency revisions and rejec
     source("catalog", "CAT"),
   );
   f.app.migration.masters.decide(f.actor, "cat", approved(cat));
-  const warehouse = { ...f.actor, role: "warehouse" as const };
+  const warehouseId = f.app.identity.createUser(f.actor, "import-warehouse", {
+    name: "Synthetic import warehouse operator",
+    email: "import-warehouse@example.test",
+    password: "long-import-warehouse-password",
+    role: "warehouse",
+    sites: [f.w1],
+  }).id;
+  const warehouse = f.app.identity.currentActor({
+    ...f.actor,
+    id: warehouseId,
+  });
   assert.throws(() => f.app.migration.masters.list(warehouse), {
     code: "FORBIDDEN",
   });

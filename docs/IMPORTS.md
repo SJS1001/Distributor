@@ -2,6 +2,12 @@
 
 Local implementation checkpoint 2026-09-30. Bounded customer/catalog master, opening-stock and unpaid-invoice paths support D-013/D-035. All tasks/product gates remain NOT VERIFIED. Complete historical financial/purchase reconciliation, actual source qualification and full cutover remain outstanding. See [implementation status](IMPLEMENTATION.md) and [checkpoint criteria](CHECKPOINTS.md).
 
+## Current import authority
+
+Customer/catalog, opening-stock and unpaid-document reviews reload the active persisted principal for the requested organization. Lists, previews and approve/reject decisions require current administrator authority and no required password change. Supplied roles do not grant or remove access. Revocation, deactivation and password restrictions also apply before returning saved command results or permanent decisions with new keys. Authorized identical retries preserve the original report, mappings and result through restart.
+
+Decision authorization runs inside the existing atomic command transaction before cached results or effects. Original source controls, stale fingerprints, source identity constraints and owning-module application remain in force. A denied attempt changes no import/master/stock/money/order or command/audit facts. Other owning APIs, configurable approval duties, historical search/retention and actual cutover/security/residency qualification remain outstanding. See [the local authority receipt](evidence/LOCAL-IMPORT-AUTHORITY-2026-10-02.md).
+
 ## Customer and catalog review
 
 An administrator uses **Imports → Dry run customer/catalog**. Prepare an authorized frozen source artifact, independently reconcile the record count and control amount, and retain its original hash and rights/cutoff evidence in approved regional storage. The application accepts the supplied evidence; it cannot verify the file contents, completeness, rights or physical storage location. Fixtures are synthetic. Import catalog masters before opening stock; customer masters do not bring unpaid documents, balances, users or credentials.

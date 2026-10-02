@@ -148,9 +148,29 @@ test("opening dry runs remain immutable and stock-free; reviewed serial/bulk map
     f.app.migration.decide(f.actor, "approve", decision),
     result,
   );
+  assert.throws(
+    () =>
+      f.app.migration.decide(
+        { ...f.actor, id: "another-admin" },
+        "missing-reviewer",
+        decision,
+      ),
+    { code: "FORBIDDEN" },
+  );
+  const reviewerId = f.app.identity.createUser(
+    f.actor,
+    "second-import-reviewer",
+    {
+      name: "Second synthetic reviewer",
+      email: "second-import-reviewer@example.test",
+      password: "long-second-import-password",
+      role: "admin",
+      sites: [],
+    },
+  ).id;
   assert.deepEqual(
     f.app.migration.decide(
-      { ...f.actor, id: "another-admin" },
+      f.app.identity.currentActor({ ...f.actor, id: reviewerId }),
       "new-review-key",
       { ...decision, reason: ` ${decision.reason} ` },
     ),
@@ -281,7 +301,17 @@ test("opening approvals recheck cutoff custody atomically and deny stale fingerp
   const f = fixture(t),
     input = source(f),
     batch = f.app.migration.preview(f.actor, "preview", input);
-  const warehouse: Actor = { ...f.actor, role: "warehouse", sites: [f.w1] };
+  const warehouseId = f.app.identity.createUser(f.actor, "import-warehouse", {
+    name: "Synthetic import warehouse operator",
+    email: "import-warehouse@example.test",
+    password: "long-import-warehouse-password",
+    role: "warehouse",
+    sites: [f.w1],
+  }).id;
+  const warehouse = f.app.identity.currentActor({
+    ...f.actor,
+    id: warehouseId,
+  });
   assert.throws(() => f.app.migration.list(warehouse), { code: "FORBIDDEN" });
   assert.throws(() => f.app.migration.preview(warehouse, "preview", input), {
     code: "FORBIDDEN",
@@ -297,7 +327,7 @@ test("opening approvals recheck cutoff custody atomically and deny stale fingerp
         "decision",
         approved(batch),
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   assert.throws(
     () =>

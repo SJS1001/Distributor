@@ -69,8 +69,19 @@ export class MasterImports {
       CREATE TABLE IF NOT EXISTS migration_master_sources(org_id TEXT NOT NULL,kind TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,target_id TEXT NOT NULL,action TEXT NOT NULL CHECK(action IN('create','match')),input_hash TEXT NOT NULL,PRIMARY KEY(org_id,kind,source_ref,source_id),UNIQUE(org_id,kind,source_ref,target_id)) STRICT;
     `);
   }
+  private current(actor: Actor) {
+    const current = this.identity.currentActor(actor);
+    permit(current, []);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing import reviews.",
+      403,
+    );
+    return current;
+  }
   private batch(actor: Actor, batchId: string) {
-    permit(actor, []);
+    actor = this.current(actor);
     const batch = this.store.get<Batch>(
       "SELECT * FROM migration_master_batches WHERE org_id=? AND id=?",
       actor.orgId,
@@ -80,7 +91,7 @@ export class MasterImports {
     return batch;
   }
   list(actor: Actor) {
-    permit(actor, []);
+    actor = this.current(actor);
     return this.store
       .all<Batch>(
         "SELECT * FROM migration_master_batches WHERE org_id=? ORDER BY created_at DESC,rowid DESC LIMIT 50",
@@ -226,7 +237,9 @@ export class MasterImports {
       "import.masters.preview",
       key,
       input,
-      () => permit(actor, []),
+      () => {
+        actor = this.current(actor);
+      },
       () => {
         const normalized = normalizeManifest(actor, input, this.identity, [
           "kind",
@@ -296,7 +309,7 @@ export class MasterImports {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.current(actor);
         this.batch(actor, input.batchId);
       },
       () => {

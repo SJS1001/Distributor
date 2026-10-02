@@ -480,7 +480,7 @@ test("current organization/role and fingerprint guard reviews and replays; chang
         "foreign",
         approved(b),
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   f.app.identity.setHold(f.actor, "hold", {
     accountId: f.buyer,
@@ -515,7 +515,17 @@ test("current organization/role and fingerprint guard reviews and replays; chang
     })),
   });
   f.app.migration.documents.decide(f.actor, "clean", approved(clean));
-  const warehouse = { ...f.actor, role: "warehouse" as const };
+  const warehouseId = f.app.identity.createUser(f.actor, "import-warehouse", {
+    name: "Synthetic import warehouse operator",
+    email: "import-warehouse@example.test",
+    password: "long-import-warehouse-password",
+    role: "warehouse",
+    sites: [f.w1],
+  }).id;
+  const warehouse = f.app.identity.currentActor({
+    ...f.actor,
+    id: warehouseId,
+  });
   assert.throws(() => f.app.migration.documents.list(warehouse), {
     code: "FORBIDDEN",
   });

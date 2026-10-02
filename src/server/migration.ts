@@ -64,8 +64,19 @@ export class Migration {
       CREATE TABLE IF NOT EXISTS migration_opening_sources(org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,unit_id TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(org_id,source_ref,source_id)) STRICT;
     `);
   }
+  private current(actor: Actor) {
+    const current = this.identity.currentActor(actor);
+    permit(current, []);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing import reviews.",
+      403,
+    );
+    return current;
+  }
   private batch(actor: Actor, batchId: string) {
-    permit(actor, []);
+    actor = this.current(actor);
     const batch = this.store.get<Batch>(
       "SELECT * FROM migration_opening_batches WHERE org_id=? AND id=?",
       actor.orgId,
@@ -99,7 +110,7 @@ export class Migration {
     };
   }
   list(actor: Actor) {
-    permit(actor, []);
+    actor = this.current(actor);
     return this.store
       .all<Batch>(
         "SELECT * FROM migration_opening_batches WHERE org_id=? ORDER BY created_at DESC,rowid DESC LIMIT 50",
@@ -250,7 +261,9 @@ export class Migration {
       "import.opening.preview",
       key,
       input,
-      () => permit(actor, []),
+      () => {
+        actor = this.current(actor);
+      },
       () => {
         const normalized = this.normalize(actor, input),
           hash = digest(canonical(normalized));
@@ -310,7 +323,7 @@ export class Migration {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.current(actor);
         this.batch(actor, input.batchId);
       },
       () => {

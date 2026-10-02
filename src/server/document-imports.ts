@@ -75,8 +75,19 @@ export class DocumentImports {
       CREATE TABLE IF NOT EXISTS migration_document_sources(org_id TEXT NOT NULL,source_ref TEXT NOT NULL,source_id TEXT NOT NULL,batch_id TEXT NOT NULL,invoice_id TEXT NOT NULL,input_hash TEXT NOT NULL,PRIMARY KEY(org_id,source_ref,source_id),UNIQUE(org_id,invoice_id)) STRICT;
     `);
   }
+  private current(actor: Actor) {
+    const current = this.identity.currentActor(actor);
+    permit(current, []);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing import reviews.",
+      403,
+    );
+    return current;
+  }
   private batch(actor: Actor, batchId: string) {
-    permit(actor, []);
+    actor = this.current(actor);
     const batch = this.store.get<Batch>(
       "SELECT * FROM migration_document_batches WHERE org_id=? AND id=?",
       actor.orgId,
@@ -86,7 +97,7 @@ export class DocumentImports {
     return batch;
   }
   list(actor: Actor) {
-    permit(actor, []);
+    actor = this.current(actor);
     return this.store
       .all<Batch>(
         "SELECT * FROM migration_document_batches WHERE org_id=? ORDER BY created_at DESC,rowid DESC LIMIT 50",
@@ -229,7 +240,9 @@ export class DocumentImports {
       "import.documents.preview",
       key,
       input,
-      () => permit(actor, []),
+      () => {
+        actor = this.current(actor);
+      },
       () => {
         const normalized = normalizeManifest(actor, input, this.identity, [
           "expectedNet",
@@ -303,7 +316,7 @@ export class DocumentImports {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.current(actor);
         this.batch(actor, input.batchId);
       },
       () => {
