@@ -13,7 +13,11 @@ import {
   type CarrierConfiguration,
 } from "../shared/carrier-booking.ts";
 
-export type CarrierBinding = { orgId: string; adapter: CarrierAdapter };
+export type CarrierBinding = {
+  orgId: string;
+  warehouseId?: string;
+  adapter: CarrierAdapter;
+};
 export type CanadaPostBinding = {
   orgId: string;
   warehouseId: string;
@@ -57,17 +61,54 @@ export class CarrierRuntime {
           "A named sandbox carrier adapter is required.",
           500,
         );
-        const key = JSON.stringify([binding.orgId, binding.adapter.provider]);
+        if (binding.warehouseId !== undefined) {
+          check(
+            typeof binding.warehouseId === "string" &&
+              binding.warehouseId.length > 0 &&
+              binding.warehouseId.length <= 128 &&
+              binding.warehouseId === binding.warehouseId.trim() &&
+              !/[\u0000-\u001f\u007f]/.test(binding.warehouseId),
+            "CARRIER_CONFIG",
+            "Supply an exact carrier warehouse identity.",
+            500,
+          );
+          app.inventory.configurationWarehouse(
+            binding.orgId,
+            binding.warehouseId,
+          );
+        }
+        const key = JSON.stringify([
+          binding.orgId,
+          binding.adapter.provider,
+          binding.warehouseId ?? null,
+        ]);
         check(
           !selected.has(key),
           "CARRIER_CONFIG",
-          "Only one sandbox adapter may be registered for each organization and carrier.",
+          "Only one sandbox adapter may be registered for each organization, carrier and warehouse.",
+          500,
+        );
+        check(
+          !bindings.some(
+            (other) =>
+              other &&
+              other !== binding &&
+              other.orgId === binding.orgId &&
+              other.adapter?.provider === binding.adapter.provider &&
+              (other.warehouseId === undefined) !==
+                (binding.warehouseId === undefined),
+          ),
+          "CARRIER_CONFIG",
+          "Choose organization-wide or warehouse-specific bindings for each carrier without mixing them.",
           500,
         );
         selected.add(key);
         // Capture identity and method handles, retaining the trusted adapter's receiver.
         return Object.freeze({
           orgId: binding.orgId,
+          ...(binding.warehouseId === undefined
+            ? {}
+            : { warehouseId: binding.warehouseId }),
           adapter: Object.freeze({
             provider: binding.adapter.provider,
             sandbox: true as const,
@@ -156,19 +197,43 @@ export class CarrierRuntime {
     );
     return actor;
   }
-  enabled(actor: Actor, provider: CarrierName) {
-    actor = this.principal(actor);
-    if (provider === "canada-post") return false; // Grouped processing never uses individual dispatch.
-    return this.bindings.some(
+  private warehouse(actor: Actor, warehouseId: string | undefined) {
+    if (warehouseId !== undefined) {
+      site(actor, warehouseId);
+      this.app.inventory.warehouse(actor, warehouseId);
+    }
+  }
+  private matching(
+    actor: Actor,
+    provider: CarrierName,
+    warehouseId: string | undefined,
+  ) {
+    return this.bindings.find(
       (binding) =>
-        binding.orgId === actor.orgId && binding.adapter.provider === provider,
+        binding.orgId === actor.orgId &&
+        binding.adapter.provider === provider &&
+        (binding.warehouseId === undefined ||
+          binding.warehouseId === warehouseId),
     );
   }
-  configurations(actor: Actor): readonly CarrierConfiguration[] {
+  enabled(actor: Actor, provider: CarrierName, warehouseId?: string) {
     actor = this.principal(actor);
+    this.warehouse(actor, warehouseId);
+    if (provider === "canada-post") return false; // Grouped processing never uses individual dispatch.
+    return this.matching(actor, provider, warehouseId) !== undefined;
+  }
+  configurations(
+    actor: Actor,
+    warehouseId?: string,
+  ): readonly CarrierConfiguration[] {
+    actor = this.principal(actor);
+    this.warehouse(actor, warehouseId);
     return this.bindings
       .filter(
-        (b) => b.orgId === actor.orgId && b.adapter.provider !== "canada-post",
+        (b) =>
+          b.orgId === actor.orgId &&
+          b.adapter.provider !== "canada-post" &&
+          (b.warehouseId === undefined || b.warehouseId === warehouseId),
       )
       .flatMap((b) =>
         b.adapter.configuration
@@ -178,8 +243,17 @@ export class CarrierRuntime {
   }
   prepare(actor: Actor, key: string, input: CarrierPrepare) {
     actor = this.principal(actor);
-    const binding = this.bindings.find(
-      (b) => b.orgId === actor.orgId && b.adapter.provider === input.provider,
+    const warehouseId = this.app.carriers.warehouseForPreparation(actor, input);
+    const binding = this.matching(actor, input.provider, warehouseId);
+    check(
+      binding ||
+        !this.bindings.some(
+          (b) =>
+            b.orgId === actor.orgId && b.adapter.provider === input.provider,
+        ),
+      "CARRIER_DISABLED",
+      "No carrier account is configured for this warehouse.",
+      503,
     );
     return this.app.carriers.prepare(
       actor,
@@ -197,10 +271,8 @@ export class CarrierRuntime {
       "Canada Post requires reviewed grouped shipping.",
       503,
     );
-    const binding = this.bindings.find(
-      (binding) =>
-        binding.orgId === actor.orgId && binding.adapter.provider === provider,
-    );
+    const warehouseId = this.app.carriers.warehouseForBooking(actor, bookingId);
+    const binding = this.matching(actor, provider, warehouseId);
     check(
       binding,
       "CARRIER_DISABLED",

@@ -1961,11 +1961,16 @@ export async function createHttp(app: Application, options: HttpOptions) {
       );
       return {
         ...current,
-        configurations: options.carriers?.configurations(actor(request)) ?? [],
+        configurations:
+          options.carriers?.configurations(
+            actor(request),
+            current.warehouseId,
+          ) ?? [],
         enabled: current.booking
           ? (options.carriers?.enabled(
               actor(request),
               current.booking.provider,
+              current.warehouseId,
             ) ?? false)
           : false,
       };
@@ -1999,11 +2004,16 @@ export async function createHttp(app: Application, options: HttpOptions) {
       );
       return {
         ...current,
-        configurations: options.carriers?.configurations(actor(request)) ?? [],
+        configurations:
+          options.carriers?.configurations(
+            actor(request),
+            current.warehouseId,
+          ) ?? [],
         enabled: current.booking
           ? (options.carriers?.enabled(
               actor(request),
               current.booking.provider,
+              current.warehouseId,
             ) ?? false)
           : false,
       };

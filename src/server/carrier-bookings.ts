@@ -372,10 +372,11 @@ export class CarrierBookings {
       "Shipment not found.",
       404,
     );
-    this.shipment(actor, shipmentId);
+    const shipment = this.shipment(actor, shipmentId);
     const booking = this.latest(actor.orgId, shipmentId);
     return {
       shipmentId,
+      warehouseId: shipment.warehouse_id,
       packedGoods: this.fulfillment.packedGoods(actor, shipmentId),
       booking: booking ? this.view(booking) : null,
     };
@@ -407,6 +408,15 @@ export class CarrierBookings {
   providerForBooking(actor: Actor, bookingId: string): CarrierName {
     actor = this.principal(actor);
     return this.intent(this.booking(actor, bookingId)).provider;
+  }
+  warehouseForPreparation(actor: Actor, input: CarrierPrepare): string {
+    actor = this.principal(actor);
+    return this.shipment(actor, this.inputTarget(input)).warehouse_id;
+  }
+  warehouseForBooking(actor: Actor, bookingId: string): string {
+    actor = this.principal(actor);
+    return this.intent(this.booking(actor, bookingId)).nativeSnapshot
+      .warehouse_id;
   }
   // A group owns a fixed native booking allowlist from preparation onward.
   // Membership cannot be appended, reused or released after provider I/O.

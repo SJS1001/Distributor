@@ -5,6 +5,7 @@ import {
   type CanadaPostBinding,
 } from "./carrier-runtime.ts";
 import { configuredCanadaPostBindings } from "./canada-post-config.ts";
+import { configuredUpsBindings } from "./ups-config.ts";
 import { check, DomainError } from "./core.ts";
 import { UpsSandbox, type UpsSandboxConfig } from "./ups-sandbox.ts";
 import { FedexSandbox, type FedexSandboxConfig } from "./fedex-sandbox.ts";
@@ -135,38 +136,42 @@ export function configuredCarriers(
       groups.push(...configuredCanadaPostBindings(app, orgId, env, transport));
     }
     if (ups) {
-      const shipper = json("UPS_SHIPPER_JSON");
-      object(
-        shipper,
-        [
-          "name",
-          "line1",
-          "line2",
-          "city",
-          "province",
-          "postalCode",
-          "country",
-          "phone",
-        ],
-        "UPS_SHIPPER_JSON",
-      );
-      bindings.push({
-        orgId,
-        adapter: new UpsSandbox(
-          {
-            orgId,
-            clientId: required("UPS_CLIENT_ID", 512),
-            clientSecret: required("UPS_CLIENT_SECRET"),
-            shipperNumber: required("UPS_SHIPPER_NUMBER", 6),
-            shipper: shipper as UpsSandboxConfig["shipper"],
-            services: services("UPS_SERVICES_JSON", [
-              "service",
-              "code",
-            ]) as UpsSandboxConfig["services"],
-          },
-          transport,
-        ),
-      });
+      if (env.UPS_WAREHOUSES_JSON !== undefined) {
+        bindings.push(...configuredUpsBindings(app, orgId, env, transport));
+      } else {
+        const shipper = json("UPS_SHIPPER_JSON");
+        object(
+          shipper,
+          [
+            "name",
+            "line1",
+            "line2",
+            "city",
+            "province",
+            "postalCode",
+            "country",
+            "phone",
+          ],
+          "UPS_SHIPPER_JSON",
+        );
+        bindings.push({
+          orgId,
+          adapter: new UpsSandbox(
+            {
+              orgId,
+              clientId: required("UPS_CLIENT_ID", 512),
+              clientSecret: required("UPS_CLIENT_SECRET"),
+              shipperNumber: required("UPS_SHIPPER_NUMBER", 6),
+              shipper: shipper as UpsSandboxConfig["shipper"],
+              services: services("UPS_SERVICES_JSON", [
+                "service",
+                "code",
+              ]) as UpsSandboxConfig["services"],
+            },
+            transport,
+          ),
+        });
+      }
     }
     if (usps) {
       check(
