@@ -23,6 +23,13 @@ import type {
   CustomerProductPage,
   SelectedCustomerProduct,
 } from "../shared/customer-products.ts";
+import type {
+  CatalogLifecycleInput,
+  CatalogLifecyclePage,
+  CatalogReview,
+  CatalogPage,
+  CatalogProduct,
+} from "../shared/catalog-lifecycle.ts";
 export type Product = {
   id: string;
   org_id: string;
@@ -83,6 +90,222 @@ export class Catalog {
     return this.store.all<Product>(
       "SELECT * FROM catalog_products WHERE org_id=? AND active=1 ORDER BY sku",
       actor.orgId,
+    );
+  }
+  private staffReader(actor: Actor) {
+    actor = this.catalogReader(actor);
+    check(
+      actor.role !== "buyer",
+      "FORBIDDEN",
+      "Staff catalog access is not permitted.",
+      403,
+    );
+    return actor;
+  }
+  productPage(
+    actor: Actor,
+    after?: string,
+    query = "",
+    state = "active",
+  ): CatalogPage {
+    return this.database.transaction(() => {
+      actor = this.staffReader(actor);
+      check(
+        typeof query === "string" && query.length <= 120,
+        "VALIDATION",
+        "Catalog search must be at most 120 characters.",
+        400,
+      );
+      check(
+        ["active", "retired", "all"].includes(state),
+        "VALIDATION",
+        "Choose active, retired or all products.",
+        400,
+      );
+      const cursor =
+        after === undefined
+          ? undefined
+          : this.store.get<Product>(
+              "SELECT * FROM catalog_products WHERE org_id=? AND id=?",
+              actor.orgId,
+              text(after, "Catalog cursor", 128),
+            );
+      check(
+        after === undefined || cursor,
+        "CURSOR",
+        "Catalog cursor is unavailable in your current scope.",
+        400,
+      );
+      const rows = this.store.all<Product>(
+        `SELECT * FROM catalog_products WHERE org_id=? ${state === "all" ? "" : "AND active=?"}
+         AND (?='' OR instr(lower(sku),lower(?))>0 OR instr(lower(name),lower(?))>0)
+         ${cursor ? "AND (sku>? OR (sku=? AND id>?))" : ""} ORDER BY sku,id LIMIT 21`,
+        actor.orgId,
+        ...(state === "all" ? [] : [state === "active" ? 1 : 0]),
+        query.trim(),
+        query.trim(),
+        query.trim(),
+        ...(cursor ? [cursor.sku, cursor.sku, cursor.id] : []),
+      );
+      return {
+        items: rows.slice(0, 20).map((p) => this.descriptor(p)),
+        next: rows.length > 20 ? rows[19]!.id : null,
+      };
+    });
+  }
+  private descriptor(p: Product): CatalogProduct {
+    const { org_id: _orgId, ...product } = p;
+    return product;
+  }
+  lifecycleHistory(
+    actor: Actor,
+    productId: string,
+    after?: string,
+  ): CatalogLifecyclePage {
+    return this.database.transaction(() =>
+      this.lifecycleHistoryRead(actor, productId, after),
+    );
+  }
+  private lifecycleHistoryRead(
+    actor: Actor,
+    productId: string,
+    after?: string,
+  ): CatalogLifecyclePage {
+    actor = this.catalogActor(actor, ["commercial"]);
+    const product = this.product(actor, text(productId, "Product ID", 128));
+    const page = this.platform.catalogLifecyclePage(actor, product.id, after);
+    return {
+      items: page.items.map((row) => {
+        let detail: {
+          product: CatalogProduct;
+          fromActive: number;
+          toActive: number;
+          reason: string;
+          expectedHash: string;
+        };
+        try {
+          detail = JSON.parse(row.detail);
+          check(
+            detail.product.id === product.id &&
+              typeof detail.product.sku === "string" &&
+              detail.product.sku.length > 0 &&
+              typeof detail.product.name === "string" &&
+              detail.product.name.length > 0 &&
+              [0, 1].includes(detail.product.serialized) &&
+              Number.isSafeInteger(detail.product.unit_price) &&
+              detail.product.unit_price >= 0 &&
+              Number.isSafeInteger(detail.product.tax_bp) &&
+              detail.product.tax_bp >= 0 &&
+              detail.product.tax_bp <= 10000 &&
+              ["CAD", "USD"].includes(detail.product.currency) &&
+              [0, 1].includes(detail.fromActive) &&
+              [0, 1].includes(detail.toActive) &&
+              detail.fromActive !== detail.toActive &&
+              detail.product.active === detail.fromActive &&
+              typeof detail.reason === "string" &&
+              detail.reason.trim().length > 0 &&
+              detail.reason.length <= 1000 &&
+              typeof detail.expectedHash === "string" &&
+              /^[a-f0-9]{64}$/.test(detail.expectedHash),
+            "HISTORY_INTEGRITY",
+            "Catalog history is unavailable. Investigate retained evidence.",
+            503,
+          );
+        } catch {
+          check(
+            false,
+            "HISTORY_INTEGRITY",
+            "Catalog history is unavailable. Investigate retained evidence.",
+            503,
+          );
+        }
+        return {
+          ...detail!,
+          id: row.id,
+          actorId: row.actorId,
+          createdAt: row.createdAt,
+        };
+      }),
+      next: page.next,
+    };
+  }
+  lifecycleReview(actor: Actor, productId: string): CatalogReview {
+    return this.database.transaction(() =>
+      this.lifecycleReviewRead(actor, productId),
+    );
+  }
+  private lifecycleReviewRead(actor: Actor, productId: string): CatalogReview {
+    actor = this.catalogActor(actor, ["commercial"]);
+    const product = this.product(actor, text(productId, "Product ID", 128));
+    const latest =
+      this.lifecycleHistoryRead(actor, product.id).items[0]?.id ?? null;
+    return {
+      product: this.descriptor(product),
+      expectedHash: digest(canonical({ product, latest })),
+    };
+  }
+  retire(actor: Actor, key: string, input: CatalogLifecycleInput) {
+    return this.changeActivity(actor, key, input, false);
+  }
+  reactivate(actor: Actor, key: string, input: CatalogLifecycleInput) {
+    return this.changeActivity(actor, key, input, true);
+  }
+  private changeActivity(
+    actor: Actor,
+    key: string,
+    input: CatalogLifecycleInput,
+    active: boolean,
+  ) {
+    return this.platform.command(
+      actor,
+      active ? "product.reactivate" : "product.retire",
+      key,
+      input,
+      () => {
+        actor = this.catalogActor(actor, ["commercial"]);
+        this.product(actor, text(input.productId, "Product ID", 128));
+      },
+      () => {
+        const reason = text(input.reason, "Reason", 1000);
+        check(
+          typeof input.expectedHash === "string" &&
+            /^[a-f0-9]{64}$/.test(input.expectedHash),
+          "VALIDATION",
+          "Review the current product before changing its status.",
+          400,
+        );
+        const reviewed = this.lifecycleReviewRead(actor, input.productId);
+        check(
+          reviewed.expectedHash === input.expectedHash,
+          "REVIEW_CHANGED",
+          "Product or lifecycle history changed; reopen the review.",
+        );
+        check(
+          reviewed.product.active === Number(!active),
+          "PRODUCT_STATE",
+          active ? "Product is already active." : "Product is already retired.",
+        );
+        this.store.run(
+          "UPDATE catalog_products SET active=? WHERE org_id=? AND id=?",
+          Number(active),
+          actor.orgId,
+          input.productId,
+        );
+        const detail = {
+          product: reviewed.product,
+          fromActive: reviewed.product.active,
+          toActive: Number(active),
+          reason,
+          expectedHash: input.expectedHash,
+        };
+        this.platform.audit(
+          actor,
+          "product.lifecycle",
+          input.productId,
+          detail,
+        );
+        return { id: input.productId, active: Number(active) };
+      },
     );
   }
   customerProducts(actor: Actor, accountId: string): CustomerProduct[] {

@@ -30,7 +30,7 @@ export function usePages<T extends Item = Item>(
       const result = await request<Page<T>>(
         endpoint +
           (previous?.next
-            ? `?${cursorName}=${encodeURIComponent(previous.next)}`
+            ? `${endpoint.includes("?") ? "&" : "?"}${cursorName}=${encodeURIComponent(previous.next)}`
             : ""),
         { signal: controller.signal },
       );

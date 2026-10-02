@@ -568,6 +568,12 @@ export class Orders {
         );
         const orderId = id(),
           lines = JSON.parse(String(q.lines)) as CommercialLine[];
+        for (const line of lines)
+          check(
+            this.catalog.product(actor, line.productId).active,
+            "PRODUCT",
+            "Product is inactive; request a new quote after catalog review.",
+          );
         this.billing.commitExposure(
           actor,
           String(q.account_id),

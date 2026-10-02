@@ -347,6 +347,48 @@ export class Platform {
     const items = rows.slice(0, 20);
     return { items, next: rows.length > 20 ? String(items.at(-1)!.id) : null };
   }
+  // Owning audit projection for catalog lifecycle review; no foreign-table access.
+  catalogLifecyclePage(actor: Actor, productId: string, after?: string) {
+    check(
+      this.readAuthority,
+      "AUTHORITY",
+      "Catalog audit authority is unavailable.",
+      503,
+    );
+    actor = this.readAuthority(actor);
+    permit(actor, ["commercial"]);
+    productId = text(productId, "Product ID", 128);
+    let before: number | null = null;
+    if (after !== undefined) {
+      const cursor = this.store.get(
+        `SELECT o.sequence FROM platform_audit_order o JOIN platform_audit a ON a.id=o.audit_id AND a.org_id=o.org_id
+         WHERE o.org_id=? AND a.action='product.lifecycle' AND a.reference=? AND a.id=?`,
+        actor.orgId,
+        productId,
+        text(after, "Catalog history cursor", 128),
+      );
+      check(cursor, "CURSOR", "Catalog history cursor is unavailable.", 400);
+      before = Number(cursor.sequence);
+    }
+    const rows = this.store.all<{
+      id: string;
+      actorId: string;
+      createdAt: string;
+      detail: string;
+    }>(
+      `SELECT a.id,a.actor_id AS actorId,a.created_at AS createdAt,a.detail
+       FROM platform_audit_order o JOIN platform_audit a ON a.id=o.audit_id AND a.org_id=o.org_id
+       WHERE o.org_id=? AND a.action='product.lifecycle' AND a.reference=?
+       ${before === null ? "" : "AND o.sequence<?"} ORDER BY o.sequence DESC LIMIT 21`,
+      actor.orgId,
+      productId,
+      ...(before === null ? [] : [before]),
+    );
+    return {
+      items: rows.slice(0, 20),
+      next: rows.length > 20 ? rows[19]!.id : null,
+    };
+  }
   // Compile-time application composition; no business module imports the optional report.
   configureProjection(run: () => number) {
     this.projection = run;

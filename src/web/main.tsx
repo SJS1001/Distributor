@@ -61,6 +61,15 @@ import {
 } from "./quickbooks-authorization.tsx";
 import type { SoldSerial } from "../shared/sold-serials.ts";
 import { Modal, type Dialog, type Field } from "./modal.tsx";
+import {
+  CatalogMaintenance,
+  CatalogHistoryRows,
+} from "./catalog-maintenance.tsx";
+import type {
+  CatalogReview,
+  CatalogLifecycleRecord,
+  CatalogLifecyclePage,
+} from "../shared/catalog-lifecycle.ts";
 import "./style.css";
 type Item = Record<string, any>;
 const money = (value: number, currency = "CAD") =>
@@ -401,6 +410,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    stopCatalogRead();
     stopOrderEntryRead();
     orderQueue.stop();
     purchaseQueue.stop();
@@ -482,6 +492,89 @@ function App() {
     name: string,
     transform: (v: Item) => unknown = (v) => v,
   ) => open(title, fields, (v) => command(name, transform(v)));
+  const catalogRead = useRef<AbortController | null>(null);
+  const stopCatalogRead = () => {
+    catalogRead.current?.abort();
+    catalogRead.current = null;
+  };
+  const reviewProductActivity = (productId: string, active: boolean) => {
+    stopCatalogRead();
+    const controller = new AbortController();
+    catalogRead.current = controller;
+    void run(async () => {
+      const review = await request<CatalogReview>(
+        `/api/catalog/products/${encodeURIComponent(productId)}/review`,
+        { signal: controller.signal },
+      ).catch((e) => {
+        if (controller.signal.aborted) return null;
+        throw e;
+      });
+      if (!review || controller.signal.aborted) return { skipRefresh: true };
+      if (review.product.active === Number(active))
+        throw Error("Product status changed; refresh the catalog.");
+      open(
+        active ? "Review product reactivation" : "Review product retirement",
+        [reason],
+        (v) =>
+          command(active ? "product.reactivate" : "product.retire", {
+            productId,
+            expectedHash: review.expectedHash,
+            reason: v.reason,
+          }),
+        <>
+          <p>
+            {review.product.sku} · {review.product.name} · Base price{" "}
+            {money(review.product.unit_price, review.product.currency)} · Tax{" "}
+            {review.product.tax_bp / 100}% ·{" "}
+            {review.product.serialized
+              ? "Serial tracking required"
+              : "Bulk product"}
+            .
+          </p>
+          <p>
+            {active
+              ? "Reactivation makes this product available for new customer quotes and order acceptance using its current prices and tax. Existing tier prices remain in place."
+              : "Retirement removes this product from new customer selection and refuses new quotes and order acceptance. Stock, purchase commitments, accepted orders, invoice snapshots and warranty history remain. Retained saved carts require explicit removal review."}
+          </p>
+          <p>
+            After a lost response, submit the same reason again to recover the
+            original request. If this review becomes stale, cancel and reopen
+            it.
+          </p>
+        </>,
+        active ? "Reactivate product" : "Retire product",
+      );
+    }, false).catch(() => {});
+  };
+  const showCatalogHistory = async (
+    productId: string,
+    loaded: CatalogLifecycleRecord[] = [],
+    after?: string,
+  ) => {
+    stopCatalogRead();
+    const controller = new AbortController();
+    catalogRead.current = controller;
+    const result = await request<CatalogLifecyclePage>(
+      `/api/catalog/products/${encodeURIComponent(productId)}/history${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+      { signal: controller.signal },
+    ).catch((e) => {
+      if (controller.signal.aborted) return null;
+      throw e;
+    });
+    if (!result || controller.signal.aborted) return { skipRefresh: true };
+    const items = [...loaded, ...result.items];
+    open(
+      "Product lifecycle history",
+      [],
+      async () => {
+        if (!result.next) return { skipRefresh: true };
+        await showCatalogHistory(productId, items, result.next);
+        return { keepDialog: true, skipRefresh: true };
+      },
+      <CatalogHistoryRows items={items} />,
+      result.next ? "Load older lifecycle changes" : "Close history",
+    );
+  };
   const supplierFields: Field[] = [
     { name: "reference", label: "Supplier follow-up reference (unique)" },
     {
@@ -1113,6 +1206,7 @@ function App() {
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
                 stopOrderEntryRead();
+                stopCatalogRead();
                 orderQueue.stop();
                 purchaseQueue.stop();
                 invoiceQueue.stop();
@@ -1121,6 +1215,9 @@ function App() {
                 setPage(p);
                 setDialog((current) =>
                   [
+                    "Review product retirement",
+                    "Review product reactivation",
+                    "Product lifecycle history",
                     "Request return or warranty review",
                     "Approve replacement reservation",
                     "Prepare an order",
@@ -3050,40 +3147,30 @@ function App() {
                   ),
                 )}
             </div>
-            {table(
-              [
-                "SKU",
-                "Product",
-                "Serial tracking",
-                "Base price",
-                "Tax",
-                "Actions",
-              ],
-              data.products,
-              (p: Item) => [
-                p.sku,
-                p.name,
-                p.serialized ? "Required" : "Bulk",
-                money(p.unit_price, currency),
-                `${p.tax_bp / 100}%`,
-                can("commercial") &&
-                  button("Tier price", () =>
-                    simple(
-                      "Set tier price",
-                      [
-                        { name: "tier", label: "Customer price tier" },
-                        {
-                          name: "unitPrice",
-                          label: "Unit price in cents",
-                          type: "number",
-                        },
-                      ],
-                      "product.price",
-                      (v) => ({ ...v, productId: p.id }),
-                    ),
-                  ),
-              ],
-            )}
+            <CatalogMaintenance
+              key={eventViewEpoch}
+              canManage={can("commercial")}
+              busy={busy}
+              review={reviewProductActivity}
+              history={(id) =>
+                void run(() => showCatalogHistory(id), false).catch(() => {})
+              }
+              price={(p) =>
+                simple(
+                  "Set tier price",
+                  [
+                    { name: "tier", label: "Customer price tier" },
+                    {
+                      name: "unitPrice",
+                      label: "Unit price in cents",
+                      type: "number",
+                    },
+                  ],
+                  "product.price",
+                  (v) => ({ ...v, productId: p.id }),
+                )
+              }
+            />
           </>
         )}
         {page === "Billing" && (
@@ -5913,6 +6000,7 @@ function App() {
           error={error}
           close={() => {
             stopOrderEntryRead();
+            stopCatalogRead();
             setDialog(null);
           }}
           submit={async (values) => {

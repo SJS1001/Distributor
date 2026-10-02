@@ -593,6 +593,22 @@ export function commands(
       }),
       run: (a, k, p) => app.catalog.create(a, k, p),
     },
+    "product.retire": {
+      schema: obj({
+        productId: str,
+        expectedHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: { type: "string", minLength: 1, maxLength: 1000 },
+      }),
+      run: (a, k, p) => app.catalog.retire(a, k, p),
+    },
+    "product.reactivate": {
+      schema: obj({
+        productId: str,
+        expectedHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: { type: "string", minLength: 1, maxLength: 1000 },
+      }),
+      run: (a, k, p) => app.catalog.reactivate(a, k, p),
+    },
     "product.price": {
       schema: obj({ productId: str, tier: str, unitPrice: num }),
       run: (a, k, p) => app.catalog.setPrice(a, k, p),
@@ -1419,6 +1435,50 @@ export async function createHttp(app: Application, options: HttpOptions) {
   }
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
+  http.get<{ Querystring: { after?: string; q?: string; state?: string } }>(
+    "/api/catalog/products/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 128 },
+            q: { type: "string", maxLength: 120 },
+            state: choice("active", "retired", "all"),
+          },
+          ["after", "q", "state"],
+        ),
+      },
+    },
+    async (request) =>
+      app.catalog.productPage(
+        actor(request),
+        request.query.after,
+        request.query.q,
+        request.query.state,
+      ),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/review",
+    async (request) =>
+      app.catalog.lifecycleReview(actor(request), request.params.id),
+  );
+  http.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+    "/api/catalog/products/:id/history",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.catalog.lifecycleHistory(
+        actor(request),
+        request.params.id,
+        request.query.after,
+      ),
+  );
   http.get<{ Querystring: { accountId: string } }>(
     "/api/catalog/customer-products",
     {

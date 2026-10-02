@@ -1,3 +1,4 @@
+import "./catalog-lifecycle-browser-journey.ts";
 import "./react-render-browser-journey.ts";
 import "./catalog-entry-browser-journey.ts";
 import { stockFactsDashboard } from "./stock-browser-facts.ts";

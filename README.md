@@ -2,7 +2,7 @@
 
 Independent distributor application and planning workspace for multiple warehouses. Repository: [SJS1001/Distributor](https://github.com/SJS1001/Distributor).
 
-**Status: implementation in progress, 30 September 2026.** The owner authorized the full system after completing the planning package. See [implementation status](docs/IMPLEMENTATION.md) for actual code, commands and remaining qualification. The remote was empty and public when inspected; local files have not been pushed.
+**Status: implementation in progress, 2 October 2026.** The owner authorized the full system after completing the planning package. See [implementation status](docs/IMPLEMENTATION.md) for actual code, commands and remaining qualification. The owner-authorized snapshot is published on `codex/local-distributor-checkpoint`; the full system remains incomplete.
 
 The intended product covers billing, online ordering, inventory, equipment scanning, fulfillment/logistics and warranty/returns. Modules should be added through defined interfaces without rewriting the product core. Project UB is a candidate optional integration, not a prerequisite for routine distributor operations.
 
@@ -23,6 +23,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
 | [Invoice checkout access](docs/CHECKOUT.md) | Fresh scoped payment links, reviewed closure/replacement, retained verification history and native balance checks |
 | [Order queue](docs/ORDER-QUEUES.md) | Scoped twenty-header pages, live state filters, full open-order counts and retry/history controls |
+| [Catalog lifecycle](docs/CATALOG-LIFECYCLE.md) | Reviewed retirement/reactivation, staff search, retained history and customer-ordering effects |
 | [Customer pricing](docs/CUSTOMER-PRICING.md) | Current assigned-customer prices, selected-account quantity editing, fresh quotes and saved cart recovery |
 | [Purchase order queue](docs/PURCHASE-QUEUES.md) | Scoped twenty-header pages, live state filters and saved receipt drafts independent of visible orders |
 | [Invoice queue](docs/INVOICE-QUEUES.md) | Scoped twenty-header pages, current balance filters, full receivable totals and credit publication independent of visible invoices |
