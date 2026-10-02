@@ -10,6 +10,16 @@ import {
   type ReconciliationReceipt,
 } from "../shared/reconciliation.ts";
 let csrf = "";
+export class RequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "RequestError";
+  }
+}
 export function setCsrf(value: string) {
   csrf = value;
 }
@@ -28,8 +38,10 @@ export async function request<T = any>(
   });
   const result = await response.json();
   if (!response.ok)
-    throw new Error(
+    throw new RequestError(
       `${result.message ?? "Request failed."}${result.code ? ` (${result.code})` : ""}`,
+      response.status,
+      result.code,
     );
   return result as T;
 }

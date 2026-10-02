@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import {
   command,
   request,
+  RequestError,
   setCsrf,
   downloadDocument,
   downloadStockLabel,
@@ -781,6 +782,40 @@ function App() {
     products: CustomerProduct[],
     old?: Item,
   ) => {
+    let revision = old?.revision ?? 0;
+    let savedCart: Item | undefined;
+    let savedLines: string | undefined;
+    let pendingSave:
+      | {
+          accountId: string;
+          warehouseId: string;
+          revision: number;
+          lines: { productId: string; quantity: number }[];
+        }
+      | undefined;
+    const finishSave = async () => {
+      if (!pendingSave) return;
+      // Recover the exact attempt before saving changed quantities. The command
+      // key survives a lost response; never assume that a failed response means
+      // the original save did not commit.
+      try {
+        savedCart = await command("cart.save", pendingSave);
+      } catch (error) {
+        // A definite refusal can be corrected. A transport/server failure or
+        // timeout retains the exact pending attempt for safe recovery.
+        if (
+          error instanceof RequestError &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 408
+        )
+          pendingSave = undefined;
+        throw error;
+      }
+      revision = savedCart!.revision;
+      savedLines = JSON.stringify(pendingSave.lines);
+      pendingSave = undefined;
+    };
     open(
       "Edit order quantities",
       products.map((p) => ({
@@ -792,17 +827,19 @@ function App() {
           old?.lines.find((l: Item) => l.productId === p.id)?.quantity ?? 0,
       })),
       async (v) => {
-        const cart = await command("cart.save", {
-          accountId,
-          warehouseId,
-          revision: old?.revision ?? 0,
-          lines: products
-            .map((p) => ({ productId: p.id, quantity: v[p.id] }))
-            .filter((l: Item) => l.quantity > 0),
-        });
-        return reviewCart(cart);
+        const lines = products
+          .map((p) => ({ productId: p.id, quantity: Number(v[p.id]) }))
+          .filter((l) => l.quantity > 0);
+        await finishSave();
+        if (!savedCart || savedLines !== JSON.stringify(lines)) {
+          pendingSave = { accountId, warehouseId, revision, lines };
+          await finishSave();
+        }
+        // Quote retries reuse the observed saved revision rather than writing
+        // again. A new native quote still refuses another session's newer cart.
+        return reviewCart(savedCart!);
       },
-      "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If another session changes this cart, reopen it to review the latest quantities.",
+      "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If saving or quoting loses its response, retry to recover the saved attempt. If another session changes this cart, cancel and reopen it to review the latest quantities.",
     );
   };
   const placeOrder = (

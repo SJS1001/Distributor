@@ -10,6 +10,16 @@ Continue to save quantities and obtain a fresh quote. The price shown while edit
 
 A failed preparation keeps the customer and warehouse selection for retry. Closing the dialog, navigation, dashboard refresh and sign-out cancel preparation reads and prevent their late responses from reopening the editor. This fence applies to preparation reads; it is not a general cancellation guarantee for submitted order commands.
 
+## Recover saving and quoting
+
+If saving or quoting loses its response, continue again from the quantity editor. It retains the exact pending save and request key until the result is recovered. If you changed quantities meanwhile, it first recovers that save, then submits the changed quantities against the returned revision. A transport failure, server error or HTTP 408 keeps the original attempt; an explicit client refusal permits correcting the form.
+
+Once the editor observes a successful save, retrying a failed quote with unchanged quantities does not save the cart again. A lost successful quote response reuses its original request key and quote snapshot. Always review the displayed quantities and money before accepting; recovery does not accept an order automatically. Existing quote expiry, current authority, credit and stock checks still apply.
+
+If another session changes the cart before a new save or quote, cancel and reopen to load its current quantities. Recovery does not overwrite a newer revision. An already issued quote retains its original snapshot; retrieving it again does not promise today's prices or a new expiry. Canceling and reopening obtains current cart quantities and prepares a new quote.
+
+The [cart recovery receipt](evidence/LOCAL-CART-RECOVERY-2026-10-02.md) records lost responses, edited quantities, validation correction, network/timeout recovery and concurrent-session refusals. Pending editor state lasts only for that editor; reopening reads the native saved cart. Submitted mutations and their durable receipts may finish even if navigation abandons the UI.
+
 ## Price and access contract
 
 `Catalog.customerProducts(actor, accountId)` refreshes persisted identity, role, required-password restrictions, customer assignment and customer tier in one database transaction. Administrator, commercial and buyer roles are permitted; finance, warehouse, warranty and support are refused. Buyers cannot choose another account, and stale or forged caller grants do not expand access. These checks precede even an empty catalog result.
