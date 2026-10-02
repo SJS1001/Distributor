@@ -89,7 +89,7 @@ function shippingTime(value: unknown): string {
 // send eligibility belongs at transmission, so recovery can retain old reviews.
 export function captureDhlReview(
   value: unknown,
-  shipment: Shipment,
+  shipment: Pick<Shipment, "lines">,
   origin: CarrierAddress,
   destination: CarrierAddress,
   parcel: CarrierParcel,

@@ -16,6 +16,7 @@ import { Database, type Store } from "./database.ts";
 import type { Platform } from "./platform.ts";
 import type { Identity } from "./iam.ts";
 import type { Fulfillment, Shipment } from "./fulfillment.ts";
+import type { Warranty, ReplacementCarrierSnapshot } from "./warranty.ts";
 import type {
   CanadaPostShipmentObservation,
   CanadaPostManifestReview,
@@ -40,7 +41,7 @@ import {
 export type CarrierIntent = CarrierPrepare & {
   bookingId: string;
   reviewHash: string;
-  nativeSnapshot: Shipment;
+  nativeSnapshot: Shipment | ReplacementCarrierSnapshot;
   configuration?: CarrierConfiguration;
 };
 export type CarrierResult = {
@@ -166,6 +167,7 @@ export class CarrierBookings {
     private platform: Platform,
     private identity: Identity,
     private fulfillment: Fulfillment,
+    private warranty: Warranty,
   ) {
     this.store = database.owned("integration");
     this.store.migrate(`
@@ -207,6 +209,33 @@ export class CarrierBookings {
         "Handover must use the booked carrier identifier and exact tracking reference.",
       );
     });
+    warranty.configureCarrierGuard((actor, replacementId, action, binding) => {
+      const booking = this.latest(
+        actor.orgId,
+        this.replacementKey(replacementId),
+      );
+      if (!booking || booking.state === "canceled") return;
+      check(
+        booking.state === "booked" && action === "dispatch",
+        "CARRIER_BOOKING_ACTIVE",
+        "Resolve or cancel an unsent booking before cancellation or collection; a booked replacement requires carrier dispatch.",
+      );
+      const intent = this.intent(booking);
+      if (intent.provider === "canada-post")
+        this.assertCanadaPostHandover(actor, booking);
+      const snapshot = this.warranty.carrierSnapshot(actor, replacementId);
+      check(
+        intent.replacementId === replacementId &&
+          canonical(snapshot) === canonical(intent.nativeSnapshot) &&
+          snapshot.ready &&
+          binding?.carrier === intent.provider &&
+          binding?.tracking === booking.tracking &&
+          binding?.recipient === intent.destination.name &&
+          binding?.address === intent.reviewedDestination,
+        "CARRIER_MISMATCH",
+        "Dispatch requires the unchanged replacement, reviewed recipient/address and exact booked carrier/tracking reference.",
+      );
+    });
   }
   private principal(actor: Actor) {
     actor = this.identity.currentActor(actor);
@@ -219,7 +248,44 @@ export class CarrierBookings {
     );
     return actor;
   }
-  private shipment(actor: Actor, shipmentId: string) {
+  private replacementKey(replacementId: string) {
+    replacementId = text(replacementId, "Replacement", 128);
+    check(
+      !replacementId.startsWith("replacement:"),
+      "VALIDATION",
+      "Supply the native replacement ID.",
+      400,
+    );
+    return `replacement:${replacementId}`;
+  }
+  private inputTarget(input: CarrierPrepare) {
+    const shipmentId = text(input.shipmentId, "Shipment", 128);
+    check(
+      !shipmentId.startsWith("replacement:"),
+      "VALIDATION",
+      "Supply a native shipment or replacement ID.",
+      400,
+    );
+    if (Object.hasOwn(input, "replacementId")) {
+      check(
+        input.replacementId === shipmentId,
+        "CARRIER_MISMATCH",
+        "Replacement and carrier shipment references must agree.",
+        400,
+      );
+      return this.replacementKey(input.replacementId!);
+    }
+    return shipmentId;
+  }
+  private shipment(
+    actor: Actor,
+    shipmentId: string,
+  ): Shipment | ReplacementCarrierSnapshot {
+    if (shipmentId.startsWith("replacement:"))
+      return this.warranty.carrierSnapshot(
+        actor,
+        shipmentId.slice("replacement:".length),
+      );
     const shipment = this.fulfillment.shipment(
       actor,
       text(shipmentId, "Shipment", 128),
@@ -234,6 +300,7 @@ export class CarrierBookings {
       text(bookingId, "Booking", 128),
     );
     check(booking, "NOT_FOUND", "Carrier booking not found.", 404);
+    this.intent(booking);
     this.shipment(actor, booking.shipment_id);
     return booking;
   }
@@ -252,18 +319,35 @@ export class CarrierBookings {
         reviewHash === booking.review_hash &&
         digest(canonical(review)) === reviewHash &&
         intent.nativeSnapshot.org_id === booking.org_id &&
-        intent.shipmentId === booking.shipment_id &&
-        intent.nativeSnapshot.id === booking.shipment_id,
+        this.inputTarget(intent) === booking.shipment_id &&
+        intent.nativeSnapshot.id === intent.shipmentId &&
+        (intent.replacementId !== undefined
+          ? "kind" in intent.nativeSnapshot &&
+            intent.nativeSnapshot.kind === "replacement"
+          : !("kind" in intent.nativeSnapshot)),
       "CARRIER_MISMATCH",
       "Carrier intent integrity check failed.",
     );
     return intent;
   }
+  private targetReference(booking: Booking) {
+    const intent = this.intent(booking);
+    return {
+      shipmentId: intent.shipmentId,
+      ...(intent.replacementId ? { replacementId: intent.replacementId } : {}),
+    };
+  }
   private view(booking: Booking): CarrierBookingView {
     const intent = this.intent(booking);
     return {
       id: booking.id,
-      shipmentId: booking.shipment_id,
+      shipmentId: intent.shipmentId,
+      ...(intent.replacementId
+        ? {
+            replacementId: intent.replacementId,
+            reviewedDestination: intent.reviewedDestination,
+          }
+        : {}),
       provider: intent.provider,
       state: booking.state,
       reviewHash: booking.review_hash,
@@ -282,6 +366,12 @@ export class CarrierBookings {
   }
   review(actor: Actor, shipmentId: string): CarrierReview {
     actor = this.principal(actor);
+    check(
+      !shipmentId.startsWith("replacement:"),
+      "NOT_FOUND",
+      "Shipment not found.",
+      404,
+    );
     this.shipment(actor, shipmentId);
     const booking = this.latest(actor.orgId, shipmentId);
     return {
@@ -289,6 +379,30 @@ export class CarrierBookings {
       packedGoods: this.fulfillment.packedGoods(actor, shipmentId),
       booking: booking ? this.view(booking) : null,
     };
+  }
+  reviewReplacement(actor: Actor, replacementId: string): CarrierReview {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const snapshot = this.warranty.carrierSnapshot(actor, replacementId);
+      const booking = this.latest(
+        actor.orgId,
+        this.replacementKey(replacementId),
+      );
+      return {
+        shipmentId: replacementId,
+        replacementId,
+        warehouseId: snapshot.warehouse_id,
+        packedGoods: [
+          {
+            allocationId: replacementId,
+            quantity: 1,
+            description: snapshot.custody.description,
+            serial: snapshot.custody.unit.serial,
+          },
+        ],
+        booking: booking ? this.view(booking) : null,
+      };
+    });
   }
   providerForBooking(actor: Actor, bookingId: string): CarrierName {
     actor = this.principal(actor);
@@ -1295,7 +1409,7 @@ export class CarrierBookings {
               "carrier.booking.booked",
               member.booking_id,
               {
-                shipmentId: this.booking(actor, member.booking_id).shipment_id,
+                ...this.targetReference(this.booking(actor, member.booking_id)),
                 provider: "canada-post",
                 manifestId: group.id,
                 reviewHash: member.review_hash,
@@ -1683,6 +1797,24 @@ export class CarrierBookings {
     shipmentId: string,
     after?: string,
   ): { items: CarrierBookingView[]; next: string | null } {
+    check(
+      !shipmentId.startsWith("replacement:"),
+      "NOT_FOUND",
+      "Shipment not found.",
+      404,
+    );
+    return this.targetHistory(actor, shipmentId, after);
+  }
+  historyReplacement(actor: Actor, replacementId: string, after?: string) {
+    return this.database.transaction(() =>
+      this.targetHistory(actor, this.replacementKey(replacementId), after),
+    );
+  }
+  private targetHistory(
+    actor: Actor,
+    shipmentId: string,
+    after?: string,
+  ): { items: CarrierBookingView[]; next: string | null } {
     actor = this.principal(actor);
     this.shipment(actor, shipmentId);
     const cursor =
@@ -1709,18 +1841,25 @@ export class CarrierBookings {
     const items = rows.slice(0, 20).map((row) => this.view(row));
     return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
   }
-  private ready(actor: Actor, shipment: Shipment, provider: CarrierName) {
+  private ready(
+    actor: Actor,
+    shipment: Shipment | ReplacementCarrierSnapshot,
+    provider: CarrierName,
+  ) {
     this.platform.assertProviderAccess();
     check(
-      shipment.state === "packed" && shipment.mode === "carrier",
+      "kind" in shipment
+        ? shipment.ready
+        : shipment.state === "packed" && shipment.mode === "carrier",
       "STATE",
-      "Carrier booking requires a packed carrier shipment.",
+      "Carrier booking requires packed carrier stock or a reserved ready warranty replacement.",
     );
-    check(
-      !this.identity.customer(actor, shipment.account_id).held,
-      "CREDIT_HOLD",
-      "Account is on hold; carrier booking requires finance clearance.",
-    );
+    if (!("kind" in shipment))
+      check(
+        !this.identity.customer(actor, shipment.account_id).held,
+        "CREDIT_HOLD",
+        "Account is on hold; carrier booking requires finance clearance.",
+      );
     this.identity.providerAllowed(actor, shipment.account_id, provider);
   }
   prepare(
@@ -1736,7 +1875,7 @@ export class CarrierBookings {
       input,
       () => {
         actor = this.principal(actor);
-        this.shipment(actor, input.shipmentId);
+        this.shipment(actor, this.inputTarget(input));
         check(
           configuration
             ? configuration.provider === input.provider &&
@@ -1751,7 +1890,8 @@ export class CarrierBookings {
         );
       },
       () => {
-        const shipment = this.shipment(actor, input.shipmentId);
+        const targetKey = this.inputTarget(input);
+        const shipment = this.shipment(actor, targetKey);
         check(
           carrierNames.includes(input.provider),
           "VALIDATION",
@@ -1759,12 +1899,20 @@ export class CarrierBookings {
           400,
         );
         this.ready(actor, shipment, input.provider);
+        const reviewedDestination =
+          "kind" in shipment
+            ? text(
+                input.reviewedDestination,
+                "Replacement delivery address",
+                2000,
+              )
+            : shipment.address;
         check(
-          input.reviewedDestination === shipment.address,
+          input.reviewedDestination === reviewedDestination,
           "CARRIER_MISMATCH",
-          "Review the exact packed shipment destination.",
+          "Review the exact delivery address for this shipment or replacement.",
         );
-        const previous = this.latest(actor.orgId, shipment.id);
+        const previous = this.latest(actor.orgId, targetKey);
         check(
           (previous?.id ?? null) === input.previousId &&
             (!previous || previous.state === "canceled"),
@@ -1782,6 +1930,7 @@ export class CarrierBookings {
           reviewedParcel = parcel(input.parcel);
         const review = {
           shipmentId: shipment.id,
+          ...("kind" in shipment ? { replacementId: shipment.id } : {}),
           previousId: input.previousId,
           provider: input.provider,
           service: clean(input.service, "Carrier service", 100),
@@ -1799,7 +1948,7 @@ export class CarrierBookings {
                 ),
               }
             : {}),
-          reviewedDestination: shipment.address,
+          reviewedDestination,
           acknowledgment: clean(
             input.acknowledgment,
             "Origin and destination acknowledgment",
@@ -1822,13 +1971,14 @@ export class CarrierBookings {
           "INSERT INTO integration_carrier_bookings(id,org_id,shipment_id,state,review_hash,intent,created_at) VALUES(?,?,?,'pending',?,?,?)",
           bookingId,
           actor.orgId,
-          shipment.id,
+          targetKey,
           reviewHash,
           canonical(intent),
           now(),
         );
         this.platform.event(actor, "carrier.booking.prepared", bookingId, {
           shipmentId: shipment.id,
+          ...("kind" in shipment ? { replacementId: shipment.id } : {}),
           reviewHash,
           provider: input.provider,
         });
@@ -1873,7 +2023,7 @@ export class CarrierBookings {
           reason,
         });
         this.platform.event(actor, "carrier.booking.canceled", booking.id, {
-          shipmentId: booking.shipment_id,
+          ...this.targetReference(booking),
         });
         return { id: booking.id };
       },
@@ -1971,7 +2121,7 @@ export class CarrierBookings {
             bookingId,
           );
           this.platform.event(actor, "carrier.booking.booked", bookingId, {
-            shipmentId: booking.shipment_id,
+            ...this.targetReference(booking),
             reviewHash: booking.review_hash,
             reference: qualified.reference,
             tracking: qualified.tracking,

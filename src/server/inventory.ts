@@ -2537,6 +2537,28 @@ export class Inventory {
     );
   }
   // Called by Warranty inside the shared business transaction; Inventory owns custody.
+  replacementCustody(actor: Actor, reference: string) {
+    permit(actor, ["warehouse"]);
+    const hold = this.store.get<{
+      id: string;
+      org_id: string;
+      unit_id: string;
+      state: string;
+    }>(
+      "SELECT * FROM inventory_replacements WHERE org_id=? AND id=?",
+      actor.orgId,
+      reference,
+    );
+    check(hold, "NOT_FOUND", "Replacement custody not found.", 404);
+    const unit = this.unit(actor, hold.unit_id);
+    site(actor, unit.warehouse_id);
+    return {
+      hold,
+      unit,
+      reservedQuantity: this.reserved(unit.id),
+      description: this.catalog.product(actor, unit.product_id).name,
+    };
+  }
   reserveReplacement(
     actor: Actor,
     reference: string,

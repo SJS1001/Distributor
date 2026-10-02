@@ -127,6 +127,15 @@ function BookingMetadata({ booking }: { booking: CarrierBookingView }) {
         />
       )}
       <p>Booking ID: {booking.id}</p>
+      {booking.replacementId && (
+        <>
+          <p>Replacement: {booking.replacementId}</p>
+          <p>Dispatch recipient: {booking.destination.name}</p>
+          <p style={{ whiteSpace: "pre-wrap" }}>
+            Dispatch address: {booking.reviewedDestination}
+          </p>
+        </>
+      )}
       <p>Carrier handover identifier: {booking.provider}</p>
       {booking.reference && (
         <p>Carrier booking reference: {booking.reference}</p>
@@ -139,6 +148,7 @@ function BookingMetadata({ booking }: { booking: CarrierBookingView }) {
 }
 export function CarrierBooking({
   shipmentId,
+  replacementId,
   packedDestination,
   packed,
   onClose,
@@ -146,12 +156,16 @@ export function CarrierBooking({
   recoveryOwner,
 }: {
   shipmentId: string;
+  replacementId?: string;
   packedDestination: string;
   packed: boolean;
   onClose: () => void;
-  onCanadaPost?: () => void;
+  onCanadaPost?: (warehouseId?: string) => void;
   recoveryOwner?: string;
 }) {
+  const reviewPath = replacementId
+    ? `/api/warranty/replacements/${encodeURIComponent(replacementId)}/carrier`
+    : `/api/shipments/${encodeURIComponent(shipmentId)}/carrier`;
   const heading = useRef<HTMLHeadingElement>(null);
   const lifetime = useRef<AbortController | null>(null);
   const currentRead = useRef<AbortController | null>(null);
@@ -186,10 +200,9 @@ export function CarrierBooking({
     // A failed refresh must not leave stale send/cancel controls enabled.
     setReview(null);
     try {
-      const result = await request<Review>(
-        `/api/shipments/${encodeURIComponent(shipmentId)}/carrier`,
-        { signal: controller.signal },
-      );
+      const result = await request<Review>(reviewPath, {
+        signal: controller.signal,
+      });
       if (result.booking?.provider === "canada-post")
         result.canadaPostGroup = await request<CanadaPostGroupView | null>(
           `/api/carrier/${encodeURIComponent(result.booking.id)}/canada-post/group`,
@@ -223,7 +236,7 @@ export function CarrierBooking({
         items: CarrierBookingView[];
         next: string | null;
       }>(
-        `/api/shipments/${encodeURIComponent(shipmentId)}/carrier/history${next ? `?after=${encodeURIComponent(next)}` : ""}`,
+        `${reviewPath}/history${next ? `?after=${encodeURIComponent(next)}` : ""}`,
         { signal: controller.signal },
       );
       if (!live(token) || controller.signal.aborted) return;
@@ -255,7 +268,7 @@ export function CarrierBooking({
       historyRead.current?.abort();
       lifetime.current = null;
     };
-  }, [shipmentId]);
+  }, [shipmentId, replacementId]);
   const perform = async (
     work: () => Promise<unknown>,
     providerOperation = false,
@@ -310,6 +323,7 @@ export function CarrierBooking({
     const input: CarrierPrepare = {
       ...(configuration ? { configurationHash: configuration.hash } : {}),
       shipmentId,
+      ...(replacementId ? { replacementId } : {}),
       previousId: review.booking?.id ?? null,
       provider: value("provider") as CarrierPrepare["provider"],
       service: value("service"),
@@ -321,7 +335,9 @@ export function CarrierBooking({
         widthMm: Number(value("widthMm")),
         heightMm: Number(value("heightMm")),
       },
-      reviewedDestination: packedDestination,
+      reviewedDestination: replacementId
+        ? value("reviewedDestination")
+        : packedDestination,
       acknowledgment: value("acknowledgment"),
     };
     if (input.provider === "dhl-express") {
@@ -364,8 +380,19 @@ export function CarrierBooking({
       <button type="button" onClick={onClose}>
         Close carrier booking review
       </button>
-      <p>Shipment: {shipmentId}</p>
-      <p>Packed destination: {packedDestination}</p>
+      <p>
+        {replacementId ? "Replacement" : "Shipment"}: {shipmentId}
+      </p>
+      {replacementId ? (
+        <p>
+          Review the held replacement serial and delivery details. Record
+          physical dispatch separately using the exact booked recipient,
+          address, carrier and tracking. An active booking blocks collection and
+          replacement cancellation.
+        </p>
+      ) : (
+        <p>Packed destination: {packedDestination}</p>
+      )}
       <p>
         Booking creates no shipment handover or invoice. Record the separate
         physical handover after booking. A provider choice does not accept its
@@ -414,7 +441,7 @@ export function CarrierBooking({
                 <button
                   type="button"
                   disabled={busy || loading}
-                  onClick={onCanadaPost}
+                  onClick={() => onCanadaPost(review.warehouseId)}
                 >
                   Open Canada Post warehouse groups
                 </button>
@@ -564,13 +591,23 @@ export function CarrierBooking({
           <h4>Prepare reviewed carrier booking</h4>
           <p>
             Enter the actual structured addresses. Compare the destination with
-            the packed destination above and confirm the origin belongs to this
+            the delivery address and confirm the origin belongs to this
             warehouse. Preparation records a review; it does not send a provider
             request. Missing named customer acceptance will be explained by the
             returned error; acceptance is managed separately.
           </p>
           <fieldset disabled={busy || loading} style={{ minWidth: 0 }}>
             <legend>Carrier and service</legend>
+            {replacementId && (
+              <label>
+                Reviewed replacement delivery address
+                <textarea
+                  name="reviewedDestination"
+                  required
+                  maxLength={2000}
+                />
+              </label>
+            )}
             <label>
               Carrier provider
               <select
@@ -690,9 +727,11 @@ export function CarrierBooking({
                 type="checkbox"
                 required
               />
-              I reviewed the entered structured destination against the packed
-              destination and confirm the entered origin belongs to this
-              warehouse.
+              I reviewed the entered structured destination against the{" "}
+              {replacementId
+                ? "replacement delivery address"
+                : "packed destination"}{" "}
+              and confirm the entered origin belongs to this warehouse.
             </label>
             <label>
               Address review acknowledgment / evidence

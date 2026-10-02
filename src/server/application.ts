@@ -138,12 +138,6 @@ export class Application {
             this.orders,
             this.billing,
           );
-          this.carriers = new CarrierBookings(
-            this.database,
-            this.platform,
-            this.identity,
-            this.fulfillment,
-          );
           this.warranty = new Warranty(
             this.database,
             this.platform,
@@ -151,6 +145,13 @@ export class Application {
             this.inventory,
             this.fulfillment,
             this.billing,
+          );
+          this.carriers = new CarrierBookings(
+            this.database,
+            this.platform,
+            this.identity,
+            this.fulfillment,
+            this.warranty,
           );
           this.integration = new Integration(
             this.database,

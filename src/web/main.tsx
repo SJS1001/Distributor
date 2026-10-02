@@ -117,6 +117,9 @@ function App() {
   const [carrierShipmentId, setCarrierShipmentId] = useState<string | null>(
     null,
   );
+  const [carrierReplacementId, setCarrierReplacementId] = useState<
+    string | null
+  >(null);
   const carrierOpener = useRef<HTMLElement | null>(null);
   const [canadaPostWarehouse, setCanadaPostWarehouse] = useState<string | null>(
     null,
@@ -146,6 +149,7 @@ function App() {
       payments: undefined,
     }));
     setCarrierShipmentId(null);
+    setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
     canadaPostOpener.current = null;
     carrierOpener.current = null;
@@ -290,6 +294,7 @@ function App() {
     setDecisionClaim(null);
     decisionOpener.current = null;
     setCarrierShipmentId(null);
+    setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
     canadaPostOpener.current = null;
     carrierOpener.current = null;
@@ -331,6 +336,7 @@ function App() {
     setDecisionClaim(null);
     decisionOpener.current = null;
     setCarrierShipmentId(null);
+    setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
     canadaPostOpener.current = null;
     carrierOpener.current = null;
@@ -927,6 +933,7 @@ function App() {
                 setDecisionClaim(null);
                 decisionOpener.current = null;
                 setCarrierShipmentId(null);
+                setCarrierReplacementId(null);
                 setCanadaPostWarehouse(null);
                 canadaPostOpener.current = null;
                 carrierOpener.current = null;
@@ -1563,6 +1570,7 @@ function App() {
                   onClick={(event) => {
                     canadaPostOpener.current = event.currentTarget;
                     setCarrierShipmentId(null);
+                    setCarrierReplacementId(null);
                     setCanadaPostWarehouse(data.warehouses[0].id);
                   }}
                 >
@@ -1739,9 +1747,11 @@ function App() {
                       );
                       canadaPostOpener.current = carrierOpener.current;
                       setCarrierShipmentId(null);
+                      setCarrierReplacementId(null);
                     }}
                     onClose={() => {
                       setCarrierShipmentId(null);
+                      setCarrierReplacementId(null);
                       setCanadaPostWarehouse(null);
                       canadaPostOpener.current = null;
                       carrierOpener.current?.focus();
@@ -4275,6 +4285,12 @@ function App() {
                     ))}
                   </>,
                   <div className="actions">
+                    {can("warehouse") &&
+                      button("Review replacement carrier booking", () => {
+                        carrierOpener.current =
+                          document.activeElement as HTMLElement;
+                        setCarrierReplacementId(r.id);
+                      })}
                     {r.state === "reserved" &&
                       can("warranty") &&
                       button("Cancel replacement", () =>
@@ -4410,6 +4426,42 @@ function App() {
                 ],
                 "No replacements have been recorded.",
               )}
+              {carrierReplacementId &&
+                claimQueue.items
+                  .flatMap((c: Item) => c.replacements ?? [])
+                  .some((r: Item) => r.id === carrierReplacementId) && (
+                  <CarrierBooking
+                    key={`replacement:${carrierReplacementId}:${eventViewEpoch}`}
+                    shipmentId={carrierReplacementId}
+                    replacementId={carrierReplacementId}
+                    packedDestination=""
+                    packed={
+                      claimQueue.items
+                        .flatMap((c: Item) => c.replacements ?? [])
+                        .find((r: Item) => r.id === carrierReplacementId)!
+                        .state === "reserved"
+                    }
+                    recoveryOwner={
+                      actor.role === "admin"
+                        ? `${actor.orgId}:${actor.id}`
+                        : undefined
+                    }
+                    onCanadaPost={(warehouseId) => {
+                      if (!warehouseId) return;
+                      claimQueue.stop();
+                      setPage("Orders");
+                      setCanadaPostWarehouse(warehouseId);
+                      canadaPostOpener.current = null;
+                      setCarrierReplacementId(null);
+                      carrierOpener.current = null;
+                    }}
+                    onClose={() => {
+                      setCarrierReplacementId(null);
+                      carrierOpener.current?.focus();
+                      carrierOpener.current = null;
+                    }}
+                  />
+                )}
             </section>
             {can("warranty", "warehouse", "finance", "commercial") && (
               <section aria-label="Manufacturer case history">

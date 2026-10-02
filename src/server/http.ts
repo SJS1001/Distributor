@@ -200,6 +200,7 @@ export function commands(
             ["customs", "companyNames"],
           ),
           shipmentId: str,
+          replacementId: str,
           previousId: { anyOf: [str, { type: "null" }] },
           provider: choice(...carrierNames),
           service: str,
@@ -214,7 +215,7 @@ export function commands(
           reviewedDestination: str,
           acknowledgment: str,
         },
-        ["configurationHash", "dhl"],
+        ["configurationHash", "dhl", "replacementId"],
       ),
       run: (a, k, p) =>
         carriers ? carriers.prepare(a, k, p) : app.carriers.prepare(a, k, p),
@@ -1985,6 +1986,47 @@ export async function createHttp(app: Application, options: HttpOptions) {
       app.carriers.history(
         actor(request),
         request.params.shipmentId,
+        request.query.after,
+      ),
+  );
+  http.get<{ Params: { replacementId: string } }>(
+    "/api/warranty/replacements/:replacementId/carrier",
+    { schema: { params: obj({ replacementId: str }), querystring: obj({}) } },
+    async (request) => {
+      const current = app.carriers.reviewReplacement(
+        actor(request),
+        request.params.replacementId,
+      );
+      return {
+        ...current,
+        configurations: options.carriers?.configurations(actor(request)) ?? [],
+        enabled: current.booking
+          ? (options.carriers?.enabled(
+              actor(request),
+              current.booking.provider,
+            ) ?? false)
+          : false,
+      };
+    },
+  );
+  http.get<{
+    Params: { replacementId: string };
+    Querystring: { after?: string };
+  }>(
+    "/api/warranty/replacements/:replacementId/carrier/history",
+    {
+      schema: {
+        params: obj({ replacementId: str }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.carriers.historyReplacement(
+        actor(request),
+        request.params.replacementId,
         request.query.after,
       ),
   );

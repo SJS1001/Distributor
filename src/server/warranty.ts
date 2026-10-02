@@ -15,7 +15,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity } from "./iam.ts";
-import { Inventory } from "./inventory.ts";
+import { Inventory, type Unit } from "./inventory.ts";
 import { Fulfillment } from "./fulfillment.ts";
 import { Billing } from "./billing.ts";
 import { WarrantyEvidence } from "./warranty-evidence.ts";
@@ -83,8 +83,37 @@ type Replacement = {
   created_at: string;
   completed_at: string | null;
 };
+export type ReplacementCarrierSnapshot = {
+  kind: "replacement";
+  id: string;
+  org_id: string;
+  account_id: string;
+  warehouse_id: string;
+  state: Replacement["state"];
+  revision: number;
+  claim: Claim;
+  approval: Replacement;
+  returnedUnit: Unit;
+  custody: ReturnType<Inventory["replacementCustody"]>;
+  // Carrier goods line identity is the native custody reference, not an order
+  // allocation. This preserves the existing customs declaration contract.
+  lines: string;
+  ready: boolean;
+};
+type ReplacementCarrierBinding = {
+  address: string;
+  recipient: string;
+  carrier: string;
+  tracking: string;
+};
 export class Warranty {
   private store: Store;
+  private carrierGuard?: (
+    actor: Actor,
+    replacementId: string,
+    action: "cancel" | "collection" | "dispatch",
+    binding?: ReplacementCarrierBinding,
+  ) => void;
   readonly evidence: WarrantyEvidence;
   constructor(
     private database: Database,
@@ -418,6 +447,51 @@ export class Warranty {
     site(actor, this.inventory.unit(actor, r.new_unit_id).warehouse_id);
     return { r, c };
   }
+  configureCarrierGuard(guard: NonNullable<Warranty["carrierGuard"]>) {
+    this.carrierGuard = guard;
+  }
+  // Task-shaped owner read; callers join their existing business transaction.
+  // Terminal records remain readable for scoped label/history access.
+  carrierSnapshot(
+    actor: Actor,
+    replacementId: string,
+  ): ReplacementCarrierSnapshot {
+    actor = this.authority(actor, ["warehouse"]);
+    const { r, c } = this.replacement(
+      actor,
+      text(replacementId, "Replacement", 128),
+    );
+    const returnedUnit = this.inventory.unit(actor, c.unit_id);
+    const custody = this.inventory.replacementCustody(actor, r.id);
+    return {
+      kind: "replacement",
+      id: r.id,
+      org_id: r.org_id,
+      account_id: c.account_id,
+      warehouse_id: custody.unit.warehouse_id,
+      state: r.state,
+      revision: r.revision,
+      claim: c,
+      approval: r,
+      returnedUnit,
+      custody,
+      lines: JSON.stringify([{ allocationId: r.id, quantity: 1 }]),
+      ready:
+        r.state === "reserved" &&
+        ["inspected", "repair"].includes(c.state) &&
+        !c.credit_id &&
+        returnedUnit.state === "stock" &&
+        returnedUnit.condition === "quarantine" &&
+        returnedUnit.quantity === 1 &&
+        custody.hold.state === "reserved" &&
+        custody.unit.product_id === returnedUnit.product_id &&
+        custody.unit.serial !== null &&
+        custody.unit.state === "stock" &&
+        custody.unit.condition === "usable" &&
+        custody.unit.quantity === 1 &&
+        custody.reservedQuantity === 1,
+    };
+  }
   private hasReplacement(actor: Actor, claimId: string) {
     return this.store.get(
       "SELECT id FROM warranty_replacements WHERE org_id=? AND claim_id=? AND state IN('reserved','handed_over')",
@@ -543,6 +617,7 @@ export class Warranty {
           "STATE",
           "Only a pending replacement can be cancelled.",
         );
+        this.carrierGuard?.(actor, r.id, "cancel");
         this.inventory.releaseReplacement(actor, r.id, input.reason);
         this.store.run(
           "UPDATE warranty_replacements SET state='cancelled',revision=revision+1,completed_at=? WHERE id=?",
@@ -580,6 +655,7 @@ export class Warranty {
       },
       () => {
         const { r, c } = this.replacement(actor, input.replacementId);
+        this.carrierGuard?.(actor, r.id, "collection");
         return this.completeReplacement(
           actor,
           r,
@@ -740,6 +816,12 @@ export class Warranty {
           evidence = text(input.evidence, "handover evidence", 2000);
         const carrierKey = carrier.normalize("NFKC").toLowerCase(),
           trackingKey = tracking.normalize("NFKC").toLowerCase();
+        this.carrierGuard?.(actor, r.id, "dispatch", {
+          carrier,
+          tracking,
+          address,
+          recipient,
+        });
         check(
           !this.store.get(
             "SELECT replacement_id FROM warranty_replacement_shipping WHERE org_id=? AND carrier_key=? AND tracking_key=?",

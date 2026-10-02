@@ -65,6 +65,9 @@ export type DhlShippingReview = {
   };
 };
 export type CarrierPrepare = {
+  // Replacement requests retain the native replacement ID as shipmentId for
+  // provider correlation. No fulfillment shipment or sale is fabricated.
+  replacementId?: string;
   dhl?: DhlShippingReview;
   configurationHash?: string;
   shipmentId: string;
@@ -78,6 +81,8 @@ export type CarrierPrepare = {
   acknowledgment: string;
 };
 export type CarrierBookingView = {
+  replacementId?: string;
+  reviewedDestination?: string;
   dhl?: DhlShippingReview;
   configuration?: CarrierConfiguration;
   id: string;
@@ -96,6 +101,8 @@ export type CarrierBookingView = {
   createdAt: string;
 };
 export type CarrierReview = {
+  replacementId?: string;
+  warehouseId?: string;
   configurations?: readonly CarrierConfiguration[];
   shipmentId: string;
   packedGoods: readonly {

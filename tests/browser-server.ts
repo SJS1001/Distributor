@@ -1,3 +1,4 @@
+import { replacementCarrierBrowser } from "./replacement-carrier-browser-fixture.ts";
 import { shipmentCoverageBrowser } from "./shipment-coverage-browser-fixture.ts";
 import { reconciliationBrowser } from "./reconciliation-browser-fixture.ts";
 import { claimQueueBrowser } from "./claim-queue-browser-fixture.ts";
@@ -883,6 +884,9 @@ const cpHttp = await createHttp(cp.app, {
   ),
 });
 await cpHttp.listen({ host: "127.0.0.1", port: 3120 });
+const replacementCarrierHttp = await replacementCarrierBrowser((fn) =>
+  cleanup.push(fn),
+);
 const claimHttp = await claimBrowser((fn) => cleanup.push(fn));
 const configurationHttp = await configurationBrowser((fn) => cleanup.push(fn));
 const dhlHttp = await dhlBrowser((fn) => cleanup.push(fn));
@@ -920,6 +924,7 @@ const stop = async () => {
   await authorizationHttp.close();
   await cpHttp.close();
   await claimHttp.close();
+  await replacementCarrierHttp.close();
   await configurationHttp.close();
   await countPolicyHttp.close();
   await coveragePolicyHttp.close();
