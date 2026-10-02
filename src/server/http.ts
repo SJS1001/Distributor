@@ -1066,6 +1066,15 @@ export function commands(
       schema: obj({ creditId: str, amount: { ...num, minimum: 1 } }),
       run: (a, k, p) => app.integration.accountingCreditApplication(a, k, p),
     },
+    "quickbooks.credit.cancel": {
+      schema: obj({
+        effectId: str,
+        reviewVersion: str,
+        amount: { ...num, minimum: 1 },
+        reason: { ...str, maxLength: 1000 },
+      }),
+      run: (a, k, p) => app.integration.cancelCreditApplication(a, k, p),
+    },
     "quickbooks.refund": {
       schema: obj({
         refundId: str,

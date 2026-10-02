@@ -5246,12 +5246,15 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     cashRow.getByRole("button", { name: "Queue QuickBooks payment" }),
   ).toHaveCount(0);
   const operation = (kind: string) =>
-    page.getByRole("row").filter({
-      has: page.getByRole("cell", {
-        name: `quickbooks · ${kind}`,
-        exact: true,
-      }),
-    });
+    page
+      .getByRole("row")
+      .filter({
+        has: page.getByRole("cell", {
+          name: `quickbooks · ${kind}`,
+          exact: true,
+        }),
+      })
+      .filter({ hasNotText: "Reserved capacity released" });
   await operation("invoice")
     .getByRole("button", { name: "Send to provider", exact: true })
     .click();
@@ -5538,9 +5541,95 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     }),
   ).toHaveCount(0);
   await operation("credit-application")
+    .getByRole("button", {
+      name: "Cancel unsent credit application",
+      exact: true,
+    })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Cancel unsent credit application",
+    exact: true,
+  });
+  await expect(dialog).toContainText("CA$113.00");
+  await expect(dialog).toContainText(invoice.number);
+  await expect(dialog).toContainText(
+    "native credit, invoice and cash remain unchanged",
+  );
+  const cancellationReason = "Correct browser credit before sending";
+  await dialog
+    .getByLabel("Cancellation reason", { exact: true })
+    .fill(cancellationReason);
+  const cancellationKeys: string[] = [];
+  let lostCancellation = false;
+  await page.route(
+    "**/api/commands/quickbooks.credit.cancel",
+    async (route) => {
+      cancellationKeys.push(route.request().headers()["idempotency-key"]!);
+      if (!lostCancellation) {
+        lostCancellation = true;
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    },
+  );
+  await dialog
+    .getByRole("button", { name: "Confirm cancellation", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Confirm cancellation", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(cancellationKeys).toHaveLength(2);
+  expect(cancellationKeys[0]).toBe(cancellationKeys[1]);
+  const canceledRows = (await effects()).filter(
+    (e: any) => e.accountingApplication?.cancellation,
+  );
+  expect(canceledRows).toHaveLength(1);
+  expect(canceledRows[0].state).toBe("blocked");
+  expect(canceledRows[0].accountingApplication.cancellation.amount).toBe(11300);
+  expect(canceledRows[0].accountingApplication.cancellation.reason).toBe(
+    cancellationReason,
+  );
+  const canceledRow = page
+    .getByRole("row")
+    .filter({ hasText: cancellationReason });
+  await expect(canceledRow).toContainText("canceled");
+  await expect(canceledRow).toContainText("Reserved capacity released");
+  await expect(
+    canceledRow.getByRole("button", { name: "Send to provider", exact: true }),
+  ).toHaveCount(0);
+  await expect(creditRow).toContainText("Reserved CA$0.00");
+  await page.reload();
+  await nav(page, "Billing");
+  await expect(canceledRow).toContainText(cancellationReason);
+  await creditRow
+    .getByRole("button", { name: "Apply QuickBooks credit", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", {
+    name: "Apply QuickBooks credit",
+    exact: true,
+  });
+  await dialog.getByLabel("Credit application (cents)").fill("11300");
+  await dialog
+    .getByRole("button", { name: "Queue application", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    (await effects()).filter((e: any) => e.kind === "credit-application"),
+  ).toHaveLength(2);
+  await expect(creditRow).toContainText("Reserved CA$113.00");
+  await operation("credit-application")
     .getByRole("button", { name: "Send to provider", exact: true })
     .click();
   await expect(operation("credit-application")).toContainText("unknown");
+  await expect(
+    operation("credit-application").getByRole("button", {
+      name: "Cancel unsent credit application",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(
     operation("credit-application").getByRole("button", {
       name: "Send to provider",
@@ -5551,6 +5640,12 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     .getByRole("button", { name: "Check provider outcome", exact: true })
     .click();
   await expect(operation("credit-application")).toContainText("completed");
+  await expect(
+    operation("credit-application").getByRole("button", {
+      name: "Cancel unsent credit application",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await page.reload();
   await nav(page, "Billing");
   await expect(operation("credit-application")).toContainText("completed");

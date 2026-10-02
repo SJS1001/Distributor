@@ -1,10 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fork } from "node:child_process";
+import { fork, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { dirname, join } from "node:path";
 import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { QuickBooksAdapter } from "../src/server/providers.ts";
 import { createHttp } from "../src/server/http.ts";
+import { createBackup, restoreBackup } from "../src/server/recovery.ts";
 import type {
   AccountingCreditApplicationIntent,
   EffectResult,
@@ -777,4 +780,693 @@ test("application reconciliation rejects charging cash, changed links/money/mark
       .creditApplication!.reservedAmount,
     5000,
   );
+});
+
+function cancellationInput(
+  f: Awaited<ReturnType<typeof setup>>,
+  effectId: string,
+) {
+  const review = f.app.integration
+    .list(f.actor)
+    .find((e) => e.id === effectId)!.accountingApplication!;
+  return {
+    effectId,
+    reviewVersion: review.reviewVersion,
+    amount: review.amount,
+    reason: "Correct queued application before sending",
+  };
+}
+function capacity(f: Awaited<ReturnType<typeof setup>>) {
+  return f.app.integration.list(f.actor).find((e) => e.id === f.credit.id)!
+    .creditApplication!;
+}
+
+function childReply(child: ChildProcess) {
+  return new Promise<any>((resolve, reject) => {
+    const finish = (value: any) => {
+      clearTimeout(timer);
+      child.off("error", fail);
+      child.off("message", finish);
+      child.off("exit", exited);
+      resolve(value);
+    };
+    const fail = (error: Error) => {
+      clearTimeout(timer);
+      child.off("message", finish);
+      child.off("exit", exited);
+      reject(error);
+    };
+    const exited = (code: number | null) =>
+      fail(Error(`Child exited before reply: ${code}`));
+    const timer = setTimeout(
+      () => fail(Error("Cancellation child timed out")),
+      20000,
+    );
+    child.once("message", finish);
+    child.once("error", fail);
+    child.once("exit", exited);
+  });
+}
+
+test("encrypted restore retains cancellation history and released capacity while isolating pending and cached cancellation work", async (t) => {
+  const f = await setup(t),
+    first = f.app.integration.accountingCreditApplication(f.actor, "first", {
+      creditId: f.creditId,
+      amount: 6000,
+    }),
+    input = cancellationInput(f, first.id);
+  f.app.integration.cancelCreditApplication(f.actor, "cancel", input);
+  const pending = f.app.integration.accountingCreditApplication(
+    f.actor,
+    "pending",
+    { creditId: f.creditId, amount: 5300 },
+  );
+  const before = facts(f),
+    receipts = f.app.database
+      .owned("integration")
+      .all("SELECT * FROM integration_credit_cancellations"),
+    key = randomBytes(32),
+    archive = join(dirname(f.path), "canceled.backup"),
+    destination = join(dirname(f.path), "restored.db");
+  await createBackup(f.path, archive, "CA", key);
+  await restoreBackup(archive, destination, "CA", key);
+  const clone = new Application(destination);
+  t.after(() => clone.close());
+  assert.deepEqual(
+    clone.database
+      .owned("integration")
+      .all("SELECT * FROM integration_credit_cancellations"),
+    receipts,
+  );
+  const credit = clone.integration
+    .list(f.actor)
+    .find((effect) => effect.id === f.credit.id)!;
+  assert.deepEqual(credit.creditApplication, {
+    reservedAmount: 5300,
+    availableCredit: 6000,
+    availableInvoice: 17300,
+  });
+  assert.equal(
+    clone.integration.list(f.actor).find((effect) => effect.id === pending.id)!
+      .accountingApplication!.canCancel,
+    false,
+  );
+  assert.throws(
+    () => clone.integration.cancelCreditApplication(f.actor, "cancel", input),
+    { code: "RECOVERY_HOLD" },
+  );
+  assert.throws(
+    () =>
+      clone.integration.cancelCreditApplication(f.actor, "new", {
+        ...input,
+        effectId: pending.id,
+      }),
+    { code: "RECOVERY_HOLD" },
+  );
+  assert.deepEqual(facts({ ...f, app: clone }), before);
+  assert.deepEqual(capacity(f), credit.creditApplication);
+});
+
+test(
+  "independent send and cancellation processes serialize in both claim orders without releasing a started reservation",
+  { timeout: 60000 },
+  async (t) => {
+    for (const sendFirst of [false, true]) {
+      const f = await setup(t),
+        before = facts(f);
+      const effect = f.app.integration.accountingCreditApplication(
+        f.actor,
+        "queue",
+        { creditId: f.creditId, amount: 11300 },
+      );
+      const review = cancellationInput(f, effect.id),
+        children: ChildProcess[] = [];
+      const launch = async (operation: "send" | "cancel", key: string) => {
+        const child = fork(
+          new URL("./accounting-cancellation-child.ts", import.meta.url),
+          {
+            execArgv: ["--import", "tsx"],
+            stdio: ["ignore", "pipe", "pipe", "ipc"],
+          },
+        );
+        children.push(child);
+        const ready = childReply(child);
+        child.send({
+          action: "init",
+          path: f.path,
+          actor: f.actor,
+          operation,
+          key,
+          review,
+        });
+        assert.deepEqual(await ready, { ready: true });
+        return child;
+      };
+      t.after(() => children.forEach((child) => child.kill()));
+      const sender = await launch("send", "send"),
+        canceler = await launch("cancel", "cancel");
+      if (sendFirst) {
+        let entered = childReply(sender);
+        sender.send({ action: "go" });
+        assert.deepEqual(await entered, { entered: true });
+        const cancelResult = childReply(canceler);
+        canceler.send({ action: "go" });
+        assert.equal((await cancelResult).code, "STATE");
+        assert.equal(capacity(f).availableCredit, 0);
+        assert.equal(
+          f.app.integration.effect(f.actor, effect.id).state,
+          "running",
+        );
+        const finished = childReply(sender);
+        sender.send({ action: "resume" });
+        const result = await finished;
+        assert.equal(result.ok, true);
+        assert.equal(result.io, 1);
+        assert.equal(result.value.state, "completed");
+        assert.equal(capacity(f).availableCredit, 0);
+      } else {
+        const cancelResult = childReply(canceler);
+        canceler.send({ action: "go" });
+        assert.equal((await cancelResult).value.state, "canceled");
+        const sendResult = childReply(sender);
+        sender.send({ action: "go" });
+        const result = await sendResult;
+        assert.equal(result.code, "STATE");
+        assert.equal(result.io, 0);
+        assert.equal(capacity(f).availableCredit, 11300);
+      }
+      assert.equal(
+        f.app.database
+          .owned("integration")
+          .all("SELECT * FROM integration_credit_cancellations").length,
+        Number(!sendFirst),
+      );
+      assert.deepEqual(facts(f), before);
+    }
+  },
+);
+
+test(
+  "competing independent cancellation processes retain one receipt and release capacity exactly once",
+  { timeout: 30000 },
+  async (t) => {
+    const f = await setup(t),
+      effect = f.app.integration.accountingCreditApplication(f.actor, "queue", {
+        creditId: f.creditId,
+        amount: 11300,
+      }),
+      review = cancellationInput(f, effect.id);
+    const children: ChildProcess[] = [];
+    t.after(() => children.forEach((child) => child.kill()));
+    for (let i = 0; i < 2; i++) {
+      const child = fork(
+        new URL("./accounting-cancellation-child.ts", import.meta.url),
+        {
+          execArgv: ["--import", "tsx"],
+          stdio: ["ignore", "pipe", "pipe", "ipc"],
+        },
+      );
+      children.push(child);
+      const ready = childReply(child);
+      child.send({
+        action: "init",
+        path: f.path,
+        actor: f.actor,
+        operation: "cancel",
+        key: `cancel-${i}`,
+        review,
+      });
+      assert.deepEqual(await ready, { ready: true });
+    }
+    const replies = children.map(childReply);
+    children.forEach((child) => child.send({ action: "go" }));
+    const results = await Promise.all(replies);
+    assert.equal(results.filter((result) => result.ok).length, 1);
+    assert.equal(results.find((result) => !result.ok).code, "STATE");
+    assert.equal(
+      f.app.database
+        .owned("integration")
+        .all("SELECT * FROM integration_credit_cancellations").length,
+      1,
+    );
+    assert.equal(capacity(f).availableCredit, 11300);
+    assert.equal(capacity(f).availableInvoice, 22600);
+  },
+);
+
+test("canceling one credit releases shared invoice capacity without discarding cash or other credit reservations", async (t) => {
+  const f = await setup(t),
+    paymentId = f.app.billing.verifiedPayment(
+      f.actor,
+      f.invoiceId,
+      11300,
+      "stripe",
+      "pi-cancel-capacity",
+    ).id,
+    secondPaymentId = f.app.billing.verifiedPayment(
+      f.actor,
+      f.invoiceId,
+      6000,
+      "stripe",
+      "pi-released-capacity",
+    ).id;
+  f.app.integration.accountingPayment(f.actor, "cash", {
+    paymentId,
+    appliedAmount: 11300,
+    depositAccountRef: "bank-1",
+  });
+  const first = f.app.integration.accountingCreditApplication(
+    f.actor,
+    "first",
+    { creditId: f.creditId, amount: 6000 },
+  );
+  f.app.integration.accountingCreditApplication(f.actor, "second", {
+    creditId: f.creditId,
+    amount: 5300,
+  });
+  const before = facts(f),
+    cashRows = f.app.database
+      .owned("integration")
+      .all("SELECT * FROM integration_payment_allocations");
+  assert.equal(capacity(f).availableInvoice, 0);
+  f.app.integration.cancelCreditApplication(
+    f.actor,
+    "cancel",
+    cancellationInput(f, first.id),
+  );
+  assert.deepEqual(capacity(f), {
+    reservedAmount: 5300,
+    availableCredit: 6000,
+    availableInvoice: 6000,
+  });
+  f.app.integration.accountingPayment(f.actor, "released-cash", {
+    paymentId: secondPaymentId,
+    appliedAmount: 6000,
+    depositAccountRef: "bank-1",
+  });
+  assert.equal(capacity(f).availableInvoice, 0);
+  assert.equal(capacity(f).availableCredit, 6000);
+  assert.throws(
+    () =>
+      f.app.integration.accountingCreditApplication(f.actor, "overlap", {
+        creditId: f.creditId,
+        amount: 1,
+      }),
+    { code: "ACCOUNTING_ALLOCATION" },
+  );
+  assert.deepEqual(
+    f.app.database
+      .owned("integration")
+      .all("SELECT * FROM integration_payment_allocations")
+      .slice(0, 1),
+    cashRows,
+  );
+  assert.deepEqual(facts(f), before);
+});
+
+test("canceling a reviewed never-started application releases exact capacity, retains original facts and retries across restart without resurrection", async (t) => {
+  const f = await setup(t),
+    before = facts(f);
+  const original = f.app.integration.accountingCreditApplication(
+    f.actor,
+    "queue",
+    { creditId: f.creditId, amount: 11300 },
+  );
+  const store = f.app.database.owned("integration"),
+    reservation = store.all("SELECT * FROM integration_credit_applications"),
+    payload = f.app.integration.effect(f.actor, original.id).payload;
+  assert.equal(capacity(f).availableCredit, 0);
+  const input = cancellationInput(f, original.id),
+    result = f.app.integration.cancelCreditApplication(
+      f.actor,
+      "cancel",
+      input,
+    );
+  assert.equal(result.state, "canceled");
+  assert.deepEqual(capacity(f), {
+    reservedAmount: 0,
+    availableCredit: 11300,
+    availableInvoice: 22600,
+  });
+  assert.deepEqual(
+    store.all("SELECT * FROM integration_credit_applications"),
+    reservation,
+  );
+  assert.equal(f.app.integration.effect(f.actor, original.id).payload, payload);
+  assert.equal(f.app.integration.effect(f.actor, original.id).state, "blocked");
+  assert.deepEqual(facts(f), before);
+  f.app.close();
+  f.app = new Application(f.path);
+  assert.deepEqual(
+    f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    result,
+  );
+  assert.throws(
+    () =>
+      f.app.integration.cancelCreditApplication(f.actor, "different", input),
+    { code: "STATE" },
+  );
+  assert.throws(
+    () =>
+      f.app.integration.cancelCreditApplication(f.actor, "cancel", {
+        ...input,
+        reason: "Changed",
+      }),
+    { code: "IDEMPOTENCY_CONFLICT" },
+  );
+  assert.equal(
+    f.app.integration.accountingCreditApplication(f.actor, "queue", {
+      creditId: f.creditId,
+      amount: 11300,
+    }).id,
+    original.id,
+  );
+  assert.equal(f.app.integration.effect(f.actor, original.id).state, "blocked");
+  let io = 0;
+  const adapter = {
+    execute: async () => {
+      io++;
+      return outcome;
+    },
+    lookup: async () => {
+      io++;
+      return outcome;
+    },
+  };
+  await assert.rejects(
+    f.app.integration.execute(f.actor, original.id, adapter),
+    { code: "STATE" },
+  );
+  await assert.rejects(
+    f.app.integration.reconcile(f.actor, original.id, adapter),
+    { code: "STATE" },
+  );
+  assert.equal(io, 0);
+  const successor = f.app.integration.accountingCreditApplication(
+    f.actor,
+    "corrected",
+    { creditId: f.creditId, amount: 11300 },
+  );
+  assert.notEqual(successor.id, original.id);
+  assert.equal(capacity(f).availableCredit, 0);
+  assert.deepEqual(facts(f), before);
+  assert.equal(
+    f.app.database
+      .owned("integration")
+      .all("SELECT * FROM integration_credit_cancellations").length,
+    1,
+  );
+});
+
+test("only an explicit cancellation receipt releases capacity; all started, uncertain and terminal effects and leases refuse cancellation", async (t) => {
+  const f = await setup(t),
+    effect = f.app.integration.accountingCreditApplication(f.actor, "queue", {
+      creditId: f.creditId,
+      amount: 11300,
+    });
+  const store = f.app.database.owned("integration");
+  for (const state of [
+    "running",
+    "unknown",
+    "completed",
+    "rejected",
+    "blocked",
+  ]) {
+    store.run(
+      "UPDATE integration_effects SET state=? WHERE id=?",
+      state,
+      effect.id,
+    );
+    assert.equal(
+      f.app.integration.list(f.actor).find((e) => e.id === effect.id)!
+        .accountingApplication!.canCancel,
+      false,
+    );
+    assert.throws(
+      () =>
+        f.app.integration.cancelCreditApplication(
+          f.actor,
+          state,
+          cancellationInput(f, effect.id),
+        ),
+      { code: "STATE" },
+    );
+    assert.equal(capacity(f).availableCredit, 0);
+  }
+  store.run(
+    "UPDATE integration_effects SET state='pending' WHERE id=?",
+    effect.id,
+  );
+  for (const [column, value] of [
+    ["started_at", 0],
+    ["external_ref", "external"],
+    ["result", "{}"],
+  ] as const) {
+    store.run(
+      `UPDATE integration_effects SET ${column}=? WHERE id=?`,
+      value,
+      effect.id,
+    );
+    assert.throws(
+      () =>
+        f.app.integration.cancelCreditApplication(
+          f.actor,
+          column,
+          cancellationInput(f, effect.id),
+        ),
+      { code: "STATE" },
+    );
+    store.run(
+      `UPDATE integration_effects SET ${column}=NULL WHERE id=?`,
+      effect.id,
+    );
+  }
+  store.run(
+    "INSERT INTO integration_operation_leases VALUES(?,?,NULL,0)",
+    effect.id,
+    f.actor.orgId,
+  );
+  assert.throws(
+    () =>
+      f.app.integration.cancelCreditApplication(
+        f.actor,
+        "lease-time",
+        cancellationInput(f, effect.id),
+      ),
+    { code: "STATE" },
+  );
+  store.run(
+    "UPDATE integration_operation_leases SET token='held',started_at=NULL WHERE effect_id=?",
+    effect.id,
+  );
+  assert.throws(
+    () =>
+      f.app.integration.cancelCreditApplication(
+        f.actor,
+        "lease-token",
+        cancellationInput(f, effect.id),
+      ),
+    { code: "STATE" },
+  );
+  assert.equal(
+    store.all("SELECT * FROM integration_credit_cancellations").length,
+    0,
+  );
+  assert.equal(capacity(f).availableCredit, 0);
+});
+
+test("cancellation reviews exact amount and version and rolls back receipt, state, capacity, command and event on late audit failure", async (t) => {
+  const f = await setup(t),
+    effect = f.app.integration.accountingCreditApplication(f.actor, "queue", {
+      creditId: f.creditId,
+      amount: 5000,
+    });
+  const input = cancellationInput(f, effect.id),
+    store = f.app.database.owned("integration"),
+    before = store.all("SELECT * FROM integration_effects"),
+    events = f.app.platform.events(f.actor);
+  for (const [key, patch, code] of [
+    ["stale", { reviewVersion: "f".repeat(64) }, "STALE"],
+    ["amount", { amount: 1 }, "ACCOUNTING_ALLOCATION"],
+    ["blank", { reason: " " }, "VALIDATION"],
+    ["large", { reason: "x".repeat(1001) }, "VALIDATION"],
+  ] as const) {
+    assert.throws(
+      () =>
+        f.app.integration.cancelCreditApplication(f.actor, key, {
+          ...input,
+          ...patch,
+        }),
+      { code },
+    );
+  }
+  const mock = t.mock.method(f.app.platform, "audit", () => {
+    throw Error("Late cancellation audit fault");
+  });
+  assert.throws(
+    () => f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    /audit fault/,
+  );
+  mock.mock.restore();
+  assert.deepEqual(store.all("SELECT * FROM integration_effects"), before);
+  assert.equal(
+    store.all("SELECT * FROM integration_credit_cancellations").length,
+    0,
+  );
+  assert.deepEqual(f.app.platform.events(f.actor), events);
+  assert.equal(capacity(f).reservedAmount, 5000);
+  assert.equal(
+    f.app.database
+      .owned("platform")
+      .all(
+        "SELECT * FROM platform_commands WHERE name='quickbooks.credit.cancel'",
+      ).length,
+    0,
+  );
+  assert.equal(
+    f.app.integration.cancelCreditApplication(f.actor, "cancel", input).state,
+    "canceled",
+  );
+});
+
+test("cancellation needs fresh finance/password authority even on retry; consent withdrawal permits local release while restore hold blocks it", async (t) => {
+  const f = await setup(t),
+    effect = f.app.integration.accountingCreditApplication(f.actor, "queue", {
+      creditId: f.creditId,
+      amount: 5000,
+    }),
+    input = cancellationInput(f, effect.id),
+    iam = f.app.database.owned("iam");
+  for (const role of ["support", "commercial", "buyer", "warehouse"]) {
+    iam.run(
+      "UPDATE iam_users SET role=?,account_id=? WHERE id=?",
+      role,
+      role === "buyer" ? f.buyer : null,
+      f.actor.id,
+    );
+    assert.throws(
+      () => f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+      { code: "FORBIDDEN" },
+    );
+  }
+  iam.run(
+    "UPDATE iam_users SET role='admin',account_id=NULL,active=0 WHERE id=?",
+    f.actor.id,
+  );
+  assert.throws(
+    () => f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    { code: "FORBIDDEN" },
+  );
+  iam.run("UPDATE iam_users SET active=1 WHERE id=?", f.actor.id);
+  iam.run(
+    "INSERT INTO iam_user_security(user_id,revision,password_change_required,updated_at) VALUES(?,1,1,?)",
+    f.actor.id,
+    new Date().toISOString(),
+  );
+  assert.throws(
+    () => f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    { code: "PASSWORD_CHANGE_REQUIRED" },
+  );
+  iam.run(
+    "UPDATE iam_user_security SET password_change_required=0 WHERE user_id=?",
+    f.actor.id,
+  );
+  chooseProviders(f, f.actor, "withdraw", {
+    accountId: f.buyer,
+    region: "CA",
+    mode: "strict",
+    providers: [],
+    version: 2,
+    acknowledgment: "Synthetic withdrawal",
+  });
+  const result = f.app.integration.cancelCreditApplication(
+    f.actor,
+    "cancel",
+    input,
+  );
+  assert.equal(result.state, "canceled");
+  iam.run("UPDATE iam_users SET role='support' WHERE id=?", f.actor.id);
+  assert.throws(
+    () => f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    { code: "FORBIDDEN" },
+  );
+  iam.run("UPDATE iam_users SET role='admin' WHERE id=?", f.actor.id);
+  assert.deepEqual(
+    f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    result,
+  );
+  f.app.platform.isolateRestore("synthetic", new Date().toISOString());
+  assert.throws(
+    () => f.app.integration.cancelCreditApplication(f.actor, "cancel", input),
+    { code: "RECOVERY_HOLD" },
+  );
+});
+
+test("authenticated cancellation HTTP requires exact fields, current authority, origin and CSRF; foreign or different operation cannot release capacity", async (t) => {
+  const f = await setup(t),
+    effect = f.app.integration.accountingCreditApplication(f.actor, "queue", {
+      creditId: f.creditId,
+      amount: 5000,
+    }),
+    input = cancellationInput(f, effect.id),
+    origin = "http://127.0.0.1:3000";
+  const http = await createHttp(f.app, {
+    origin,
+    staticRoot: "/nonexistent-distributor-test",
+  });
+  await http.ready();
+  t.after(() => http.close());
+  const login = await http.inject({
+    method: "POST",
+    url: "/api/login",
+    headers: { origin },
+    payload: {
+      email: "admin@example.test",
+      password: "long-test-only-password",
+    },
+  });
+  const headers = {
+    origin,
+    cookie: login.cookies.map((c) => `${c.name}=${c.value}`).join("; "),
+    "x-csrf-token": login.json().csrf,
+    "idempotency-key": "cancel",
+  };
+  const post = (payload: any, h: Record<string, string> = headers) =>
+    http.inject({
+      method: "POST",
+      url: "/api/commands/quickbooks.credit.cancel",
+      headers: h,
+      payload,
+    });
+  assert.equal((await post(input, { origin })).statusCode, 401);
+  for (const bad of [
+    { ...input, provider: "forged" },
+    { ...input, amount: 0.5 },
+    { ...input, reason: "x".repeat(1001) },
+  ])
+    assert.equal((await post(bad)).statusCode, 400);
+  assert.equal(
+    (await post(input, { ...headers, origin: "https://foreign.test" }))
+      .statusCode,
+    403,
+  );
+  assert.equal(
+    (await post(input, { ...headers, "x-csrf-token": "bad" })).statusCode,
+    403,
+  );
+  assert.equal(
+    (await post({ ...input, effectId: f.credit.id })).statusCode,
+    409,
+  );
+  assert.equal(
+    (await post({ ...input, effectId: "missing-foreign" })).statusCode,
+    404,
+  );
+  const response = await post(input);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual((await post(input)).json(), response.json());
+  f.app.database
+    .owned("iam")
+    .run("UPDATE iam_users SET role='support' WHERE id=?", f.actor.id);
+  assert.equal((await post(input)).statusCode, 403);
 });

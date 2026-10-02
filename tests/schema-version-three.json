@@ -1,0 +1,21 @@
+{
+  "sourceCommit": "1b47807f452194a199ce6b227b64a1f2633760f9",
+  "hashes": {
+    "enabled": "c86f87279e50593e40a58456b04b9b993933689a37f93e046e11d8b6049917eb",
+    "disabled": "77c6b89d9f44f74dccb1564e2b991a63b0119ffd2ba00365ad4b2864f8dc4d1d"
+  },
+  "additions": [
+    {
+      "type": "index",
+      "name": "integration_revocation_binding",
+      "tbl_name": "integration_credential_revocations",
+      "sql": "CREATE INDEX integration_revocation_binding ON integration_credential_revocations(org_id,binding_id,state)"
+    },
+    {
+      "type": "table",
+      "name": "integration_credential_revocations",
+      "tbl_name": "integration_credential_revocations",
+      "sql": "CREATE TABLE integration_credential_revocations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,worker_id TEXT NOT NULL,account_id TEXT NOT NULL,realm TEXT NOT NULL,client_id TEXT NOT NULL,credential_revision INTEGER NOT NULL,disabled_revision INTEGER NOT NULL,residency_version INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('sending','unknown','confirmed','released')),claim TEXT,started_at INTEGER NOT NULL,finished_at INTEGER,evidence TEXT,UNIQUE(org_id,binding_id,credential_revision)) STRICT"
+    }
+  ]
+}

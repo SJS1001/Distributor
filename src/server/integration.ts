@@ -19,6 +19,7 @@ import {
 } from "./integration-accounting-balances.ts";
 import { IntegrationCheckouts } from "./integration-checkouts.ts";
 import { IntegrationOperations } from "./integration-operations.ts";
+import { ACCOUNTING_CANCELLATION_INITIALIZE_DDL } from "./accounting-cancellation-schema.ts";
 import { IntegrationCosts } from "./integration-costs.ts";
 import { Inventory } from "./inventory.ts";
 import { IntegrationRefundCallbacks } from "./integration-refund-callbacks.ts";
@@ -153,6 +154,7 @@ export class Integration {
     CREATE INDEX IF NOT EXISTS integration_credit_application_invoice ON integration_credit_applications(org_id,invoice_id);
     CREATE INDEX IF NOT EXISTS integration_credit_application_credit ON integration_credit_applications(org_id,credit_id);
   `);
+    this.store.migrate(ACCOUNTING_CANCELLATION_INITIALIZE_DDL);
     this.checkouts = new IntegrationCheckouts(
       database,
       identity,
@@ -248,6 +250,10 @@ export class Integration {
           e.kind === "credit" &&
           ["admin", "finance", "support"].includes(actor.role)
             ? this.creditApplicationCapacity(actor, e.reference)
+            : undefined,
+        accountingApplication:
+          e.provider === "quickbooks" && e.kind === "credit-application"
+            ? this.describeCreditApplication(actor, e)
             : undefined,
         recoveryHold: !!this.platform.recoveryHold(),
         accountingRefund:
@@ -884,7 +890,7 @@ export class Integration {
   }
   private accountingAllocated(actor: Actor, invoiceId: string) {
     return this.store.get<{ amount: number }>(
-      "SELECT (SELECT COALESCE(SUM(applied_amount),0) FROM integration_payment_allocations WHERE org_id=? AND invoice_id=?) + (SELECT COALESCE(SUM(amount),0) FROM integration_credit_applications WHERE org_id=? AND invoice_id=?) AS amount",
+      "SELECT (SELECT COALESCE(SUM(applied_amount),0) FROM integration_payment_allocations WHERE org_id=? AND invoice_id=?) + (SELECT COALESCE(SUM(amount),0) FROM integration_credit_applications a WHERE org_id=? AND invoice_id=? AND NOT EXISTS(SELECT 1 FROM integration_credit_cancellations c WHERE c.org_id=a.org_id AND c.effect_id=a.effect_id)) AS amount",
       actor.orgId,
       invoiceId,
       actor.orgId,
@@ -895,7 +901,7 @@ export class Integration {
     const credit = this.billing.recordedCredit(actor, creditId),
       invoice = this.billing.invoice(actor, credit.invoice_id),
       reservedAmount = this.store.get<{ amount: number }>(
-        "SELECT (SELECT COALESCE(SUM(amount),0) FROM integration_credit_applications WHERE org_id=? AND credit_id=?) + (SELECT COALESCE(SUM(amount),0) FROM integration_accounting_refunds WHERE org_id=? AND credit_id=?) AS amount",
+        "SELECT (SELECT COALESCE(SUM(amount),0) FROM integration_credit_applications a WHERE org_id=? AND credit_id=? AND NOT EXISTS(SELECT 1 FROM integration_credit_cancellations c WHERE c.org_id=a.org_id AND c.effect_id=a.effect_id)) + (SELECT COALESCE(SUM(amount),0) FROM integration_accounting_refunds WHERE org_id=? AND credit_id=?) AS amount",
         actor.orgId,
         creditId,
         actor.orgId,
@@ -909,6 +915,158 @@ export class Integration {
         invoice.total - this.accountingAllocated(actor, invoice.id),
       ),
     };
+  }
+  private describeCreditApplication(actor: Actor, effect: Effect) {
+    const reservation = this.store.get<{
+      effect_id: string;
+      org_id: string;
+      invoice_id: string;
+      credit_id: string;
+      amount: number;
+    }>(
+      "SELECT * FROM integration_credit_applications WHERE org_id=? AND effect_id=?",
+      actor.orgId,
+      effect.id,
+    );
+    check(
+      reservation,
+      "ACCOUNTING_ALLOCATION",
+      "Credit application reservation is missing.",
+    );
+    const invoice = this.billing.invoice(actor, reservation.invoice_id),
+      credit = this.billing.recordedCredit(actor, reservation.credit_id),
+      lease =
+        this.store.get(
+          "SELECT token,started_at FROM integration_operation_leases WHERE org_id=? AND effect_id=?",
+          actor.orgId,
+          effect.id,
+        ) ?? null,
+      cancellation =
+        this.store.get(
+          "SELECT actor_id,reason,review_version,amount,created_at FROM integration_credit_cancellations WHERE org_id=? AND effect_id=?",
+          actor.orgId,
+          effect.id,
+        ) ?? null;
+    return {
+      invoiceNumber: invoice.number,
+      creditNumber: credit.number,
+      amount: reservation.amount,
+      currency: invoice.currency,
+      reviewVersion: digest(
+        canonical({ effect, reservation, lease, cancellation }),
+      ),
+      canCancel:
+        ["admin", "finance"].includes(actor.role) &&
+        !actor.accountId &&
+        !this.platform.recoveryHold() &&
+        !this.identity.security(actor).passwordChangeRequired &&
+        !cancellation &&
+        effect.state === "pending" &&
+        effect.started_at === null &&
+        effect.external_ref === null &&
+        effect.result === null &&
+        (lease === null || (lease.token === null && lease.started_at === null)),
+      cancellation,
+    };
+  }
+  cancelCreditApplication(
+    actor: Actor,
+    key: string,
+    input: {
+      effectId: string;
+      reviewVersion: string;
+      amount: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "quickbooks.credit.cancel",
+      key,
+      input,
+      () => {
+        actor = this.operations.principal(actor);
+        permit(actor, ["finance"]);
+        // A restored pending snapshot is not proof that nothing was sent after it.
+        this.platform.assertProviderAccess();
+        const effect = this.effect(actor, input.effectId);
+        check(
+          effect.provider === "quickbooks" &&
+            effect.kind === "credit-application",
+          "STATE",
+          "Only a credit application can be canceled here.",
+        );
+        this.describeCreditApplication(actor, effect);
+      },
+      () => {
+        const effect = this.effect(actor, input.effectId),
+          review = this.describeCreditApplication(actor, effect);
+        check(
+          review.canCancel,
+          "STATE",
+          "Only a never-started pending credit application may be canceled. Reconcile other outcomes.",
+        );
+        check(
+          review.reviewVersion === input.reviewVersion,
+          "STALE",
+          "Credit application changed; refresh and review it again.",
+        );
+        const amount = integer(
+            input.amount,
+            "Reviewed credit application amount",
+            1,
+          ),
+          reason = text(input.reason, "Cancellation reason", 1000),
+          payload = JSON.parse(
+            effect.payload,
+          ) as AccountingCreditApplicationIntent;
+        check(
+          amount === review.amount && amount === payload.amount,
+          "ACCOUNTING_ALLOCATION",
+          "Review the exact reserved credit application amount.",
+        );
+        const reservation = this.store.get<{
+            invoice_id: string;
+            credit_id: string;
+          }>(
+            "SELECT invoice_id,credit_id FROM integration_credit_applications WHERE org_id=? AND effect_id=?",
+            actor.orgId,
+            effect.id,
+          )!,
+          invoice = this.billing.invoice(actor, reservation.invoice_id),
+          credit = this.billing.recordedCredit(actor, reservation.credit_id);
+        check(
+          payload.credit.credit.id === credit.id &&
+            credit.invoice_id === invoice.id &&
+            payload.credit.invoice.id === invoice.id &&
+            effect.account_id === invoice.account_id,
+          "ACCOUNTING_CREDIT_MISMATCH",
+          "Credit application identity changed; reconcile its reservation.",
+        );
+        const createdAt = now();
+        this.store.run(
+          "INSERT INTO integration_credit_cancellations VALUES(?,?,?,?,?,?,?)",
+          effect.id,
+          actor.orgId,
+          actor.id,
+          reason,
+          input.reviewVersion,
+          amount,
+          createdAt,
+        );
+        // Transport state remains blocked. The explicit receipt alone releases
+        // capacity; ordinary blocked/rejected/uncertain effects still reserve it.
+        this.store.run(
+          "UPDATE integration_effects SET state='blocked',error='Unsent credit application canceled by finance.' WHERE org_id=? AND id=?",
+          actor.orgId,
+          effect.id,
+        );
+        this.platform.event(actor, "integration.credit-canceled", effect.id, {
+          amount,
+        });
+        return { id: effect.id, state: "canceled", amount, reason, createdAt };
+      },
+    );
   }
   accountingCreditApplication(
     actor: Actor,

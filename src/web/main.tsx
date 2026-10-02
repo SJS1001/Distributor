@@ -3525,15 +3525,37 @@ function App() {
                   (e: Item) => [
                     `${e.provider} · ${e.kind}`,
                     <>
-                      {e.result?.status
-                        ? `${e.state} · ${e.result.status}`
-                        : e.state}
+                      {e.accountingApplication?.cancellation
+                        ? "canceled"
+                        : e.result?.status
+                          ? `${e.state} · ${e.result.status}`
+                          : e.state}
                       {e.accountingRefund && (
                         <small>
                           Native refund: {e.accountingRefund.nativeState}
                           {e.accountingRefund.requiresReview
                             ? " · Finance review required; reconcile the existing accounting outcome."
                             : " · Confirmed cash already returned"}
+                        </small>
+                      )}
+                      {e.accountingApplication && (
+                        <small>
+                          {e.accountingApplication.creditNumber} to{" "}
+                          {e.accountingApplication.invoiceNumber}
+                          {" · "}
+                          {money(
+                            e.accountingApplication.amount,
+                            e.accountingApplication.currency,
+                          )}
+                          {e.accountingApplication.cancellation && (
+                            <>
+                              {" · Canceled: "}
+                              {e.accountingApplication.cancellation.reason}
+                              {" · "}
+                              {e.accountingApplication.cancellation.created_at}
+                              {" · Reserved capacity released"}
+                            </>
+                          )}
                         </small>
                       )}
                     </>,
@@ -3674,6 +3696,34 @@ function App() {
                             />
                           )}
                         <div className="actions">
+                          {can("finance") &&
+                            e.accountingApplication?.canCancel &&
+                            button("Cancel unsent credit application", () => {
+                              const reviewed = {
+                                effectId: e.id,
+                                reviewVersion:
+                                  e.accountingApplication.reviewVersion,
+                                amount: e.accountingApplication.amount,
+                              };
+                              open(
+                                "Cancel unsent credit application",
+                                [
+                                  {
+                                    name: "reason",
+                                    label: "Cancellation reason",
+                                    type: "textarea",
+                                    maxLength: 1000,
+                                  },
+                                ],
+                                (values) =>
+                                  command("quickbooks.credit.cancel", {
+                                    ...reviewed,
+                                    reason: values.reason,
+                                  }),
+                                `Cancel ${money(reviewed.amount, e.accountingApplication.currency)} from ${e.accountingApplication.creditNumber} to ${e.accountingApplication.invoiceNumber}. This releases its reserved accounting capacity and retains the history. The native credit, invoice and cash remain unchanged. Only a never-started application can be canceled.`,
+                                "Confirm cancellation",
+                              );
+                            })}
                           {(e.kind !== "refund" || can("finance")) &&
                             e.state === "pending" &&
                             e.checkout?.state !== "superseded" &&

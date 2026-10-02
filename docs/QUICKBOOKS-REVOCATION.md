@@ -10,7 +10,7 @@ A fresh request requires a current finance/administrator worker with completed p
 
 ## Protected operator interface
 
-Use Node 24.16.x and a version-three regional store. Earlier stores require the separate [fresh-file schema upgrade](SCHEMA-UPGRADES.md), with all old API/worker/operator processes stopped. Version-three checks cannot fence old binaries. Filesystem authority covers the entire store; the CLI is not an account administrator export or a browser endpoint.
+Use Node 24.16.x and a version-four regional store. Earlier stores require the separate [fresh-file schema upgrade](SCHEMA-UPGRADES.md), with all old API/worker/operator processes stopped. Current schema checks cannot fence old binaries. Filesystem authority covers the entire store; the CLI is not an account administrator export or a browser endpoint.
 
 Export the exact `DATABASE_PATH`, `DATA_REGION`, `PROVIDER_BINDING_ID`, `PROVIDER_ORG_ID`, `PROVIDER_WORKER_USER_ID`, `PROVIDER_ACCOUNT_ID`, `QUICKBOOKS_REALM_ID` and `QUICKBOOKS_CLIENT_ID`. Respect the store's optional `EVENT_REPORTS` profile. A new outbound request additionally requires `PROVIDER_ENCRYPTION_KEY`, `QUICKBOOKS_CLIENT_SECRET` and explicitly `PROVIDERS_ENABLED=true`; the CLI refuses default-disabled or missing-secret configuration before opening the application. This flag does not grant permission to activate providers. Keep secrets in approved runtime configuration and supply operation JSON through protected noninteractive stdin, bounded to 32 KiB. Extra arguments, arrays, unknown revocation fields and invalid operation values reject. Never place tokens, client secrets, authorization codes or keys in arguments, history, repository files, logs or review evidence.
 

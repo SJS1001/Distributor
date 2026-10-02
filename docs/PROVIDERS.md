@@ -312,4 +312,9 @@ The [local disconnect receipt](evidence/LOCAL-QUICKBOOKS-DISCONNECT-2026-10-01.m
 
 ## QuickBooks protected token revocation
 
-A separate default-disabled operator CLI now disables local credentials before one explicit upstream token request, retains scoped uncertainty across crashes and blocks reconnect until an evidence-bound review. Offline inspection/review remains available during withdrawal or restore hold. See the [revocation runbook](QUICKBOOKS-REVOCATION.md) for protected input, one-shot outcomes, independent confirmation sources and schema-three upgrade requirements. Local/browser disconnect continues to make no provider request. Synthetic checks do not qualify Intuit revocation, full grant termination or production security/residency acceptance.
+A separate default-disabled operator CLI now disables local credentials before one explicit upstream token request, retains scoped uncertainty across crashes and blocks reconnect until an evidence-bound review. Offline inspection/review remains available during withdrawal or restore hold. See the [revocation runbook](QUICKBOOKS-REVOCATION.md) for protected input, one-shot outcomes, independent confirmation sources and current schema upgrade requirements. Local/browser disconnect continues to make no provider request. Synthetic checks do not qualify Intuit revocation, full grant termination or production security/residency acceptance.
+
+
+## Canceling never-started accounting applications
+
+Finance can now [cancel a reviewed unsent credit application](ACCOUNTING-CANCELLATIONS.md) locally with an exact amount/version and reason. Its original intent/reservation remains retained; only its dedicated cancellation receipt releases capacity. Current cash/credit/refund reservations still enforce their shared limits. Started, uncertain or terminal operations and restored provider holds refuse cancellation. Provider permission withdrawal does not block this local correction. No upstream reversal or provider I/O is made. Version-four storage requires reviewed fresh-file upgrades for earlier stores; actual accounting/operator acceptance remains open.

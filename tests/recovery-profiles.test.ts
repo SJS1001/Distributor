@@ -22,6 +22,7 @@ import { supportedSchemaHash } from "../src/server/schema.ts";
 import type { Adapter } from "../src/server/integration.ts";
 import type { Region } from "../src/server/iam.ts";
 import { accept, chooseProviders, fixture, ship } from "./fixtures.ts";
+import versionThree from "./schema-version-three.json" with { type: "json" };
 import versionTwo from "./schema-version-two.json" with { type: "json" };
 
 // Read-only independent oracles: never invoke a constructor to inspect a recovered profile.
@@ -223,7 +224,7 @@ for (const region of ["CA", "US"] as const) {
         "backup must leave every source row and exact schema unchanged",
       );
       assert.equal(receipt.version, 1);
-      assert.equal(receipt.schemaVersion, 3);
+      assert.equal(receipt.schemaVersion, 4);
       assert.equal(receipt.eventReports, eventReports);
       assert.equal(receipt.schemaHash, before.schemaHash);
       assert.equal(
@@ -247,7 +248,7 @@ for (const region of ["CA", "US"] as const) {
       ship(f, accept(f, 1, "later-order").id);
       const after = inspect(f.path);
       const restored = await restoreBackup(archive, target, region, key);
-      assert.equal(restored.schemaVersion, 3);
+      assert.equal(restored.schemaVersion, 4);
       assert.equal(restored.eventReports, eventReports);
       assert.equal(restored.schemaHash, before.schemaHash);
       assert.equal(restored.snapshotHash, receipt.snapshotHash);
@@ -509,7 +510,7 @@ test("authenticated altered version/profile receipts and legacy/foreign layouts 
   }
 });
 
-for (const sourceVersion of [1, 2])
+for (const sourceVersion of [1, 2, 3])
   test(`authenticated version-${sourceVersion} archives require a separate upgrade procedure and never restore implicitly`, async (t) => {
     const f = fixture(t, { eventReports: false }),
       key = randomBytes(32),
@@ -525,9 +526,13 @@ for (const sourceVersion of [1, 2])
     const previousHash =
       sourceVersion === 1
         ? "3211e34356f19967e025451a7299201e274cdc4a3cf15ccc8a5a892d94301221"
-        : versionTwo.hashes.disabled;
+        : sourceVersion === 2
+          ? versionTwo.hashes.disabled
+          : versionThree.hashes.disabled;
     try {
-      db.exec("DROP TABLE integration_credential_revocations");
+      db.exec("DROP TABLE integration_credit_cancellations");
+      if (sourceVersion < 3)
+        db.exec("DROP TABLE integration_credential_revocations");
       if (sourceVersion === 1)
         db.exec(
           "DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups",
@@ -578,7 +583,7 @@ test("operator CLI backs up/restores disabled US profile through protected stdin
   assert.equal(restored.code, 0, restored.err);
   for (const result of [backed, restored]) {
     const receipt = JSON.parse(result.out);
-    assert.equal(receipt.schemaVersion, 3);
+    assert.equal(receipt.schemaVersion, 4);
     assert.equal(receipt.eventReports, false);
     assert.equal(receipt.schemaHash, before.schemaHash);
     assert.equal(receipt.region, region);

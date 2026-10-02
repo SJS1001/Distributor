@@ -24,6 +24,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Invoice checkout access](docs/CHECKOUT.md) | Fresh scoped payment links, reviewed closure/replacement, retained verification history and native balance checks |
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
+| [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md) | Reviewed local capacity release, retained history and uncertainty/restore refusals |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |
@@ -54,4 +55,4 @@ Ordinary carrier bookings now retain [reviewed account/service/date configuratio
 
 The [DHL test client](docs/CARRIER-BOOKINGS.md#dhl-express-test-client) retains transport, waybill and customs invoice pages together and checks the exact reviewed companies, goods and tender time. Its warehouse form now collects explicit company, tender and packed-goods declarations and displays retained history; see [the local UI receipt](docs/evidence/LOCAL-DHL-UI-2026-10-01.md). Synthetic fixtures do not qualify customs or actual provider behavior.
 
-The [protected QuickBooks token-revocation procedure](docs/QUICKBOOKS-REVOCATION.md) provides explicit one-shot requests, local disable before transport and retained operator review after crashes. It is default-disabled and locally tested with synthetic responses only. Existing regional stores require a reviewed schema-three fresh-file upgrade; no provider request or product acceptance is claimed.
+The [protected QuickBooks token-revocation procedure](docs/QUICKBOOKS-REVOCATION.md) provides explicit one-shot requests, local disable before transport and retained operator review after crashes. It is default-disabled and locally tested with synthetic responses only. Existing regional stores require a reviewed current-version fresh-file upgrade; no provider request or product acceptance is claimed.

@@ -5,8 +5,9 @@ import type { Region } from "./iam.ts";
 import baseline from "./schema-baseline.json" with { type: "json" };
 import { CANADA_POST_SCHEMA } from "./canada-post-schema.ts";
 import { QUICKBOOKS_REVOCATION_SCHEMA } from "./quickbooks-revocation-schema.ts";
+import { ACCOUNTING_CANCELLATION_SCHEMA } from "./accounting-cancellation-schema.ts";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const SCHEMA_TABLE = "platform_schema_version";
 // This DDL is part of the frozen v1 schema identity. Changing it requires a new version.
 export const SCHEMA_DDL =
@@ -82,11 +83,29 @@ const profiles = baseline.schemas.map((profile) => {
                 : 0,
       ),
     ),
+    versionThreeHash: fingerprint(
+      [
+        ...previous,
+        ...CANADA_POST_SCHEMA,
+        ...QUICKBOOKS_REVOCATION_SCHEMA,
+      ].sort((a, b) =>
+        a.type < b.type
+          ? -1
+          : a.type > b.type
+            ? 1
+            : a.name < b.name
+              ? -1
+              : a.name > b.name
+                ? 1
+                : 0,
+      ),
+    ),
     currentHash: fingerprint(
       [
         ...previous,
         ...CANADA_POST_SCHEMA,
         ...QUICKBOOKS_REVOCATION_SCHEMA,
+        ...ACCOUNTING_CANCELLATION_SCHEMA,
       ].sort((a, b) =>
         a.type < b.type
           ? -1
@@ -120,9 +139,12 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
       initializedAt: null,
     };
   const current = profiles.find((p) => p.currentHash === schemaHash);
+  const versionThree = profiles.find((p) => p.versionThreeHash === schemaHash);
   const versionTwo = profiles.find((p) => p.versionTwoHash === schemaHash);
   const previous =
-    versionTwo ?? profiles.find((p) => p.previousHash === schemaHash);
+    versionThree ??
+    versionTwo ??
+    profiles.find((p) => p.previousHash === schemaHash);
   const legacy = profiles.find((p) => p.legacyHash === schemaHash);
   check(
     current || previous || legacy,
@@ -160,7 +182,8 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
   );
   const row = rows[0]!;
   check(
-    row.version === (current ? SCHEMA_VERSION : versionTwo ? 2 : 1),
+    row.version ===
+      (current ? SCHEMA_VERSION : versionThree ? 3 : versionTwo ? 2 : 1),
     "SCHEMA_VERSION",
     "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
   );
@@ -188,7 +211,7 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
   );
   return {
     kind: current ? "current" : "previous",
-    version: current ? SCHEMA_VERSION : versionTwo ? 2 : 1,
+    version: current ? SCHEMA_VERSION : versionThree ? 3 : versionTwo ? 2 : 1,
     schemaHash,
     eventReports: (current ?? previous)!.eventReports,
     region: row.region,
