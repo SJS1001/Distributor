@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — transfer dispatch recovery and requested GitHub commit, 2026-10-02
+
+- Resumed published parent `772222acdd845fa95d52993f31ae03a126cd3cbf` on `codex/local-distributor-checkpoint` under snapshot publication authorization. Fresh checks confirm matching remote parent, push permission and zero workflows/Actions runs. Direct workstation checks only; no CI runner, delegated/cloud session, provider IO, PR, merge or deployment.
+- Dedicated dispatch review retains the exact source/body/key and chosen destination before transport. Fixed read-only reviews recover after navigation/reload/sign-in; Web Locks, storage validation and exact evidence checks coordinate tabs. Pre-effect refusals require appropriate correction/current stock review; unknown/authority replies retain recovery. Cached native replies recheck source grants. No native runtime, schema, dependency, license or workflow change.
+- Local verification passes 1,983 native tests and all 166 production Chromium tests, including nine new dispatch journeys. TypeScript/build/formatting pass; existing bundle warning remains. Changed-source React scan including untracked files reports zero errors and two maintainability warnings. [Receipt](evidence/LOCAL-TRANSFER-DISPATCH-RECOVERY-2026-10-02.md) binds final inputs and outcomes. No failed verification attempt; initial tracked-only React scope was corrected.
+- Self-review covers fresh authority, immutable exact review, persistence/tab coordination, changed evidence, pre-effect versus uncertain outcomes, original receipt/current custody, serial/quantity/cost conservation, focus and abandoned responses. Cleared storage, uncertain pre-feature generic dispatches, shared-device retention, other browsers/devices, generic loss/recovery dialogs, query/history costs, physical custody and production/provider/residency/operator acceptance remain open. All 44 tasks and 10 gates NOT VERIFIED; full system incomplete.
+- Final planning/link/whitespace and staged publication review precede local commit and owner-authorized normal branch push. Verify exact remote HEAD and clean checkout before reporting publication. Preserve historical receipts and private artifacts; no CI job is authorized.
+
 ## Latest continuation — transfer arrival recovery and requested GitHub commit, 2026-10-02
 
 - Resumed published parent `7c3798654d2decedfc5f11ba18aa1caaf572f282` on `codex/local-distributor-checkpoint` under the owner's snapshot publication authorization. Fresh checks confirm matching remote, push permission and zero workflows/Actions runs. Direct workstation checks only; no CI runner, delegated/cloud session, provider request, PR, merge or deployment.

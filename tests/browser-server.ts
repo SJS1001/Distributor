@@ -1,3 +1,4 @@
+import { transferDispatchBrowser } from "./transfer-dispatch-browser-fixture.ts";
 import { transferArrivalBrowser } from "./transfer-arrival-browser-fixture.ts";
 import { transferQueueBrowser } from "./transfer-queue-browser-fixture.ts";
 import { operationsHealthBrowser } from "./operations-health-browser-fixture.ts";
@@ -937,6 +938,9 @@ const supplierReturnQueueHttp = await supplierReturnQueueBrowser((fn) =>
 );
 const purchaseQueueHttp = await purchaseQueueBrowser((fn) => cleanup.push(fn));
 const transferQueueHttp = await transferQueueBrowser((fn) => cleanup.push(fn));
+const transferDispatchHttp = await transferDispatchBrowser((fn) =>
+  cleanup.push(fn),
+);
 const transferArrivalHttp = await transferArrivalBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -984,6 +988,7 @@ const stop = async () => {
   await purchaseQueueHttp.close();
   await transferQueueHttp.close();
   await transferArrivalHttp.close();
+  await transferDispatchHttp.close();
   await supplierReturnQueueHttp.close();
   await invoiceQueueHttp.close();
   await stockQueueHttp.close();

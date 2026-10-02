@@ -1,3 +1,7 @@
+import {
+  TransferDispatch,
+  type DispatchSelection,
+} from "./transfer-dispatch.tsx";
 import { TransferArrival, type ArrivalSelection } from "./transfer-arrival.tsx";
 import { TransferQueue } from "./transfer-queue.tsx";
 import {
@@ -141,6 +145,8 @@ function App() {
   } | null>(null);
   const stockHistoryOpener = useRef<HTMLElement | null>(null);
   const [binSelection, setBinSelection] = useState<BinSelection | null>(null);
+  const [dispatchSelection, setDispatchSelection] =
+    useState<DispatchSelection | null>(null);
   const [arrivalSelection, setArrivalSelection] =
     useState<ArrivalSelection | null>(null);
   const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
@@ -201,6 +207,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
+    setDispatchSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
@@ -436,6 +443,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
+    setDispatchSelection(null);
     stockHistoryOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
@@ -463,6 +471,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
+    setDispatchSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopCatalogRead();
@@ -1298,6 +1307,7 @@ function App() {
                 setStockHistory(null);
                 setBinSelection(null);
                 setArrivalSelection(null);
+                setDispatchSelection(null);
                 stockHistoryOpener.current = null;
                 setPurchaseEntryOpen(false);
                 setDialog((current) =>
@@ -2275,6 +2285,21 @@ function App() {
                 }}
               />
             )}
+            {can("warehouse") && (
+              <TransferDispatch
+                key={`${actor.orgId}:${actor.id}:${extra.transferRefresh}:${dispatchSelection?.unitId ?? ""}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                selection={dispatchSelection}
+                close={() => setDispatchSelection(null)}
+                saved={async () => {
+                  await refresh();
+                  setNotice(
+                    "Transfer dispatch confirmed. Review current Inventory and transfer history before further physical work.",
+                  );
+                }}
+              />
+            )}
             <StockQueueControls
               queue={stockQueue}
               products={data.products}
@@ -2419,29 +2444,21 @@ function App() {
                     button(
                       "Transfer",
                       () =>
-                        simple(
-                          "Dispatch transfer",
-                          [
-                            select(
-                              "destinationId",
-                              "Destination",
-                              extra.transferDestinations.filter(
-                                (w: Item) => w.id !== u.warehouse_id,
-                              ),
-                              (w) => w.name,
-                            ),
-                            {
-                              name: "quantity",
-                              label: "Units",
-                              type: "number",
-                              value: 1,
-                              max: u.available,
-                            },
-                            reason,
-                          ],
-                          "transfer.dispatch",
-                          (v) => ({ ...v, unitId: u.id, revision: u.revision }),
-                        ),
+                        setDispatchSelection({
+                          unitId: u.id,
+                          sourceId: u.warehouse_id,
+                          sourceBin: u.bin,
+                          product: productName(u.product_id),
+                          source: warehouseName(u.warehouse_id),
+                          serial: u.serial,
+                          quantity: u.quantity,
+                          availableQuantity: u.available,
+                          revision: u.revision,
+                          unitCost: u.cost,
+                          destinations: extra.transferDestinations
+                            .filter((w: Item) => w.id !== u.warehouse_id)
+                            .map((w: Item) => ({ id: w.id, name: w.name })),
+                        }),
                       !Array.isArray(extra.transferDestinations),
                     )}
                 </div>,
