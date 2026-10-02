@@ -1,3 +1,4 @@
+import { TransferArrival, type ArrivalSelection } from "./transfer-arrival.tsx";
 import { TransferQueue } from "./transfer-queue.tsx";
 import {
   useSupplierReturnQueue,
@@ -140,6 +141,8 @@ function App() {
   } | null>(null);
   const stockHistoryOpener = useRef<HTMLElement | null>(null);
   const [binSelection, setBinSelection] = useState<BinSelection | null>(null);
+  const [arrivalSelection, setArrivalSelection] =
+    useState<ArrivalSelection | null>(null);
   const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -197,6 +200,7 @@ function App() {
   const refresh = async () => {
     setStockHistory(null);
     setBinSelection(null);
+    setArrivalSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
@@ -431,6 +435,7 @@ function App() {
     setSupplierHistoryId(null);
     setStockHistory(null);
     setBinSelection(null);
+    setArrivalSelection(null);
     stockHistoryOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
@@ -457,6 +462,7 @@ function App() {
   const signOut = () => {
     setStockHistory(null);
     setBinSelection(null);
+    setArrivalSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopCatalogRead();
@@ -1291,6 +1297,7 @@ function App() {
                 setPage(p);
                 setStockHistory(null);
                 setBinSelection(null);
+                setArrivalSelection(null);
                 stockHistoryOpener.current = null;
                 setPurchaseEntryOpen(false);
                 setDialog((current) =>
@@ -2253,6 +2260,21 @@ function App() {
                 }}
               />
             )}
+            {can("warehouse") && (
+              <TransferArrival
+                key={`${actor.orgId}:${actor.id}:${extra.transferRefresh}:${arrivalSelection?.transferId ?? ""}:${arrivalSelection?.lineId ?? ""}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                selection={arrivalSelection}
+                close={() => setArrivalSelection(null)}
+                saved={async () => {
+                  await refresh();
+                  setNotice(
+                    "Transfer arrival confirmed. Review current Inventory and transfer history before further physical work.",
+                  );
+                }}
+              />
+            )}
             <StockQueueControls
               queue={stockQueue}
               products={data.products}
@@ -2797,55 +2819,20 @@ function App() {
                               .map((line: Item) => (
                                 <React.Fragment key={line.line_id}>
                                   {button("Receive transfer", () =>
-                                    simple(
-                                      "Receive transfer",
-                                      [
-                                        {
-                                          name: "quantity",
-                                          label: "Units arriving",
-                                          type: "number",
-                                          value: line.remainingQuantity,
-                                          max: line.remainingQuantity,
-                                        },
-                                        {
-                                          name: "serial",
-                                          scan: "single",
-                                          label:
-                                            "Scan transferred serial (leave blank for bulk)",
-                                          optional: !line.serial,
-                                        },
-                                        {
-                                          name: "receiptRef",
-                                          label:
-                                            "Arrival reference (unique per portion)",
-                                          help: "Use a distinct reference for each quantity and condition received.",
-                                        },
-                                        {
-                                          name: "bin",
-                                          label: "Destination bin",
-                                        },
-                                        {
-                                          name: "condition",
-                                          label: "Condition",
-                                          options: [
-                                            "usable",
-                                            "quarantine",
-                                            "damaged",
-                                          ].map((v) => ({
-                                            value: v,
-                                            label: v,
-                                          })),
-                                        },
-                                        reason,
-                                      ],
-                                      "transfer.receive",
-                                      (v) => ({
-                                        ...v,
-                                        serial: v.serial || null,
-                                        transferId: t.id,
-                                        lineId: line.line_id,
-                                      }),
-                                    ),
+                                    setArrivalSelection({
+                                      transferId: t.id,
+                                      lineId: line.line_id,
+                                      destinationId: t.destination_id,
+                                      product: productName(line.product_id),
+                                      source: warehouseName(t.source_id),
+                                      destination: warehouseName(
+                                        t.destination_id,
+                                      ),
+                                      serial: line.serial,
+                                      dispatchedQuantity: line.quantity,
+                                      remainingQuantity: line.remainingQuantity,
+                                      unitCost: line.unit_cost,
+                                    }),
                                   )}
                                   {actor?.role === "admin" &&
                                     button("Approve transit loss", () =>

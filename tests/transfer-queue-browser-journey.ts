@@ -156,7 +156,7 @@ test("browser: phone transfer pages replace twenty rows, retry the exact cursor 
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Retry exact transfer arrival", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(q.getByRole("status")).toHaveText(

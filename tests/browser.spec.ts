@@ -1,3 +1,4 @@
+import "./transfer-arrival-browser-journey.ts";
 import "./transfer-queue-browser-journey.ts";
 import "./operations-health-browser-journey.ts";
 import "./bin-relocation-browser-journey.ts";
@@ -1635,7 +1636,12 @@ test("browser: partial transfer retries preserve transit stock and separate dama
     await next(page);
     if (quantity === 2) {
       await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
-      await next(page);
+      await page
+        .getByRole("button", {
+          name: "Retry exact transfer arrival",
+          exact: true,
+        })
+        .click();
     }
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(transfer).toContainText(
