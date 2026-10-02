@@ -13,6 +13,7 @@ import { Identity } from "./iam.ts";
 import { Platform } from "./platform.ts";
 import { BillingPaymentHistory } from "./billing-payment-history.ts";
 import { BillingRefunds } from "./billing-refunds.ts";
+import { billingControls } from "./billing-controls.ts";
 import { BillingOpening } from "./billing-opening.ts";
 import { BillingDocuments } from "./billing-documents.ts";
 import { BillingDelivery } from "./billing-delivery.ts";
@@ -181,6 +182,10 @@ export class Billing {
           creditable_quantity: Number(line.quantity) - historical - subsequent,
         };
       });
+  }
+  // Internal owning operation: Application.reconciliation supplies authority and snapshot.
+  controlTotals(actor: Actor, currency: string) {
+    return billingControls(this.store, actor, currency);
   }
   totals(actor: Actor, invoiceId: string) {
     const invoice = this.invoice(actor, invoiceId);

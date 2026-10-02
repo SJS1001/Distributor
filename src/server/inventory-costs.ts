@@ -16,7 +16,7 @@ export type CostMovement = {
   reason: string;
   createdAt: string;
 };
-const signs: Record<
+export const movementSigns: Record<
   string,
   "positive" | "negative" | "zero" | "either" | "transfer"
 > = {
@@ -135,7 +135,9 @@ export class InventoryCosts {
        WHERE s.org_id=? ORDER BY s.sequence`,
       [actor.orgId],
       (r) => {
-        const sign = Object.hasOwn(signs, r.type) ? signs[r.type] : undefined;
+        const sign = Object.hasOwn(movementSigns, r.type)
+          ? movementSigns[r.type]
+          : undefined;
         check(
           sign &&
             r.id &&

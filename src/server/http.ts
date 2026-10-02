@@ -2495,6 +2495,9 @@ export async function createHttp(app: Application, options: HttpOptions) {
         ),
     );
   });
+  http.get("/api/operations/reconciliation", async (request) =>
+    app.reconciliation(actor(request)),
+  );
   http.get("/api/audit", async (request) =>
     app.platform.audits(actor(request)),
   );

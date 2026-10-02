@@ -1,5 +1,5 @@
 import { validateMfaPolicy } from "./mfa-policy.ts";
-import { check, type Actor, type Role } from "./core.ts";
+import { check, permit, now, type Actor, type Role } from "./core.ts";
 import { Database } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity, type Region } from "./iam.ts";
@@ -186,6 +186,26 @@ export class Application {
       this.database.close();
       throw error;
     }
+  }
+  reconciliation(actor: Actor) {
+    return this.database.transaction(() => {
+      const current = this.identity.currentActor(actor);
+      permit(current, ["finance"]);
+      check(
+        !this.identity.security(current).passwordChangeRequired,
+        "PASSWORD_CHANGE_REQUIRED",
+        "Change your password before continuing.",
+        403,
+      );
+      const currency = this.identity.organization(current).currency;
+      return {
+        version: 1 as const,
+        checkedAt: now(),
+        currency,
+        stock: this.inventory.controlTotals(current),
+        billing: this.billing.controlTotals(current, currency),
+      };
+    });
   }
   dashboard(actor: Actor) {
     actor = this.identity.currentActor(actor);

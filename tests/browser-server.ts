@@ -1,4 +1,5 @@
 import { shipmentCoverageBrowser } from "./shipment-coverage-browser-fixture.ts";
+import { reconciliationBrowser } from "./reconciliation-browser-fixture.ts";
 import { claimQueueBrowser } from "./claim-queue-browser-fixture.ts";
 import {
   setup as canadaPostSetup,
@@ -894,6 +895,9 @@ const shipmentCoverageHttp = await shipmentCoverageBrowser((fn) =>
   cleanup.push(fn),
 );
 const queueHttp = await claimQueueBrowser((fn) => cleanup.push(fn));
+const reconciliationHttp = await reconciliationBrowser((fn) =>
+  cleanup.push(fn),
+);
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -921,6 +925,7 @@ const stop = async () => {
   await coveragePolicyHttp.close();
   await shipmentCoverageHttp.close();
   await queueHttp.close();
+  await reconciliationHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);

@@ -34,6 +34,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Schema startup and upgrades](docs/SCHEMA-UPGRADES.md) | Atomic initialization, exact supported versions and reviewed fresh-file clones |
 | [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets, optional/required role MFA and session revocation |
 | [Local event reporting](docs/EVENTS.md) | Bounded optional report processing, scoped diagnostics and reviewed failure recovery |
+| [Stock and billing reconciliation](docs/RECONCILIATION.md) | Native control totals, bounded discrepancy details and investigation limits |
 | [Providers, residency and devices](docs/PROVIDERS.md) | Customer choice, major-provider candidates and local provider operations |
 | [Evidence instructions](docs/evidence/README.md) | Receipt template for future verification |
 | [Handoff](docs/HANDOFF.md) | Historical setup and current implementation continuation |

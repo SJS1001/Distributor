@@ -13,6 +13,7 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Catalog } from "./catalog.ts";
 import { Platform } from "./platform.ts";
+import { stockControls } from "./inventory-controls.ts";
 import { InventoryCosts } from "./inventory-costs.ts";
 import { Identity } from "./iam.ts";
 import type { CountReviewPolicy } from "./count-policy.ts";
@@ -434,6 +435,10 @@ export class Inventory {
         unit.id,
       ),
     };
+  }
+  // Internal owning operation: Application.reconciliation supplies authority and snapshot.
+  controlTotals(actor: Actor) {
+    return stockControls(this.store, actor);
   }
   private movement(
     actor: Actor,

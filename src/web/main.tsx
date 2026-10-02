@@ -28,6 +28,7 @@ import { ProviderHistory } from "./provider-history.tsx";
 import { OrderAmendments } from "./order-amendments.tsx";
 import { OrderReservations, ReservationStatus } from "./order-reservations.tsx";
 import { SupplierReturnHistory } from "./supplier-return-history.tsx";
+import { ReconciliationPanel } from "./reconciliation.tsx";
 import { AuditHistory } from "./audit-history.tsx";
 import { RequiredMfa } from "./required-mfa.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
@@ -897,6 +898,7 @@ function App() {
         "Customers",
         "Security",
         ...(can("support") ? ["Audit history", "Event reporting"] : []),
+        ...(can("finance") ? ["Reconciliation"] : []),
         ...(admin ? ["Imports", "Administration"] : []),
       ]
     : ["Overview", "Orders", "Billing", "Returns", "Customers", "Security"];
@@ -986,6 +988,9 @@ function App() {
             Recovery workspace: provider operations and payment links are on
             hold. An operator must reconcile this snapshot before activation.
           </p>
+        )}
+        {page === "Reconciliation" && can("finance") && (
+          <ReconciliationPanel key={eventViewEpoch} />
         )}
         {page === "Audit history" && can("support") && (
           <AuditHistory key={eventViewEpoch} />
