@@ -1,4 +1,5 @@
 import { IssueCollector } from "./control-issues.ts";
+import { reservationControls } from "./reservation-controls.ts";
 import type {
   OrderSalesEvidence,
   FulfillmentSalesEvidence,
@@ -275,6 +276,7 @@ export function salesControls(
         actual.get(product) ?? 0n,
       );
   }
+  reservationControls(orderEvidence, shipments, inventory, issues);
   return {
     orders: orders.size,
     shipments: shipments.filter((s) => s.state === "shipped").length,

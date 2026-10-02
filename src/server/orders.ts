@@ -96,7 +96,9 @@ export class Orders {
       ),
       lines: this.store.all(
         `SELECT id,order_id AS "order",product_id AS product,
-         CAST(shipped AS TEXT) AS shipped,CAST(unit_price AS TEXT) AS price,CAST(unit_tax AS TEXT) AS tax
+         CAST(quantity AS TEXT) AS quantity,CAST(shipped AS TEXT) AS shipped,
+         CAST(canceled AS TEXT) AS canceled,CAST(allocated AS TEXT) AS allocated,
+         CAST(unit_price AS TEXT) AS price,CAST(unit_tax AS TEXT) AS tax
          FROM orders_lines WHERE org_id=? ORDER BY rowid`,
         actor.orgId,
       ),

@@ -31,7 +31,9 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
   });
   await expect(panel).toContainText("Stock discrepancies: 2");
   await expect(panel).toContainText("Billing discrepancies: 0");
-  await expect(panel).toContainText("Sales agreement discrepancies: 2");
+  await expect(panel).toContainText("Sales agreement discrepancies: 4");
+  await expect(panel).toContainText("SALE ORDER RESERVED");
+  await expect(panel).toContainText("SALE PACK OVERCOMMITTED");
   await expect(panel).toContainText("SALE INVOICE PRICE");
   await expect(panel).toContainText("SALE INVOICE TAX");
   await expect(panel).toContainText("PRODUCT QUANTITY");
@@ -113,7 +115,10 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
   );
   const retained = JSON.parse(retainedBytes.toString());
   expect(retained.report.billing.balance).toBe("11300");
-  expect(retained.report.sales.issues.count).toBe(2);
+  expect(retained.report.sales.issues.count).toBe(4);
+  expect(retained.report.sales.issues.items.map((i: any) => i.code)).toEqual(
+    expect.arrayContaining(["SALE_ORDER_RESERVED", "SALE_PACK_OVERCOMMITTED"]),
+  );
   expect(retained.limits.productGateAcceptance).toBe(false);
   expect(retainedBytes.toString()).not.toContain("PRIVATE-PAYMENT");
   let downloadCount = 0;
@@ -219,7 +224,7 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
     .getByRole("button", { name: "Run reconciliation", exact: true })
     .click();
   await expect(panel).toContainText("Billing discrepancies: 0");
-  await expect(panel).toContainText("Sales agreement discrepancies: 2");
+  await expect(panel).toContainText("Sales agreement discrepancies: 4");
   await expect(panel).toContainText("SALE INVOICE PRICE");
   await expect(panel).toContainText("SALE INVOICE TAX");
   await page.unroute("**/api/operations/reconciliation");

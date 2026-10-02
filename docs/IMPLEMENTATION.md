@@ -526,3 +526,10 @@ Normal trusted server startup now accepts one to twenty separately configured Ca
 ## UPS accounts by native warehouse — 2026-10-02
 
 Trusted startup now supports separate UPS accounts, contacts, credentials and service mappings for up to twenty native warehouses while retaining the organization-wide mode. Ordinary and replacement review APIs select only the native origin's configuration; preparation, transmission and restart recovery use the same owning snapshot. Missing or changed bindings refuse before I/O, and mixed global/site registrations reject startup. No schema/dependency/workflow change. See [configuration](CARRIER-BOOKINGS.md#ups-configuration-for-multiple-warehouses) and [local evidence](evidence/LOCAL-UPS-WAREHOUSES-2026-10-02.md). This adds partial D-027/D-029 engineering coverage; actual providers/operators and all 44 tasks/10 gates remain NOT VERIFIED.
+
+
+## Outstanding reservations and active packing controls — 2026-10-02
+
+Native sales reconciliation now compares open order promises with remaining allocations and usable warehouse stock, including shared capacity with reserved warranty replacements. Active packs must reference picked same-order/site allocations and fit their combined remaining capacity. Historical released/consumed promises do not constrain later stock transfers or returns. Reports remain readonly; previously saved receipts retain their original bytes and scope. No schema, dependency or public report shape change.
+
+See [the reconciliation procedure](RECONCILIATION.md) and [local evidence](evidence/LOCAL-RESERVATION-CONTROLS-2026-10-02.md). This extends partial D-023/D-036 engineering coverage. Agreement cannot establish physical custody/picks, coordinated corruption, actual provider/bank balances, production scan/lock/memory limits or operator acceptance. All 44 tasks and 10 gates remain NOT VERIFIED; the full-system goal remains active.

@@ -443,9 +443,20 @@ export class Inventory {
     return {
       allocations: this.store.all(
         `SELECT a.id,a.order_id AS "order",a.product_id AS product,a.warehouse_id AS warehouse,
-         a.unit_id AS unit,CAST(a.consumed AS TEXT) AS consumed,u.product_id AS unitProduct
+         a.unit_id AS unit,CAST(a.quantity AS TEXT) AS quantity,CAST(a.consumed AS TEXT) AS consumed,
+         CAST(a.released AS TEXT) AS released,a.stage,u.product_id AS unitProduct
          FROM inventory_allocations a LEFT JOIN inventory_units u ON u.org_id=a.org_id AND u.id=a.unit_id
          WHERE a.org_id=? ORDER BY a.rowid`,
+        actor.orgId,
+      ),
+      units: this.store.all(
+        `SELECT id,warehouse_id AS warehouse,CAST(quantity AS TEXT) AS quantity,state,condition,
+         CASE WHEN serial IS NULL THEN 0 ELSE 1 END AS hasSerial
+         FROM inventory_units WHERE org_id=? ORDER BY rowid`,
+        actor.orgId,
+      ),
+      replacementHolds: this.store.all(
+        `SELECT id,unit_id AS unit FROM inventory_replacements WHERE org_id=? AND state='reserved' ORDER BY rowid`,
         actor.orgId,
       ),
       movements: this.store.all(

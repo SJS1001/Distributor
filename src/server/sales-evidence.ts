@@ -11,7 +11,10 @@ export type OrderSalesEvidence = {
     id: string;
     order: string;
     product: string;
+    quantity: string;
     shipped: string;
+    canceled: string;
+    allocated: string;
     price: string;
     tax: string;
   }[];
@@ -33,9 +36,21 @@ export type InventorySalesEvidence = {
     product: string;
     warehouse: string;
     unit: string;
+    quantity: string;
     consumed: string;
+    released: string;
+    stage: string;
     unitProduct: string | null;
   }[];
+  units: {
+    id: string;
+    warehouse: string;
+    quantity: string;
+    state: string;
+    condition: string;
+    hasSerial: number;
+  }[];
+  replacementHolds: { id: string; unit: string }[];
   movements: {
     id: string;
     shipment: string;

@@ -13,6 +13,27 @@ export async function reconciliationBrowser(after: (fn: () => void) => void) {
     "UPDATE billing_invoices SET net=9000,tax=2300 WHERE id=?",
     sale.invoiceId,
   );
+  const outstanding = accept(f, 1, "outstanding"),
+    allocation = f.app.fulfillment.picks(f.actor, outstanding.id)[0]!;
+  f.app.fulfillment.pick(f.actor, "outstanding-pick", {
+    orderId: outstanding.id,
+    allocationId: allocation.id,
+    serial: allocation.serial,
+  });
+  f.app.fulfillment.pack(f.actor, "outstanding-pack", {
+    orderId: outstanding.id,
+    revision: f.app.orders.order(f.actor, outstanding.id).revision,
+    mode: "collection",
+    address: "PRIVATE-ADDRESS",
+    lines: [{ allocationId: allocation.id, quantity: 1 }],
+  });
+  // Released stock no longer supports either the recorded order or active pack.
+  f.app.database
+    .owned("inventory")
+    .run(
+      "UPDATE inventory_allocations SET released=1 WHERE id=?",
+      allocation.id,
+    );
   // Deliberate retained stock fault; reporting must never repair it.
   const unit = f.app.inventory.trace(f.actor, "S2").unit;
   f.app.database
