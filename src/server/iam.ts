@@ -1014,7 +1014,29 @@ export class Identity {
       },
     );
   }
+  private customerActor(actor: Actor, allowed: Role[]) {
+    actor = this.currentActor(actor);
+    permit(actor, allowed);
+    check(
+      !this.passwordChangeRequired(actor.id),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing customer accounts.",
+      403,
+    );
+    return actor;
+  }
+  private customerReader(actor: Actor) {
+    return this.customerActor(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+      "buyer",
+    ]);
+  }
   customer(actor: Actor, accountId: string): Customer {
+    actor = this.customerReader(actor);
     account(actor, accountId);
     const row = this.store.get(
       "SELECT * FROM iam_accounts WHERE org_id=? AND id=?",
@@ -1025,15 +1047,16 @@ export class Identity {
     return row as Customer;
   }
   customers(actor: Actor) {
+    actor = this.customerReader(actor);
     return this.store.all<Customer>(
-      "SELECT * FROM iam_accounts WHERE org_id=? AND (? IS NULL OR id=?) ORDER BY name",
+      "SELECT * FROM iam_accounts WHERE org_id=? AND (?=0 OR id=?) ORDER BY name",
       actor.orgId,
-      actor.role === "buyer" ? actor.accountId : null,
+      actor.role === "buyer" ? 1 : 0,
       actor.accountId,
     );
   }
   reviewCustomerImport(actor: Actor, raw: unknown): MasterReview {
-    permit(actor, []);
+    actor = this.customerActor(actor, []);
     const r = importFields(raw, [
       "sourceId",
       "targetId",
@@ -1082,6 +1105,7 @@ export class Identity {
   }
   // Owning operation inside the migration command's transaction. Consent is never imported.
   applyCustomerImport(actor: Actor, raw: unknown): MasterMapping {
+    actor = this.customerActor(actor, []);
     const reviewed = this.reviewCustomerImport(actor, raw),
       r = raw as Record<string, unknown>;
     const targetId = reviewed.targetId ?? id();
@@ -1113,7 +1137,9 @@ export class Identity {
       "account.create",
       key,
       input,
-      () => permit(actor, ["commercial"]),
+      () => {
+        actor = this.customerActor(actor, ["commercial"]);
+      },
       () => {
         const accountId = id();
         const org = this.organization(actor);
@@ -1141,7 +1167,7 @@ export class Identity {
       key,
       input,
       () => {
-        permit(actor, ["finance"]);
+        actor = this.customerActor(actor, ["finance"]);
         this.customer(actor, input.accountId);
       },
       () => {

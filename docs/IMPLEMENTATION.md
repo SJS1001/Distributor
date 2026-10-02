@@ -59,6 +59,8 @@ The [refund write guard receipt](evidence/LOCAL-REFUND-PREWRITE-2026-10-01.md) r
 
 ## Evidence and limits
 
+The [customer authority checkpoint](evidence/LOCAL-CUSTOMER-AUTHORITY-2026-10-02.md) adds current persisted access checks to customer reads/imports and creation/credit-hold commands, including saved retries. Seven new tests independently reproduced the previous failures; final local backend verification passed 1,780 tests and three selected production-build browser journeys. Buyer account reassignment and the empty-assignment list filter are covered, along with password/deactivation and independent connection/restart changes. This is partial access-control engineering; full authorization, staff visibility policy and all product gates remain unqualified.
+
 Local commands: `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build`, `npm run format:check` and `npm run verify:plan`. Browser tests use disposable synthetic SQLite data and locally installed Chromium. They are local checks, not GitHub Actions evidence. Provider-recovery tests use explicit synthetic adapters; no payment/accounting/carrier request or physical device was qualified.
 
 See [handoff](HANDOFF.md), [checkpoint criteria](CHECKPOINTS.md) and [evidence instructions](evidence/README.md). Exact tested file hashes and failures are preserved in local engineering receipts. No product gate is verified. Production hosting, residency of backups/logs/support, commercial approvals, performance/recovery targets and publication license remain unresolved. The application is still under construction.
