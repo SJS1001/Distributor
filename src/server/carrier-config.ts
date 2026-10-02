@@ -12,6 +12,7 @@ import { check, DomainError } from "./core.ts";
 import { UpsSandbox, type UpsSandboxConfig } from "./ups-sandbox.ts";
 import { FedexSandbox, type FedexSandboxConfig } from "./fedex-sandbox.ts";
 import { UspsSandbox, type UspsSandboxConfig } from "./usps-sandbox.ts";
+import { DhlTestClient, type DhlTestConfig } from "./dhl-test.ts";
 
 // Trusted workstation/server environment, never request-body configuration.
 // Capture all values at startup; no token acquisition, send or background task.
@@ -33,9 +34,10 @@ export function configuredCarriers(
   const ups = flag("UPS_SANDBOX_ENABLED"),
     fedex = flag("FEDEX_SANDBOX_ENABLED"),
     usps = flag("USPS_TEM_ENABLED"),
-    canadaPost = flag("CANADA_POST_TEST_ENABLED");
+    canadaPost = flag("CANADA_POST_TEST_ENABLED"),
+    dhl = flag("DHL_TEST_ENABLED");
   check(
-    ups || fedex || usps || canadaPost,
+    ups || fedex || usps || canadaPost || dhl,
     "CARRIER_CONFIG",
     "Select at least one supported sandbox carrier.",
     500,
@@ -99,6 +101,33 @@ export function configuredCarriers(
   const bindings: CarrierBinding[] = [];
   const groups: CanadaPostBinding[] = [];
   try {
+    if (dhl) {
+      check(
+        env.DHL_TEST_CREDENTIALS_ACK === "test-only",
+        "CARRIER_CONFIG",
+        "Explicitly acknowledge DHL test credentials and endpoint only.",
+        500,
+      );
+      bindings.push({
+        orgId,
+        adapter: new DhlTestClient(
+          {
+            orgId,
+            username: required("DHL_USERNAME", 512),
+            password: required("DHL_PASSWORD", 1024),
+            accountNumber: required("DHL_ACCOUNT_NUMBER", 12),
+            country: required("DHL_COUNTRY", 2) as DhlTestConfig["country"],
+            services: services("DHL_SERVICES_JSON", [
+              "service",
+              "productCode",
+              "localProductCode",
+              "destinationCountry",
+            ]) as DhlTestConfig["services"],
+          },
+          transport,
+        ),
+      });
+    }
     if (canadaPost) {
       check(
         env.CANADA_POST_TEST_CREDENTIALS_ACK === "test-application-only",

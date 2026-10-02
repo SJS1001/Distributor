@@ -47,6 +47,8 @@ The planning package is complete as a reviewable draft. Owner/operator answers a
 
 The [latest planning choices/access review](docs/evidence/PLANNING-CHOICES-2026-09-30.md) records customer residency acceptance criteria and fresh read-only GitHub access. Historical implementation receipts remain separate from planning acceptance.
 
-Reviewed ordinary carrier booking coordination and its default-disabled adapter boundary are described in [the carrier runbook](docs/CARRIER-BOOKINGS.md). Original default-disabled UPS/FedEx sandbox and USPS TEM protocol clients have local synthetic coverage and explicit opt-in server configuration. FedEx and USPS lost-response recovery remains unsupported and uncertain bookings stay blocked; actual carrier protocols/services and product gates remain unqualified.
+Reviewed ordinary carrier booking coordination and its default-disabled adapter boundary are described in [the carrier runbook](docs/CARRIER-BOOKINGS.md). Original default-disabled UPS/FedEx sandbox, USPS TEM and DHL test protocol clients have local synthetic coverage and explicit opt-in server configuration. FedEx, USPS and DHL lost-response recovery remains unsupported and uncertain bookings stay blocked; actual carrier protocols/services and product gates remain unqualified.
 
 Ordinary carrier bookings now retain [reviewed account/service/date configuration](docs/CARRIER-BOOKINGS.md#reviewed-ordinary-carrier-configuration), refuse drift before I/O and show warehouse review/history controls. Local synthetic verification does not qualify actual carriers, devices or product gates.
+
+The [DHL test client](docs/CARRIER-BOOKINGS.md#dhl-express-test-client) retains transport, waybill and customs invoice pages together and checks the exact reviewed companies, goods and tender time. Its warehouse declaration form remains to be implemented; local fixtures do not qualify customs or actual provider behavior.

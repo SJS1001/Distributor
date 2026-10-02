@@ -35,11 +35,14 @@ export type CarrierConfiguration = {
 };
 // Explicit equipment/goods review; no address, price or customs defaults.
 export type DhlShippingReview = {
+  // Optional for historical reviews; the protocol client requires both names.
+  companyNames?: { shipper: string; receiver: string };
   plannedShippingAt: string;
   description: string;
   incoterm: "DAP" | "FCA" | "EXW" | "CPT" | "CIP" | "DPU";
   customs?: {
     currency: "USD" | "CAD";
+    invoiceType?: "commercial" | "proforma" | "returns";
     invoiceNumber: string;
     invoiceDate: string;
     exportReason:

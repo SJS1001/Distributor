@@ -121,6 +121,10 @@ export function commands(
           configurationHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
           dhl: obj(
             {
+              companyNames: obj({
+                shipper: { type: "string", minLength: 1, maxLength: 100 },
+                receiver: { type: "string", minLength: 1, maxLength: 100 },
+              }),
               plannedShippingAt: {
                 type: "string",
                 pattern:
@@ -128,58 +132,66 @@ export function commands(
               },
               description: { type: "string", minLength: 1, maxLength: 1000 },
               incoterm: choice("DAP", "FCA", "EXW", "CPT", "CIP", "DPU"),
-              customs: obj({
-                currency: choice("USD", "CAD"),
-                invoiceNumber: { type: "string", minLength: 1, maxLength: 35 },
-                invoiceDate: {
-                  type: "string",
-                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+              customs: obj(
+                {
+                  invoiceType: choice("commercial", "proforma", "returns"),
+                  currency: choice("USD", "CAD"),
+                  invoiceNumber: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: 35,
+                  },
+                  invoiceDate: {
+                    type: "string",
+                    pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  },
+                  exportReason: choice(
+                    "commercial_purpose_or_sale",
+                    "return",
+                    "warranty_replacement",
+                    "sample",
+                    "gift",
+                    "temporary",
+                  ),
+                  acknowledgment: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: 1000,
+                  },
+                  lines: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 100,
+                    items: obj({
+                      allocationId: str,
+                      quantity: { type: "integer", minimum: 1, maximum: 1e9 },
+                      description: {
+                        type: "string",
+                        minLength: 1,
+                        maxLength: 512,
+                      },
+                      unitValueMinor: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 1e12,
+                      },
+                      manufacturerCountry: {
+                        type: "string",
+                        pattern: "^[A-Z]{2}$",
+                      },
+                      commodityCode: { type: "string", pattern: "^\\d{6,18}$" },
+                      netWeightGrams: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 1e6,
+                      },
+                    }),
+                  },
                 },
-                exportReason: choice(
-                  "commercial_purpose_or_sale",
-                  "return",
-                  "warranty_replacement",
-                  "sample",
-                  "gift",
-                  "temporary",
-                ),
-                acknowledgment: {
-                  type: "string",
-                  minLength: 1,
-                  maxLength: 1000,
-                },
-                lines: {
-                  type: "array",
-                  minItems: 1,
-                  maxItems: 100,
-                  items: obj({
-                    allocationId: str,
-                    quantity: { type: "integer", minimum: 1, maximum: 1e9 },
-                    description: {
-                      type: "string",
-                      minLength: 1,
-                      maxLength: 512,
-                    },
-                    unitValueMinor: {
-                      type: "integer",
-                      minimum: 1,
-                      maximum: 1e12,
-                    },
-                    manufacturerCountry: {
-                      type: "string",
-                      pattern: "^[A-Z]{2}$",
-                    },
-                    commodityCode: { type: "string", pattern: "^\\d{6,18}$" },
-                    netWeightGrams: {
-                      type: "integer",
-                      minimum: 1,
-                      maximum: 1e6,
-                    },
-                  }),
-                },
-              }),
+                ["invoiceType"],
+              ),
             },
-            ["customs"],
+            ["customs", "companyNames"],
           ),
           shipmentId: str,
           previousId: { anyOf: [str, { type: "null" }] },

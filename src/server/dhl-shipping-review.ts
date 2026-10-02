@@ -97,7 +97,7 @@ export function captureDhlReview(
   const raw = record(
     value,
     ["plannedShippingAt", "description", "incoterm"],
-    ["customs"],
+    ["customs", "companyNames"],
   );
   const plannedShippingAt = shippingTime(raw.plannedShippingAt),
     description = exactText(raw.description, "DHL goods description", 1000);
@@ -108,6 +108,16 @@ export function captureDhlReview(
     400,
   );
   const incoterm = raw.incoterm as DhlShippingReview["incoterm"];
+  const company = Object.hasOwn(raw, "companyNames")
+    ? record(raw.companyNames, ["shipper", "receiver"])
+    : undefined;
+  const companyNames = company
+    ? {
+        shipper: exactText(company.shipper, "DHL shipper company", 100),
+        receiver: exactText(company.receiver, "DHL receiver company", 100),
+      }
+    : undefined;
+  const companies = companyNames ? { companyNames } : {};
   const crossBorder = origin.country !== destination.country;
   check(
     Object.hasOwn(raw, "customs") === crossBorder,
@@ -115,15 +125,29 @@ export function captureDhlReview(
     "Cross-border goods require a declaration; domestic reviews must omit customs.",
     400,
   );
-  if (!crossBorder) return { plannedShippingAt, description, incoterm };
-  const customs = record(raw.customs, [
-    "currency",
-    "invoiceNumber",
-    "invoiceDate",
-    "exportReason",
-    "acknowledgment",
-    "lines",
-  ]);
+  if (!crossBorder)
+    return { ...companies, plannedShippingAt, description, incoterm };
+  const customs = record(
+    raw.customs,
+    [
+      "currency",
+      "invoiceNumber",
+      "invoiceDate",
+      "exportReason",
+      "acknowledgment",
+      "lines",
+    ],
+    ["invoiceType"],
+  );
+  check(
+    !Object.hasOwn(customs, "invoiceType") ||
+      ["commercial", "proforma", "returns"].includes(
+        customs.invoiceType as string,
+      ),
+    "VALIDATION",
+    "Choose an explicit supported DHL customs invoice type.",
+    400,
+  );
   check(
     customs.currency === "USD" || customs.currency === "CAD",
     "VALIDATION",
@@ -255,10 +279,17 @@ export function captureDhlReview(
     400,
   );
   return {
+    ...companies,
     plannedShippingAt,
     description,
     incoterm,
     customs: {
+      ...(Object.hasOwn(customs, "invoiceType")
+        ? {
+            invoiceType: customs.invoiceType as
+              "commercial" | "proforma" | "returns",
+          }
+        : {}),
       currency: customs.currency,
       invoiceNumber,
       invoiceDate,
