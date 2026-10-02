@@ -1587,6 +1587,29 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     async (request) => app.warranty.soldUnitPage(actor(request), request.query),
   );
+  http.get<{ Querystring: import("../shared/claim-queue.ts").ClaimQueueQuery }>(
+    "/api/warranty/claims/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            state: choice(
+              "submitted",
+              "approved",
+              "rejected",
+              "received",
+              "inspected",
+              "repair",
+              "disposed",
+            ),
+            after: { type: "string", minLength: 1, maxLength: 512 },
+          },
+          ["state", "after"],
+        ),
+      },
+    },
+    async (request) => app.warranty.claimPage(actor(request), request.query),
+  );
   http.get(
     "/api/warranty/coverage-policy",
     { schema: { querystring: obj({}) } },

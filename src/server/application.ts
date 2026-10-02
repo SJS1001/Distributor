@@ -195,6 +195,16 @@ export class Application {
     )
       ? this.warranty.soldUnitPage(actor)
       : { items: [], next: null };
+    const claims = [
+      "admin",
+      "finance",
+      "commercial",
+      "buyer",
+      "warranty",
+      "warehouse",
+    ].includes(actor.role)
+      ? this.warranty.claimPage(actor)
+      : { items: [], next: null };
     return {
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
@@ -220,16 +230,8 @@ export class Application {
         : [],
       soldUnits: sold.items,
       soldUnitNext: sold.next,
-      claims: [
-        "admin",
-        "finance",
-        "commercial",
-        "buyer",
-        "warranty",
-        "warehouse",
-      ].includes(actor.role)
-        ? this.warranty.list(actor)
-        : [],
+      claims: claims.items,
+      claimNext: claims.next,
       stock: actor.role === "buyer" ? [] : this.inventory.stock(actor),
     };
   }

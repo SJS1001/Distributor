@@ -27,6 +27,7 @@ import type {
   WarrantyCoverage,
 } from "../shared/warranty-coverage.ts";
 import type { SoldSerial, SoldSerialPage } from "../shared/sold-serials.ts";
+import { claimStates, type ClaimQueueQuery } from "../shared/claim-queue.ts";
 export type Claim = {
   id: string;
   org_id: string;
@@ -243,6 +244,97 @@ export class Warranty {
             actor.role === "buyer" ? [] : this.manufacturerRecords(actor, c.id),
         }));
     });
+  }
+  claimPage(actor: Actor, input: ClaimQueueQuery = {}) {
+    return this.database.transaction(() => {
+      actor = this.authority(actor, [
+        "warranty",
+        "warehouse",
+        "finance",
+        "commercial",
+        "buyer",
+      ]);
+      check(
+        input.state === undefined || claimStates.includes(input.state),
+        "VALIDATION",
+        "Unknown claim state.",
+        400,
+      );
+      const state = input.state ?? null;
+      let before: number | null = null;
+      if (input.after !== undefined) {
+        const token = text(input.after, "Claim cursor", 512);
+        let cursor: unknown;
+        try {
+          const decoded = Buffer.from(token, "base64url");
+          check(
+            decoded.toString("base64url") === token,
+            "VALIDATION",
+            "Invalid claim cursor.",
+            400,
+          );
+          cursor = JSON.parse(decoded.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid claim cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 3 &&
+            cursor[0] === 1 &&
+            cursor[1] === state &&
+            typeof cursor[2] === "string" &&
+            cursor[2].length <= 128,
+          "VALIDATION",
+          "Claim cursor does not match this queue.",
+          400,
+        );
+        // Current authority and custody are checked even when the cursor's state has changed.
+        this.claimRecord(actor, cursor[2]);
+        before = this.store.get<{ position: number }>(
+          "SELECT rowid AS position FROM warranty_claims WHERE org_id=? AND id=?",
+          actor.orgId,
+          cursor[2],
+        )!.position;
+      }
+      const items: ReturnType<Warranty["claimProjection"]>[] = [];
+      for (;;) {
+        const rows = this.store.all<Claim & { position: number }>(
+          `SELECT *,rowid AS position FROM warranty_claims WHERE org_id=?${actor.role === "buyer" ? " AND account_id=?" : ""}${state === null ? "" : " AND state=?"}${before === null ? "" : " AND rowid<?"} ORDER BY rowid DESC LIMIT 21`,
+          actor.orgId,
+          ...(actor.role === "buyer" ? [actor.accountId!] : []),
+          ...(state === null ? [] : [state]),
+          ...(before === null ? [] : [before]),
+        );
+        for (const { position: _, ...claim } of rows) {
+          if (
+            actor.role === "warehouse" &&
+            !actor.sites.includes(
+              this.inventory.unit(actor, claim.unit_id).warehouse_id,
+            )
+          )
+            continue;
+          // Fetch related facts only for the returned page, never for the lookahead.
+          if (items.length === 20)
+            return {
+              items,
+              next: Buffer.from(
+                JSON.stringify([1, state, items[19]!.id]),
+              ).toString("base64url"),
+            };
+          items.push(this.claimProjection(actor, claim));
+        }
+        if (rows.length < 21) return { items, next: null };
+        before = rows.at(-1)!.position;
+      }
+    });
+  }
+  private claimProjection(actor: Actor, claim: Claim) {
+    return {
+      ...claim,
+      replacements: this.replacementRecords(actor, claim.id),
+      manufacturerCases:
+        actor.role === "buyer" ? [] : this.manufacturerRecords(actor, claim.id),
+    };
   }
   replacements(actor: Actor, claimId: string) {
     return this.database.transaction(() =>

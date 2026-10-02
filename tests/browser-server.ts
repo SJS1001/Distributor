@@ -1,3 +1,4 @@
+import { claimQueueBrowser } from "./claim-queue-browser-fixture.ts";
 import {
   setup as canadaPostSetup,
   configurationHash as canadaPostHash,
@@ -888,6 +889,7 @@ const coveragePolicyHttp = await coveragePolicyBrowser((fn) =>
   cleanup.push(fn),
 );
 
+const queueHttp = await claimQueueBrowser((fn) => cleanup.push(fn));
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -913,6 +915,7 @@ const stop = async () => {
   await configurationHttp.close();
   await countPolicyHttp.close();
   await coveragePolicyHttp.close();
+  await queueHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);

@@ -1,3 +1,4 @@
+import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
 import React, { useEffect, useState, useRef } from "react";
@@ -85,6 +86,11 @@ function App() {
     [busy, setBusy] = useState(false),
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({});
+  const claimQueue = useClaimQueue(
+    data?.claims,
+    data?.claimNext,
+    page === "Returns" && !!actor && !busy,
+  );
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -125,6 +131,7 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
     );
@@ -276,6 +283,7 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    claimQueue.stop();
     setCoverageOpen(false);
     coverageOpener.current = null;
     setDecisionClaim(null);
@@ -313,6 +321,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    claimQueue.stop();
     setDialog((current) =>
       current?.title === "Request return or warranty review" ? null : current,
     );
@@ -904,6 +913,7 @@ function App() {
               key={p}
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
+                claimQueue.stop();
                 setPage(p);
                 setDialog((current) =>
                   current?.title === "Request return or warranty review"
@@ -3970,9 +3980,10 @@ function App() {
                 }}
               />
             )}
+            <ClaimQueueControls queue={claimQueue} />
             {table(
               ["Claim", "Customer", "Issue", "State", "Actions"],
-              data.claims,
+              claimQueue.items,
               (c: Item) => [
                 c.id.slice(0, 8),
                 accountName(c.account_id),
@@ -4221,7 +4232,7 @@ function App() {
               </p>
               {table(
                 ["Claim", "Serials / coverage", "State", "Evidence", "Actions"],
-                data.claims.flatMap((c: Item) =>
+                claimQueue.items.flatMap((c: Item) =>
                   (c.replacements ?? []).map((r: Item) => ({ ...r, claim: c })),
                 ),
                 (r: Item) => [
@@ -4412,7 +4423,7 @@ function App() {
                     "Evidence history",
                     "Actions",
                   ],
-                  data.claims.flatMap((c: Item) =>
+                  claimQueue.items.flatMap((c: Item) =>
                     (c.manufacturerCases ?? []).map((m: Item) => ({
                       ...m,
                       claim: c,
