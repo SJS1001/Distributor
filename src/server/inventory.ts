@@ -538,10 +538,14 @@ export class Inventory {
         UNION SELECT r.unit_id,l.unit_id FROM inventory_transfer_recoveries r
         JOIN inventory_transfer_losses x ON x.org_id=r.org_id AND x.id=r.loss_id
         JOIN inventory_transfer_lines l ON l.org_id=x.org_id AND l.id=x.line_id WHERE r.org_id=?
+        UNION SELECT incoming.unit_id,outgoing.unit_id FROM inventory_movements incoming
+        JOIN inventory_movements outgoing ON outgoing.org_id=incoming.org_id AND outgoing.reference=incoming.reference
+        WHERE incoming.org_id=? AND incoming.type='relocation.split.in' AND outgoing.type='relocation.split.out'
       ), lineage(unit_id) AS (
         SELECT ? UNION SELECT e.parent FROM edges e JOIN lineage a ON e.child=a.unit_id
       ) SELECT DISTINCT m.reference FROM lineage a JOIN inventory_movements m ON m.unit_id=a.unit_id
       WHERE m.org_id=? AND m.type='receipt'`,
+      actor.orgId,
       actor.orgId,
       actor.orgId,
       actor.orgId,
@@ -1075,6 +1079,7 @@ export class Inventory {
       bin: string;
       serial: string | null;
       reason: string;
+      quantity?: number;
     },
   ) {
     return this.platform.command(
@@ -1096,6 +1101,17 @@ export class Inventory {
           serial = input.serial === null ? null : text(input.serial, "serial"),
           reason = text(input.reason, "relocation reason", 1000);
         integer(input.revision, "stock revision", 0);
+        const quantity =
+          input.quantity === undefined
+            ? u.quantity
+            : integer(input.quantity, "bin move quantity", 1, 100000);
+        check(
+          quantity > 0 &&
+            quantity <= u.quantity &&
+            (!u.serial || quantity === 1),
+          "STOCK",
+          "Move a positive quantity within this stock record; serialized equipment moves as one unit.",
+        );
         check(
           u.revision === input.revision && u.bin === sourceBin,
           "REVISION",
@@ -1127,32 +1143,81 @@ export class Inventory {
           "Resolve the pending missing-serial review before moving this stock.",
         );
         const relocationId = id(),
-          result = {
-            id: u.id,
-            relocationId,
-            warehouseId: u.warehouse_id,
-            fromBin: sourceBin,
+          partial = quantity < u.quantity;
+        let moved = u;
+        if (partial) {
+          this.store.run(
+            "UPDATE inventory_units SET quantity=quantity-?,revision=revision+1 WHERE org_id=? AND id=?",
+            quantity,
+            actor.orgId,
+            u.id,
+          );
+          const movedId = id();
+          this.store.run(
+            "INSERT INTO inventory_units(id,org_id,product_id,warehouse_id,bin,quantity,cost,condition,state) VALUES(?,?,?,?,?,?,?,?,?)",
+            movedId,
+            actor.orgId,
+            u.product_id,
+            u.warehouse_id,
             bin,
-            serial,
-            quantity: u.quantity,
-            unitCost: u.cost,
-            condition: u.condition,
-            revision: u.revision + 1,
-          };
-        this.store.run(
-          "UPDATE inventory_units SET bin=?,revision=revision+1 WHERE org_id=? AND id=?",
-          bin,
-          actor.orgId,
-          u.id,
-        );
-        this.movement(
-          actor,
-          u,
-          "relocation",
-          0,
+            quantity,
+            u.cost,
+            u.condition,
+            "stock",
+          );
+          moved = this.unit(actor, movedId);
+          const evidence = `${JSON.stringify(sourceBin)} → ${JSON.stringify(bin)}: ${reason}`;
+          this.movement(
+            actor,
+            u,
+            "relocation.split.out",
+            -quantity,
+            relocationId,
+            evidence,
+          );
+          this.movement(
+            actor,
+            moved,
+            "relocation.split.in",
+            quantity,
+            relocationId,
+            evidence,
+          );
+        } else {
+          this.store.run(
+            "UPDATE inventory_units SET bin=?,revision=revision+1 WHERE org_id=? AND id=?",
+            bin,
+            actor.orgId,
+            u.id,
+          );
+          this.movement(
+            actor,
+            u,
+            "relocation",
+            0,
+            relocationId,
+            `${JSON.stringify(sourceBin)} → ${JSON.stringify(bin)}: ${reason}`,
+          );
+        }
+        const result = {
+          id: moved.id,
           relocationId,
-          `${JSON.stringify(sourceBin)} → ${JSON.stringify(bin)}: ${reason}`,
-        );
+          warehouseId: u.warehouse_id,
+          fromBin: sourceBin,
+          bin,
+          serial,
+          quantity,
+          unitCost: u.cost,
+          condition: u.condition,
+          revision: partial ? moved.revision : u.revision + 1,
+          ...(partial
+            ? {
+                sourceUnitId: u.id,
+                sourceQuantity: u.quantity - quantity,
+                sourceRevision: u.revision + 1,
+              }
+            : {}),
+        };
         this.platform.audit(actor, "stock.relocated", relocationId, {
           ...result,
           beforeRevision: u.revision,

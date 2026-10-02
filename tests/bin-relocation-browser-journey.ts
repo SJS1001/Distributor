@@ -176,3 +176,78 @@ test("browser: bin review rejects changed stock, cancellation conserves facts an
   await expect(bulkRow).toContainText("quarantine");
   await expect(bulkRow).toContainText("6 / 0 / 0");
 });
+
+test("browser: phone partial bulk putaway leaves four units and recovers the same two-unit move after a lost response", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, "warehouse@example.test");
+  const lot = (await stock(page)).find((u) => u.serial === null)!;
+  expect(lot.quantity).toBe(6);
+  await page
+    .getByRole("row")
+    .filter({ hasText: "BIN-MOVE-BULK" })
+    .getByRole("button", { name: "Move to bin", exact: true })
+    .click();
+  await expect(
+    dialog(page).getByLabel("Units to move", { exact: true }),
+  ).toHaveValue("6");
+  await fill(page, lot.bin, "PARTIAL-PHONE");
+  await dialog(page).getByLabel("Units to move", { exact: true }).fill("2");
+  const attempts: { key: string; payload: unknown }[] = [];
+  let result: any;
+  await page.route("**/api/commands/stock.relocate", async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"]!,
+      payload: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    if (attempts.length === 1) {
+      result = body;
+      await route.abort("failed");
+    } else {
+      expect(body).toEqual(result);
+      await route.fulfill({ response });
+    }
+  });
+  await dialog(page)
+    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .click();
+  await expect(dialog(page).getByRole("alert")).toBeVisible();
+  await dialog(page)
+    .getByRole("button", { name: "Confirm bin move", exact: true })
+    .click();
+  await expect(dialog(page)).toHaveCount(0);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  expect((attempts[0]!.payload as any).quantity).toBe(2);
+  const lots = (await stock(page)).filter(
+    (u) => u.product_id === lot.product_id,
+  );
+  expect(lots).toHaveLength(2);
+  expect(lots.find((u) => u.id === lot.id)).toEqual({
+    ...lot,
+    quantity: 4,
+    available: 0,
+    revision: lot.revision + 1,
+  });
+  const moved = lots.find((u) => u.id !== lot.id)!;
+  expect([
+    moved.quantity,
+    moved.cost,
+    moved.condition,
+    moved.bin,
+    moved.available,
+    moved.warehouse_id,
+  ]).toEqual([2, 125, "quarantine", "PARTIAL-PHONE", 0, lot.warehouse_id]);
+  await expect(
+    page.getByRole("row").filter({ hasText: "PARTIAL-PHONE" }),
+  ).toContainText("2 / 0 / 0");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});

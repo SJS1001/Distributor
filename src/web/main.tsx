@@ -2323,7 +2323,16 @@ function App() {
                                   scan: "single" as const,
                                 },
                               ]
-                            : []),
+                            : [
+                                {
+                                  name: "quantity",
+                                  label: "Units to move",
+                                  type: "number" as const,
+                                  value: u.quantity,
+                                  min: 1,
+                                  max: u.quantity,
+                                },
+                              ]),
                           reason,
                         ],
                         (v) =>
@@ -2333,7 +2342,7 @@ function App() {
                             revision: u.revision,
                             serial: u.serial ? v.serial : null,
                           }),
-                        `Move all ${u.quantity} units of ${productName(u.product_id)}${u.serial ? `, serial ${u.serial}` : " in this bulk lot"} from ${warehouseName(u.warehouse_id)} / ${u.bin}. Confirm both bins and the physical stock. The warehouse, original cost and condition remain the same. Reserved stock cannot move. For another warehouse, use Transfer.`,
+                        `Move all ${u.quantity} units of ${productName(u.product_id)}${u.serial ? `, serial ${u.serial}` : " in this bulk lot, or select a smaller quantity to leave the remainder in its current bin"} from ${warehouseName(u.warehouse_id)} / ${u.bin}. Confirm both bins and the physical stock. The warehouse, original cost and condition remain the same. Reserved stock cannot move. For another warehouse, use Transfer.`,
                         "Confirm bin move",
                       ),
                     )}

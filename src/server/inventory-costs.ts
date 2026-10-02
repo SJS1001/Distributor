@@ -27,6 +27,8 @@ export const movementSigns: Record<
   count: "either",
   inspection: "zero",
   relocation: "zero",
+  "relocation.split.out": "transfer",
+  "relocation.split.in": "transfer",
   "shortpick.hold": "zero",
   "serial.loss": "negative",
   "serial.recovery": "positive",
@@ -161,8 +163,10 @@ export class InventoryCosts {
           "Stock movement direction conflicts with its custody operation.",
         );
         check(
-          (r.type !== "transfer.dispatch" || r.quantity < 0) &&
-            (r.type !== "transfer.receive" || r.quantity > 0) &&
+          (!["transfer.dispatch", "relocation.split.out"].includes(r.type) ||
+            r.quantity < 0) &&
+            (!["transfer.receive", "relocation.split.in"].includes(r.type) ||
+              r.quantity > 0) &&
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(r.createdAt) &&
             Number.isFinite(Date.parse(r.createdAt)) &&
             new Date(r.createdAt).toISOString() === r.createdAt,

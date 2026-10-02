@@ -85,8 +85,10 @@ export function stockControls(store: Store, actor: Actor): StockControls {
         (sign === "zero" && q !== 0n) ||
         (sign === "positive" && q <= 0n) ||
         (sign === "negative" && q >= 0n) ||
-        (m.type === "transfer.dispatch" && q >= 0n) ||
-        (m.type === "transfer.receive" && q <= 0n)
+        (["transfer.dispatch", "relocation.split.out"].includes(m.type) &&
+          q >= 0n) ||
+        (["transfer.receive", "relocation.split.in"].includes(m.type) &&
+          q <= 0n)
       )
         issues.add("MOVEMENT_DIRECTION", m.id);
       if (

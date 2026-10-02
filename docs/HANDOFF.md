@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — partial bulk-bin moves, 2026-10-02
+
+- Resumed published parent `7060f3f6568dbcbfc00405fc83b732e676995b32` on `codex/local-distributor-checkpoint`. Owner authorized committing and pushing the current Distributor snapshot. GitHub push permission and zero workflows are freshly confirmed; no CI runner, delegated session, provider request, PR, merge or deployment is started.
+- Bulk bin reviews now select a positive quantity, defaulting to the whole lot. Partial moves atomically leave the remainder, create a destination lot and retain paired custody movements at original cost and condition. Repeated splits retain receipt lineage; original whole-record native payloads/results remain compatible. No schema, dependency, license or workflow change.
+- Fresh full native checks pass 1,947/1,947; focused native checks pass 15/15; production Chromium bin journeys pass 3/3. TypeScript, formatting and build exit zero. Existing production bundle and App complexity warnings remain. No full browser-suite rerun is claimed. Exact hashes, commands, outcomes and private failures are recorded in [the partial-move receipt](evidence/LOCAL-PARTIAL-BIN-MOVES-2026-10-02.md) and its machine companion.
+- Self-review covers inventory ownership, fresh retry authority, quantity/serial identity, atomic custody evidence, count invalidation, current reservations and cost/lineage conservation. Native checks include CA/US restart, late-failure rollback and real competing processes; the phone journey loses a committed response and recovers the same two-unit result.
+- Continue dedicated downstream transfer/supplier-return qualification after splits, supplier discontinuation policy and broader receiving/warehouse qualification. Bin directory/capacity, generic dialog payload recovery, real devices/custody, production load/security/residency/providers and operator acceptance remain open. All 44 tasks and 10 gates remain NOT VERIFIED; the full system is incomplete.
+
 ## Latest continuation — purchase descriptors, 2026-10-02
 
 - Resumed published parent 7950f347b83fd70ad519349ee387a443938780e3 on codex/local-distributor-checkpoint under the owner-authorized source/test/documentation push. Fresh repository checks confirm the matching remote, push permission, zero workflows and zero Actions runs. No CI runner, cloud session, delegated agent, provider request, PR, merge or deployment is started.

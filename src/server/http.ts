@@ -719,14 +719,18 @@ export function commands(
       run: (a, k, p) => app.procurement.followups.review(a, k, p),
     },
     "stock.relocate": {
-      schema: obj({
-        unitId: str,
-        revision: num,
-        sourceBin: str,
-        bin: str,
-        serial: { anyOf: [str, { type: "null" }] },
-        reason: str,
-      }),
+      schema: obj(
+        {
+          unitId: str,
+          revision: num,
+          sourceBin: str,
+          bin: str,
+          serial: { anyOf: [str, { type: "null" }] },
+          reason: str,
+          quantity: { type: "integer", minimum: 1, maximum: 100000 },
+        },
+        ["quantity"],
+      ),
       run: (a, k, p) => app.inventory.relocate(a, k, p),
     },
     "stock.inspect": {
