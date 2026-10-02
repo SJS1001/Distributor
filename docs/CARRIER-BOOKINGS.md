@@ -167,6 +167,19 @@ All writes require the existing same-origin session and CSRF checks; command ope
 This is locally tested original synthetic runtime/API work, not carrier acceptance, production activation, operator acceptance, or a passed gate. See the [runtime receipt](evidence/LOCAL-CANADA-POST-RUNTIME-2026-10-01.md). Remaining work includes warehouse batch-selection/group controls, browser recovery and private-document UX, explicit scoped stale-claim operating procedures and actual vendor qualification.
 
 
+## Canada Post configuration for multiple warehouses
+
+Trusted startup configuration now accepts `CANADA_POST_WAREHOUSES_JSON` as an alternative to the single-warehouse fields above. Supply 1–20 registrations in at most 16,384 JSON characters. Each entry has exactly `warehouseId`, `customerNumber`, `contractId`, `company`, `shippingPoint`, `services`, `clientIdEnv` and `clientSecretEnv`. All warehouses must belong to the organization selected by `CARRIER_ORG_ID` in this regional store, and each warehouse appears once. Account, contract, company, shipping point and domestic service mappings are reviewed separately for each origin. The [environment example](../.env.example) shows two registrations.
+
+The credential fields contain names of explicitly supplied environment variables, never secret values. Names must start with `CANADA_POST_`, followed by an uppercase letter and up to 95 uppercase letters, digits or underscores. Referenced credentials undergo the protocol client's existing bounded validation. A customer account can share credential references across warehouse registrations if separately qualified. JSON cannot override the organization, test declaration, gateway or transport. No configuration operation requests tokens, writes native records or starts a worker.
+
+When selecting the list, omit all six legacy origin variables: `CANADA_POST_WAREHOUSE_ID`, `CANADA_POST_CUSTOMER_NUMBER`, `CANADA_POST_CONTRACT_ID`, `CANADA_POST_COMPANY`, `CANADA_POST_SHIPPING_POINT_JSON` and `CANADA_POST_SERVICES_JSON`. Even an empty legacy variable conflicts. `CANADA_POST_CLIENT_ID` and `CANADA_POST_CLIENT_SECRET` can still serve as explicitly named references. An invalid registration rejects the whole startup configuration with sanitized errors; there is no partial registration or automatic fallback.
+
+Existing single-warehouse configuration remains supported. Both modes retain the default-disabled outer carrier/test flags and explicit test-application credential acknowledgment. The runtime captures exact registrations; later environment mutation does not alter the running bindings. List order is irrelevant to group selection. Restarting with a missing warehouse or changed non-secret account/contract/company/shipping-point/service configuration refuses dispatch and recovery before provider I/O. Credential rotation preserves the non-secret configuration hash, but actual replacement credential authority still needs qualification.
+
+The [multiwarehouse local receipt](evidence/LOCAL-CANADA-POST-ORIGINS-2026-10-02.md) covers two separately configured synthetic accounts, native stock at both warehouses, separately purchased labels/manifests, exact native handover and lost-response recovery after a real SQLite restart. It also covers invalid startup, both regional stores, warehouse permissions and no startup I/O/writes. This does not qualify actual Canada Post accounts, provider residency, physical origins, service availability, devices or operators; every product gate remains unverified.
+
+
 ## Canada Post warehouse browser operations
 
 From Orders → Shipments, select **Review Canada Post warehouse groups**, then choose the warehouse. Individual Canada Post booking review also opens the same warehouse interface and shows its active group; an active group suppresses individual pending cancellation. Warehouse changes, navigation, refresh and sign-out discard the old view and abort its reads.
