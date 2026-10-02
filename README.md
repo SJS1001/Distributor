@@ -30,6 +30,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Invoice queue](docs/INVOICE-QUEUES.md) | Scoped twenty-header pages, current balance filters, full receivable totals and credit publication independent of visible invoices |
 | [Stock and replacement search](docs/STOCK-QUEUES.md) | Scoped twenty-record stock pages, full availability totals and independent eligible replacement serial search |
 | [Stock bin movement](docs/BIN-RELOCATION.md) | Reviewed intact-stock relocation, retained locations, exact retries and conserved original cost |
+| [Stock movement history](docs/STOCK-HISTORY.md) | Scoped serial/bulk pages, current positions, original movement costs and exact read retry |
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
 | [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md) | Reviewed local capacity release, retained history and uncertainty/restore refusals |

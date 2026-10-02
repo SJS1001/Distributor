@@ -229,6 +229,9 @@ h2 {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.stock-history {
+  overflow-wrap: anywhere;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;

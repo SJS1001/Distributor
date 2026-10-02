@@ -23,6 +23,11 @@ import { stockControls } from "./inventory-controls.ts";
 import { InventoryCosts } from "./inventory-costs.ts";
 import { Identity } from "./iam.ts";
 import type { CountReviewPolicy } from "./count-policy.ts";
+import type {
+  StockHistoryInput,
+  StockHistoryPage,
+  StockMovement,
+} from "../shared/stock-history.ts";
 export type Unit = {
   id: string;
   org_id: string;
@@ -617,6 +622,104 @@ export class Inventory {
       value: quantity * u.cost,
       revision: u.revision + 1,
     };
+  }
+  movementPage(actor: Actor, input: StockHistoryInput): StockHistoryPage {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, [
+        "warehouse",
+        "commercial",
+        "finance",
+        "warranty",
+        "support",
+      ]);
+      check(
+        (input.unitId !== undefined) !== (input.serial !== undefined),
+        "VALIDATION",
+        "Select exactly one stock record or serial.",
+        400,
+      );
+      const selected =
+        input.unitId !== undefined
+          ? text(input.unitId, "Stock record", 128)
+          : text(input.serial, "Serial");
+      const unit = this.store.get<Unit>(
+        `SELECT * FROM inventory_units WHERE org_id=? AND ${input.unitId !== undefined ? "id" : "serial"}=?`,
+        actor.orgId,
+        selected,
+      );
+      check(unit, "NOT_FOUND", "Stock record not found.", 404);
+      if (actor.role === "warehouse") site(actor, unit.warehouse_id);
+      let where = "org_id=? AND unit_id=?";
+      const parameters: SQLInputValue[] = [actor.orgId, unit.id];
+      if (actor.role === "warehouse") {
+        where += ` AND warehouse_id IN (${actor.sites.map(() => "?").join(",")})`;
+        parameters.push(...actor.sites);
+      }
+      const binding = [
+        1,
+        actor.orgId,
+        unit.id,
+        actor.role === "warehouse" ? [...actor.sites].sort() : null,
+      ];
+      let anchor = Number.MAX_SAFE_INTEGER;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Stock movement cursor", 4096);
+        let cursor: unknown;
+        try {
+          const decoded = Buffer.from(encoded, "base64url");
+          check(
+            decoded.toString("base64url") === encoded,
+            "VALIDATION",
+            "Invalid stock movement cursor.",
+            400,
+          );
+          cursor = JSON.parse(decoded.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid stock movement cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 5 &&
+            canonical(cursor.slice(0, 4)) === canonical(binding) &&
+            typeof cursor[4] === "string" &&
+            cursor[4].length > 0 &&
+            cursor[4].length <= 128,
+          "VALIDATION",
+          "Stock movement cursor does not match this view.",
+          400,
+        );
+        const row = this.store.get<{ position: number }>(
+          `SELECT rowid AS position FROM inventory_movements WHERE ${where} AND id=?`,
+          ...parameters,
+          cursor[4],
+        );
+        check(
+          row,
+          "VALIDATION",
+          "Stock movement cursor is unavailable. Refresh history.",
+          400,
+        );
+        anchor = row.position;
+      }
+      const rows = this.store.all<StockMovement>(
+        `SELECT id,warehouse_id,type,quantity,unit_cost,reference,reason,actor_id,created_at
+         FROM inventory_movements WHERE ${where} AND rowid<? ORDER BY rowid DESC LIMIT 21`,
+        ...parameters,
+        anchor,
+      );
+      const items = rows.slice(0, 20);
+      const { org_id: _org, ...position } = unit;
+      return {
+        unit: position,
+        items,
+        next:
+          rows.length > 20
+            ? Buffer.from(JSON.stringify([...binding, items[19]!.id])).toString(
+                "base64url",
+              )
+            : null,
+      };
+    });
   }
   trace(actor: Actor, serial: string) {
     actor = this.custodyActor(actor, [

@@ -1813,6 +1813,25 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.query.after,
       ),
   );
+  http.get<{
+    Querystring: { unitId?: string; serial?: string; after?: string };
+  }>(
+    "/api/stock/history",
+    {
+      schema: {
+        querystring: obj(
+          {
+            unitId: { type: "string", minLength: 1, maxLength: 128 },
+            serial: { type: "string", minLength: 1, maxLength: 160 },
+            after: { type: "string", minLength: 1, maxLength: 4096 },
+          },
+          ["unitId", "serial", "after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.inventory.movementPage(actor(request), request.query),
+  );
   http.get<{ Params: { serial: string } }>(
     "/api/serials/:serial",
     async (request) =>

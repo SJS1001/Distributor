@@ -3,6 +3,7 @@ import {
   SupplierReturnQueueControls,
 } from "./supplier-return-queue.tsx";
 import { useStockQueue, StockQueueControls } from "./stock-queue.tsx";
+import { StockHistory } from "./stock-history.tsx";
 import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
@@ -122,6 +123,11 @@ function App() {
     page === "Purchasing" && !!actor && !busy,
   );
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [stockHistory, setStockHistory] = useState<{
+    unitId?: string;
+    serial?: string;
+  } | null>(null);
+  const stockHistoryOpener = useRef<HTMLElement | null>(null);
   const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -175,6 +181,8 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    setStockHistory(null);
+    stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
     orderQueue.stop();
@@ -185,6 +193,7 @@ function App() {
     claimQueue.stop();
     setDialog((current) =>
       [
+        "Serial history",
         "Request return or warranty review",
         "Approve replacement reservation",
       ].includes(current?.title ?? "")
@@ -403,6 +412,8 @@ function App() {
     setEvidenceClaim(null);
     setProviderHistoryAccount(null);
     setSupplierHistoryId(null);
+    setStockHistory(null);
+    stockHistoryOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
     setAmendmentOrderId(null);
@@ -426,6 +437,8 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    setStockHistory(null);
+    stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopCatalogRead();
     stopOrderEntryRead();
@@ -1234,9 +1247,12 @@ function App() {
                 stockQueue.stop();
                 claimQueue.stop();
                 setPage(p);
+                setStockHistory(null);
+                stockHistoryOpener.current = null;
                 setPurchaseEntryOpen(false);
                 setDialog((current) =>
                   [
+                    "Serial history",
                     "Review product retirement",
                     "Review product reactivation",
                     "Product lifecycle history",
@@ -2129,7 +2145,9 @@ function App() {
                     "warehouse.create",
                   ),
                 )}
-              {button("Find serial", () =>
+              {button("Find serial", () => {
+                stockHistoryOpener.current =
+                  document.activeElement as HTMLElement;
                 open(
                   "Serial history",
                   [
@@ -2140,25 +2158,28 @@ function App() {
                     },
                   ],
                   async (v) => {
-                    const trace = await request(
-                      `/api/serials/${encodeURIComponent(v.serial)}`,
-                    );
-                    open(
-                      `Serial ${trace.unit.serial}`,
-                      [],
-                      async () => ({}),
-                      trace.movements
-                        .map(
-                          (m: Item) =>
-                            `${new Date(m.created_at).toLocaleString()} · ${m.type} · ${m.quantity} · ${m.reason}`,
-                        )
-                        .join("\n"),
-                    );
+                    setDialog(null);
+                    setStockHistory({ serial: v.serial });
                     return { keepDialog: true };
                   },
-                ),
-              )}
+                  undefined,
+                  "Find movement history",
+                );
+              })}
             </div>
+            {stockHistory && (
+              <StockHistory
+                key={JSON.stringify(stockHistory)}
+                selection={stockHistory}
+                currency={data.organization.currency}
+                productName={productName}
+                warehouseName={warehouseName}
+                onClose={() => {
+                  setStockHistory(null);
+                  stockHistoryOpener.current?.focus();
+                }}
+              />
+            )}
             <StockQueueControls
               queue={stockQueue}
               products={data.products}
@@ -2184,6 +2205,11 @@ function App() {
                 u.condition,
                 `${u.quantity} / ${u.reserved} / ${u.available}`,
                 <div className="actions">
+                  {button("Movement history", () => {
+                    stockHistoryOpener.current =
+                      document.activeElement as HTMLElement;
+                    setStockHistory({ unitId: u.id });
+                  })}
                   {can("warehouse") &&
                     u.state === "stock" &&
                     !u.serial &&
@@ -6052,6 +6078,10 @@ function App() {
           }}
           submit={async (values) => {
             try {
+              if (dialog.title === "Serial history") {
+                await dialog.perform(values);
+                return;
+              }
               const result = await run(() => dialog.perform(values));
               if (!(result as Item)?.keepDialog) setDialog(null);
             } catch {}
