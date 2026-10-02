@@ -6,7 +6,7 @@ Commercial staff and administrators can open **Purchasing → Purchase order**, 
 
 **Review purchase order** shows supplier, warehouse, individual quantities and costs, and an exact total of the entered line costs. Tax, freight and supplier payments are not added. **Edit purchase lines** returns to the same quantities before submission. Canceling an unsubmitted review creates no order. **Create reviewed purchase order** invokes the existing native purchasing command. Creating an order does not receive stock; use separate receipt/scanning controls for partial deliveries, inspection and original-cost movements.
 
-The catalog includes products retired for customer ordering and labels them accordingly. Retirement currently prevents new customer quotes/acceptance; it is not an approved supplier purchasing discontinuation rule. Saved receipt drafts retain their existing active-product/SKU checks. An operator must resolve any retired-product receiving restriction before using that draft workflow; this editor does not change it.
+The catalog includes products retired for customer ordering and labels them accordingly. Retirement currently prevents new customer quotes/acceptance; it is not an approved supplier purchasing discontinuation rule. Saved and new receipt drafts can receive these native purchase commitments without reactivating customer ordering. Exact purchase-line SKU, remaining quantity, unique new serial, original cost and current-authority checks still apply; retirement does not cancel a purchase commitment. See [retired-product receiving evidence](evidence/LOCAL-RETIRED-RECEIVING-2026-10-02.md).
 
 ## Find a supplier
 

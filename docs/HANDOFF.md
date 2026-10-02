@@ -1,5 +1,15 @@
 # Distributor setup handoff
 
+## Latest continuation — retired-product receiving, 2026-10-02
+
+- Resumed published parent 3b5c3c5fa7da0974a1d46f77660f19a7c12f383a on codex/local-distributor-checkpoint under the owner-authorized source/test/documentation push. Fresh GitHub checks confirm the matching remote, push permission, zero workflows and zero Actions runs. No CI runner, cloud session, delegated agent, provider request, PR, merge or deployment is started.
+- Scanned purchase receipt drafts now receive existing native commitments after customer-ordering retirement. Only the active-product condition was removed; exact SKU, remaining quantity, unique new serials, fresh authority, original cost, quarantine and atomic confirmation remain enforced. Saved/new partial drafts retain immutable versions and exact retries without reactivating customer ordering. No schema, dependency, license or browser application change.
+- Fresh full native suite passes 1,939/1,939; full production Chromium passes 131/131. Focused native checks pass 26/26 and the new phone browser journey passes 1/1. TypeScript and formatting exit zero. Production build keeps the existing large-bundle warning; no fresh React scan is claimed. Exact inputs and private artifacts are in [the local receipt](evidence/LOCAL-RETIRED-RECEIVING-2026-10-02.md) and its machine companion.
+- Four new CA/US serialized/bulk restart checks reconcile three units/12,963 regional cents at the purchase cost of 4,321 cents through two receipts, with no customer order/invoice. The warehouse browser checks saved scans, reload, lost committed confirmation response, exact retry, wrong-SKU refusal, second delivery, permanent original-cost movements and retained retirement.
+- Initial retirement failures, corrected tuple-inference test compilation failures and an intermediate ambiguous draft/receipt row assertion remain private under /tmp/distributor-retired-receiving-checkpoint. Self-review covers authority before cached results, module ownership, SKU/serial identity, quantity/cost conservation, separate confirmation, immutable versions and publication exclusions.
+- Continue with retired-product descriptors in purchase queues/receipt line selectors (currently can fall back to an identifier), separate supplier discontinuation policy and broader receiving qualification. Actual supplier custody, physical devices, production load/recovery, providers/residency and human acceptance remain open. All 44 tasks and 10 gates remain NOT VERIFIED; the full system is incomplete.
+
+
 ## Latest continuation — browser serial dossier, 2026-10-02
 
 - Resumed published parent ce970ac756d960f9c6f4604e43edddfaefdb38e1 on codex/local-distributor-checkpoint. The owner authorized committing the current Distributor snapshot to GitHub. Push permission, the matching public repository and zero workflows/runs are freshly checked. No CI runner, cloud session, delegated agent, provider request, PR, merge or deployment is started.

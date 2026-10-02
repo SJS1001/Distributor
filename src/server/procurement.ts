@@ -179,7 +179,7 @@ export class Procurement {
     check(line, "NOT_FOUND", "Purchase line not found.", 404);
     const product = this.catalog.product(actor, String(line.product_id));
     check(
-      product.active && text(input.observedSku, "observed SKU") === product.sku,
+      text(input.observedSku, "observed SKU") === product.sku,
       "SKU",
       "Observed SKU must match the selected purchase line.",
     );
