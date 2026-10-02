@@ -1,3 +1,4 @@
+import type { FulfillmentSalesEvidence } from "./sales-evidence.ts";
 import {
   account,
   check,
@@ -126,6 +127,16 @@ export class Fulfillment {
         now(),
         "legacy",
       );
+  }
+  // Internal sales controls; never project addresses, tracking or serials to the report.
+  salesEvidence(actor: Actor): FulfillmentSalesEvidence {
+    permit(actor, ["finance"]);
+    return this.store.all(
+      `SELECT id,order_id AS "order",account_id AS account,warehouse_id AS warehouse,
+       state,invoice_id AS invoice,lines,units
+       FROM fulfillment_shipments WHERE org_id=? ORDER BY rowid`,
+      actor.orgId,
+    );
   }
   shipment(actor: Actor, shipmentId: string): Shipment {
     const row = this.store.get<Shipment>(

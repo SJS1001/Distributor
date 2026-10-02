@@ -161,6 +161,7 @@ for (const region of ["CA", "US"] as const)
       assert.equal(r.stock.quantity, "2");
       assert.equal(r.stock.value, "12000");
       assert.equal(r.stock.issues.count, 0);
+      assert.equal(r.sales.issues.count, 0);
       assert.deepEqual(r.billing, {
         invoices: 1,
         credits: 1,
@@ -191,6 +192,7 @@ for (const region of ["CA", "US"] as const)
       const restarted = f.app.reconciliation(f.actor);
       assert.deepEqual(restarted.billing, completed.billing);
       assert.deepEqual(restarted.stock, completed.stock);
+      assert.deepEqual(restarted.sales, completed.sales);
     } finally {
       db.close();
     }
@@ -240,6 +242,10 @@ test("reconciliation: historical opening credits/payments/refunds are independen
   assert.equal(r.billing.balance, "7300");
   assert.equal(r.billing.issues.count, 0);
   assert.equal(r.stock.quantity, "3");
+  assert.equal(r.sales.openingInvoices, 1);
+  assert.equal(r.sales.invoices, 0);
+  assert.equal(r.sales.invoiceNet, "0");
+  assert.equal(r.sales.issues.count, 0);
   assert(!JSON.stringify(r).includes("PRIVATE-"));
 });
 

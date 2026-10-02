@@ -1,3 +1,4 @@
+import type { BillingSalesEvidence } from "./sales-evidence.ts";
 import {
   account,
   check,
@@ -182,6 +183,25 @@ export class Billing {
           creditable_quantity: Number(line.quantity) - historical - subsequent,
         };
       });
+  }
+  // Opening provenance, rather than an ID prefix, distinguishes historical documents.
+  salesEvidence(actor: Actor): BillingSalesEvidence {
+    permit(actor, ["finance"]);
+    return {
+      invoices: this.store.all(
+        `SELECT i.id,i.order_id AS "order",i.shipment_id AS shipment,i.account_id AS account,i.currency,
+         CASE WHEN o.invoice_id IS NULL THEN 0 ELSE 1 END AS opening
+         FROM billing_invoices i LEFT JOIN billing_opening_documents o ON o.org_id=i.org_id AND o.invoice_id=i.id
+         WHERE i.org_id=? ORDER BY i.rowid`,
+        actor.orgId,
+      ),
+      lines: this.store.all(
+        `SELECT id,invoice_id AS invoice,product_id AS product,CAST(quantity AS TEXT) AS quantity,
+         CAST(unit_price AS TEXT) AS price,CAST(unit_tax AS TEXT) AS tax
+         FROM billing_lines WHERE org_id=? ORDER BY rowid`,
+        actor.orgId,
+      ),
+    };
   }
   // Internal owning operation: Application.reconciliation supplies authority and snapshot.
   controlTotals(actor: Actor, currency: string) {

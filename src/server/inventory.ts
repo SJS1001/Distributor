@@ -1,3 +1,4 @@
+import type { InventorySalesEvidence } from "./sales-evidence.ts";
 import {
   canonical,
   check,
@@ -433,6 +434,26 @@ export class Inventory {
         "SELECT * FROM inventory_movements WHERE org_id=? AND unit_id=? ORDER BY created_at,rowid",
         actor.orgId,
         unit.id,
+      ),
+    };
+  }
+  // Internal sales controls from inventory-owned allocations and shipment deductions.
+  salesEvidence(actor: Actor): InventorySalesEvidence {
+    permit(actor, ["finance"]);
+    return {
+      allocations: this.store.all(
+        `SELECT a.id,a.order_id AS "order",a.product_id AS product,a.warehouse_id AS warehouse,
+         a.unit_id AS unit,CAST(a.consumed AS TEXT) AS consumed,u.product_id AS unitProduct
+         FROM inventory_allocations a LEFT JOIN inventory_units u ON u.org_id=a.org_id AND u.id=a.unit_id
+         WHERE a.org_id=? ORDER BY a.rowid`,
+        actor.orgId,
+      ),
+      movements: this.store.all(
+        `SELECT m.id,m.reference AS shipment,m.unit_id AS unit,u.product_id AS product,
+         m.warehouse_id AS warehouse,CAST(m.quantity AS TEXT) AS quantity,CAST(m.unit_cost AS TEXT) AS cost
+         FROM inventory_movements m LEFT JOIN inventory_units u ON u.org_id=m.org_id AND u.id=m.unit_id
+         WHERE m.org_id=? AND m.type='shipment' ORDER BY m.rowid`,
+        actor.orgId,
       ),
     };
   }

@@ -33,10 +33,27 @@ export type BillingControls = {
   uncertainRefunds: string;
   issues: ControlIssues;
 };
+export type SalesControls = {
+  orders: number;
+  shipments: number;
+  invoices: number;
+  openingInvoices: number;
+  allocations: number;
+  movements: number;
+  shippedQuantity: string;
+  shippedCost: string;
+  movementQuantity: string;
+  movementCost: string;
+  invoicedQuantity: string;
+  invoiceNet: string;
+  invoiceTax: string;
+  issues: ControlIssues;
+};
 export type Reconciliation = {
   version: 1;
   checkedAt: string;
   currency: string;
   stock: StockControls;
   billing: BillingControls;
+  sales: SalesControls;
 };

@@ -95,9 +95,9 @@ export function ReconciliationPanel() {
         change organization-wide quantity or value.
       </p>
       <p>
-        These controls compare stock by product and native billing records. They
-        do not verify physical counts, shipment-to-invoice agreement, bank
-        statements or provider balances.
+        These controls compare stock by product, native billing records and
+        agreement between orders, shipments, stock deductions and invoices. They
+        do not verify physical counts, bank statements or provider balances.
       </p>
       <button onClick={() => void load()} disabled={busy}>
         Run reconciliation
@@ -112,7 +112,10 @@ export function ReconciliationPanel() {
         <>
           <p role="status">
             Checked {data.checkedAt} · {data.currency} ·{" "}
-            {data.stock.issues.count + data.billing.issues.count} discrepancies
+            {data.stock.issues.count +
+              data.billing.issues.count +
+              data.sales.issues.count}{" "}
+            discrepancies
           </p>
           <h3>Stock controls</h3>
           <dl>
@@ -153,6 +156,30 @@ export function ReconciliationPanel() {
             requests
           </p>
           <Issues name="Billing" issues={data.billing.issues} />
+          <h3>Sales agreement controls</h3>
+          <dl>
+            <dt>Shipped quantity</dt>
+            <dd>{data.sales.shippedQuantity}</dd>
+            <dt>Stock deduction quantity</dt>
+            <dd>{data.sales.movementQuantity}</dd>
+            <dt>Invoiced quantity</dt>
+            <dd>{data.sales.invoicedQuantity}</dd>
+            <dt>Shipped original cost</dt>
+            <dd>{money(data.sales.shippedCost, data.currency)}</dd>
+            <dt>Stock deduction original cost</dt>
+            <dd>{money(data.sales.movementCost, data.currency)}</dd>
+            <dt>Regional native invoice line net</dt>
+            <dd>{money(data.sales.invoiceNet, data.currency)}</dd>
+            <dt>Regional native invoice line tax</dt>
+            <dd>{money(data.sales.invoiceTax, data.currency)}</dd>
+          </dl>
+          <p>
+            {data.sales.orders} orders · {data.sales.shipments} committed
+            shipments · {data.sales.invoices} native invoices ·{" "}
+            {data.sales.openingInvoices} historical opening invoices excluded
+            from sales agreement
+          </p>
+          <Issues name="Sales agreement" issues={data.sales.issues} />
         </>
       )}
     </section>

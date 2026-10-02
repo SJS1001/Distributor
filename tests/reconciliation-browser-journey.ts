@@ -29,8 +29,35 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
   });
   await expect(panel).toContainText("Stock discrepancies: 2");
   await expect(panel).toContainText("Billing discrepancies: 0");
+  await expect(panel).toContainText("Sales agreement discrepancies: 2");
+  await expect(panel).toContainText("SALE INVOICE PRICE");
+  await expect(panel).toContainText("SALE INVOICE TAX");
   await expect(panel).toContainText("PRODUCT QUANTITY");
   await expect(panel).toContainText("PRODUCT VALUE");
+  await expect(
+    panel
+      .locator("dt")
+      .filter({ hasText: /^Regional native invoice line net$/ })
+      .locator("+ dd"),
+  ).toHaveText("CAD 90.00");
+  await expect(
+    panel
+      .locator("dt")
+      .filter({ hasText: /^Regional native invoice line tax$/ })
+      .locator("+ dd"),
+  ).toHaveText("CAD 23.00");
+  await expect(
+    panel
+      .locator("dt")
+      .filter({ hasText: /^Shipped quantity$/ })
+      .locator("+ dd"),
+  ).toHaveText("1");
+  await expect(
+    panel
+      .locator("dt")
+      .filter({ hasText: /^Stock deduction quantity$/ })
+      .locator("+ dd"),
+  ).toHaveText("1");
   await expect(
     panel
       .locator("dt")
@@ -92,6 +119,9 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
     .getByRole("button", { name: "Run reconciliation", exact: true })
     .click();
   await expect(panel).toContainText("Billing discrepancies: 0");
+  await expect(panel).toContainText("Sales agreement discrepancies: 2");
+  await expect(panel).toContainText("SALE INVOICE PRICE");
+  await expect(panel).toContainText("SALE INVOICE TAX");
   await page.unroute("**/api/operations/reconciliation");
   let entered!: () => void, release!: () => void;
   const started = new Promise<void>((resolve) => {

@@ -1,3 +1,4 @@
+import type { OrderSalesEvidence } from "./sales-evidence.ts";
 import {
   account,
   check,
@@ -83,6 +84,23 @@ export class Orders {
     CREATE TABLE IF NOT EXISTS orders_reservation_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,order_id TEXT NOT NULL,revision INTEGER NOT NULL,action TEXT NOT NULL CHECK(action IN('deadline','expire')),before_expires_at INTEGER,expires_at INTEGER,lines TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(order_id,revision)) STRICT;
     CREATE INDEX IF NOT EXISTS orders_reservation_history_page ON orders_reservation_history(org_id,order_id,revision);
   `);
+  }
+  // Internal sales controls; the caller supplies fresh authority and a snapshot.
+  salesEvidence(actor: Actor): OrderSalesEvidence {
+    permit(actor, ["finance"]);
+    return {
+      orders: this.store.all(
+        `SELECT id,account_id AS account,warehouse_id AS warehouse,currency
+         FROM orders_orders WHERE org_id=? ORDER BY rowid`,
+        actor.orgId,
+      ),
+      lines: this.store.all(
+        `SELECT id,order_id AS "order",product_id AS product,
+         CAST(shipped AS TEXT) AS shipped,CAST(unit_price AS TEXT) AS price,CAST(unit_tax AS TEXT) AS tax
+         FROM orders_lines WHERE org_id=? ORDER BY rowid`,
+        actor.orgId,
+      ),
+    };
   }
   order(actor: Actor, orderId: string): Order {
     const row = this.store.get<Order>(

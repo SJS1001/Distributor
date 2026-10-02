@@ -1,3 +1,4 @@
+import { salesControls } from "./sales-controls.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
 import { check, permit, now, type Actor, type Role } from "./core.ts";
 import { Database } from "./database.ts";
@@ -204,6 +205,13 @@ export class Application {
         currency,
         stock: this.inventory.controlTotals(current),
         billing: this.billing.controlTotals(current, currency),
+        sales: salesControls(
+          this.orders.salesEvidence(current),
+          this.fulfillment.salesEvidence(current),
+          this.inventory.salesEvidence(current),
+          this.billing.salesEvidence(current),
+          currency,
+        ),
       };
     });
   }
