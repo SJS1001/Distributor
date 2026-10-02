@@ -111,6 +111,7 @@ test("customer and catalog dry runs are immutable; atomic creation preserves ind
       }).id,
     ]),
   );
+  const beforeStock = f.app.inventory.stock(f.actor);
   const before = f.app.dashboard(f.actor),
     users = f.app.database.owned("iam").all("SELECT id FROM iam_users");
   for (const kind of ["customer", "catalog"] as const) {
@@ -218,7 +219,7 @@ test("customer and catalog dry runs are immutable; atomic creation preserves ind
     12000,
   );
   assert.equal(products.filter((p) => p.serialized).length, 1);
-  assert.deepEqual(f.app.inventory.stock(f.actor), before.stock);
+  assert.deepEqual(f.app.inventory.stock(f.actor), beforeStock);
   assert.equal(f.app.billing.invoices(f.actor).length, 0);
   assert.deepEqual(
     f.app.database.owned("iam").all("SELECT id FROM iam_users"),

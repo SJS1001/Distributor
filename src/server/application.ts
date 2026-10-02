@@ -265,6 +265,10 @@ export class Application {
     const invoices = canReadInvoices
       ? this.billing.invoicePage(actor)
       : { items: [], next: null };
+    const stock =
+      actor.role === "buyer"
+        ? { items: [], next: null }
+        : this.inventory.stockPage(actor);
     return {
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
@@ -289,7 +293,12 @@ export class Application {
       soldUnitNext: sold.next,
       claims: claims.items,
       claimNext: claims.next,
-      stock: actor.role === "buyer" ? [] : this.inventory.stock(actor),
+      stock: stock.items,
+      stockNext: stock.next,
+      stockSummary:
+        actor.role === "buyer"
+          ? { available: 0 }
+          : this.inventory.stockSummary(actor),
     };
   }
   close() {

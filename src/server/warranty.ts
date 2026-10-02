@@ -513,6 +513,27 @@ export class Warranty {
     );
     this.decision(actor, r.claim_id, `replacement.${r.state}`, reason);
   }
+  replacementCandidatePage(
+    actor: Actor,
+    claimId: string,
+    input: { after?: string; query?: string } = {},
+  ) {
+    return this.database.transaction(() => {
+      actor = this.authority(actor, ["warranty"]);
+      const c = this.claimRecord(actor, claimId);
+      check(
+        ["inspected", "repair"].includes(c.state),
+        "STATE",
+        "Replacement requires an inspected return or completed repair review.",
+      );
+      check(
+        !c.credit_id && !this.hasReplacement(actor, c.id),
+        "REMEDY",
+        "Claim already has a credit or active replacement.",
+      );
+      return this.inventory.replacementCandidates(actor, c.unit_id, input);
+    });
+  }
   reserveReplacement(
     actor: Actor,
     key: string,

@@ -1,4 +1,8 @@
 import {
+  stockQueueViews,
+  type StockQueueInput,
+} from "../shared/stock-queue.ts";
+import {
   invoiceQueueStates,
   type InvoiceQueueState,
 } from "../shared/invoice-queue.ts";
@@ -1860,6 +1864,48 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .header("x-download-receipt", result.receipt.id)
         .send(result.bytes);
     },
+  );
+  http.get<{ Querystring: StockQueueInput }>(
+    "/api/stock/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 4096 },
+            query: { type: "string", maxLength: 100 },
+            productId: { type: "string", minLength: 1, maxLength: 128 },
+            warehouseId: { type: "string", minLength: 1, maxLength: 128 },
+            view: choice(...stockQueueViews),
+          },
+          ["after", "query", "productId", "warehouseId", "view"],
+        ),
+      },
+    },
+    async (request) => app.inventory.stockPage(actor(request), request.query),
+  );
+  http.get<{
+    Params: { claimId: string };
+    Querystring: { after?: string; query?: string };
+  }>(
+    "/api/warranty/claims/:claimId/replacement-candidates",
+    {
+      schema: {
+        params: obj({ claimId: str }),
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 4096 },
+            query: { type: "string", maxLength: 100 },
+          },
+          ["after", "query"],
+        ),
+      },
+    },
+    async (request) =>
+      app.warranty.replacementCandidatePage(
+        actor(request),
+        request.params.claimId,
+        request.query,
+      ),
   );
   http.get("/api/stock/labels", async (request) =>
     app.labels.downloads(actor(request)),

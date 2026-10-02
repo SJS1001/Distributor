@@ -1,3 +1,5 @@
+import { useStockQueue, StockQueueControls } from "./stock-queue.tsx";
+import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
 import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
@@ -109,6 +111,11 @@ function App() {
     data?.invoiceNext,
     page === "Billing" && !!actor && !busy,
   );
+  const stockQueue = useStockQueue(
+    data?.stock,
+    data?.stockNext,
+    page === "Inventory" && !!actor && !busy,
+  );
   const purchaseQueue = usePurchaseQueue(
     extra.purchases?.orders,
     extra.purchases?.orderNext,
@@ -165,9 +172,15 @@ function App() {
     orderQueue.stop();
     purchaseQueue.stop();
     invoiceQueue.stop();
+    stockQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
-      current?.title === "Request return or warranty review" ? null : current,
+      [
+        "Request return or warranty review",
+        "Approve replacement reservation",
+      ].includes(current?.title ?? "")
+        ? null
+        : current,
     );
     setCoverageOpen(false);
     coverageOpener.current = null;
@@ -358,6 +371,7 @@ function App() {
     orderQueue.stop();
     purchaseQueue.stop();
     invoiceQueue.stop();
+    stockQueue.stop();
     claimQueue.stop();
     setCoverageOpen(false);
     coverageOpener.current = null;
@@ -401,9 +415,15 @@ function App() {
     orderQueue.stop();
     purchaseQueue.stop();
     invoiceQueue.stop();
+    stockQueue.stop();
     claimQueue.stop();
     setDialog((current) =>
-      current?.title === "Request return or warranty review" ? null : current,
+      [
+        "Request return or warranty review",
+        "Approve replacement reservation",
+      ].includes(current?.title ?? "")
+        ? null
+        : current,
     );
     setCoverageOpen(false);
     coverageOpener.current = null;
@@ -998,10 +1018,14 @@ function App() {
                 orderQueue.stop();
                 purchaseQueue.stop();
                 invoiceQueue.stop();
+                stockQueue.stop();
                 claimQueue.stop();
                 setPage(p);
                 setDialog((current) =>
-                  current?.title === "Request return or warranty review"
+                  [
+                    "Request return or warranty review",
+                    "Approve replacement reservation",
+                  ].includes(current?.title ?? "")
                     ? null
                     : current,
                 );
@@ -1113,15 +1137,7 @@ function App() {
                   ).length,
                 ],
                 ...(staff
-                  ? [
-                      [
-                        "Available units",
-                        data.stock.reduce(
-                          (s: number, u: Item) => s + u.available,
-                          0,
-                        ),
-                      ],
-                    ]
+                  ? [["Available units", data.stockSummary.available]]
                   : []),
               ].map(([label, value]) => (
                 <section key={String(label)}>
@@ -1928,6 +1944,11 @@ function App() {
                 ),
               )}
             </div>
+            <StockQueueControls
+              queue={stockQueue}
+              products={data.products}
+              warehouses={data.warehouses}
+            />
             {table(
               [
                 "Product / serial",
@@ -1936,7 +1957,7 @@ function App() {
                 "Book quantity / reserved / available",
                 "Actions",
               ],
-              data.stock,
+              stockQueue.items,
               (u: Item) => [
                 <>
                   <strong>{productName(u.product_id)}</strong>
@@ -4231,23 +4252,16 @@ function App() {
                       open(
                         "Approve replacement reservation",
                         [
-                          select(
-                            "newUnitId",
-                            "Replacement serial",
-                            data.stock.filter(
-                              (u: Item) =>
-                                u.serial &&
-                                u.state === "stock" &&
-                                u.condition === "usable" &&
-                                u.available === 1 &&
-                                u.product_id ===
-                                  data.stock.find(
-                                    (o: Item) => o.id === c.unit_id,
-                                  )?.product_id,
+                          {
+                            name: "newUnitId",
+                            label: "Replacement serial",
+                            content: (
+                              <ReplacementSerialSelect
+                                claimId={c.id}
+                                warehouseName={warehouseName}
+                              />
                             ),
-                            (u) =>
-                              `${u.serial} · ${warehouseName(u.warehouse_id)}`,
-                          ),
+                          },
                           {
                             name: "oldDisposition",
                             label: "Returned unit at handover",
@@ -4533,6 +4547,7 @@ function App() {
                       orderQueue.stop();
                       purchaseQueue.stop();
                       invoiceQueue.stop();
+                      stockQueue.stop();
                       claimQueue.stop();
                       setPage("Orders");
                       setCanadaPostWarehouse(warehouseId);

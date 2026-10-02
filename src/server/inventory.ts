@@ -1,5 +1,10 @@
 import type { InventorySalesEvidence } from "./sales-evidence.ts";
 import {
+  stockQueueViews,
+  type StockQueueInput,
+} from "../shared/stock-queue.ts";
+import type { SQLInputValue } from "node:sqlite";
+import {
   canonical,
   check,
   digest,
@@ -137,7 +142,7 @@ export class Inventory {
   private store: Store;
   readonly costs: InventoryCosts;
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private catalog: Catalog,
     private identity: Identity,
@@ -317,6 +322,187 @@ export class Inventory {
             ? u.quantity - this.reserved(u.id)
             : 0,
       }));
+  }
+  private stockScope(actor: Actor, restrictSites = false) {
+    const parameters: SQLInputValue[] = [actor.orgId];
+    let where = "u.org_id=?";
+    if (
+      actor.role === "warehouse" ||
+      (restrictSites && actor.role !== "admin")
+    ) {
+      where += actor.sites.length
+        ? ` AND u.warehouse_id IN (${actor.sites.map(() => "?").join(",")})`
+        : " AND 0=1";
+      parameters.push(...actor.sites);
+    }
+    return { where, parameters };
+  }
+  private stockBalances(where: string) {
+    return `WITH held AS (
+      SELECT u.*,
+        COALESCE((SELECT SUM(a.quantity-a.consumed-a.released) FROM inventory_allocations a WHERE a.org_id=u.org_id AND a.unit_id=u.id),0)
+        +(SELECT COUNT(*) FROM inventory_replacements r WHERE r.org_id=u.org_id AND r.unit_id=u.id AND r.state='reserved') AS reserved
+      FROM inventory_units u WHERE ${where}
+    ), balances AS (
+      SELECT *,CASE WHEN state='stock' AND condition='usable' THEN quantity-reserved ELSE 0 END AS available FROM held
+    )`;
+  }
+  stockPage(actor: Actor, input: StockQueueInput = {}) {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, [
+        "warehouse",
+        "commercial",
+        "finance",
+        "warranty",
+        "support",
+      ]);
+      return this.stockRecords(actor, input, "stock");
+    });
+  }
+  stockSummary(actor: Actor) {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, [
+        "warehouse",
+        "commercial",
+        "finance",
+        "warranty",
+        "support",
+      ]);
+      const scope = this.stockScope(actor);
+      const row = this.store.get(
+        `${this.stockBalances(scope.where)} SELECT COALESCE(SUM(MAX(0,available)),0) AS available FROM balances`,
+        ...scope.parameters,
+      )!;
+      return { available: Number(row.available) };
+    });
+  }
+  // Called by warranty inside its claim review transaction. Inventory resolves
+  // product/custody and eligible stock; warranty owns the claim/remedy decision.
+  replacementCandidates(
+    actor: Actor,
+    oldUnitId: string,
+    input: { after?: string; query?: string } = {},
+  ) {
+    actor = this.custodyActor(actor, ["warranty"]);
+    const old = this.unit(actor, text(oldUnitId, "Returned unit", 128));
+    site(actor, old.warehouse_id);
+    check(
+      old.state === "stock" &&
+        old.condition === "quarantine" &&
+        old.serial &&
+        old.quantity === 1,
+      "STATE",
+      "Returned serial must remain in quarantine.",
+    );
+    return this.stockRecords(
+      actor,
+      { ...input, productId: old.product_id },
+      `replacement:${old.id}`,
+    );
+  }
+  private stockRecords(actor: Actor, input: StockQueueInput, purpose: string) {
+    const query =
+      input.query === undefined || input.query.trim() === ""
+        ? ""
+        : text(input.query, "Stock search", 100);
+    const productId =
+      input.productId === undefined
+        ? null
+        : text(input.productId, "Product", 128);
+    const warehouseId =
+      input.warehouseId === undefined
+        ? null
+        : text(input.warehouseId, "Warehouse", 128);
+    const view = input.view ?? null;
+    check(
+      view === null || stockQueueViews.includes(view),
+      "VALIDATION",
+      "Choose a supported stock view.",
+      400,
+    );
+    if (productId) this.catalog.product(actor, productId);
+    if (warehouseId) {
+      this.warehouse(actor, warehouseId);
+      if (actor.role === "warehouse" || purpose !== "stock")
+        site(actor, warehouseId);
+    }
+    const binding = [1, purpose, query, productId, warehouseId, view];
+    let anchor: Unit | undefined;
+    if (input.after !== undefined) {
+      const encoded = text(input.after, "Stock cursor", 4096);
+      let cursor: unknown;
+      try {
+        const decoded = Buffer.from(encoded, "base64url");
+        check(
+          decoded.toString("base64url") === encoded,
+          "VALIDATION",
+          "Invalid stock cursor.",
+          400,
+        );
+        cursor = JSON.parse(decoded.toString("utf8"));
+      } catch {
+        check(false, "VALIDATION", "Invalid stock cursor.", 400);
+      }
+      check(
+        Array.isArray(cursor) &&
+          cursor.length === 7 &&
+          JSON.stringify(cursor.slice(0, 6)) === JSON.stringify(binding) &&
+          typeof cursor[6] === "string" &&
+          cursor[6].length > 0 &&
+          cursor[6].length <= 128,
+        "VALIDATION",
+        "Stock cursor does not match this search.",
+        400,
+      );
+      anchor = this.unit(actor, cursor[6]);
+      // A live change may remove the anchor from this filter. Recheck current
+      // custody before allowing continuation, independently of its condition.
+      if (actor.role === "warehouse" || purpose !== "stock")
+        site(actor, anchor.warehouse_id);
+    }
+    const scope = this.stockScope(actor, purpose !== "stock");
+    if (productId) {
+      scope.where += " AND u.product_id=?";
+      scope.parameters.push(productId);
+    }
+    if (warehouseId) {
+      scope.where += " AND u.warehouse_id=?";
+      scope.parameters.push(warehouseId);
+    }
+    if (query) {
+      scope.where +=
+        " AND (instr(lower(COALESCE(u.serial,'')),lower(?))>0 OR instr(lower(u.bin),lower(?))>0)";
+      scope.parameters.push(query, query);
+    }
+    let where =
+      view === "available"
+        ? "available>0"
+        : view === "quarantine" || view === "damaged"
+          ? `state='stock' AND condition='${view}'`
+          : view
+            ? `state='${view}'`
+            : "1=1";
+    if (purpose !== "stock")
+      where +=
+        " AND serial IS NOT NULL AND state='stock' AND condition='usable' AND quantity=1 AND reserved=0";
+    if (anchor) {
+      where += " AND id>?";
+      scope.parameters.push(anchor.id);
+    }
+    const rows = this.store.all<Unit & { reserved: number; available: number }>(
+      `${this.stockBalances(scope.where)} SELECT * FROM balances WHERE ${where} ORDER BY id LIMIT 21`,
+      ...scope.parameters,
+    );
+    const items = rows.slice(0, 20).map((row) => ({ ...row }));
+    return {
+      items,
+      next:
+        rows.length > 20
+          ? Buffer.from(JSON.stringify([...binding, items[19]!.id])).toString(
+              "base64url",
+            )
+          : null,
+    };
   }
   availability(actor: Actor, productId: string, warehouseId: string) {
     actor = this.custodyReader(actor);

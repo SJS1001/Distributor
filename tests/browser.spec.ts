@@ -1,3 +1,5 @@
+import { stockFactsDashboard } from "./stock-browser-facts.ts";
+import "./stock-queue-browser-journey.ts";
 import "./invoice-queue-browser-journey.ts";
 import "./purchase-queue-browser-journey.ts";
 import "./order-queue-browser-journey.ts";
@@ -219,8 +221,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
   };
   const purchases = async () =>
     (await page.request.get("/api/purchases")).json();
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const product = await cmd("product.create", {
     sku: "SUP-FUP-BROWSER",
     name: "Supplier finance bulk fixture",
@@ -605,8 +606,7 @@ test("browser: refund notices page safely, retain personal reads after a lost re
     p.getByRole("region", { name: "Refund notices", exact: true });
   const notices = async (p: Page) =>
     (await p.request.get("/api/billing/refund-notices")).json();
-  const snapshot = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const snapshot = async () => stockFactsDashboard(page);
   await login(page, "admin@example.test", "long-test-only-password");
   const before = await snapshot();
   const original = await notices(page);
@@ -833,7 +833,7 @@ test("browser: reviewed stock QR downloads retain one receipt after a lost respo
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   const u = before.stock.find(
     (s: any) => s.state === "stock" && s.quantity > 0 && s.serial,
   );
@@ -893,7 +893,7 @@ test("browser: reviewed stock QR downloads retain one receipt after a lost respo
   expect(receipts[0].content_hash).toBe(
     createHash("sha256").update(bytes).digest("hex"),
   );
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   expect(after.stock).toEqual(before.stock);
   expect(errors).toEqual([]);
 });
@@ -914,7 +914,7 @@ test("browser: audit history traverses older pages, retains retries and cancels 
     ).toBeVisible();
   };
   await login(page, "event-admin@example.test", "long-event-test-password");
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   await page.setViewportSize({ width: 390, height: 844 });
   const endpoint = "/api/audit/page";
   let firstFailure = false;
@@ -1085,7 +1085,7 @@ test("browser: audit history traverses older pages, retains retries and cancels 
       })
     ).status(),
   ).toBe(200);
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   for (const key of ["stock", "orders", "invoices"])
     expect(after[key]).toEqual(before[key]);
   expect(errors).toEqual([]);
@@ -1159,7 +1159,7 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  const before = await (await page.request.get("/api/dashboard")).json(),
+  const before = await stockFactsDashboard(page),
     eq = before.products.find((p: any) => p.sku === "EQ-1");
   await nav(page, "Imports");
   const rows = [
@@ -1247,9 +1247,9 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
   });
   await expect(customers).toContainText("2 create / 0 match. 0 review issues");
   await expect(customers).toContainText('"held":true');
-  expect(
-    (await (await page.request.get("/api/dashboard")).json()).accounts,
-  ).toHaveLength(before.accounts.length);
+  expect((await stockFactsDashboard(page)).accounts).toHaveLength(
+    before.accounts.length,
+  );
   let lost = false;
   await page.route("**/api/commands/import.masters.decide", async (route) => {
     if (!lost) {
@@ -1304,7 +1304,7 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
     .fill("Reviewed exact product target and new SKU");
   await next(page);
   await expect(catalog).toContainText("applied");
-  const after = await (await page.request.get("/api/dashboard")).json(),
+  const after = await stockFactsDashboard(page),
     imported = after.accounts.filter((c: any) =>
       c.name.startsWith("Browser imported"),
     );
@@ -1473,7 +1473,7 @@ test("browser: opening dry runs reconcile independent totals and apply serial/bu
   });
   await expect(ready).toContainText("0 review issues");
   const stock = async () => {
-    const dashboard = await (await page.request.get("/api/dashboard")).json();
+    const dashboard = await stockFactsDashboard(page);
     const ids = dashboard.products
       .filter((p: any) => p.sku.startsWith("OPEN-"))
       .map((p: any) => p.id);
@@ -1637,7 +1637,7 @@ test("browser: partial transfer retries preserve transit stock and separate dama
   await expect(
     transfer.getByRole("button", { name: "Receive transfer", exact: true }),
   ).toHaveCount(0);
-  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const dashboard = await stockFactsDashboard(page);
   const product = dashboard.products.find((p: any) => p.sku === "TR-1");
   const stock = dashboard.stock.filter((u: any) => u.product_id === product.id);
   expect(stock.reduce((sum: number, u: any) => sum + u.quantity, 0)).toBe(6);
@@ -1728,7 +1728,7 @@ test("browser: two site-limited operators dispatch and scan a serial without des
   await expect(transfer).toContainText(
     "1 dispatched · 1 received · 0 in transit",
   );
-  const destination = await (await page.request.get("/api/dashboard")).json();
+  const destination = await stockFactsDashboard(page);
   expect(
     destination.stock.find((u: any) => u.serial === "S3").warehouse_id,
   ).toBe(destination.warehouses[0].id);
@@ -2014,8 +2014,7 @@ test("browser: split packing retries once, void releases holds, and each handove
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  const snapshot = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const snapshot = async () => stockFactsDashboard(page);
   const before = await snapshot();
   const priorOrderIds = new Set(before.orders.map((o: any) => o.id));
   const bulk = before.products.find((p: any) => p.sku === "SUP-1");
@@ -2322,7 +2321,7 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
   expect(
     line.receivedQuantity + line.remainingQuantity + line.lostQuantity,
   ).toBe(3);
-  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const dashboard = await stockFactsDashboard(page);
   const positions = dashboard.stock.filter(
     (u: any) => u.product_id === line.product_id,
   );
@@ -2453,7 +2452,7 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await next(page);
   await expect(stale).toContainText("rejected");
   await expect(lot).toContainText("5 / 0 / 0");
-  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const dashboard = await stockFactsDashboard(page);
   const product = dashboard.products.find((p: any) => p.sku === "COUNT-1");
   const stock = dashboard.stock.filter((u: any) => u.product_id === product.id);
   expect(stock.reduce((sum: number, u: any) => sum + u.quantity, 0)).toBe(5);
@@ -2543,7 +2542,7 @@ test("browser: supplier handover retries one physical removal, preserves purchas
   );
   expect(returned).toHaveLength(1);
   expect(returned[0].quantity * returned[0].unit_cost).toBe(2000);
-  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const dashboard = await stockFactsDashboard(page);
   const product = dashboard.products.find((p: any) => p.sku === "SUPRET-1");
   const stock = dashboard.stock.filter((u: any) => u.product_id === product.id);
   expect(stock.reduce((s: number, u: any) => s + u.quantity, 0)).toBe(4);
@@ -2573,7 +2572,7 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  const before = await (await page.request.get("/api/dashboard")).json(),
+  const before = await stockFactsDashboard(page),
     buyer = before.accounts.find((a: any) => a.name === "Synthetic buyer"),
     product = before.products.find((p: any) => p.sku === "EQ-1"),
     effectsBefore = await (await page.request.get("/api/effects")).json();
@@ -2664,9 +2663,9 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
     "1 documents. Eligible: 1 documents. 0 review issues",
   );
   await expect(review).toContainText('"creditedQuantity":1');
-  expect(
-    (await (await page.request.get("/api/dashboard")).json()).invoices,
-  ).toHaveLength(before.invoices.length);
+  expect((await stockFactsDashboard(page)).invoices).toHaveLength(
+    before.invoices.length,
+  );
   let lost = false;
   await page.route("**/api/commands/import.documents.decide", async (route) => {
     if (!lost) {
@@ -2700,7 +2699,7 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
     );
   expect(applied.result.mappings).toHaveLength(1);
   expect(applied.result.value).toBe(8300);
-  const after = await (await page.request.get("/api/dashboard")).json(),
+  const after = await stockFactsDashboard(page),
     imported = after.invoices.find(
       (i: any) => i.number === "BROWSER-LEGACY-001",
     );
@@ -2768,7 +2767,7 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
     .fill("Verified new bank receipt after migration cutoff");
   await next(page);
   await expect(invoice).toContainText("$73.00");
-  const updated = await (await page.request.get("/api/dashboard")).json(),
+  const updated = await stockFactsDashboard(page),
     paid = updated.invoices.find((i: any) => i.id === imported.id);
   expect(paid).toMatchObject({ paid: 5000, refunded: 1000, balance: 7300 });
   const csv = await (await page.request.get("/api/accounting.csv")).text();
@@ -3357,7 +3356,7 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   expect(
     purchases.receipts.filter((r: any) => r.po_id === draft.po_id),
   ).toHaveLength(1);
-  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const dashboard = await stockFactsDashboard(page);
   const stock = dashboard.stock.filter((u: any) =>
     ["BROWSER-D1", "BROWSER-D2"].includes(u.serial),
   );
@@ -3516,7 +3515,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     unitPrice: 10000,
     taxBasisPoints: 1300,
   });
-  const dashboard = await (await page.request.get("/api/dashboard")).json();
+  const dashboard = await stockFactsDashboard(page);
   const warehouseId = dashboard.warehouses[0].id;
   const purchases = await (await page.request.get("/api/purchases")).json();
   const po = await cmd("purchase.create", {
@@ -3557,7 +3556,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
       allocationId: p.id,
       serial: p.serial,
     });
-  const picked = await (await page.request.get("/api/dashboard")).json();
+  const picked = await stockFactsDashboard(page);
   const pack = await cmd("fulfillment.pack", {
     orderId: order.id,
     revision: picked.orders.find((x: any) => x.id === order.id).revision,
@@ -3586,7 +3585,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
       sites: [],
       currentPassword: "long-test-only-password",
     });
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   const invoice = before.invoices.find((i: any) => i.id === shipped.invoiceId);
   expect(invoice.total).toBe(22600);
   await page.reload();
@@ -3885,7 +3884,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     current = (await inbox())[0];
     expect(current.state).toBe("withdrawn");
     expect(current.acknowledgments).toHaveLength(1);
-    const after = await (await page.request.get("/api/dashboard")).json();
+    const after = await stockFactsDashboard(page);
     expect(after.invoices).toEqual(before.invoices);
     expect(after.stock).toEqual(before.stock);
     expect(after.orders).toEqual(before.orders);
@@ -3978,7 +3977,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
       (await inbox()).find((p: any) => p.id === creditPub.id).acknowledgments[0]
         .content_hash,
     ).toBe(creditHash);
-    const final = await (await page.request.get("/api/dashboard")).json();
+    const final = await stockFactsDashboard(page);
     expect(final.invoices.find((i: any) => i.id === invoice.id).balance).toBe(
       11300,
     );
@@ -4246,9 +4245,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
       colleague.getByRole("region", { name: "Document history", exact: true }),
     ).toHaveCount(0);
     await colleague.unroute(delayedUrl);
-    const paginationFinal = await (
-      await page.request.get("/api/dashboard")
-    ).json();
+    const paginationFinal = await stockFactsDashboard(page);
     expect(paginationFinal).toEqual(final);
     expect(errors).toEqual([]);
   } finally {
@@ -4283,8 +4280,7 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Manufacturer browser customer",
     tier: "standard",
@@ -4562,8 +4558,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Replacement browser customer",
     tier: "standard",
@@ -4681,7 +4676,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
       .getByRole("button", { name: "Approve replacement", exact: true })
       .click();
     await page.getByLabel("Replacement serial", { exact: true }).selectOption({
-      label: `REP-NEW · ${before.warehouses.find((w: any) => w.id === warehouseId).name}`,
+      label: `REP-NEW · ${before.warehouses.find((w: any) => w.id === warehouseId).name} / REP`,
     });
     await page
       .getByLabel("Reason / evidence", { exact: true })
@@ -4899,7 +4894,7 @@ test("browser: credited cash refund request and bank verification retry one rese
     unitPrice: 10000,
     taxBasisPoints: 1300,
   });
-  const initial = await (await page.request.get("/api/dashboard")).json(),
+  const initial = await stockFactsDashboard(page),
     warehouseId = initial.warehouses[0].id;
   const purchases = await (await page.request.get("/api/purchases")).json();
   const po = await cmd("purchase.create", {
@@ -4940,7 +4935,7 @@ test("browser: credited cash refund request and bank verification retry one rese
       allocationId: p.id,
       serial: p.serial,
     });
-  const picked = await (await page.request.get("/api/dashboard")).json();
+  const picked = await stockFactsDashboard(page);
   const packed = await cmd("fulfillment.pack", {
     orderId: order.id,
     revision: picked.orders.find((o: any) => o.id === order.id).revision,
@@ -4962,7 +4957,7 @@ test("browser: credited cash refund request and bank verification retry one rese
     reference: "REF-BROWSER-PAY",
     reason: "Synthetic payment evidence",
   });
-  const paid = await (await page.request.get("/api/dashboard")).json(),
+  const paid = await stockFactsDashboard(page),
     invoice = paid.invoices.find((i: any) => i.id === invoiceId);
   await cmd("billing.credit", {
     invoiceId,
@@ -4970,7 +4965,7 @@ test("browser: credited cash refund request and bank verification retry one rese
     reason: "Synthetic credit",
     lines: [{ lineId: invoice.lines[0].id, quantity: 1 }],
   });
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   await page.reload();
   await nav(page, "Billing");
   const row = page.getByRole("row").filter({ hasText: invoice.number });
@@ -5065,7 +5060,7 @@ test("browser: credited cash refund request and bank verification retry one rese
   expect(refunds.find((r: any) => r.invoice_id === invoiceId).state).toBe(
     "completed",
   );
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   const final = after.invoices.find((i: any) => i.id === invoiceId);
   expect(final.paid).toBe(11300);
   expect(final.credited).toBe(11300);
@@ -5116,7 +5111,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     unitPrice: 10000,
     taxBasisPoints: 1300,
   });
-  const initial = await (await page.request.get("/api/dashboard")).json(),
+  const initial = await stockFactsDashboard(page),
     warehouseId = initial.warehouses[0].id;
   const purchases = await (await page.request.get("/api/purchases")).json();
   const po = await cmd("purchase.create", {
@@ -5157,7 +5152,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
       allocationId: pick.id,
       serial: pick.serial,
     });
-  const picked = await (await page.request.get("/api/dashboard")).json();
+  const picked = await stockFactsDashboard(page);
   const packed = await cmd("fulfillment.pack", {
     orderId: order.id,
     revision: picked.orders.find((o: any) => o.id === order.id).revision,
@@ -5178,7 +5173,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     reference: "QBO-BROWSER-CASH",
     reason: "Synthetic verified bank receipt",
   });
-  const before = await (await page.request.get("/api/dashboard")).json(),
+  const before = await stockFactsDashboard(page),
     invoice = before.invoices.find((i: any) => i.id === shipped.invoiceId);
   await page.reload();
   await nav(page, "Billing");
@@ -5331,7 +5326,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
       exact: true,
     }),
   ).toHaveCount(0);
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   expect(after.stock).toEqual(before.stock);
   expect(after.orders).toEqual(before.orders);
   expect(after.invoices).toEqual(before.invoices);
@@ -5342,9 +5337,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     reason: "Synthetic accounting credit",
     lines: [{ lineId: lines[0].id, quantity: 1 }],
   });
-  const creditedBefore = await (
-    await page.request.get("/api/dashboard")
-  ).json();
+  const creditedBefore = await stockFactsDashboard(page);
   const creditFacts = await (await page.request.get("/api/credits")).json();
   await page.reload();
   await nav(page, "Billing");
@@ -5668,7 +5661,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
       exact: true,
     }),
   ).toHaveCount(0);
-  const creditedAfter = await (await page.request.get("/api/dashboard")).json();
+  const creditedAfter = await stockFactsDashboard(page);
   expect(creditedAfter.stock).toEqual(creditedBefore.stock);
   expect(creditedAfter.orders).toEqual(creditedBefore.orders);
   expect(creditedAfter.invoices).toEqual(creditedBefore.invoices);
@@ -6042,7 +6035,7 @@ test("browser: stock cost reviews survive lost replies and separate immutable do
       await (await page.request.get("/api/accounting/costs")).json()
     ).items.filter((p: any) => p.batchRef === "BROWSER-COST"),
   ).toHaveLength(1);
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   for (let i = 0; i < 23; i++) {
     const response = await page.request.post(
       "/api/commands/accounting.cost.prepare",
@@ -6168,7 +6161,7 @@ test("browser: stock cost reviews survive lost replies and separate immutable do
     await page.request.get(`/api/accounting/costs/${saved.id}`)
   ).json();
   expect(accepted.state).toBe("accepted");
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   for (const key of ["stock", "invoices", "orders", "shipments"])
     expect(after[key]).toEqual(before[key]);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -6252,7 +6245,7 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
     unitPrice: 10000,
     taxBasisPoints: 1300,
   });
-  const initial = await (await page.request.get("/api/dashboard")).json(),
+  const initial = await stockFactsDashboard(page),
     warehouseId = initial.warehouses[0].id;
   const purchases = await (await page.request.get("/api/purchases")).json();
   const po = await cmd("purchase.create", {
@@ -6293,7 +6286,7 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
       allocationId: p.id,
       serial: p.serial,
     });
-  const picked = await (await page.request.get("/api/dashboard")).json();
+  const picked = await stockFactsDashboard(page);
   const packed = await cmd("fulfillment.pack", {
     orderId: order.id,
     revision: picked.orders.find((o: any) => o.id === order.id).revision,
@@ -6315,7 +6308,7 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
     reference: "QBO-REFUND-BROWSER-CASH",
     reason: "Synthetic verified cash",
   });
-  const paid = await (await page.request.get("/api/dashboard")).json(),
+  const paid = await stockFactsDashboard(page),
     invoice = paid.invoices.find((i: any) => i.id === invoiceId);
   const credit = await cmd("billing.credit", {
     invoiceId,
@@ -6383,7 +6376,7 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
     reason: "Synthetic completed bank refund",
   });
   const nativeFacts = async () => {
-    const dashboard = await (await page.request.get("/api/dashboard")).json();
+    const dashboard = await stockFactsDashboard(page);
     return {
       stock: dashboard.stock,
       orders: dashboard.orders,
@@ -6563,8 +6556,7 @@ test("browser: serial loss review and recovery retain history, retry once and re
     expect(response.status()).toBe(200);
     return response.json();
   };
-  const snapshot = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const snapshot = async () => stockFactsDashboard(page);
   const warehouseId = (await snapshot()).warehouses.find(
     (w: any) => w.name === "Toronto",
   ).id;
@@ -6617,6 +6609,10 @@ test("browser: serial loss review and recovery retain history, retry once and re
   }
   await page.reload();
   await nav(page, "Inventory");
+  await page
+    .getByLabel("Search stock serial or bin", { exact: true })
+    .fill(serial);
+  await page.getByRole("button", { name: "Search stock", exact: true }).click();
   const stockRow = page
     .getByRole("row")
     .filter({ hasText: serial })
@@ -6733,6 +6729,10 @@ test("browser: serial loss review and recovery retain history, retry once and re
   expect(after.invoices).toEqual(before.invoices);
   expect(after.orders).toEqual(before.orders);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page
+    .getByLabel("Search stock serial or bin", { exact: true })
+    .fill(serial);
+  await page.getByRole("button", { name: "Search stock", exact: true }).click();
   await stockRow.getByRole("button", { name: "Inspect", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -6772,8 +6772,7 @@ test("browser: short picks retry once, retain paged history after failure, and i
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const snapshot = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const snapshot = async () => stockFactsDashboard(page);
   const before = await snapshot(),
     warehouseId = before.warehouses.find((w: any) => w.name === "Toronto").id;
   const productId = (
@@ -7007,8 +7006,7 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Evidence browser customer",
     tier: "standard",
@@ -7337,8 +7335,7 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Shipping browser customer",
     tier: "standard",
@@ -7754,8 +7751,7 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Delivery browser customer",
     tier: "standard",
@@ -8046,8 +8042,7 @@ test("browser: shipment pages retain rows after failure and discard continuation
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Paging browser customer",
     tier: "standard",
@@ -8356,8 +8351,7 @@ test("browser: event diagnostics preserve pages and exact reviewed retries witho
   const signOut = page.getByRole("button", { name: "Sign out", exact: true });
   await signOut.scrollIntoViewIfNeeded();
   await expect(signOut).toBeInViewport();
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const before = await dashboard();
   const endpoint = "/api/events/event-report/deliveries";
   let initialFailure = false;
@@ -8651,7 +8645,7 @@ test("browser: customers review immutable provider terms, stale consent stops, a
     await nav(p, "Customers");
   };
   await login(page, "admin@example.test");
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   const context = await browser.newContext({
       viewport: { width: 390, height: 844 },
     }),
@@ -8820,7 +8814,7 @@ test("browser: customers review immutable provider terms, stale consent stops, a
     expect(await (await buyerPage.request.get(historyUrl)).json()).toEqual(
       receipt,
     );
-    const after = await (await page.request.get("/api/dashboard")).json();
+    const after = await stockFactsDashboard(page);
     for (const key of ["stock", "orders", "invoices"])
       expect(after[key]).toEqual(before[key]);
     expect(
@@ -8854,7 +8848,7 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
     await nav(p, "Customers");
   };
   await login(page, "history-buyer@example.test");
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   const account = before.accounts[0];
   const versionsUrl = `/api/accounts/${account.id}/provider-acceptance-versions`;
   const acceptanceUrl = `/api/accounts/${account.id}/provider-acceptances?version=2`;
@@ -9077,7 +9071,7 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
   } finally {
     await adminContext.close();
   }
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   for (const field of ["stock", "orders", "invoices"])
     expect(after[field]).toEqual(before[field]);
   expect(after.accounts[0]).toEqual(account);
@@ -10125,7 +10119,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
     } while (after);
     return items;
   };
-  const before = await (await page.request.get("/api/dashboard")).json();
+  const before = await stockFactsDashboard(page);
   before.shipments = await allShipments();
   const shipment = before.shipments.find((s: any) =>
     s.address.startsWith("Synthetic carrier destination,"),
@@ -10316,7 +10310,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   await expect(
     review.getByText(`Booking ID: ${second.id}`, { exact: true }),
   ).toBeVisible();
-  const after = await (await page.request.get("/api/dashboard")).json();
+  const after = await stockFactsDashboard(page);
   after.shipments = await allShipments();
   expect(snapshot(after)).toEqual(original);
   expect(
@@ -12367,8 +12361,7 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
     expect(response.status(), await response.text()).toBe(200);
     return response.json();
   };
-  const dashboard = async () =>
-    (await page.request.get("/api/dashboard")).json();
+  const dashboard = async () => stockFactsDashboard(page);
   const account = await cmd("account.create", {
     name: "Decision browser customer",
     tier: "standard",
@@ -12722,7 +12715,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
     expect(r.status(), await r.text()).toBe(200);
     return r.json();
   };
-  const initial = await (await page.request.get("/api/dashboard")).json();
+  const initial = await stockFactsDashboard(page);
   const warehouseId = initial.warehouses[0].id;
   const purchases = await (await page.request.get("/api/purchases")).json();
   const account = await cmd("account.create", {
@@ -12779,7 +12772,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
       allocationId: pick.id,
       serial: pick.serial,
     });
-  const picked = await (await page.request.get("/api/dashboard")).json();
+  const picked = await stockFactsDashboard(page);
   const packed = await cmd("fulfillment.pack", {
     orderId: order.id,
     revision: picked.orders.find((o: any) => o.id === order.id).revision,
@@ -12794,7 +12787,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
     shipmentId: packed.id,
     handoverEvidence: "Synthetic 25-unit sale",
   });
-  const latest = await (await page.request.get("/api/dashboard")).json();
+  const latest = await stockFactsDashboard(page);
   const target = latest.stock.find((u: any) => u.serial === serials[24]);
   await cmd("user.create", {
     email: "sold-search-buyer@example.test",
@@ -13008,7 +13001,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
   expect(submissions).toHaveLength(1);
   expect(submissions[0].unitId).toBe(target.id);
   expect(submissions[0].accountId).toBe(account.id);
-  const submitted = await (await page.request.get("/api/dashboard")).json();
+  const submitted = await stockFactsDashboard(page);
   expect(
     submitted.claims.filter(
       (c: any) =>
