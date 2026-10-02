@@ -23,6 +23,8 @@ Export the reviewed runtime configuration; `.env.example` is a reference and is 
 
 `npm start` is the API and static browser server. `npm run worker` and `npm run events:worker` are separate bounded foreground commands; startup does not schedule them. Provider, carrier and browser authorization processing must remain disabled until separately authorized and qualified. Provider CLI loading is not proof of credentials, vendor acceptance or live processing. No CI workflow, service manager or deployment is installed by these instructions.
 
+The API process runs local maintenance once per minute after startup: at most 100 expired authenticator-enrollment bundles and at most 100 expired/interrupted QuickBooks authorization attempts per cycle. Each operation catches storage failures independently and retries on the next cycle with a redacted message; neither contacts a provider. Startup also processes one batch under validated schema initialization. These bounds limit changed rows, not query cost; large-store throughput, clock trust and retention remain unqualified. See [authorization maintenance](PROVIDERS.md#local-authorization-expiry-maintenance).
+
 ## Repeatable workstation check
 
 From a development checkout with locked dependencies and an already populated npm cache:

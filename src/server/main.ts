@@ -42,8 +42,9 @@ const http = await createHttp(app, {
   carriers: configuredCarriers(app),
 });
 // Local application maintenance only. Startup also processes one batch; each
-// minute erases at most 100 expired enrollment bundles without provider I/O.
-const enrollmentCleanup = setInterval(() => {
+// minute erases at most 100 expired enrollment bundles and terminalizes at most
+// 100 expired/interrupted OAuth attempts. Neither operation makes provider I/O.
+const localMaintenance = setInterval(() => {
   try {
     app.identity.mfa.purgeExpiredEnrollments();
   } catch {
@@ -51,10 +52,17 @@ const enrollmentCleanup = setInterval(() => {
       "Authenticator setup cleanup did not complete; retrying next minute.\n",
     );
   }
+  try {
+    app.providerCredentials.authorization.expireAttempts();
+  } catch {
+    process.stderr.write(
+      "QuickBooks authorization cleanup did not complete; retrying next minute.\n",
+    );
+  }
 }, 60000).unref();
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => {
-    clearInterval(enrollmentCleanup);
+    clearInterval(localMaintenance);
     void http.close().finally(() => {
       app.close();
       process.exitCode = 0;

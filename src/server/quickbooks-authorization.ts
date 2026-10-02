@@ -71,6 +71,52 @@ export class QuickBooksAuthorization {
       claim TEXT,started_at INTEGER,installed_revision INTEGER
     ) STRICT;
     CREATE INDEX IF NOT EXISTS integration_authorization_binding ON integration_authorizations(org_id,binding_id);`);
+    this.expireAttempts();
+  }
+  // Filesystem-authorized local maintenance; no tenant endpoint or provider I/O.
+  // A transmitted code may have been consumed, so abandoned exchanges are unknown.
+  expireAttempts() {
+    const now = Date.now();
+    const rows = this.store.all<{ state: string }>(
+      `UPDATE integration_authorizations
+       SET state=CASE WHEN state='pending' THEN 'expired' ELSE 'unknown' END,claim=NULL
+       WHERE id IN (
+         SELECT id FROM integration_authorizations
+         WHERE (state='pending' AND expires_at<=?) OR
+           (state='exchanging' AND (expires_at<=? OR started_at IS NULL OR started_at<?))
+         ORDER BY expires_at,id LIMIT 100
+       ) RETURNING state`,
+      now,
+      now,
+      now - 90000,
+    );
+    return {
+      expired: rows.filter((row) => row.state === "expired").length,
+      interrupted: rows.filter((row) => row.state === "unknown").length,
+    };
+  }
+  private expireAttempt(row: Attempt) {
+    const now = Date.now();
+    this.store.run(
+      `UPDATE integration_authorizations
+       SET state=CASE WHEN state='pending' THEN 'expired' ELSE 'unknown' END,claim=NULL
+       WHERE id=? AND ((state='pending' AND expires_at<=?) OR
+         (state='exchanging' AND (expires_at<=? OR started_at IS NULL OR started_at<?)))`,
+      row.id,
+      now,
+      now,
+      now - 90000,
+    );
+  }
+  private timely(row: Attempt) {
+    const now = Date.now();
+    check(
+      now < row.expires_at &&
+        row.started_at !== null &&
+        now - row.started_at <= 90000,
+      "OAUTH_EXPIRED",
+      "Expired or interrupted authorization requires a new connection attempt.",
+    );
   }
   private redirect(binding: AuthorizationBinding) {
     let uri: URL;
@@ -230,13 +276,14 @@ export class QuickBooksAuthorization {
       if (row) {
         this.row(binding, row.id);
         this.initiator(binding, row, sessionToken);
+        this.expireAttempt(row);
       }
       return {
         enabled: true as const,
         realm: binding.realm,
         accountId: binding.accountId,
         credentials: current.credentials,
-        attempt: row ? this.metadata(row) : null,
+        attempt: row ? this.metadata(this.row(binding, row.id)) : null,
       };
     });
   }
@@ -279,10 +326,13 @@ export class QuickBooksAuthorization {
     attemptId: string,
     sessionToken?: string,
   ) {
-    this.current(binding, false);
-    const row = this.row(binding, attemptId);
-    this.initiator(binding, row, sessionToken);
-    return this.metadata(row);
+    return this.database.transaction(() => {
+      this.current(binding, false);
+      const row = this.row(binding, attemptId);
+      this.initiator(binding, row, sessionToken);
+      this.expireAttempt(row);
+      return this.metadata(this.row(binding, attemptId));
+    });
   }
   begin(
     binding: AuthorizationBinding,
@@ -464,7 +514,12 @@ export class QuickBooksAuthorization {
         "OAUTH_STATE",
         "Authorization state differs.",
       );
-      if (row.state === "exchanging" && Date.now() - row.started_at! > 90000) {
+      if (
+        row.state === "exchanging" &&
+        (Date.now() >= row.expires_at ||
+          row.started_at === null ||
+          Date.now() - row.started_at > 90000)
+      ) {
         this.store.run(
           "UPDATE integration_authorizations SET state='unknown',claim=NULL WHERE id=?",
           row.id,
@@ -555,11 +610,7 @@ export class QuickBooksAuthorization {
           "OAUTH_STALE",
           "Authorization was superseded.",
         );
-        check(
-          Date.now() < row.expires_at,
-          "OAUTH_EXPIRED",
-          "Authorization attempt expired during exchange.",
-        );
+        this.timely(active);
         this.fresh(row, current);
         const installed = this.install(
           binding,
@@ -603,11 +654,7 @@ export class QuickBooksAuthorization {
         "OAUTH_STALE",
         "Authorization was superseded.",
       );
-      check(
-        Date.now() < row.expires_at,
-        "OAUTH_EXPIRED",
-        "Authorization attempt expired during exchange.",
-      );
+      this.timely(active);
       this.fresh(row, this.current(binding));
     });
   }
