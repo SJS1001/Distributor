@@ -617,6 +617,15 @@ export function commands(
       schema: obj({ name: str }),
       run: (a, k, p) => app.procurement.supplier(a, k, p),
     },
+    "supplier.availability": {
+      schema: obj({
+        supplierId: str,
+        revision: { type: "integer", minimum: 0, maximum: 99999998 },
+        active: { type: "boolean" },
+        reason: { type: "string", minLength: 1, maxLength: 1000 },
+      }),
+      run: (a, k, p) => app.procurement.supplierAvailability(a, k, p),
+    },
     "purchase.create": {
       schema: obj({
         supplierId: str,
@@ -1677,6 +1686,24 @@ export async function createHttp(app: Application, options: HttpOptions) {
     { schema: { params: obj({ supplierId: str }) } },
     async (request) =>
       app.procurement.supplierChoice(actor(request), request.params.supplierId),
+  );
+  http.get<{ Params: { supplierId: string }; Querystring: { after?: string } }>(
+    "/api/purchases/suppliers/:supplierId/availability",
+    {
+      schema: {
+        params: obj({ supplierId: str }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[1-9][0-9]{0,8}$" } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.procurement.supplierAvailabilityReview(
+        actor(request),
+        request.params.supplierId,
+        request.query.after,
+      ),
   );
   http.get<{ Querystring: { after?: string; state?: PurchaseQueueState } }>(
     "/api/purchases/orders/page",

@@ -1,3 +1,4 @@
+import versionSix from "./schema-version-six.json" with { type: "json" };
 import versionFive from "./schema-version-five.json" with { type: "json" };
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -191,6 +192,34 @@ function frozenVersionFive(
     db.exec("COMMIT");
   });
 }
+function frozenVersionSix(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionFive(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionSix.additions) {
+      db.exec(object.sql);
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=6,schema_hash=?",
+    ).run(
+      eventReports ? versionSix.hashes.enabled : versionSix.hashes.disabled,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -241,7 +270,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -258,6 +287,7 @@ function conservedUpgrade(
     "integration_credit_cancellations",
     "warranty_claim_coverage",
     "fulfillment_coverage",
+    "procurement_supplier_changes",
   ]) {
     if (sourceVersion >= 2 && name.startsWith("integration_canada_post"))
       continue;
@@ -266,6 +296,7 @@ function conservedUpgrade(
     if (sourceVersion >= 4 && name === "integration_credit_cancellations")
       continue;
     if (sourceVersion >= 5 && name === "warranty_claim_coverage") continue;
+    if (sourceVersion >= 6 && name === "fulfillment_coverage") continue;
     assert.deepEqual(
       after[name],
       [],
@@ -328,7 +359,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
       test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
@@ -339,13 +370,14 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
         const f = fixture(t, security, region);
         const nativeShipment = ship(f, accept(f).id);
         const invoice = nativeShipment.invoiceId;
-        // Historical versions could not retain shipment policy.
-        f.app.database
-          .owned("fulfillment")
-          .run(
-            "DELETE FROM fulfillment_coverage WHERE shipment_id=?",
-            nativeShipment.id,
-          );
+        // Versions before six could not retain shipment policy.
+        if (sourceVersion < 6)
+          f.app.database
+            .owned("fulfillment")
+            .run(
+              "DELETE FROM fulfillment_coverage WHERE shipment_id=?",
+              nativeShipment.id,
+            );
         const historicalClaim = f.app.warranty.submit(
           f.actor,
           "historical-claim",
@@ -376,7 +408,7 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
         });
         const dir = directory(t),
           source = join(dir, `v${sourceVersion}.db`),
-          destination = join(dir, "v6.db");
+          destination = join(dir, "v7.db");
         if (sourceVersion >= 2) {
           // Retain a locally prepared group, without claiming a provider response.
           f.app.database
@@ -420,7 +452,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
               ? frozenVersionThree
               : sourceVersion === 4
                 ? frozenVersionFour
-                : frozenVersionFive)(f.path, source, eventReports, region);
+                : sourceVersion === 5
+                  ? frozenVersionFive
+                  : frozenVersionSix)(f.path, source, eventReports, region);
         const before = snapshot(source),
           receipt = inspectSchema(source),
           sourceBytes = readFileSync(source);
@@ -437,7 +471,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
                     ? versionThree.hashes
                     : sourceVersion === 4
                       ? versionFour.hashes
-                      : versionFive.hashes
+                      : sourceVersion === 5
+                        ? versionFive.hashes
+                        : versionSix.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -447,7 +483,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
                     ? versionThree.hashes
                     : sourceVersion === 4
                       ? versionFour.hashes
-                      : versionFive.hashes
+                      : sourceVersion === 5
+                        ? versionFive.hashes
+                        : versionSix.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -476,10 +514,10 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 6);
+        assert.equal(upgraded.version, 7);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 6);
+        assert.equal(inspection.version, 7);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);
@@ -487,9 +525,11 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
         assert.deepEqual(inspectSchema(source), receipt);
         const clone = new Application(destination, region, security);
         try {
-          assert.equal(
+          assert.deepEqual(
             clone.fulfillment.shipmentCoverage(f.actor, nativeShipment.id),
-            null,
+            sourceVersion >= 6
+              ? f.app.fulfillment.shipmentCoverage(f.actor, nativeShipment.id)
+              : null,
           );
           assert.equal(
             clone.warranty.coverage(
@@ -497,7 +537,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
               f.app.inventory.trace(f.actor, "S1").unit.id,
               f.buyer,
             ).source,
-            "current_provisional_policy",
+            sourceVersion >= 6
+              ? "shipment_policy"
+              : "current_provisional_policy",
           );
           assert.deepEqual(
             clone.warranty.claimCoverage(f.actor, historicalClaim.id),

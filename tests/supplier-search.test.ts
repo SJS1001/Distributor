@@ -47,7 +47,12 @@ for (const region of ["CA", "US"] as const)
       const page = f.app.procurement.supplierPage(f.actor, { after });
       assert.ok(page.items.length <= 20);
       for (const row of page.items)
-        assert.deepEqual(Object.keys(row).sort(), ["id", "name"]);
+        assert.deepEqual(Object.keys(row).sort(), [
+          "active",
+          "id",
+          "name",
+          "revision",
+        ]);
       ids.push(...page.items.map((row) => row.id));
       after = page.next ?? undefined;
     } while (after);

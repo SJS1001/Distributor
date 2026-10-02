@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "42cf8924a1d124655aac21095d05c6439b780d3f",
+  "hashes": {
+    "disabled": "bfc05c10667d9926595dbd02079bc676cbbe02e5049aeef5a7a1ebec3506a1f5",
+    "enabled": "3839664df7628cc665f2f57ff0657d37f2280b0ff1379cf712a254fe22d7f45a"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "fulfillment_coverage",
+      "tbl_name": "fulfillment_coverage",
+      "sql": "CREATE TABLE fulfillment_coverage(shipment_id TEXT PRIMARY KEY REFERENCES fulfillment_shipments(id),org_id TEXT NOT NULL,snapshot TEXT NOT NULL) STRICT"
+    }
+  ]
+}

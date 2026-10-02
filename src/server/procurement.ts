@@ -3,7 +3,10 @@ import type { SerialReceipt } from "../shared/serial-dossier.ts";
 import type {
   SupplierChoice,
   SupplierPage,
+  SupplierAvailabilityReview,
+  SupplierAvailabilityChange,
 } from "../shared/supplier-search.ts";
+import { SUPPLIER_AVAILABILITY_INITIALIZE_DDL } from "./supplier-availability-schema.ts";
 import {
   purchaseQueueStates,
   type PurchaseQueueState,
@@ -111,6 +114,7 @@ export class Procurement {
     CREATE TABLE IF NOT EXISTS procurement_receipts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,po_id TEXT NOT NULL,line_id TEXT NOT NULL,delivery_ref TEXT NOT NULL,quantity INTEGER NOT NULL,unit_ids TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,po_id,delivery_ref,line_id)) STRICT;
     CREATE TABLE IF NOT EXISTS procurement_returns(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,receipt_id TEXT NOT NULL,po_id TEXT NOT NULL,supplier_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,quantity INTEGER NOT NULL CHECK(quantity>0),unit_cost INTEGER NOT NULL CHECK(unit_cost>=0),serial TEXT,return_ref TEXT NOT NULL,reason TEXT NOT NULL,handover_evidence TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,input_hash TEXT NOT NULL,result TEXT NOT NULL,UNIQUE(org_id,return_ref)) STRICT;
   `);
+    this.store.migrate(SUPPLIER_AVAILABILITY_INITIALIZE_DDL);
     this.followups = new SupplierFollowups(database, platform, identity);
     this.drafts = new ReceiptDrafts(database, platform, {
       currentActor: (actor) =>
@@ -248,13 +252,135 @@ export class Procurement {
   }
   supplierChoice(actor: Actor, supplierId: string): SupplierChoice {
     actor = this.authorize(actor, ["warehouse", "commercial", "finance"]);
-    const row = this.store.get<SupplierChoice>(
+    const row = this.store.get<{ id: string; name: string }>(
       "SELECT id,name FROM procurement_suppliers WHERE org_id=? AND id=?",
       actor.orgId,
       text(supplierId, "Supplier ID", 128),
     );
     check(row, "NOT_FOUND", "Supplier not found.", 404);
-    return row;
+    const status = this.store.get<{ active: number; revision: number }>(
+      "SELECT active,revision FROM procurement_supplier_changes WHERE org_id=? AND supplier_id=? ORDER BY revision DESC LIMIT 1",
+      actor.orgId,
+      row.id,
+    );
+    return {
+      ...row,
+      active: status ? Boolean(status.active) : true,
+      revision: status?.revision ?? 0,
+    };
+  }
+  supplierAvailabilityReview(
+    actor: Actor,
+    supplierId: string,
+    after?: string,
+  ): SupplierAvailabilityReview {
+    return this.database.transaction(() => {
+      const supplier = this.supplierChoice(actor, supplierId);
+      if (after !== undefined) {
+        check(
+          typeof after === "string" && /^[1-9][0-9]{0,8}$/.test(after),
+          "VALIDATION",
+          "Invalid supplier history cursor.",
+          400,
+        );
+        check(
+          this.store.get(
+            "SELECT id FROM procurement_supplier_changes WHERE org_id=? AND supplier_id=? AND revision=?",
+            actor.orgId,
+            supplier.id,
+            Number(after),
+          ),
+          "CURSOR",
+          "Supplier history cursor is outside this supplier.",
+          400,
+        );
+      }
+      const rows = this.store.all<
+        Omit<SupplierAvailabilityChange, "active"> & { active: number }
+      >(
+        `SELECT id,revision,active,actor_id AS actorId,reason,created_at AS createdAt FROM procurement_supplier_changes WHERE org_id=? AND supplier_id=? ${after ? "AND revision<?" : ""} ORDER BY revision DESC LIMIT 21`,
+        actor.orgId,
+        supplier.id,
+        ...(after ? [Number(after)] : []),
+      );
+      const changes = rows
+        .slice(0, 20)
+        .map((r) => ({ ...r, active: Boolean(r.active) }));
+      return {
+        supplier,
+        changes,
+        next: rows.length > 20 ? String(changes[19]!.revision) : null,
+      };
+    });
+  }
+  supplierAvailability(
+    actor: Actor,
+    key: string,
+    input: {
+      supplierId: string;
+      revision: number;
+      active: boolean;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "supplier.availability",
+      key,
+      input,
+      () => {
+        actor = this.authorize(actor, ["commercial"]);
+      },
+      () => {
+        const supplier = this.supplierChoice(actor, input.supplierId);
+        const revision = integer(
+          input.revision,
+          "Supplier review revision",
+          0,
+          99999998,
+        );
+        check(
+          typeof input.active === "boolean",
+          "VALIDATION",
+          "Supplier availability must be a boolean.",
+          400,
+        );
+        const reason = text(input.reason, "Supplier availability reason", 1000);
+        check(
+          supplier.revision === revision,
+          "REVISION",
+          "Supplier availability changed. Refresh and review again.",
+        );
+        check(
+          supplier.active !== input.active,
+          "SUPPLIER_STATE",
+          "Supplier already has this purchasing availability.",
+        );
+        const changeId = id();
+        this.store.run(
+          "INSERT INTO procurement_supplier_changes VALUES(?,?,?,?,?,?,?,?)",
+          changeId,
+          actor.orgId,
+          supplier.id,
+          revision + 1,
+          Number(input.active),
+          actor.id,
+          reason,
+          now(),
+        );
+        const result = {
+          ...supplier,
+          revision: revision + 1,
+          active: input.active,
+        };
+        this.platform.event(actor, "supplier.availability.changed", changeId, {
+          supplierId: supplier.id,
+          revision: result.revision,
+          active: result.active,
+        });
+        return result;
+      },
+    );
   }
   supplierPage(
     actor: Actor,
@@ -310,7 +436,7 @@ export class Procurement {
           400,
         );
       }
-      const rows = this.store.all<SupplierChoice>(
+      const rows = this.store.all<{ id: string; name: string }>(
         `SELECT id,name FROM procurement_suppliers WHERE org_id=? AND (?='' OR instr(lower(name),?)>0)
          ${anchor ? "AND (name>? OR (name=? AND id>?))" : ""} ORDER BY name,id LIMIT 21`,
         actor.orgId,
@@ -318,7 +444,9 @@ export class Procurement {
         q,
         ...(anchor ? [anchor.name, anchor.name, anchor.id] : []),
       );
-      const items = rows.slice(0, 20);
+      const items = rows
+        .slice(0, 20)
+        .map((row) => this.supplierChoice(actor, row.id));
       return {
         items,
         next:
@@ -369,15 +497,11 @@ export class Procurement {
         actor = this.authorize(actor, ["commercial"]);
       },
       () => {
+        const supplier = this.supplierChoice(actor, input.supplierId);
         check(
-          this.store.get(
-            "SELECT id FROM procurement_suppliers WHERE org_id=? AND id=?",
-            actor.orgId,
-            input.supplierId,
-          ),
-          "NOT_FOUND",
-          "Supplier not found.",
-          404,
+          supplier.active,
+          "SUPPLIER_INACTIVE",
+          "Supplier is unavailable for new purchasing.",
         );
         this.inventory.warehouse(actor, input.warehouseId);
         check(

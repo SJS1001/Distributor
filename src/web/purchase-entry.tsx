@@ -186,7 +186,7 @@ export function PurchaseEntry({
   close,
   created,
 }: {
-  suppliers: Choice[];
+  suppliers: SupplierChoice[];
   warehouses: Choice[];
   currency: string;
   orgId: string;
@@ -201,7 +201,7 @@ export function PurchaseEntry({
     recovery.pending?.review ?? null,
   );
   const [supplier, setSupplier] = useState<SupplierChoice | null>(
-    suppliers[0] ?? null,
+    suppliers.find((row) => row.active) ?? null,
   );
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [lines, setLines] = useState<Line[]>([]);

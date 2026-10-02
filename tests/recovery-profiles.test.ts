@@ -1,3 +1,4 @@
+import versionSix from "./schema-version-six.json" with { type: "json" };
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -226,7 +227,7 @@ for (const region of ["CA", "US"] as const) {
         "backup must leave every source row and exact schema unchanged",
       );
       assert.equal(receipt.version, 1);
-      assert.equal(receipt.schemaVersion, 6);
+      assert.equal(receipt.schemaVersion, 7);
       assert.equal(receipt.eventReports, eventReports);
       assert.equal(receipt.schemaHash, before.schemaHash);
       assert.equal(
@@ -250,7 +251,7 @@ for (const region of ["CA", "US"] as const) {
       ship(f, accept(f, 1, "later-order").id);
       const after = inspect(f.path);
       const restored = await restoreBackup(archive, target, region, key);
-      assert.equal(restored.schemaVersion, 6);
+      assert.equal(restored.schemaVersion, 7);
       assert.equal(restored.eventReports, eventReports);
       assert.equal(restored.schemaHash, before.schemaHash);
       assert.equal(restored.snapshotHash, receipt.snapshotHash);
@@ -512,7 +513,7 @@ test("authenticated altered version/profile receipts and legacy/foreign layouts 
   }
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6])
   test(`authenticated version-${sourceVersion} archives require a separate upgrade procedure and never restore implicitly`, async (t) => {
     const f = fixture(t, { eventReports: false }),
       key = randomBytes(32),
@@ -534,9 +535,12 @@ for (const sourceVersion of [1, 2, 3, 4, 5])
             ? versionThree.hashes.disabled
             : sourceVersion === 4
               ? versionFour.hashes.disabled
-              : versionFive.hashes.disabled;
+              : sourceVersion === 5
+                ? versionFive.hashes.disabled
+                : versionSix.hashes.disabled;
     try {
-      db.exec("DROP TABLE fulfillment_coverage");
+      db.exec("DROP TABLE procurement_supplier_changes");
+      if (sourceVersion < 6) db.exec("DROP TABLE fulfillment_coverage");
       if (sourceVersion < 5) db.exec("DROP TABLE warranty_claim_coverage");
       if (sourceVersion < 4)
         db.exec("DROP TABLE integration_credit_cancellations");
@@ -592,7 +596,7 @@ test("operator CLI backs up/restores disabled US profile through protected stdin
   assert.equal(restored.code, 0, restored.err);
   for (const result of [backed, restored]) {
     const receipt = JSON.parse(result.out);
-    assert.equal(receipt.schemaVersion, 6);
+    assert.equal(receipt.schemaVersion, 7);
     assert.equal(receipt.eventReports, false);
     assert.equal(receipt.schemaHash, before.schemaHash);
     assert.equal(receipt.region, region);
