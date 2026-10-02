@@ -1,3 +1,4 @@
+import { TransferQueue } from "./transfer-queue.tsx";
 import {
   useSupplierReturnQueue,
   SupplierReturnQueueControls,
@@ -222,6 +223,7 @@ function App() {
       ...current,
       refunds: undefined,
       payments: undefined,
+      transfers: undefined,
     }));
     setCarrierShipmentId(null);
     setCarrierReplacementId(null);
@@ -267,7 +269,8 @@ function App() {
       e.cartRefresh = crypto.randomUUID();
     }
     if (["admin", "warehouse", "support"].includes(actor?.role ?? "")) {
-      e.transfers = await request("/api/transfers");
+      e.transfers = await request("/api/transfers/page");
+      e.transferRefresh = crypto.randomUUID();
       e.transferDestinations = await request("/api/transfer-destinations");
       e.counts = await request("/api/counts");
       e.countReviewPolicy = await request("/api/count-review-policy");
@@ -2661,169 +2664,145 @@ function App() {
               </>
             )}
             {extra.transfers && (
-              <>
-                <h2>Transfers</h2>
-                {table(
-                  ["Route", "Status", "Quantities / arrivals", "Actions"],
-                  extra.transfers,
-                  (t: Item) => [
-                    `${t.source_name} → ${t.destination_name}`,
-                    t.state,
-                    <div>
-                      {t.lines.map((line: Item) => (
-                        <div key={line.line_id}>
-                          <strong>
-                            {productName(line.product_id)} ·{" "}
-                            {line.serial ?? "Bulk lot"}
-                          </strong>
-                          <small>
-                            {line.quantity} dispatched · {line.receivedQuantity}{" "}
-                            received · {line.remainingQuantity} in transit
-                            {line.lossQuantity > 0 && (
-                              <>
-                                {" "}
-                                · {line.lostQuantity} unrecovered loss ·{" "}
-                                {line.recoveredQuantity} recovered
-                              </>
-                            )}
-                          </small>
-                          {line.legacyReceived && (
+              <TransferQueue
+                key={extra.transferRefresh}
+                initial={extra.transfers}
+                active={!busy}
+              >
+                {(items) =>
+                  table(
+                    [
+                      "Reference",
+                      "Route",
+                      "Status",
+                      "Quantities / arrivals",
+                      "Actions",
+                    ],
+                    items,
+                    (t: Item) => [
+                      <span key="reference" title={t.id}>
+                        {t.id}
+                      </span>,
+                      `${t.source_name} → ${t.destination_name}`,
+                      t.state,
+                      <div>
+                        {t.lines.map((line: Item) => (
+                          <div key={line.line_id}>
+                            <strong>
+                              {productName(line.product_id)} ·{" "}
+                              {line.serial ?? "Bulk lot"}
+                            </strong>
                             <small>
-                              Historical whole receipt; portion evidence
-                              unavailable
+                              {line.quantity} dispatched ·{" "}
+                              {line.receivedQuantity} received ·{" "}
+                              {line.remainingQuantity} in transit
+                              {line.lossQuantity > 0 && (
+                                <>
+                                  {" "}
+                                  · {line.lostQuantity} unrecovered loss ·{" "}
+                                  {line.recoveredQuantity} recovered
+                                </>
+                              )}
                             </small>
-                          )}
-                          {line.receipts.map((r: Item) => (
-                            <small key={r.id}>
-                              {r.receipt_ref} · {r.quantity} {r.condition} ·{" "}
-                              {r.bin}
-                            </small>
-                          ))}
-                          {line.losses.map((loss: Item) => (
-                            <div key={loss.id}>
+                            {line.legacyReceived && (
                               <small>
-                                {loss.loss_ref} · {loss.quantity} loss approved
-                                · {loss.remainingLostQuantity} unrecovered ·{" "}
-                                {loss.reason}
+                                Historical whole receipt; portion evidence
+                                unavailable
                               </small>
-                              {loss.recoveries.map((r: Item) => (
-                                <small key={r.id}>
-                                  {r.receipt_ref} · {r.quantity} recovered{" "}
-                                  {r.condition} · {r.bin}
+                            )}
+                            {line.receipts.map((r: Item) => (
+                              <small key={r.id}>
+                                {r.receipt_ref} · {r.quantity} {r.condition} ·{" "}
+                                {r.bin}
+                              </small>
+                            ))}
+                            {line.losses.map((loss: Item) => (
+                              <div key={loss.id}>
+                                <small>
+                                  {loss.loss_ref} · {loss.quantity} loss
+                                  approved · {loss.remainingLostQuantity}{" "}
+                                  unrecovered · {loss.reason}
                                 </small>
-                              ))}
-                              {actor?.role === "admin" &&
-                                loss.remainingLostQuantity > 0 &&
-                                button("Recover lost stock", () =>
-                                  simple(
-                                    "Recover lost stock",
-                                    [
-                                      {
-                                        name: "quantity",
-                                        label: "Units found",
-                                        type: "number",
-                                        value: loss.remainingLostQuantity,
-                                        max: loss.remainingLostQuantity,
-                                      },
-                                      {
-                                        name: "serial",
-                                        scan: "single",
-                                        label:
-                                          "Scan recovered serial (leave blank for bulk)",
-                                        optional: !line.serial,
-                                      },
-                                      {
-                                        name: "receiptRef",
-                                        label:
-                                          "Recovery reference (unique per portion)",
-                                      },
-                                      { name: "bin", label: "Destination bin" },
-                                      {
-                                        name: "condition",
-                                        label: "Condition",
-                                        value: "quarantine",
-                                        options: [
-                                          "usable",
-                                          "quarantine",
-                                          "damaged",
-                                        ].map((v) => ({ value: v, label: v })),
-                                      },
-                                      reason,
-                                    ],
-                                    "transfer.recover",
-                                    (v) => ({
-                                      ...v,
-                                      serial: v.serial || null,
-                                      lossId: loss.id,
-                                    }),
-                                  ),
-                                )}
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>,
-                    can("warehouse") &&
-                      (actor?.role === "admin" ||
-                        actor?.sites.includes(t.destination_id)) && (
-                        <div className="actions">
-                          {t.lines
-                            .filter((line: Item) => line.remainingQuantity > 0)
-                            .map((line: Item) => (
-                              <React.Fragment key={line.line_id}>
-                                {button("Receive transfer", () =>
-                                  simple(
-                                    "Receive transfer",
-                                    [
-                                      {
-                                        name: "quantity",
-                                        label: "Units arriving",
-                                        type: "number",
-                                        value: line.remainingQuantity,
-                                        max: line.remainingQuantity,
-                                      },
-                                      {
-                                        name: "serial",
-                                        scan: "single",
-                                        label:
-                                          "Scan transferred serial (leave blank for bulk)",
-                                        optional: !line.serial,
-                                      },
-                                      {
-                                        name: "receiptRef",
-                                        label:
-                                          "Arrival reference (unique per portion)",
-                                        help: "Use a distinct reference for each quantity and condition received.",
-                                      },
-                                      { name: "bin", label: "Destination bin" },
-                                      {
-                                        name: "condition",
-                                        label: "Condition",
-                                        options: [
-                                          "usable",
-                                          "quarantine",
-                                          "damaged",
-                                        ].map((v) => ({ value: v, label: v })),
-                                      },
-                                      reason,
-                                    ],
-                                    "transfer.receive",
-                                    (v) => ({
-                                      ...v,
-                                      serial: v.serial || null,
-                                      transferId: t.id,
-                                      lineId: line.line_id,
-                                    }),
-                                  ),
-                                )}
+                                {loss.recoveries.map((r: Item) => (
+                                  <small key={r.id}>
+                                    {r.receipt_ref} · {r.quantity} recovered{" "}
+                                    {r.condition} · {r.bin}
+                                  </small>
+                                ))}
                                 {actor?.role === "admin" &&
-                                  button("Approve transit loss", () =>
+                                  loss.remainingLostQuantity > 0 &&
+                                  button("Recover lost stock", () =>
                                     simple(
-                                      "Approve transit loss",
+                                      "Recover lost stock",
                                       [
                                         {
                                           name: "quantity",
-                                          label: "Missing units to write off",
+                                          label: "Units found",
+                                          type: "number",
+                                          value: loss.remainingLostQuantity,
+                                          max: loss.remainingLostQuantity,
+                                        },
+                                        {
+                                          name: "serial",
+                                          scan: "single",
+                                          label:
+                                            "Scan recovered serial (leave blank for bulk)",
+                                          optional: !line.serial,
+                                        },
+                                        {
+                                          name: "receiptRef",
+                                          label:
+                                            "Recovery reference (unique per portion)",
+                                        },
+                                        {
+                                          name: "bin",
+                                          label: "Destination bin",
+                                        },
+                                        {
+                                          name: "condition",
+                                          label: "Condition",
+                                          value: "quarantine",
+                                          options: [
+                                            "usable",
+                                            "quarantine",
+                                            "damaged",
+                                          ].map((v) => ({
+                                            value: v,
+                                            label: v,
+                                          })),
+                                        },
+                                        reason,
+                                      ],
+                                      "transfer.recover",
+                                      (v) => ({
+                                        ...v,
+                                        serial: v.serial || null,
+                                        lossId: loss.id,
+                                      }),
+                                    ),
+                                  )}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>,
+                      can("warehouse") &&
+                        (actor?.role === "admin" ||
+                          actor?.sites.includes(t.destination_id)) && (
+                          <div className="actions">
+                            {t.lines
+                              .filter(
+                                (line: Item) => line.remainingQuantity > 0,
+                              )
+                              .map((line: Item) => (
+                                <React.Fragment key={line.line_id}>
+                                  {button("Receive transfer", () =>
+                                    simple(
+                                      "Receive transfer",
+                                      [
+                                        {
+                                          name: "quantity",
+                                          label: "Units arriving",
                                           type: "number",
                                           value: line.remainingQuantity,
                                           max: line.remainingQuantity,
@@ -2832,33 +2811,86 @@ function App() {
                                           name: "serial",
                                           scan: "single",
                                           label:
-                                            "Confirm missing serial (leave blank for bulk)",
+                                            "Scan transferred serial (leave blank for bulk)",
                                           optional: !line.serial,
                                         },
                                         {
-                                          name: "lossRef",
+                                          name: "receiptRef",
                                           label:
-                                            "Loss evidence reference (unique per portion)",
+                                            "Arrival reference (unique per portion)",
+                                          help: "Use a distinct reference for each quantity and condition received.",
+                                        },
+                                        {
+                                          name: "bin",
+                                          label: "Destination bin",
+                                        },
+                                        {
+                                          name: "condition",
+                                          label: "Condition",
+                                          options: [
+                                            "usable",
+                                            "quarantine",
+                                            "damaged",
+                                          ].map((v) => ({
+                                            value: v,
+                                            label: v,
+                                          })),
                                         },
                                         reason,
                                       ],
-                                      "transfer.loss",
+                                      "transfer.receive",
                                       (v) => ({
                                         ...v,
                                         serial: v.serial || null,
                                         transferId: t.id,
                                         lineId: line.line_id,
-                                        revision: line.transitRevision,
                                       }),
                                     ),
                                   )}
-                              </React.Fragment>
-                            ))}
-                        </div>
-                      ),
-                  ],
-                )}
-              </>
+                                  {actor?.role === "admin" &&
+                                    button("Approve transit loss", () =>
+                                      simple(
+                                        "Approve transit loss",
+                                        [
+                                          {
+                                            name: "quantity",
+                                            label: "Missing units to write off",
+                                            type: "number",
+                                            value: line.remainingQuantity,
+                                            max: line.remainingQuantity,
+                                          },
+                                          {
+                                            name: "serial",
+                                            scan: "single",
+                                            label:
+                                              "Confirm missing serial (leave blank for bulk)",
+                                            optional: !line.serial,
+                                          },
+                                          {
+                                            name: "lossRef",
+                                            label:
+                                              "Loss evidence reference (unique per portion)",
+                                          },
+                                          reason,
+                                        ],
+                                        "transfer.loss",
+                                        (v) => ({
+                                          ...v,
+                                          serial: v.serial || null,
+                                          transferId: t.id,
+                                          lineId: line.line_id,
+                                          revision: line.transitRevision,
+                                        }),
+                                      ),
+                                    )}
+                                </React.Fragment>
+                              ))}
+                          </div>
+                        ),
+                    ],
+                  )
+                }
+              </TransferQueue>
             )}
           </>
         )}

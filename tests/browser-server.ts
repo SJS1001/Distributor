@@ -1,3 +1,4 @@
+import { transferQueueBrowser } from "./transfer-queue-browser-fixture.ts";
 import { operationsHealthBrowser } from "./operations-health-browser-fixture.ts";
 import { binRelocationBrowser } from "./bin-relocation-browser-fixture.ts";
 import { stockHistoryBrowser } from "./stock-history-browser-fixture.ts";
@@ -934,6 +935,7 @@ const supplierReturnQueueHttp = await supplierReturnQueueBrowser((fn) =>
   cleanup.push(fn),
 );
 const purchaseQueueHttp = await purchaseQueueBrowser((fn) => cleanup.push(fn));
+const transferQueueHttp = await transferQueueBrowser((fn) => cleanup.push(fn));
 const reconciliationHttp = await reconciliationBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -976,6 +978,7 @@ const stop = async () => {
   await queueHttp.close();
   await orderQueueHttp.close();
   await purchaseQueueHttp.close();
+  await transferQueueHttp.close();
   await supplierReturnQueueHttp.close();
   await invoiceQueueHttp.close();
   await stockQueueHttp.close();

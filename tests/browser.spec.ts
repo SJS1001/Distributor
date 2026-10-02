@@ -1,3 +1,4 @@
+import "./transfer-queue-browser-journey.ts";
 import "./operations-health-browser-journey.ts";
 import "./bin-relocation-browser-journey.ts";
 import "./stock-history-browser-journey.ts";
