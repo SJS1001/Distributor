@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — transfer page API and requested GitHub commit, 2026-10-02
+
+- Resumed published parent `f5c7270897a08f44d796fc3029fd965a4bacfcfa` on `codex/local-distributor-checkpoint` for the owner's GitHub commit request. Read-only checks confirm push permission, matching remote parent, zero workflows and zero Actions runs. Direct workstation verification only; no CI runner, delegated/cloud session, provider IO, PR, merge or deployment.
+- Completed the pending native/HTTP transfer page API with twenty scoped headers and live state filters. Purpose/version/organization/current-site/filter-bound canonical continuation and scoped anchors preserve tied-time ordering and changed-state traversal. Shared custody projection retains original details; legacy full-list reads and existing browser behavior are preserved. Browser paging integration remains pending; no schema, dependency, license, workflow or mutation-policy change.
+- Fresh complete native checks pass 1,983/1,983; focused checks pass 22/22, including seven new synthetic tests. TypeScript and formatting pass. No fresh browser/build/React/isolated runtime claim. The initial fixture loss-ID mistake and its failed log remain privately retained. [Receipt](evidence/LOCAL-TRANSFER-PAGING-2026-10-02.md) binds final tested inputs/outcomes.
+- Self-review checks fresh authority, SQL scope/state before limits, bounded header/detail expansion, current cursor eligibility, read conservation, legacy custody/cost/quantity behavior and publication exclusions. Per-transfer histories, derived-state scans/index/locking costs, browser controls, production/provider/device/residency and operator qualification remain open. All 44 tasks and 10 gates NOT VERIFIED; full system incomplete.
+- Final document/link/whitespace and staged-byte review precede the authorized normal branch push. Verify exact remote HEAD and clean checkout before reporting publication. No CI runner is authorized by this checkpoint.
+
 ## Latest continuation — bin recovery and requested GitHub commit, 2026-10-02
 
 - Resumed published parent `132c41a21e5080751ae04184ec311ec8e2176875` on `codex/local-distributor-checkpoint`. The owner requested committing to GitHub; read-only checks confirm push permission, matching remote parent and zero workflows/Actions runs. Direct workstation checks only; no CI runner, delegated/cloud session, provider request, PR, merge or deployment.

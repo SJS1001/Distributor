@@ -1,4 +1,8 @@
 import {
+  transferQueueStates,
+  type TransferQueueInput,
+} from "../shared/transfer-queue.ts";
+import {
   stockQueueViews,
   type StockQueueInput,
 } from "../shared/stock-queue.ts";
@@ -1767,6 +1771,22 @@ export async function createHttp(app: Application, options: HttpOptions) {
     { schema: { params: obj({ draftId: str }) } },
     async (request) =>
       app.procurement.drafts.history(actor(request), request.params.draftId),
+  );
+  http.get<{ Querystring: TransferQueueInput }>(
+    "/api/transfers/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            state: { type: "string", enum: [...transferQueueStates] },
+            after: { type: "string", minLength: 1, maxLength: 4096 },
+          },
+          ["state", "after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.inventory.transferPage(actor(request), request.query),
   );
   http.get("/api/transfers", async (request) =>
     app.inventory.transfers(actor(request)),

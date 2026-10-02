@@ -1,3 +1,7 @@
+import {
+  transferQueueStates,
+  type TransferQueueInput,
+} from "../shared/transfer-queue.ts";
 import type { InventorySalesEvidence } from "./sales-evidence.ts";
 import {
   stockQueueViews,
@@ -2409,106 +2413,190 @@ export class Inventory {
       .filter(
         (t) =>
           actor.role === "admin" ||
-          actor.sites.includes(String(t.source_id)) ||
-          actor.sites.includes(String(t.destination_id)),
+          actor.sites.includes(t.source_id) ||
+          actor.sites.includes(t.destination_id),
       )
-      .map((t) => {
-        const lines = this.store
-          .all<TransferManifest>(
-            "SELECT m.*,l.received FROM inventory_transfer_manifest m JOIN inventory_transfer_lines l ON l.id=m.line_id AND l.org_id=m.org_id WHERE m.org_id=? AND m.transfer_id=?",
+      .map((t) => this.transferDetails(actor, t));
+  }
+  transferPage(actor: Actor, input: TransferQueueInput = {}) {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, ["warehouse", "support"]);
+      const state = input.state ?? null;
+      check(
+        state === null || transferQueueStates.includes(state),
+        "VALIDATION",
+        "Choose a supported transfer state.",
+        400,
+      );
+      const scope = actor.role === "admin" ? null : [...actor.sites].sort();
+      const binding = ["transfer-queue", 1, actor.orgId, scope, state];
+      const parameters: SQLInputValue[] = [actor.orgId];
+      let where = "t.org_id=?";
+      if (scope) {
+        where += scope.length
+          ? ` AND (t.source_id IN (${scope.map(() => "?").join(",")}) OR t.destination_id IN (${scope.map(() => "?").join(",")}))`
+          : " AND 0=1";
+        parameters.push(...scope, ...scope);
+      }
+      let anchor: (Transfer & { position: number }) | undefined;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Transfer cursor", 4096);
+        let cursor: unknown;
+        try {
+          const bytes = Buffer.from(encoded, "base64url");
+          check(
+            encoded === input.after && bytes.toString("base64url") === encoded,
+            "VALIDATION",
+            "Invalid transfer cursor.",
+            400,
+          );
+          cursor = JSON.parse(bytes.toString("utf8"));
+        } catch {
+          check(false, "VALIDATION", "Invalid transfer cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 6 &&
+            JSON.stringify(cursor.slice(0, 5)) === JSON.stringify(binding) &&
+            typeof cursor[5] === "string" &&
+            cursor[5].length > 0 &&
+            cursor[5].length <= 128,
+          "VALIDATION",
+          "Transfer cursor does not match this organization, sites and state.",
+          400,
+        );
+        anchor = this.store.get<Transfer & { position: number }>(
+          `SELECT t.*,t.rowid AS position FROM inventory_transfers t WHERE ${where} AND t.id=?`,
+          ...parameters,
+          cursor[5],
+        );
+        check(anchor, "CURSOR", "Transfer cursor is no longer available.", 400);
+      }
+      // Derive the same live state as transferDetails, before the header limit.
+      // Unrecovered losses and legacy whole receipts remain distinguishable.
+      const loss = `EXISTS(SELECT 1 FROM inventory_transfer_losses l WHERE l.org_id=t.org_id AND l.transfer_id=t.id AND l.quantity>COALESCE((SELECT SUM(r.quantity) FROM inventory_transfer_recoveries r WHERE r.org_id=l.org_id AND r.loss_id=l.id),0))`;
+      const arrivals = `EXISTS(SELECT 1 FROM inventory_transfer_receipts r JOIN inventory_transfer_manifest m ON m.org_id=r.org_id AND m.line_id=r.line_id WHERE m.org_id=t.org_id AND m.transfer_id=t.id)
+        OR EXISTS(SELECT 1 FROM inventory_transfer_recoveries r JOIN inventory_transfer_losses l ON l.org_id=r.org_id AND l.id=r.loss_id WHERE l.org_id=t.org_id AND l.transfer_id=t.id)
+        OR EXISTS(SELECT 1 FROM inventory_transfer_lines l WHERE l.org_id=t.org_id AND l.transfer_id=t.id AND l.received=1 AND NOT EXISTS(SELECT 1 FROM inventory_transfer_losses x WHERE x.org_id=l.org_id AND x.line_id=l.id))`;
+      const effective = `CASE WHEN ${loss} THEN CASE WHEN t.state='transit' THEN 'partially-reconciled' ELSE 'reconciled-with-loss' END WHEN t.state='transit' AND (${arrivals}) THEN 'partially-received' ELSE t.state END`;
+      const rows = this.store.all<Transfer & { position: number }>(
+        `SELECT t.*,t.rowid AS position FROM inventory_transfers t WHERE ${where}
+        ${state ? `AND (${effective})=?` : ""}
+        ${anchor ? "AND (t.created_at<? OR (t.created_at=? AND t.rowid<?))" : ""}
+        ORDER BY t.created_at DESC,t.rowid DESC LIMIT 21`,
+        ...parameters,
+        ...(state ? [state] : []),
+        ...(anchor
+          ? [anchor.created_at, anchor.created_at, anchor.position]
+          : []),
+      );
+      const headers = rows.slice(0, 20);
+      const items = headers.map(({ position: _, ...t }) =>
+        this.transferDetails(actor, t),
+      );
+      return {
+        items,
+        next:
+          rows.length > 20
+            ? Buffer.from(
+                JSON.stringify([...binding, headers[19]!.id]),
+              ).toString("base64url")
+            : null,
+      };
+    });
+  }
+  private transferDetails(actor: Actor, t: Transfer) {
+    const lines = this.store
+      .all<TransferManifest>(
+        "SELECT m.*,l.received FROM inventory_transfer_manifest m JOIN inventory_transfer_lines l ON l.id=m.line_id AND l.org_id=m.org_id WHERE m.org_id=? AND m.transfer_id=?",
+        actor.orgId,
+        String(t.id),
+      )
+      .map((line) => {
+        const receipts = this.store.all(
+          "SELECT id,unit_id,receipt_ref,quantity,condition,bin,reason,actor_id,created_at FROM inventory_transfer_receipts WHERE org_id=? AND line_id=? ORDER BY created_at,id",
+          actor.orgId,
+          String(line.line_id),
+        );
+        const recorded = receipts.reduce(
+          (sum, r) => sum + Number(r.quantity),
+          0,
+        );
+        const losses = this.store
+          .all<{
+            id: string;
+            loss_ref: string;
+            quantity: number;
+            unit_cost: number;
+            reason: string;
+            actor_id: string;
+            created_at: string;
+          }>(
+            "SELECT id,loss_ref,quantity,unit_cost,reason,actor_id,created_at FROM inventory_transfer_losses WHERE org_id=? AND line_id=? ORDER BY created_at,id",
             actor.orgId,
-            String(t.id),
+            line.line_id,
           )
-          .map((line) => {
-            const receipts = this.store.all(
-              "SELECT id,unit_id,receipt_ref,quantity,condition,bin,reason,actor_id,created_at FROM inventory_transfer_receipts WHERE org_id=? AND line_id=? ORDER BY created_at,id",
+          .map((loss) => {
+            const recoveries = this.store.all(
+              "SELECT id,unit_id,receipt_ref,quantity,condition,bin,reason,actor_id,created_at FROM inventory_transfer_recoveries WHERE org_id=? AND loss_id=? ORDER BY created_at,id",
               actor.orgId,
-              String(line.line_id),
+              String(loss.id),
             );
-            const recorded = receipts.reduce(
+            const recoveredQuantity = recoveries.reduce(
               (sum, r) => sum + Number(r.quantity),
               0,
             );
-            const losses = this.store
-              .all<{
-                id: string;
-                loss_ref: string;
-                quantity: number;
-                unit_cost: number;
-                reason: string;
-                actor_id: string;
-                created_at: string;
-              }>(
-                "SELECT id,loss_ref,quantity,unit_cost,reason,actor_id,created_at FROM inventory_transfer_losses WHERE org_id=? AND line_id=? ORDER BY created_at,id",
-                actor.orgId,
-                line.line_id,
-              )
-              .map((loss) => {
-                const recoveries = this.store.all(
-                  "SELECT id,unit_id,receipt_ref,quantity,condition,bin,reason,actor_id,created_at FROM inventory_transfer_recoveries WHERE org_id=? AND loss_id=? ORDER BY created_at,id",
-                  actor.orgId,
-                  String(loss.id),
-                );
-                const recoveredQuantity = recoveries.reduce(
-                  (sum, r) => sum + Number(r.quantity),
-                  0,
-                );
-                return {
-                  ...loss,
-                  recoveredQuantity,
-                  remainingLostQuantity:
-                    Number(loss.quantity) - recoveredQuantity,
-                  recoveries,
-                };
-              });
-            const lossQuantity = losses.reduce(
-              (sum, l) => sum + Number(l.quantity),
-              0,
-            );
-            const recoveredQuantity = losses.reduce(
-              (sum, l) => sum + l.recoveredQuantity,
-              0,
-            );
-            const legacyReceived = Boolean(
-              line.received && recorded === 0 && lossQuantity === 0,
-            );
-            const receivedQuantity =
-              (legacyReceived ? line.quantity : recorded) + recoveredQuantity;
-            const remainingQuantity =
-              line.quantity -
-              receivedQuantity -
-              (lossQuantity - recoveredQuantity);
             return {
-              ...line,
-              receivedQuantity,
-              remainingQuantity,
-              lossQuantity,
+              ...loss,
               recoveredQuantity,
-              lostQuantity: lossQuantity - recoveredQuantity,
-              transitRevision:
-                remainingQuantity > 0
-                  ? this.unit(actor, line.unit_id).revision
-                  : null,
-              legacyReceived,
-              receipts,
-              losses,
+              remainingLostQuantity: Number(loss.quantity) - recoveredQuantity,
+              recoveries,
             };
           });
+        const lossQuantity = losses.reduce(
+          (sum, l) => sum + Number(l.quantity),
+          0,
+        );
+        const recoveredQuantity = losses.reduce(
+          (sum, l) => sum + l.recoveredQuantity,
+          0,
+        );
+        const legacyReceived = Boolean(
+          line.received && recorded === 0 && lossQuantity === 0,
+        );
+        const receivedQuantity =
+          (legacyReceived ? line.quantity : recorded) + recoveredQuantity;
+        const remainingQuantity =
+          line.quantity - receivedQuantity - (lossQuantity - recoveredQuantity);
         return {
-          ...t,
-          source_name: this.warehouse(actor, String(t.source_id)).name,
-          destination_name: this.warehouse(actor, String(t.destination_id))
-            .name,
-          state: lines.some((l) => l.lostQuantity > 0)
-            ? t.state === "transit"
-              ? "partially-reconciled"
-              : "reconciled-with-loss"
-            : t.state === "transit" && lines.some((l) => l.receivedQuantity > 0)
-              ? "partially-received"
-              : t.state,
-          lines,
+          ...line,
+          receivedQuantity,
+          remainingQuantity,
+          lossQuantity,
+          recoveredQuantity,
+          lostQuantity: lossQuantity - recoveredQuantity,
+          transitRevision:
+            remainingQuantity > 0
+              ? this.unit(actor, line.unit_id).revision
+              : null,
+          legacyReceived,
+          receipts,
+          losses,
         };
       });
+    return {
+      ...t,
+      source_name: this.warehouse(actor, String(t.source_id)).name,
+      destination_name: this.warehouse(actor, String(t.destination_id)).name,
+      state: lines.some((l) => l.lostQuantity > 0)
+        ? t.state === "transit"
+          ? "partially-reconciled"
+          : "reconciled-with-loss"
+        : t.state === "transit" && lines.some((l) => l.receivedQuantity > 0)
+          ? "partially-received"
+          : t.state,
+      lines,
+    };
   }
   receiveTransfer(
     actor: Actor,

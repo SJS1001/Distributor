@@ -73,6 +73,8 @@ The [refund write guard receipt](evidence/LOCAL-REFUND-PREWRITE-2026-10-01.md) r
 
 ## Evidence and limits
 
+The [transfer paging receipt](evidence/LOCAL-TRANSFER-PAGING-2026-10-02.md) covers a new scoped native/HTTP twenty-header API with live receipt/loss/recovery states, tied-time traversal, current grant/cursor checks and read conservation. [API behavior and limits](TRANSFER-QUEUES.md) retain the legacy full-list endpoint used by the browser. Browser paging and production query/locking qualification remain pending; this does not verify a product gate.
+
 The [purchase descriptor receipt](evidence/LOCAL-PURCHASE-DESCRIPTORS-2026-10-02.md) records current catalog-owned SKU, name and customer-ordering activity on scoped purchase lines. The queue and new receipt selector identify retired commitments while preserving exact native receiving and original cost/quantity facts. CA/US restart and HTTP access checks plus the phone receiving journey exercise this partial D-008/D-014/D-017 change; per-line read cost, supplier policy, physical devices, production and operator acceptance remain unqualified.
 
 The [retired-product receiving receipt](evidence/LOCAL-RETIRED-RECEIVING-2026-10-02.md) records scanned receipt drafts for existing purchase commitments after customer-ordering retirement. Saving remains separate from stock confirmation; current authority, exact SKU, remaining quantity, new serial identity, original purchase cost and quarantine checks remain enforced. Customer ordering stays retired. This is partial D-014/D-017 engineering; supplier policy, physical devices, production and operator acceptance remain unqualified.

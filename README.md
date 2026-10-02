@@ -31,6 +31,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Stock and replacement search](docs/STOCK-QUEUES.md) | Scoped twenty-record stock pages, full availability totals and independent eligible replacement serial search |
 | [Stock bin movement](docs/BIN-RELOCATION.md) | Reviewed whole or partial bulk relocation, retained locations, exact retries and conserved original cost |
 | [Stock movement history](docs/STOCK-HISTORY.md) | Scoped serial/bulk pages, current positions, original movement costs and exact read retry |
+| [Transfer page API](docs/TRANSFER-QUEUES.md) | Scoped twenty-header reads and live custody-state filters; browser integration remains pending |
 | [Serial dossier](docs/SERIAL-DOSSIER.md) | Scoped receipt, movement, shipment, invoice and claim lineage with browser paging, retry and refresh |
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |

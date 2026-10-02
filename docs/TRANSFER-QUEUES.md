@@ -1,0 +1,11 @@
+# Transfer page API
+
+Inventory exposes `transferPage(actor, { state?, after? })` and authenticated `GET /api/transfers/page`. A response contains `items` (at most twenty transfer headers with their existing custody details) and `next` (a continuation token or null). Omit `state` for all states, or choose `transit`, `partially-received`, `partially-reconciled`, `received` or `reconciled-with-loss`.
+
+Current persisted administrator, warehouse or support authority and the password-change requirement govern every read. Administrators see their organization; other permitted staff see transfers involving a currently granted source or destination warehouse. Empty grants return an empty first page. Organization and warehouse scope are applied in SQL before the twenty-header boundary, and details are expanded only for returned headers. Native receipts, losses and recoveries determine the live state filter before that boundary.
+
+Headers sort by creation time descending, then insertion position descending. Tokens bind their purpose, version, organization, sorted current warehouse grants and selected state. Changed scope or filter requires a fresh first page. Invalid/noncanonical tokens and missing or inaccessible anchors refuse continuation. An anchor changing state still permits continuation with the original state filter; later pages observe current facts rather than a frozen multi-request snapshot.
+
+The legacy `transfers(actor)` and `/api/transfers` operations retain their full-list behavior. The browser still uses that legacy endpoint: browser pagination, filter controls and cancellation/retry journeys remain to be implemented and verified. This checkpoint adds the native/HTTP page API without silently hiding transfers from existing operators.
+
+Per-transfer line and receipt/loss/recovery histories are still unbounded. Derived-state scans, existing query/index costs, the read transaction's writer reservation, changing records between pages and production-scale qualification remain limitations. No schema, dependency, workflow, transfer mutation or accounting policy changes. This is partial inventory engineering; all product gates remain NOT VERIFIED. See [local verification](evidence/LOCAL-TRANSFER-PAGING-2026-10-02.md) and [implementation status](IMPLEMENTATION.md).
