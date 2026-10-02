@@ -1,4 +1,10 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { claimStates, type ClaimState } from "../shared/claim-queue.ts";
 import { request } from "./api.ts";
 
@@ -22,7 +28,10 @@ export function useClaimQueue(
   });
   const pending = useRef<AbortController | null>(null);
   const current = useRef({ initial, active });
-  current.current = { initial, active };
+  // Only committed inputs may fence a request from the visible screen.
+  useLayoutEffect(() => {
+    current.current = { initial, active };
+  }, [initial, active]);
   const cancel = () => {
     pending.current?.abort();
     pending.current = null;

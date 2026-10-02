@@ -17,7 +17,7 @@ Date: 2026-09-30. A proposal is not an approved business rule. Owner columns ide
 
 ## CI runner decision
 
-Current execution restriction: local commits and direct workstation checks only, per the owner's subsequent instruction. Do not start local/self-hosted or cloud CI jobs or push this work. The future hosted-runner decision below remains the intended policy once CI is separately authorized.
+Current execution restriction: direct workstation checks; no local/self-hosted or cloud CI jobs. On 2026-10-02 the owner explicitly requested committing all work to the GitHub repository, authorizing this Distributor source/test/documentation snapshot to be pushed on the current branch. This supersedes the earlier local-only restriction for this snapshot. No PR, merge, deployment or workflow creation is authorized. The future hosted-runner decision below remains the intended policy once CI is separately authorized.
 
 - Date/reviewer: 2026-09-30; repository owner, by explicit instruction in chat.
 - Decision/rationale: Distributor will use GitHub-hosted runners. The owner selected GitHub's hosted infrastructure instead of the local fleet; no additional technical rationale was supplied.
@@ -43,7 +43,7 @@ Current execution restriction: local commits and direct workstation checks only,
 | DEC-11 | Selected OPUS extraction, permissive custom core, or whole-platform adaptation? Source ownership, publication rights and proprietary versus copyleft delivery? | Owner + technical/license reviewer | G0/G1 / D-002, D-003 |
 | DEC-12 | Dedicated team, QA/operator availability, integration access and release responsibility? | Product owner | G0 / D-006 |
 | DEC-13 | Optional UB context/mapping now, later, or no UB? Proposed: defer production adoption, preserve adapter seam. | Product owner + technical reviewer | D-042–D-044 |
-| DEC-14 | Public source versus private implementation; own project license and publication scope? Repo is currently public; no license chosen. | Repository owner | Before any source export/push |
+| DEC-14 | Public source versus private implementation; own project license and publication scope? Repo is public; owner authorized the current original Distributor source/test/documentation snapshot on 2026-10-02. No product license chosen; OPUS/UB/private data and broader redistribution remain excluded. | Repository owner | Current snapshot authorized; revisit before further export or distribution |
 
 ## Required examples
 

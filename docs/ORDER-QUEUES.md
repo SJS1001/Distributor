@@ -8,6 +8,8 @@ Open **Orders** to see up to twenty newest recorded orders. **Load more orders**
 
 Failed continuation loads preserve the rows and cursor so **Retry order queue** requests the same page. A failed first filter load leaves the new queue empty until retry. Refresh reloads the initial all-state queue. Navigation, refresh, sign-out and a newer filter cancel earlier responses. Keyboard pagination restores focus to the retry/next button or the queue heading after the final page. An order identifier's hover text contains the complete identifier. Amendment and reservation histories also work for orders loaded on later pages.
 
+Request fencing follows committed screen inputs. An abandoned React render cannot discard a response belonging to the visible queue or leave that request busy. Committed navigation and refresh still cancel earlier work. See [the render-safety receipt](evidence/LOCAL-RENDER-AUTHORITY-2026-10-02.md).
+
 The Overview open-order metric counts every order in the current account/site scope, independently of the twenty displayed headers. Order pages and that metric each use a current database snapshot; the whole dashboard is not one atomic snapshot. A change between those queries can make the displayed slice and count differ temporarily.
 
 ## Access and live queue semantics

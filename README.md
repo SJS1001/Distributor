@@ -48,7 +48,7 @@ All product checkpoints are **NOT VERIFIED**. Documentation is not evidence that
 
 Future GitHub Actions workflows will use **GitHub-hosted runners**, as instructed by the owner on 2026-09-30. The repository has no workflows yet; see [the CI decision](docs/DECISIONS.md#ci-runner-decision).
 
-Current work uses direct workstation checks and local commits only, per the owner's instruction. No pushes, PRs or local/cloud CI runner jobs are authorized for this checkpoint.
+The owner authorized committing all work and pushing the current Distributor source, tests and documentation to this repository on 2026-10-02. Verification uses direct workstation commands; PRs and local/cloud CI runner jobs remain unauthorized. No Actions workflow is present. Private runtime data, credentials and private verification artifacts are excluded.
 
 No product license has been selected. A public repository is not by itself permission to republish OPUS, UB, customer information or third-party code.
 
