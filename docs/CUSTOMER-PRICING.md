@@ -20,6 +20,14 @@ If another session changes the cart before a new save or quote, cancel and reope
 
 The [cart recovery receipt](evidence/LOCAL-CART-RECOVERY-2026-10-02.md) records lost responses, edited quantities, validation correction, network/timeout recovery and concurrent-session refusals. Pending editor state lasts only for that editor; reopening reads the native saved cart. Submitted mutations and their durable receipts may finish even if navigation abandons the UI.
 
+## Unavailable saved items
+
+If a saved product is absent from the current active catalog, the editor shows its saved unit and item counts and an unchecked **Remove unavailable items from this saved cart** choice. Continue refuses before saving or quoting until that choice is checked. Canceling before submission preserves those quantities; reopening asks again. Available products keep their saved quantities and current customer prices.
+
+Continuing with removal checked saves the remaining available quantities before requesting a quote. A failed or lost response follows the same exact-save recovery above. Canceling after submission does not undo a committed save. If removal leaves no items, the empty cart is saved and the quote reports **Cart is empty.**; add available quantities and continue to obtain a quote. Removal never accepts an order automatically.
+
+The [local removal receipt](evidence/LOCAL-UNAVAILABLE-CART-2026-10-02.md) records buyer and staff cancellation, lost-response recovery, and clearing an unavailable-only cart. Unavailable item names are not currently returned by the cart projection; this review shows counts and removes all unavailable lines together. It does not reactivate products or implement catalog retirement management.
+
 ## Price and access contract
 
 `Catalog.customerProducts(actor, accountId)` refreshes persisted identity, role, required-password restrictions, customer assignment and customer tier in one database transaction. Administrator, commercial and buyer roles are permitted; finance, warehouse, warranty and support are refused. Buyers cannot choose another account, and stale or forged caller grants do not expand access. These checks precede even an empty catalog result.
@@ -32,6 +40,6 @@ The public projection contains exactly `id`, `sku`, `name`, `serialized`, `unit_
 
 ## Qualification limits
 
-The product list and saved cart collection remain unbounded. Each pricing read is transaction-consistent, but cart, pricing and dashboard reads are separate and may become stale. Immediate read transactions, SQL cost, full catalog editing at scale and inactive saved-cart lines remain unqualified. Native quote and acceptance commands remain authoritative for account, currency, stock, credit, reservation and immutable price evidence.
+The product list and saved cart collection remain unbounded. Each pricing read is transaction-consistent, but cart, pricing and dashboard reads are separate and may become stale. Immediate read transactions, SQL cost and full catalog editing at scale remain unqualified. Unavailable saved lines now require explicit removal, but their original display names and individual unavailable-line editing remain absent. Native quote and acceptance commands remain authoritative for account, currency, stock, credit, reservation and immutable price evidence.
 
 The [local receipt](evidence/LOCAL-CUSTOMER-PRICING-2026-10-02.md) records synthetic CA/US cases, phone-width Chromium workflows, retained failures and tested inputs. It does not establish country-specific tax obligations, actual provider/device behavior, infrastructure residency, production load/security/recovery or operator acceptance. This is partial D-008/D-018/D-019/D-020 and REQ-03/REQ-12/REQ-13 engineering; it does not pass G3 or any other product gate.

@@ -347,3 +347,170 @@ test("browser: cart recovery retains the original save after network loss and a 
   });
   expect((await carts(page))[0].revision).toBe(2);
 });
+
+test("browser: unavailable cart items require explicit removal before saving or quoting", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page, "unavailable");
+  const original = (await carts(page))[0];
+  expect(original.lines).toHaveLength(2);
+  let quotes = 0;
+  await page.route(quoteRoute, async (route) => {
+    quotes++;
+    await route.continue();
+  });
+  const saves: { key: string | undefined; data: unknown }[] = [];
+  await page.route(saveRoute, async (route) => {
+    saves.push({
+      key: route.request().headers()["idempotency-key"],
+      data: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    if (saves.length === 1) await route.fulfill(unavailable);
+    else await route.fulfill({ response });
+  });
+  await prepare(page);
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Review removal of unavailable saved items before continuing.",
+  );
+  expect(saves).toHaveLength(0);
+  expect(quotes).toBe(0);
+  expect((await carts(page))[0]).toEqual(original);
+  await expect(page.getByRole("dialog")).toContainText(
+    "2 saved units across 1 unavailable item",
+  );
+  const remove = page.getByRole("checkbox", {
+    name: "Remove unavailable items from this saved cart",
+    exact: true,
+  });
+  await expect(remove).not.toBeChecked();
+  await remove.check();
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Synthetic quote unavailable",
+  );
+  await proceed(page);
+  await expect(
+    page.getByRole("heading", { name: "Review and accept order", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("Total: CA$113.00");
+  expect(saves).toHaveLength(2);
+  expect(quotes).toBe(1);
+  expect(saves[0]!.key).toBeTruthy();
+  expect(saves[1]).toEqual(saves[0]);
+  const saved = (await carts(page))[0];
+  expect(saved.revision).toBe(2);
+  expect(saved.lines).toEqual([original.lines[0]]);
+  expect(
+    (await (await page.request.get(`${origin}/api/dashboard`)).json()).orders,
+  ).toEqual([]);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.reload();
+  await prepare(page);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Remove unavailable items from this saved cart",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("browser: staff cancel preserves unavailable cart quantities and reopening resets removal choice", async ({
+  page,
+}) => {
+  await login(page, "admin");
+  // Select the exact independent staff fixture customer, not an arbitrary cart.
+  const accounts = (
+    await (await page.request.get(`${origin}/api/dashboard`)).json()
+  ).accounts;
+  const customer = accounts.find(
+    (a: any) => a.name === "Cart recovery unavailable-staff",
+  );
+  const before = (await carts(page)).find(
+    (c: any) => c.account_id === customer.id,
+  );
+  await page
+    .getByRole("button", { name: "Prepare order", exact: true })
+    .click();
+  await page.getByLabel("Customer", { exact: true }).selectOption(customer.id);
+  await page
+    .getByLabel("Warehouse", { exact: true })
+    .selectOption({ label: "Toronto" });
+  await proceed(page);
+  const remove = page.getByRole("checkbox", {
+    name: "Remove unavailable items from this saved cart",
+    exact: true,
+  });
+  await remove.check();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  expect(
+    (await carts(page)).find((c: any) => c.account_id === customer.id),
+  ).toEqual(before);
+  await page
+    .getByRole("button", { name: "Prepare order", exact: true })
+    .click();
+  await page.getByLabel("Customer", { exact: true }).selectOption(customer.id);
+  await page
+    .getByLabel("Warehouse", { exact: true })
+    .selectOption({ label: "Toronto" });
+  await proceed(page);
+  await expect(remove).not.toBeChecked();
+  await remove.check();
+  await proceed(page);
+  await expect(
+    page.getByRole("heading", { name: "Review and accept order", exact: true }),
+  ).toBeVisible();
+  const saved = (await carts(page)).find(
+    (c: any) => c.account_id === customer.id,
+  );
+  expect(saved.revision).toBe(2);
+  expect(saved.lines).toEqual([before.lines[0]]);
+});
+
+test("browser: explicitly removing the only unavailable item clears the cart without ordering", async ({
+  page,
+}) => {
+  await login(page, "unavailable-empty");
+  const before = (await carts(page))[0];
+  await prepare(page);
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Review removal of unavailable saved items before continuing.",
+  );
+  expect((await carts(page))[0]).toEqual(before);
+  await page
+    .getByRole("checkbox", {
+      name: "Remove unavailable items from this saved cart",
+      exact: true,
+    })
+    .check();
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Cart is empty.",
+  );
+  expect((await carts(page))[0].lines).toEqual([]);
+  expect((await carts(page))[0].revision).toBe(2);
+  expect(
+    (await (await page.request.get(`${origin}/api/dashboard`)).json()).orders,
+  ).toEqual([]);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("1");
+  await proceed(page);
+  await expect(
+    page.getByRole("heading", { name: "Review and accept order", exact: true }),
+  ).toBeVisible();
+  expect((await carts(page))[0].revision).toBe(3);
+});

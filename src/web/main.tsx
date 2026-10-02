@@ -782,6 +782,14 @@ function App() {
     products: CustomerProduct[],
     old?: Item,
   ) => {
+    const availableIds = new Set(products.map((product) => product.id));
+    const unavailableLines: { productId: string; quantity: number }[] = (
+      old?.lines ?? []
+    ).filter((line: Item) => !availableIds.has(line.productId));
+    const unavailableUnits = unavailableLines.reduce(
+      (total, line) => total + line.quantity,
+      0,
+    );
     let revision = old?.revision ?? 0;
     let savedCart: Item | undefined;
     let savedLines: string | undefined;
@@ -816,17 +824,29 @@ function App() {
       savedLines = JSON.stringify(pendingSave.lines);
       pendingSave = undefined;
     };
+    const fields: Field[] = products.map((p) => ({
+      name: p.id,
+      label: `${p.sku} · ${p.name}`,
+      type: "number",
+      help: `Customer price ${money(p.unit_price, p.currency)} + ${money(p.unit_tax, p.currency)} tax per unit (${p.currency}).`,
+      value: old?.lines.find((l: Item) => l.productId === p.id)?.quantity ?? 0,
+    }));
+    if (unavailableLines.length)
+      fields.push({
+        name: "removeUnavailableItems",
+        label: "Remove unavailable items from this saved cart",
+        type: "checkbox",
+        value: false,
+        help: `${unavailableUnits} saved ${unavailableUnits === 1 ? "unit" : "units"} across ${unavailableLines.length} unavailable ${unavailableLines.length === 1 ? "item" : "items"}. These items cannot be ordered from the current catalog. Continuing removes them before requesting a quote. Canceling after submission does not undo a saved change.`,
+      });
     open(
       "Edit order quantities",
-      products.map((p) => ({
-        name: p.id,
-        label: `${p.sku} · ${p.name}`,
-        type: "number",
-        help: `Customer price ${money(p.unit_price, p.currency)} + ${money(p.unit_tax, p.currency)} tax per unit (${p.currency}).`,
-        value:
-          old?.lines.find((l: Item) => l.productId === p.id)?.quantity ?? 0,
-      })),
+      fields,
       async (v) => {
+        if (unavailableLines.length && !v.removeUnavailableItems)
+          throw new Error(
+            "Review removal of unavailable saved items before continuing.",
+          );
         const lines = products
           .map((p) => ({ productId: p.id, quantity: Number(v[p.id]) }))
           .filter((l) => l.quantity > 0);

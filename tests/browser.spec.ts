@@ -2365,6 +2365,18 @@ test("browser: warehouse count observation survives reload, administrator retry 
     .filter({
       has: page.getByRole("button", { name: "Start count", exact: true }),
     });
+  const findLot = async () => {
+    // Dashboard refresh restores the first stock page. Search the fixture bin
+    // rather than assuming a counted lot remains on that page after mutations.
+    await page
+      .getByLabel("Search stock serial or bin", { exact: true })
+      .fill("COUNT-1");
+    await page
+      .getByRole("button", { name: "Search stock", exact: true })
+      .click();
+    await expect(lot).toBeVisible();
+  };
+  await findLot();
   await lot.getByRole("button", { name: "Start count", exact: true }).click();
   await page
     .getByLabel("Count reference (unique)", { exact: true })
@@ -2383,6 +2395,7 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await expect(
     count.getByRole("button", { name: "Approve count", exact: true }),
   ).toHaveCount(0);
+  await findLot();
   await expect(lot).toContainText("6 / 0 / 6");
   await page.reload();
   await nav(page, "Inventory");
@@ -2408,6 +2421,7 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(count).toContainText("approved");
+  await findLot();
   await expect(lot).toContainText("5 / 0 / 5");
   await lot.getByRole("button", { name: "Start count", exact: true }).click();
   await page
@@ -2423,6 +2437,8 @@ test("browser: warehouse count observation survives reload, administrator retry 
     .getByLabel("Reason / evidence", { exact: true })
     .fill("Observation before later inspection");
   await next(page);
+  await expect(stale).toContainText("submitted");
+  await findLot();
   await lot.getByRole("button", { name: "Inspect", exact: true }).click();
   await page
     .getByLabel("Condition", { exact: true })
@@ -2453,6 +2469,7 @@ test("browser: warehouse count observation survives reload, administrator retry 
     .fill("Recount required after inspection");
   await next(page);
   await expect(stale).toContainText("rejected");
+  await findLot();
   await expect(lot).toContainText("5 / 0 / 0");
   const dashboard = await stockFactsDashboard(page);
   const product = dashboard.products.find((p: any) => p.sku === "COUNT-1");

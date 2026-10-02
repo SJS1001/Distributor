@@ -29,6 +29,9 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
     "conflict",
     "invalid",
     "timeout",
+    "unavailable",
+    "unavailable-staff",
+    "unavailable-empty",
   ]) {
     const account = f.app.identity.createCustomer(f.actor, `cart-${name}`, {
       name: `Cart recovery ${name}`,
@@ -43,6 +46,30 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
       accountId: account,
       sites: [],
     });
+    if (name.startsWith("unavailable")) {
+      const retired = f.app.catalog.create(f.actor, `retired-${name}`, {
+        sku: `RETIRED-${name}`,
+        name: `Retired synthetic ${name}`,
+        serialized: true,
+        unitPrice: 5000,
+        taxBasisPoints: 1300,
+      }).id;
+      f.app.orders.saveCart(f.actor, `retired-cart-${name}`, {
+        accountId: account,
+        warehouseId: f.w1,
+        revision: 0,
+        lines: [
+          ...(name === "unavailable-empty"
+            ? []
+            : [{ productId: f.product, quantity: 1 }]),
+          { productId: retired, quantity: 2 },
+        ],
+      });
+      // Simulate a catalog product becoming inactive after a native draft save.
+      f.app.database
+        .owned("catalog")
+        .run("UPDATE catalog_products SET active=0 WHERE id=?", retired);
+    }
   }
   const http = await createHttp(f.app, { origin: "http://127.0.0.1:3139" });
   await http.listen({ host: "127.0.0.1", port: 3139 });
