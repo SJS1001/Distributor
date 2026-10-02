@@ -20,6 +20,10 @@ import { Platform } from "./platform.ts";
 import { SHIPMENT_COVERAGE_INITIALIZE_DDL } from "./shipment-coverage-schema.ts";
 import { coverageDate, coverageDays } from "./coverage-policy.ts";
 import type { ShipmentCoverageSnapshot } from "../shared/warranty-coverage.ts";
+import {
+  shipmentQueueStates,
+  type ShipmentQueueState,
+} from "../shared/shipment-queue.ts";
 export type Shipment = {
   id: string;
   org_id: string;
@@ -186,8 +190,14 @@ export class Fulfillment {
       this.shipmentView(s),
     );
   }
-  shipmentPage(actor: Actor, after?: string) {
+  shipmentPage(actor: Actor, after?: string, state?: ShipmentQueueState) {
     actor = this.shipmentReader(actor);
+    check(
+      state === undefined || shipmentQueueStates.includes(state),
+      "VALIDATION",
+      "Choose a supported shipment status.",
+      400,
+    );
     const scope = this.shipmentScope(actor);
     const cursor =
       after === undefined
@@ -203,7 +213,7 @@ export class Fulfillment {
       "Shipment cursor is unavailable in your current scope.",
       400,
     );
-    const rows = this.shipmentRows(actor, cursor, 21);
+    const rows = this.shipmentRows(actor, cursor, 21, state);
     const items = rows.slice(0, 20).map((s) => this.shipmentView(s));
     return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
   }
@@ -240,8 +250,22 @@ export class Fulfillment {
     }
     return { where, params };
   }
-  private shipmentRows(actor: Actor, cursor?: Shipment, limit?: number) {
+  private shipmentRows(
+    actor: Actor,
+    cursor?: Shipment,
+    limit?: number,
+    state?: ShipmentQueueState,
+  ) {
     const scope = this.shipmentScope(actor);
+    if (state !== undefined) {
+      if (["packed", "shipped", "void"].includes(state)) {
+        scope.where += " AND s.state=?";
+      } else {
+        scope.where +=
+          " AND s.state='shipped' AND COALESCE(h.state,CASE WHEN s.mode='carrier' THEN 'handed_over' ELSE 'collected' END)=?";
+      }
+      scope.params.push(state);
+    }
     if (cursor) {
       scope.where += " AND (s.created_at<? OR (s.created_at=? AND s.id<?))";
       scope.params.push(cursor.created_at, cursor.created_at, cursor.id);

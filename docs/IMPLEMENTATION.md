@@ -533,3 +533,10 @@ Trusted startup now supports separate UPS accounts, contacts, credentials and se
 Native sales reconciliation now compares open order promises with remaining allocations and usable warehouse stock, including shared capacity with reserved warranty replacements. Active packs must reference picked same-order/site allocations and fit their combined remaining capacity. Historical released/consumed promises do not constrain later stock transfers or returns. Reports remain readonly; previously saved receipts retain their original bytes and scope. No schema, dependency or public report shape change.
 
 See [the reconciliation procedure](RECONCILIATION.md) and [local evidence](evidence/LOCAL-RESERVATION-CONTROLS-2026-10-02.md). This extends partial D-023/D-036 engineering coverage. Agreement cannot establish physical custody/picks, coordinated corruption, actual provider/bank balances, production scan/lock/memory limits or operator acceptance. All 44 tasks and 10 gates remain NOT VERIFIED; the full-system goal remains active.
+
+
+## Shipment status queue — local engineering 2026-10-02
+
+Orders now filters paged shipments by native packing/handover/void state or latest delivery outcome. The owning SQL operation applies current organization/account/site restrictions and status before its row limit; superseded delivery observations cannot keep a shipment in an exception queue. Current-scope creation cursors survive status changes, with explicit live-queue semantics. Phone controls clear earlier results when changing status, permit failed first-page retry and fence late responses while preserving unrelated dashboard loads. No stock, order, invoice or carrier mutation occurs.
+
+See [the workflow](FULFILLMENT.md#filter-the-shipment-queue) and [local evidence](evidence/LOCAL-SHIPMENT-FILTERS-2026-10-02.md). Partial D-008/D-026/D-028/D-036 and REQ-03/REQ-16 engineering coverage only. Actual provider/device/operating/residency/security/load/recovery and operator qualification remain outstanding; all 44 tasks and 10 gates remain NOT VERIFIED. Full-system goal active; workstation checks/local commits only.

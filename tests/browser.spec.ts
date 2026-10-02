@@ -8111,6 +8111,20 @@ test("browser: shipment pages retain rows after failure and discard continuation
     });
     packedIds.push(packed.id);
   }
+  await cmd("fulfillment.ship", {
+    shipmentId: packedIds[0],
+    carrier: "Synthetic queue carrier",
+    tracking: "QUEUE-DELAYED",
+    handoverEvidence: "Synthetic warehouse handover",
+  });
+  await cmd("fulfillment.delivery.update", {
+    shipmentId: packedIds[0],
+    revision: 0,
+    state: "delayed",
+    reference: "QUEUE-DELAY",
+    evidence: "Synthetic delayed delivery evidence",
+    observedAt: new Date().toISOString(),
+  });
   const before = await dashboard();
   const expected: any[] = [];
   let cursor: string | null = null;
@@ -8124,7 +8138,21 @@ test("browser: shipment pages retain rows after failure and discard continuation
     cursor = result.next;
   } while (cursor);
   expect(expected.filter((s) => packedIds.includes(s.id))).toHaveLength(23);
+  let releaseExtras!: () => void, capturedExtras!: () => void;
+  const extrasGate = new Promise<void>((resolve) => {
+    releaseExtras = resolve;
+  });
+  const extrasReady = new Promise<void>((resolve) => {
+    capturedExtras = resolve;
+  });
+  await page.route("**/api/effects", async (route) => {
+    const response = await route.fetch();
+    capturedExtras();
+    await extrasGate;
+    await route.fulfill({ response });
+  });
   await page.reload();
+  await extrasReady;
   await nav(page, "Orders");
   const panel = page.getByRole("region", {
     name: "Shipment history",
@@ -8162,6 +8190,76 @@ test("browser: shipment pages retain rows after failure and discard continuation
     await panel.locator("tbody tr td:nth-child(2)").allTextContents(),
   ).toEqual(expected.map((s) => s.address));
   await page.unroute("**/api/shipments/page?after=*");
+  const status = panel.getByLabel("Shipment status", { exact: true });
+  await status.selectOption("delayed");
+  await expect(panel.locator("tbody tr")).toHaveCount(1);
+  await expect(panel.locator("tbody tr")).toContainText("Page shipment 00");
+  await expect(panel.locator("tbody tr")).toContainText("delayed");
+  // Changing the queue must not discard unrelated in-flight dashboard sections.
+  releaseExtras();
+  await nav(page, "Security");
+  await expect(
+    page.getByText("admin@example.test", { exact: false }),
+  ).toBeVisible();
+  await page.unroute("**/api/effects");
+  await nav(page, "Orders");
+  await expect(status).toHaveValue("delayed");
+  await expect(panel.locator("tbody tr")).toHaveCount(1);
+  await status.selectOption("returned");
+  await expect(panel.getByRole("status")).toContainText("No shipments match");
+  await expect(panel.locator("tbody tr")).toHaveCount(0);
+  let filterFail = true;
+  await page.route("**/api/shipments/page?state=lost", async (route) => {
+    if (filterFail) {
+      filterFail = false;
+      await route.fulfill({
+        status: 503,
+        json: { code: "TEST", message: "Synthetic shipment filter failure" },
+      });
+    } else await route.continue();
+  });
+  await status.selectOption("lost");
+  await expect(page.getByRole("alert")).toContainText(
+    "Synthetic shipment filter failure",
+  );
+  await expect(panel.locator("tbody tr")).toHaveCount(0);
+  await panel
+    .getByRole("button", { name: "Retry shipment filter", exact: true })
+    .click();
+  await expect(panel.getByRole("status")).toContainText("No shipments match");
+  await page.unroute("**/api/shipments/page?state=lost");
+  // A filter request can finish after a new selection; its old rows stay absent.
+  let releaseFilter!: () => void, capturedFilter!: () => void;
+  const filterGate = new Promise<void>((resolve) => {
+    releaseFilter = resolve;
+  });
+  const filterReady = new Promise<void>((resolve) => {
+    capturedFilter = resolve;
+  });
+  await page.route("**/api/shipments/page?state=delayed", async (route) => {
+    const response = await route.fetch();
+    capturedFilter();
+    await filterGate;
+    await route.fulfill({ response });
+  });
+  await status.selectOption("delayed");
+  await filterReady;
+  await status.selectOption("returned");
+  await expect(panel.getByRole("status")).toContainText("No shipments match");
+  const oldFilter = page.waitForResponse((r) =>
+    r.url().includes("/api/shipments/page?state=delayed"),
+  );
+  releaseFilter();
+  await oldFilter;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(status).toHaveValue("returned");
+  await expect(panel.locator("tbody tr")).toHaveCount(0);
+  await page.unroute("**/api/shipments/page?state=delayed");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(
@@ -8170,6 +8268,7 @@ test("browser: shipment pages retain rows after failure and discard continuation
   ).toBe(true);
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(panel.locator("tbody tr")).toHaveCount(20);
+  await expect(status).toHaveValue("");
   await expect(
     page.getByRole("button", { name: "Refresh", exact: true }),
   ).toBeEnabled();

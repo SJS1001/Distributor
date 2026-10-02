@@ -5,6 +5,10 @@ import { Application } from "../src/server/application.ts";
 import { createHttp } from "../src/server/http.ts";
 import { Store } from "../src/server/database.ts";
 import type { Actor, Role } from "../src/server/core.ts";
+import {
+  shipmentQueueStates,
+  type ShipmentQueueState,
+} from "../src/shared/shipment-queue.ts";
 
 type Fixture = ReturnType<typeof fixture>;
 // Deliberately tied-time history fixtures; these are not physical shipment proof.
@@ -59,6 +63,182 @@ function update(f: Fixture, actor: Actor, changes: Record<string, unknown>) {
     },
   );
 }
+test("shipment status filters precede row limits, use latest revisions and retain scoped live cursors after status changes", (t) => {
+  const f = fixture(t);
+  seed(f, 43, "matching");
+  seed(f, 80, "zz-unrelated", f.buyer, f.w2);
+  const store = f.app.database.owned("fulfillment");
+  store.run(
+    "UPDATE fulfillment_shipments SET state='shipped',shipped_at=created_at WHERE id LIKE 'matching-%'",
+  );
+  for (let i = 0; i < 43; i++) {
+    const id = `matching-${String(i).padStart(3, "0")}`;
+    for (const [revision, state] of [
+      [1, "in_transit"],
+      [2, "delayed"],
+    ] as const)
+      store.run(
+        "INSERT INTO fulfillment_delivery_history(id,org_id,shipment_id,revision,state,reference,reference_key,evidence,observed_at,actor_id,created_at,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,'operator')",
+        `${id}-${revision}`,
+        f.actor.orgId,
+        id,
+        revision,
+        state,
+        `${id}-${revision}`,
+        `${id}-${revision}`,
+        "Private evidence must not leak",
+        "2026-09-30T12:00:00.000Z",
+        f.actor.id,
+        "2026-09-30T12:00:00.000Z",
+      );
+  }
+  const warehouse = user(f, "warehouse");
+  const before = store.all("SELECT * FROM fulfillment_shipments ORDER BY id");
+  const first = f.app.fulfillment.shipmentPage(warehouse, undefined, "delayed");
+  assert.equal(first.items.length, 20);
+  assert.equal(first.next, "matching-023");
+  assert.ok(first.items.every((s) => s.delivery?.state === "delayed"));
+  assert.ok(!JSON.stringify(first).includes("Private evidence"));
+  assert.deepEqual(
+    f.app.fulfillment.shipmentPage(warehouse, undefined, "in_transit"),
+    { items: [], next: null },
+  );
+  // The cursor is an accessible creation boundary, even after leaving the filter.
+  store.run(
+    "INSERT INTO fulfillment_delivery_history(id,org_id,shipment_id,revision,state,reference,reference_key,evidence,observed_at,actor_id,created_at,source) VALUES('cursor-changed',?,?,3,'delivered','changed','changed','New evidence',?,?,?,'operator')",
+    f.actor.orgId,
+    first.next,
+    "2026-09-30T12:00:00.000Z",
+    f.actor.id,
+    "2026-09-30T12:00:00.000Z",
+  );
+  f.app.close();
+  f.app = new Application(f.path);
+  const second = f.app.fulfillment.shipmentPage(
+    warehouse,
+    first.next!,
+    "delayed",
+  );
+  const third = f.app.fulfillment.shipmentPage(
+    warehouse,
+    second.next!,
+    "delayed",
+  );
+  assert.equal(second.items.length, 20);
+  assert.equal(third.items.length, 3);
+  assert.equal(third.next, null);
+  const ids = [...first.items, ...second.items, ...third.items].map(
+    (s) => s.id,
+  );
+  assert.equal(new Set(ids).size, 43);
+  assert.deepEqual(
+    ids,
+    Array.from(
+      { length: 43 },
+      (_, i) => `matching-${String(42 - i).padStart(3, "0")}`,
+    ),
+  );
+  assert.equal(
+    f.app.fulfillment.shipmentPage(warehouse, undefined, "delayed").items
+      .length,
+    20,
+  );
+  assert.equal(
+    f.app.fulfillment.shipmentPage(warehouse, undefined, "shipped").items
+      .length,
+    20,
+  );
+  assert.deepEqual(
+    f.app.database
+      .owned("fulfillment")
+      .all("SELECT * FROM fulfillment_shipments ORDER BY id"),
+    before,
+  );
+  for (const invalid of ["", "unknown", null, 1, {}, "delayed' OR 1=1 --"])
+    assert.throws(
+      () =>
+        f.app.fulfillment.shipmentPage(
+          warehouse,
+          undefined,
+          invalid as ShipmentQueueState,
+        ),
+      { code: "VALIDATION" },
+    );
+  assert.throws(
+    () =>
+      f.app.fulfillment.shipmentPage(warehouse, "zz-unrelated-000", "packed"),
+    { code: "CURSOR" },
+  );
+  update(f, warehouse, { sites: [f.w2] });
+  assert.throws(
+    () => f.app.fulfillment.shipmentPage(warehouse, first.next!, "delayed"),
+    { code: "CURSOR" },
+  );
+  assert.deepEqual(
+    f.app.fulfillment.shipmentPage(warehouse, undefined, "delayed"),
+    { items: [], next: null },
+  );
+});
+test("every shipment queue state uses native defaults and latest scoped history without inventing outcomes", (t) => {
+  const f = fixture(t);
+  seed(f, shipmentQueueStates.length);
+  const store = f.app.database.owned("fulfillment");
+  const expected = new Map<string, string[]>();
+  shipmentQueueStates.forEach((state, i) => {
+    const id = `page-${String(i).padStart(3, "0")}`;
+    if (["packed", "void"].includes(state))
+      store.run(
+        "UPDATE fulfillment_shipments SET state=? WHERE id=?",
+        state,
+        id,
+      );
+    else {
+      store.run(
+        "UPDATE fulfillment_shipments SET state='shipped',mode=?,shipped_at=created_at WHERE id=?",
+        state === "collected" ? "collection" : "carrier",
+        id,
+      );
+      if (!["shipped", "handed_over", "collected"].includes(state))
+        store.run(
+          "INSERT INTO fulfillment_delivery_history(id,org_id,shipment_id,revision,state,reference,reference_key,evidence,observed_at,actor_id,created_at,source) VALUES(?,?,?,1,?,'ref','ref','private',?,?,?,'operator')",
+          `${id}-history`,
+          f.actor.orgId,
+          id,
+          state,
+          "2026-09-30T12:00:00.000Z",
+          f.actor.id,
+          "2026-09-30T12:00:00.000Z",
+        );
+    }
+    expected.set(state, [id]);
+  });
+  expected.set("handed_over", ["page-003", "page-001"]);
+  expected.set("shipped", [
+    "page-009",
+    "page-008",
+    "page-007",
+    "page-006",
+    "page-005",
+    "page-004",
+    "page-003",
+    "page-001",
+  ]);
+  // A different organization's newer history with the same native ID is ignored.
+  store.run(
+    "INSERT INTO fulfillment_delivery_history(id,org_id,shipment_id,revision,state,reference,reference_key,evidence,observed_at,actor_id,created_at,source) VALUES('foreign','foreign','page-003',100,'lost','foreign','foreign','foreign',?,?,?,'operator')",
+    "2026-09-30T12:00:00.000Z",
+    f.actor.id,
+    "2026-09-30T12:00:00.000Z",
+  );
+  for (const state of shipmentQueueStates)
+    assert.deepEqual(
+      f.app.fulfillment
+        .shipmentPage(f.actor, undefined, state)
+        .items.map((s) => s.id),
+      expected.get(state),
+      state,
+    );
+});
 test("shipment pages traverse tied timestamps exactly once across restart; new newer shipments await refresh", (t) => {
   const f = fixture(t);
   seed(f, 43);
@@ -101,16 +281,19 @@ test("buyer and warehouse predicates precede limits; cursors cannot cross curren
   const buyer = user(f, "buyer"),
     warehouse = user(f, "warehouse");
   for (const actor of [buyer, warehouse]) {
-    const first = f.app.fulfillment.shipmentPage(actor);
+    const first = f.app.fulfillment.shipmentPage(actor, undefined, "packed");
     assert.equal(first.items.length, 20);
     assert.ok(first.items.every((s) => s.id.startsWith("owned-")));
     assert.equal(
-      f.app.fulfillment.shipmentPage(actor, first.next!).items.length,
+      f.app.fulfillment.shipmentPage(actor, first.next!, "packed").items.length,
       3,
     );
-    assert.throws(() => f.app.fulfillment.shipmentPage(actor, "zz-other-000"), {
-      code: "CURSOR",
-    });
+    assert.throws(
+      () => f.app.fulfillment.shipmentPage(actor, "zz-other-000", "packed"),
+      {
+        code: "CURSOR",
+      },
+    );
   }
   assert.deepEqual(
     f.app.fulfillment.shipmentPage({
@@ -167,6 +350,7 @@ test("page and compatibility projections reread real grants, active status and r
     );
   for (const read of [
     () => f.app.fulfillment.shipmentPage(warehouse, cursor),
+    () => f.app.fulfillment.shipmentPage(warehouse, cursor, "packed"),
     () => f.app.fulfillment.shipments(warehouse),
   ])
     assert.throws(read, { code: "PASSWORD_CHANGE_REQUIRED" });
@@ -208,6 +392,18 @@ test("paged latest delivery summaries preserve original shipment shape and nativ
     tracking: "PAGE-TRACK",
     handoverEvidence: "Synthetic handover",
   });
+  assert.deepEqual(
+    f.app.fulfillment
+      .shipmentPage(f.actor, undefined, "collected")
+      .items.map((s) => s.id),
+    [id],
+  );
+  assert.deepEqual(
+    f.app.fulfillment
+      .shipmentPage(f.actor, undefined, "handed_over")
+      .items.map((s) => s.id),
+    [carrier.id],
+  );
   const before = {
     units: f.app.inventory.stock(f.actor),
     orders: f.app.orders.list(f.actor),
@@ -236,6 +432,23 @@ test("paged latest delivery summaries preserve original shipment shape and nativ
   f.app.database
     .owned("fulfillment")
     .run("UPDATE fulfillment_shipments SET state='void' WHERE id='page-000'");
+  for (const [state, ids] of [
+    ["delivered", [id]],
+    ["returned", [carrier.id]],
+    ["delayed", []],
+    ["handed_over", []],
+    ["collected", []],
+    ["void", ["page-000"]],
+    ["packed", ["page-001"]],
+  ] as const) {
+    assert.deepEqual(
+      f.app.fulfillment
+        .shipmentPage(f.actor, undefined, state)
+        .items.map((s) => s.id),
+      [...ids],
+      state,
+    );
+  }
   const all = f.app.fulfillment.shipments(f.actor),
     page = f.app.fulfillment.shipmentPage(f.actor);
   assert.deepEqual(page.items, all);
@@ -290,7 +503,7 @@ test("shipment continuation returns at most 21 database rows and uses one joined
     let next: string | undefined;
     let seen = 0;
     do {
-      const page = f.app.fulfillment.shipmentPage(f.actor, next);
+      const page = f.app.fulfillment.shipmentPage(f.actor, next, "packed");
       seen += page.items.length;
       next = page.next ?? undefined;
     } while (next);
@@ -332,6 +545,18 @@ test("HTTP shipment pages reject malformed/unknown queries and unauthenticated a
   const first = await http.inject({ url: "/api/shipments/page", headers });
   assert.equal(first.statusCode, 200);
   assert.equal(first.json().items.length, 20);
+  const filtered = await http.inject({
+    url: "/api/shipments/page?state=packed",
+    headers,
+  });
+  assert.equal(filtered.statusCode, 200);
+  assert.deepEqual(filtered.json(), first.json());
+  assert.deepEqual(
+    (
+      await http.inject({ url: "/api/shipments/page?state=delayed", headers })
+    ).json(),
+    { items: [], next: null },
+  );
   const dashboard = await http.inject({ url: "/api/dashboard", headers });
   assert.deepEqual(dashboard.json().shipments, first.json().items);
   assert.equal(dashboard.json().shipmentNext, first.json().next);
@@ -345,6 +570,9 @@ test("HTTP shipment pages reject malformed/unknown queries and unauthenticated a
     "?after=unknown",
     `?after=${"x".repeat(129)}`,
     "?limit=100",
+    "?state=",
+    "?state=unknown",
+    "?state=lost&state=delayed",
     "?accountId=other",
     "?after=page-022&after=page-021",
   ])

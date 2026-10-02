@@ -17,6 +17,10 @@ import {
 import { type ProviderRuntime } from "./provider-runtime.ts";
 import { type CarrierRuntime } from "./carrier-runtime.ts";
 import { carrierNames } from "../shared/carrier-booking.ts";
+import {
+  shipmentQueueStates,
+  type ShipmentQueueState,
+} from "../shared/shipment-queue.ts";
 
 type Schema = Record<string, unknown>;
 const str: Schema = { type: "string", minLength: 1, maxLength: 2000 },
@@ -1938,18 +1942,25 @@ export async function createHttp(app: Application, options: HttpOptions) {
     after: query.after === undefined ? undefined : Number(query.after),
     limit: query.limit === undefined ? undefined : Number(query.limit),
   });
-  http.get<{ Querystring: { after?: string } }>(
+  http.get<{ Querystring: { after?: string; state?: ShipmentQueueState } }>(
     "/api/shipments/page",
     {
       schema: {
         querystring: obj(
-          { after: { type: "string", minLength: 1, maxLength: 128 } },
-          ["after"],
+          {
+            after: { type: "string", minLength: 1, maxLength: 128 },
+            state: choice(...shipmentQueueStates),
+          },
+          ["after", "state"],
         ),
       },
     },
     async (request) =>
-      app.fulfillment.shipmentPage(actor(request), request.query.after),
+      app.fulfillment.shipmentPage(
+        actor(request),
+        request.query.after,
+        request.query.state,
+      ),
   );
   http.get<{ Params: { shipmentId: string } }>(
     "/api/shipments/:shipmentId/carrier",

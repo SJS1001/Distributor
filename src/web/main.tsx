@@ -39,6 +39,10 @@ import { SoldCoverage } from "./warranty-coverage.tsx";
 import { SoldSerialSelect } from "./sold-serial-select.tsx";
 import { stockLabelOutputs } from "../shared/stock-label.ts";
 import {
+  shipmentQueueStates,
+  type ShipmentQueueState,
+} from "../shared/shipment-queue.ts";
+import {
   QuickBooksCallback,
   QuickBooksConnection,
 } from "./quickbooks-authorization.tsx";
@@ -126,10 +130,15 @@ function App() {
   );
   const canadaPostOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
+  const dashboardEpoch = useRef(0);
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
   const shipmentRequest = useRef<number | null>(null);
   const shipmentHeading = useRef<HTMLHeadingElement | null>(null);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
+  const [shipmentFilter, setShipmentFilter] = useState<ShipmentQueueState | "">(
+    "",
+  );
+  const [shipmentFilterReady, setShipmentFilterReady] = useState(true);
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [loginCode, setLoginCode] = useState(""),
@@ -158,11 +167,25 @@ function App() {
     setAmendmentOrderId(null);
     amendmentOpener.current = null;
     const epoch = ++shipmentEpoch.current;
+    const dashboardVersion = ++dashboardEpoch.current;
     shipmentRequest.current = null;
     setShipmentsLoading(false);
+    setShipmentFilterReady(false);
     const d = await request("/api/dashboard");
-    if (shipmentEpoch.current !== epoch) return;
-    setData(d);
+    if (dashboardEpoch.current !== dashboardVersion) return;
+    setData((current) =>
+      shipmentEpoch.current === epoch
+        ? d
+        : {
+            ...d,
+            shipments: current?.shipments ?? [],
+            shipmentNext: current?.shipmentNext ?? null,
+          },
+    );
+    if (shipmentEpoch.current === epoch) {
+      setShipmentFilter("");
+      setShipmentFilterReady(true);
+    }
     setEventViewEpoch((value) => value + 1);
     const e: Item = {};
     if (
@@ -232,38 +255,50 @@ function App() {
     if (["admin", "finance"].includes(actor?.role ?? ""))
       e.billingProfiles = await request("/api/billing/profiles");
     e.security = await request("/api/security");
-    if (shipmentEpoch.current === epoch) setExtra(e);
+    if (dashboardEpoch.current === dashboardVersion) setExtra(e);
   };
-  const loadShipments = async () => {
-    if (!data?.shipmentNext || shipmentRequest.current !== null) return;
+  const loadShipments = async (
+    state = shipmentFilter,
+    first = !shipmentFilterReady,
+  ) => {
+    if (
+      !data ||
+      (!first && !data.shipmentNext) ||
+      shipmentRequest.current !== null
+    )
+      return;
     const epoch = shipmentEpoch.current,
-      after = data.shipmentNext;
+      after = first ? null : data.shipmentNext;
     shipmentRequest.current = epoch;
     setShipmentsLoading(true);
     setError("");
     try {
-      const result = await request(
-        `/api/shipments/page?after=${encodeURIComponent(after)}`,
-      );
+      const query = new URLSearchParams();
+      if (after) query.set("after", after);
+      if (state) query.set("state", state);
+      const result = await request(`/api/shipments/page?${query}`);
       if (shipmentEpoch.current !== epoch) return;
       setData((current) =>
         current &&
         shipmentEpoch.current === epoch &&
-        current.shipmentNext === after
+        (first || current.shipmentNext === after)
           ? {
               ...current,
-              shipments: [
-                ...current.shipments,
-                ...result.items.filter(
-                  (s: Item) =>
-                    !current.shipments.some((old: Item) => old.id === s.id),
-                ),
-              ],
+              shipments: first
+                ? result.items
+                : [
+                    ...current.shipments,
+                    ...result.items.filter(
+                      (s: Item) =>
+                        !current.shipments.some((old: Item) => old.id === s.id),
+                    ),
+                  ],
               shipmentNext: result.next,
             }
           : current,
       );
-      if (!result.next) shipmentHeading.current?.focus();
+      setShipmentFilterReady(true);
+      if (!first && !result.next) shipmentHeading.current?.focus();
     } catch (e) {
       if (shipmentEpoch.current === epoch) setError((e as Error).message);
     } finally {
@@ -272,6 +307,17 @@ function App() {
         setShipmentsLoading(false);
       }
     }
+  };
+  const filterShipments = (state: ShipmentQueueState | "") => {
+    ++shipmentEpoch.current;
+    shipmentRequest.current = null;
+    setShipmentFilter(state);
+    setShipmentFilterReady(false);
+    setData((current) =>
+      current ? { ...current, shipments: [], shipmentNext: null } : current,
+    );
+    setCarrierShipmentId(null);
+    void loadShipments(state, true);
   };
   useEffect(() => {
     void request("/api/session")
@@ -299,6 +345,7 @@ function App() {
     canadaPostOpener.current = null;
     carrierOpener.current = null;
     shipmentEpoch.current++;
+    dashboardEpoch.current++;
     shipmentRequest.current = null;
     setShipmentsLoading(false);
     setEvidenceClaim(null);
@@ -1559,10 +1606,30 @@ function App() {
               <h2 ref={shipmentHeading} tabIndex={-1}>
                 Shipments
               </h2>
+              <label htmlFor="shipment-status">Shipment status</label>
+              <select
+                id="shipment-status"
+                value={shipmentFilter}
+                disabled={busy}
+                onChange={(e) =>
+                  filterShipments(e.target.value as ShipmentQueueState | "")
+                }
+              >
+                <option value="">All statuses</option>
+                {shipmentQueueStates.map((state) => (
+                  <option key={state} value={state}>
+                    {state.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
               <p>
                 Newest first. Loaded: {data.shipments.length}. Saved changes or
                 refresh reload the newest page.
               </p>
+              {shipmentFilterReady && !data.shipments.length && (
+                <p role="status">No shipments match this status.</p>
+              )}
+              {shipmentsLoading && <p role="status">Loading shipments…</p>}
               {can("warehouse") && data.warehouses.length > 0 && (
                 <button
                   type="button"
@@ -1759,7 +1826,7 @@ function App() {
                     }}
                   />
                 )}
-              {data.shipmentNext && (
+              {(data.shipmentNext || !shipmentFilterReady) && (
                 <button
                   type="button"
                   disabled={busy || shipmentsLoading}
@@ -1767,7 +1834,9 @@ function App() {
                 >
                   {shipmentsLoading
                     ? "Loading shipments…"
-                    : "Load more shipments"}
+                    : shipmentFilterReady
+                      ? "Load more shipments"
+                      : "Retry shipment filter"}
                 </button>
               )}
             </section>
