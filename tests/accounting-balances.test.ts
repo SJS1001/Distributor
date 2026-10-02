@@ -47,7 +47,13 @@ const adapter = (balance = 11300): Adapter => ({
 });
 function facts(f: Awaited<ReturnType<typeof setup>>) {
   return {
-    stock: f.app.inventory.stock(f.actor),
+    // Owning facts remain comparable after password authority is revoked.
+    stock: f.app.database
+      .owned("inventory")
+      .all(
+        "SELECT * FROM inventory_units WHERE org_id=? ORDER BY id",
+        f.actor.orgId,
+      ),
     // Independent owning-store oracle can compare conserved native facts
     // after authority is revoked; public order reads must deny that actor.
     orders: f.app.database
@@ -492,6 +498,9 @@ test("completion rechecks consent, credential status and restore isolation, and 
       0,
     );
     if (restriction === "password") {
+      assert.throws(() => f.app.inventory.stock(f.actor), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
       assert.throws(() => f.app.orders.list(f.actor), {
         code: "PASSWORD_CHANGE_REQUIRED",
       });

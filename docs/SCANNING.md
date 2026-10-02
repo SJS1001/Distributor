@@ -28,6 +28,12 @@ The camera stops after a valid candidate, on **Stop camera**, dialog close, page
 
 Selected serial fields in stock lookup, picking, transfers, recovery, transit loss, supplier return and warranty receipt share this input control. Those commands retain their existing validation and confirmation. Durable scan drafts currently apply only to purchase receiving. Quantity counts and other workflows do not gain offline drafts.
 
+## Current inventory authority
+
+Inventory warehouse/stock/serial/transfer reads, mapped warehouse lookup and warehouse creation, inspection, transfer dispatch/arrival/loss/recovery now reload active persisted identity and check required password changes. Roles and grants supplied by the caller cannot increase access. Command checks happen inside the immediate transaction before cached results or stock effects. A completed dispatch retry requires the current grant to its original source, even after the serial arrives elsewhere; an arrival retry requires its original destination. Actual warehouse users retain site-filtered stock and trace access, while authorized staff can see destination names for transfer selection. See [local inventory authority evidence](evidence/LOCAL-INVENTORY-AUTHORITY-2026-10-02.md).
+
+These checks do not qualify internal task-shaped APIs, all module boundaries or production security. Lists remain unbounded and do not form one coherent dashboard/authority snapshot. Previously saved receipts retain their original verification scope.
+
 ## Required qualification
 
 Use existing approved devices to record exact model/firmware, OS/browser version, symbology, label size/material and actual reads. Exercise denied permissions, no camera, low light/damaged labels, duplicate/wrong-task scans, suffix behavior, cancellation and connectivity failures with warehouse operators. Confirm camera release on real mobile backgrounding. Physical label printing/readability, large draft queries, production upgrades, physical custody, approved serial policy and any offline requirements remain pending. The [provider/device plan](PROVIDERS.md) lists candidates without qualifying them.

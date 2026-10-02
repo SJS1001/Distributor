@@ -347,6 +347,22 @@ async function compete(
   f: ReturnType<typeof fixture>,
   batches: { id: string; reviewHash: string }[],
 ) {
+  const reviewers = batches.map((_, i) => {
+    const name = `reviewer-${i}`,
+      existing = f.app.identity
+        .users(f.actor)
+        .find((u) => u.email === `${name}@example.test`);
+    const userId =
+      existing?.id ??
+      f.app.identity.createUser(f.actor, name, {
+        name,
+        email: `${name}@example.test`,
+        password: "long-test-only-password",
+        role: "admin",
+        sites: [],
+      }).id;
+    return f.app.identity.currentActor({ ...f.actor, id: String(userId) });
+  });
   const children = batches.map(() =>
     fork(new URL("./migration-child.ts", import.meta.url), {
       execArgv: ["--import", "tsx"],
@@ -372,7 +388,7 @@ async function compete(
           action: "init",
           input: {
             path: f.path,
-            actor: { ...f.actor, id: `reviewer-${i}` },
+            actor: reviewers[i],
             key: `review-${i}`,
             payload: approved(batches[i]!),
           },

@@ -256,7 +256,31 @@ test("scopes, table ownership and cached receipts reauthorize current actor gran
       () => f.app.database.owned("inventory").migrate(sql),
       /authorized/,
     );
-  const revoked: Actor = { ...f.actor, role: "buyer", accountId: f.buyer };
+  const otherAdmin = f.app.identity.createUser(f.actor, "revocation-reviewer", {
+    name: "Revocation reviewer",
+    email: "revocation-reviewer@example.test",
+    password: "long-test-only-password",
+    role: "admin",
+    sites: [],
+  });
+  const reviewer = f.app.identity.currentActor({
+    ...f.actor,
+    id: otherAdmin.id,
+  });
+  const row = f.app.identity.users(reviewer).find((u) => u.id === f.actor.id)!;
+  f.app.identity.updateUser(reviewer, "revoke-admin", {
+    userId: f.actor.id,
+    revision: Number(row.revision),
+    name: f.actor.name,
+    email: String(row.email),
+    role: "buyer",
+    accountId: f.buyer,
+    sites: [],
+    active: true,
+    currentPassword: "long-test-only-password",
+    reason: "Synthetic revocation before retry",
+  });
+  const revoked: Actor = { ...f.actor, role: "admin" };
   assert.throws(
     () => f.app.inventory.createWarehouse(revoked, "w1", { name: "Toronto" }),
     { code: "FORBIDDEN" },

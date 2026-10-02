@@ -3,6 +3,18 @@ import assert from "node:assert/strict";
 import { fork, type ChildProcess } from "node:child_process";
 import { Application } from "../src/server/application.ts";
 import { fixture } from "./fixtures.ts";
+import type { Role } from "../src/server/core.ts";
+
+function user(f: ReturnType<typeof fixture>, role: Role, name: string = role) {
+  const row = f.app.identity.createUser(f.actor, name, {
+    name,
+    email: `${name}@example.test`,
+    password: "long-transfer-password",
+    role,
+    sites: [f.w1, f.w2],
+  });
+  return f.app.identity.currentActor({ ...f.actor, id: row.id });
+}
 
 function transferBulk(f: ReturnType<typeof fixture>, quantity = 6) {
   const product = f.app.catalog.create(f.actor, "loss-bulk", {
@@ -62,9 +74,18 @@ test("approved partial transit losses, arrivals and later recovery retain eviden
     f.app.inventory.transfers(f.actor)[0]!.state,
     "partially-reconciled",
   );
+  assert.throws(
+    () =>
+      f.app.inventory.approveTransferLoss(
+        { ...f.actor, id: "absent-admin" },
+        "another-key",
+        approval,
+      ),
+    { code: "FORBIDDEN" },
+  );
   assert.deepEqual(
     f.app.inventory.approveTransferLoss(
-      { ...f.actor, id: "other-admin" },
+      user(f, "admin", "other-admin"),
       "another-key",
       approval,
     ),
@@ -225,12 +246,8 @@ test("serial loss/recovery preserves identity, excludes lost stock and requires 
     lossRef: "SERIAL-LOSS",
     reason: "Investigation confirmed missing serial",
   };
-  const warehouse = {
-    ...f.actor,
-    role: "warehouse" as const,
-    sites: [f.w1, f.w2],
-  };
-  for (const actor of [warehouse, { ...f.actor, role: "support" as const }])
+  const warehouse = user(f, "warehouse");
+  for (const actor of [warehouse, user(f, "support")])
     assert.throws(
       () => f.app.inventory.approveTransferLoss(actor, "loss", payload),
       { code: "FORBIDDEN" },
@@ -270,7 +287,7 @@ test("serial loss/recovery preserves identity, excludes lost stock and requires 
         "loss",
         payload,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   assert.throws(
     () =>
@@ -318,7 +335,7 @@ test("serial loss/recovery preserves identity, excludes lost stock and requires 
         "found",
         found,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
   const recovery = f.app.inventory.recoverTransferLoss(f.actor, "found", found);
   assert.equal(recovery.unitId, u.id);

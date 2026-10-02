@@ -6,6 +6,35 @@ import { Application } from "../src/server/application.ts";
 import type { Actor } from "../src/server/core.ts";
 import { fixture } from "./fixtures.ts";
 
+function warehouseUser(
+  f: ReturnType<typeof fixture>,
+  name: string,
+  sites: string[],
+) {
+  const row = f.app.identity.createUser(f.actor, name, {
+    name,
+    email: `${name}@example.test`,
+    password: "long-transfer-password",
+    role: "warehouse",
+    sites,
+  });
+  return f.app.identity.currentActor({ ...f.actor, id: row.id });
+}
+function grants(f: ReturnType<typeof fixture>, actor: Actor, sites: string[]) {
+  const row = f.app.identity.users(f.actor).find((u) => u.id === actor.id)!;
+  f.app.identity.updateUser(f.actor, `grant-${actor.id}-${row.revision}`, {
+    userId: actor.id,
+    revision: Number(row.revision),
+    name: actor.name,
+    email: String(row.email),
+    role: "warehouse",
+    sites,
+    active: true,
+    currentPassword: "long-test-only-password",
+    reason: "Synthetic transfer access change",
+  });
+}
+
 function bulk(f: ReturnType<typeof fixture>, quantity = 6) {
   const productId = f.app.catalog.create(f.actor, "transfer-bulk", {
     sku: "TR-1",
@@ -85,12 +114,16 @@ test("partial bulk arrivals survive restart, separate damaged/quarantine custody
   assert.equal(partial.lines[0]!.quantity, 4);
   assert.equal(partial.lines[0]!.receivedQuantity, 2);
   assert.equal(partial.lines[0]!.remainingQuantity, 2);
-  const otherReceiver: Actor = {
-    ...f.actor,
-    id: "destination-operator",
-    role: "warehouse",
-    sites: [f.w2],
-  };
+  assert.throws(
+    () =>
+      f.app.inventory.receiveTransfer(
+        { ...f.actor, id: "absent-operator" },
+        "new-key",
+        payload,
+      ),
+    { code: "FORBIDDEN" },
+  );
+  const otherReceiver = warehouseUser(f, "destination-operator", [f.w2]);
   assert.deepEqual(
     f.app.inventory.receiveTransfer(otherReceiver, "new-key", payload),
     received,
@@ -195,7 +228,8 @@ test("partial bulk arrivals survive restart, separate damaged/quarantine custody
 
 test("serialized arrivals require the exact scan, one unit, matching line and current destination grants even on retry", (t) => {
   const f = fixture(t),
-    u = f.app.inventory.trace(f.actor, "S3").unit;
+    u = f.app.inventory.trace(f.actor, "S3").unit,
+    sourceOnly = warehouseUser(f, "source-operator", [f.w1]);
   const dispatch = {
     unitId: u.id,
     quantity: 1,
@@ -204,7 +238,7 @@ test("serialized arrivals require the exact scan, one unit, matching line and cu
     reason: "Synthetic serial relocation",
   };
   const transfer = f.app.inventory.dispatchTransfer(
-    f.actor,
+    sourceOnly,
     "dispatch",
     dispatch,
   );
@@ -233,7 +267,6 @@ test("serialized arrivals require the exact scan, one unit, matching line and cu
         }),
       { code },
     );
-  const sourceOnly: Actor = { ...f.actor, role: "warehouse", sites: [f.w1] };
   assert.deepEqual(
     f.app.inventory.transferDestinations(sourceOnly).map((w) => w.name),
     ["Ottawa", "Toronto"],
@@ -258,15 +291,17 @@ test("serialized arrivals require the exact scan, one unit, matching line and cu
     f.app.inventory.dispatchTransfer(sourceOnly, "dispatch", dispatch),
     transfer,
   );
+  grants(f, sourceOnly, [f.w2]);
   assert.throws(
     () =>
       f.app.inventory.dispatchTransfer(
-        { ...sourceOnly, sites: [f.w2] },
+        { ...sourceOnly, sites: [f.w1] },
         "dispatch",
         dispatch,
       ),
     { code: "FORBIDDEN" },
   );
+  grants(f, sourceOnly, [f.w1]);
   assert.throws(
     () =>
       f.app.inventory.dispatchTransfer(sourceOnly, "dispatch", {
@@ -292,7 +327,7 @@ test("serialized arrivals require the exact scan, one unit, matching line and cu
         "receive",
         payload,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
 });
 

@@ -193,6 +193,14 @@ export class Inventory {
     });
   }
   warehouses(actor: Actor) {
+    actor = this.custodyActor(actor, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+      "buyer",
+    ]);
     return this.store
       .all(
         "SELECT * FROM inventory_warehouses WHERE org_id=? ORDER BY name",
@@ -220,14 +228,14 @@ export class Inventory {
     return row;
   }
   transferDestinations(actor: Actor) {
-    permit(actor, ["warehouse", "support"]);
+    actor = this.custodyActor(actor, ["warehouse", "support"]);
     return this.store.all<{ id: string; name: string }>(
       "SELECT id,name FROM inventory_warehouses WHERE org_id=? ORDER BY name",
       actor.orgId,
     );
   }
   warehouseByName(actor: Actor, name: string) {
-    permit(actor, []);
+    actor = this.custodyActor(actor, []);
     const warehouse = this.store.get(
       "SELECT * FROM inventory_warehouses WHERE org_id=? AND name=?",
       actor.orgId,
@@ -247,7 +255,9 @@ export class Inventory {
       "warehouse.create",
       key,
       input,
-      () => permit(actor, []),
+      () => {
+        actor = this.custodyActor(actor, []);
+      },
       () => {
         const warehouseId = id();
         this.store.run(
@@ -279,7 +289,7 @@ export class Inventory {
     );
   }
   stock(actor: Actor) {
-    permit(actor, [
+    actor = this.custodyActor(actor, [
       "warehouse",
       "commercial",
       "finance",
@@ -319,7 +329,7 @@ export class Inventory {
       .reduce((sum, u) => sum + u.quantity - this.reserved(u.id), 0);
   }
   purchaseOrigin(actor: Actor, unitId: string): string | null {
-    permit(actor, ["warehouse", "commercial", "finance"]);
+    actor = this.custodyActor(actor, ["warehouse", "commercial", "finance"]);
     const u = this.unit(actor, unitId);
     if (actor.role === "warehouse") site(actor, u.warehouse_id);
     // Follow owned custody evidence rather than assuming a split lot kept its ID.
@@ -420,7 +430,12 @@ export class Inventory {
     };
   }
   trace(actor: Actor, serial: string) {
-    permit(actor, ["warehouse", "commercial", "warranty", "support"]);
+    actor = this.custodyActor(actor, [
+      "warehouse",
+      "commercial",
+      "warranty",
+      "support",
+    ]);
     const unit = this.store.get<Unit>(
       "SELECT * FROM inventory_units WHERE org_id=? AND serial=?",
       actor.orgId,
@@ -742,7 +757,7 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, ["warehouse"]);
+        actor = this.custodyActor(actor, ["warehouse"]);
         site(actor, this.unit(actor, input.unitId).warehouse_id);
       },
       () => {
@@ -1771,7 +1786,7 @@ export class Inventory {
       key,
       input,
       (cached) => {
-        permit(actor, ["warehouse"]);
+        actor = this.custodyActor(actor, ["warehouse"]);
         if (cached) {
           const original = this.store.get<Transfer>(
             "SELECT * FROM inventory_transfers WHERE org_id=? AND id=?",
@@ -1880,7 +1895,7 @@ export class Inventory {
     );
   }
   transfers(actor: Actor) {
-    permit(actor, ["warehouse", "support"]);
+    actor = this.custodyActor(actor, ["warehouse", "support"]);
     return this.store
       .all<Transfer>(
         "SELECT * FROM inventory_transfers WHERE org_id=? ORDER BY created_at DESC",
@@ -2010,7 +2025,7 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, ["warehouse"]);
+        actor = this.custodyActor(actor, ["warehouse"]);
         const t = this.store.get(
           "SELECT * FROM inventory_transfers WHERE org_id=? AND id=?",
           actor.orgId,
@@ -2229,7 +2244,7 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.custodyActor(actor, []);
         check(
           this.store.get(
             "SELECT id FROM inventory_transfers WHERE org_id=? AND id=?",
@@ -2387,7 +2402,7 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.custodyActor(actor, []);
         check(
           this.store.get(
             "SELECT id FROM inventory_transfer_losses WHERE org_id=? AND id=?",
