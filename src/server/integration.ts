@@ -9,6 +9,7 @@ import {
   permit,
   text,
   type Actor,
+  type Role,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { Platform } from "./platform.ts";
@@ -194,7 +195,34 @@ export class Integration {
     );
   }
   readonly checkouts: IntegrationCheckouts;
+  private principal(actor: Actor, roles: Role[]) {
+    const current = this.identity.currentActor(actor);
+    permit(current, roles);
+    check(
+      !this.identity.security(current).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing provider operations.",
+      403,
+    );
+    return current;
+  }
+  private financial(effect: Effect) {
+    return [
+      "refund",
+      "payment",
+      "credit",
+      "credit-application",
+      "refund-expense",
+      "refund-application",
+    ].includes(effect.kind);
+  }
   effect(actor: Actor, effectId: string): Effect {
+    actor = this.principal(actor, [
+      "finance",
+      "support",
+      "commercial",
+      "buyer",
+    ]);
     const row = this.store.get<Effect>(
       "SELECT * FROM integration_effects WHERE org_id=? AND id=?",
       actor.orgId,
@@ -202,11 +230,16 @@ export class Integration {
     );
     check(row, "NOT_FOUND", "Provider operation not found.", 404);
     account(actor, row.account_id);
+    if (this.financial(row)) permit(actor, ["finance", "support"]);
     return row;
   }
   list(actor: Actor) {
-    actor = this.identity.currentActor(actor);
-    permit(actor, ["finance", "support", "commercial", "buyer"]);
+    actor = this.principal(actor, [
+      "finance",
+      "support",
+      "commercial",
+      "buyer",
+    ]);
     return this.store
       .all<Effect>(
         "SELECT * FROM integration_effects WHERE org_id=? ORDER BY created_at DESC",
@@ -215,14 +248,7 @@ export class Integration {
       .filter(
         (e) =>
           (actor.role !== "buyer" || e.account_id === actor.accountId) &&
-          (![
-            "refund",
-            "payment",
-            "credit",
-            "credit-application",
-            "refund-expense",
-            "refund-application",
-          ].includes(e.kind) ||
+          (!this.financial(e) ||
             ["admin", "finance", "support"].includes(actor.role)),
       )
       .map((e) => ({
@@ -265,7 +291,7 @@ export class Integration {
       }));
   }
   pending(actor: Actor, limit = 20) {
-    permit(actor, ["finance", "support"]);
+    actor = this.principal(actor, ["finance", "support"]);
     return this.store.all<Effect>(
       "SELECT * FROM integration_effects WHERE org_id=? AND state='pending' ORDER BY created_at,id LIMIT ?",
       actor.orgId,
@@ -283,9 +309,8 @@ export class Integration {
       hash: string;
     },
   ) {
-    permit(actor, ["finance"]);
-    this.identity.organization(actor);
     return this.database.transaction(() => {
+      actor = this.identity.workerActor(actor.orgId, actor.id);
       check(
         !this.store.get(
           "SELECT id FROM integration_refund_callbacks WHERE org_id=? AND binding_id=? AND event_id=?",
@@ -331,9 +356,7 @@ export class Integration {
     });
   }
   callbacks(actor: Actor) {
-    permit(actor, ["finance", "support"]);
-    actor = this.identity.currentActor(actor);
-    permit(actor, ["finance", "support"]);
+    actor = this.principal(actor, ["finance", "support"]);
     const checkout = this.store
       .all<Callback>(
         "SELECT * FROM integration_callbacks WHERE org_id=? ORDER BY created_at DESC,id LIMIT 200",
@@ -351,7 +374,7 @@ export class Integration {
       .slice(0, 200);
   }
   dueCallbacks(actor: Actor, bindingId: string, limit = 20) {
-    permit(actor, ["finance"]);
+    actor = this.identity.workerActor(actor.orgId, actor.id);
     return this.store.all<Callback>(
       "SELECT * FROM integration_callbacks WHERE org_id=? AND binding_id=? AND state IN('pending','waiting') AND retry_at<=? ORDER BY created_at,id LIMIT ?",
       actor.orgId,
@@ -361,9 +384,9 @@ export class Integration {
     );
   }
   claimCallback(actor: Actor, callbackId: string) {
-    permit(actor, ["finance"]);
-    this.platform.assertProviderAccess();
     return this.database.transaction(() => {
+      actor = this.identity.workerActor(actor.orgId, actor.id);
+      this.platform.assertProviderAccess();
       const row = this.store.get<Callback>(
         "SELECT * FROM integration_callbacks WHERE org_id=? AND id=?",
         actor.orgId,
@@ -392,6 +415,8 @@ export class Integration {
     error: string | null = null,
   ) {
     return this.database.transaction(() => {
+      // A revoked worker leaves its attempt interrupted for bounded recovery.
+      actor = this.identity.workerActor(actor.orgId, actor.id);
       const updated = this.store.run(
         "UPDATE integration_callbacks SET state=?,error=?,retry_at=? WHERE org_id=? AND id=? AND state='processing' AND attempts=?",
         state,
@@ -411,10 +436,12 @@ export class Integration {
     });
   }
   retryCallback(actor: Actor, callbackId: string) {
+    actor = this.identity.workerActor(actor.orgId, actor.id);
     if (this.refundCallbacks.has(actor, callbackId))
       return this.refundCallbacks.retry(actor, callbackId);
-    permit(actor, ["finance"]);
     return this.database.transaction(() => {
+      actor = this.identity.workerActor(actor.orgId, actor.id);
+      this.platform.assertProviderAccess();
       const row = this.store.get<Callback>(
         "SELECT * FROM integration_callbacks WHERE org_id=? AND id=?",
         actor.orgId,
@@ -1579,7 +1606,7 @@ export class Integration {
     });
   }
   accountingCsv(actor: Actor) {
-    permit(actor, ["finance"]);
+    actor = this.principal(actor, ["finance"]);
     const invoices = this.billing.invoices(actor),
       rows = [
         [

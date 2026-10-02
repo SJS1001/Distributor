@@ -195,14 +195,21 @@ test("provider completion rechecks active role/security and leaves unknown for q
       code:
         change === "password-change" ? "PASSWORD_CHANGE_REQUIRED" : "FORBIDDEN",
     });
-    assert.equal(
-      f.app.integration.effect(f.actor, f.effect.id).state,
-      "unknown",
-    );
-    assert.equal(
-      f.app.integration.effect(f.actor, f.effect.id).external_ref,
-      null,
-    );
+    if (change !== "role='commercial'")
+      assert.throws(() => f.app.integration.effect(f.actor, f.effect.id), {
+        code:
+          change === "password-change"
+            ? "PASSWORD_CHANGE_REQUIRED"
+            : "FORBIDDEN",
+      });
+    const current = f.app.database
+      .owned("integration")
+      .get(
+        "SELECT state,external_ref FROM integration_effects WHERE id=?",
+        f.effect.id,
+      )!;
+    assert.equal(current.state, "unknown");
+    assert.equal(current.external_ref, null);
     iam.run(
       "UPDATE iam_users SET active=1,role='admin' WHERE id=?",
       f.actor.id,
@@ -467,7 +474,16 @@ test("grant checks happen after transaction acquisition for cached commands, cla
       code: "FORBIDDEN",
     },
   );
-  assert.equal(f.app.integration.effect(f.actor, f.effect.id).state, "pending");
+  assert.throws(() => f.app.integration.effect(f.actor, f.effect.id), {
+    code: "FORBIDDEN",
+  });
+  assert.equal(
+    f.app.database
+      .owned("integration")
+      .get("SELECT state FROM integration_effects WHERE id=?", f.effect.id)!
+      .state,
+    "pending",
+  );
   iam.run("UPDATE iam_users SET active=1 WHERE id=?", f.actor.id);
   await assert.rejects(
     f.app.integration.execute(f.actor, f.effect.id, {
@@ -479,11 +495,17 @@ test("grant checks happen after transaction acquisition for cached commands, cla
     }),
     { code: "FORBIDDEN" },
   );
-  assert.equal(f.app.integration.effect(f.actor, f.effect.id).state, "unknown");
-  assert.equal(
-    f.app.integration.effect(f.actor, f.effect.id).external_ref,
-    null,
-  );
+  assert.throws(() => f.app.integration.effect(f.actor, f.effect.id), {
+    code: "FORBIDDEN",
+  });
+  const current = f.app.database
+    .owned("integration")
+    .get(
+      "SELECT state,external_ref FROM integration_effects WHERE id=?",
+      f.effect.id,
+    )!;
+  assert.equal(current.state, "unknown");
+  assert.equal(current.external_ref, null);
 });
 
 test(

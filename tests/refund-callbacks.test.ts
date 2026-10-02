@@ -627,16 +627,36 @@ test("refund callback HTTP lists and retry require finance/current session with 
       foreignRuntime.receiveStripe("foreign", Buffer.from(s.raw), s.signature),
     { code: "NOT_FOUND" },
   );
-  for (const role of ["buyer", "commercial"] as const)
+  for (const role of ["buyer", "commercial"] as const) {
+    const userId = f.app.identity.createUser(
+      f.actor,
+      `callback-reader-${role}`,
+      {
+        name: `Callback ${role}`,
+        email: `callback-${role}@example.test`,
+        password: "long-synthetic-reader-password",
+        role,
+        sites: [],
+        ...(role === "buyer" ? { accountId: f.buyer } : {}),
+      },
+    ).id;
     assert.throws(
       () =>
         f.app.integration.callbacks({
           ...f.actor,
-          role,
-          accountId: role === "buyer" ? f.buyer : null,
+          id: userId,
         }),
       { code: "FORBIDDEN" },
     );
+    assert.equal(
+      f.app.integration.callbacks({
+        ...f.actor,
+        role,
+        accountId: role === "buyer" ? f.buyer : null,
+      }).length,
+      1,
+    );
+  }
   const http = await createHttp(f.app, {
     origin: "http://localhost",
     providers: f.runtime,

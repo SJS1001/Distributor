@@ -133,3 +133,10 @@ See [local billing evidence](evidence/LOCAL-BILLING-AUTHORITY-2026-10-02.md). Or
 All import report lists and preview/approve/reject commands use current active persisted administrator grants and password state. A supplied administrator role cannot elevate a warehouse operator; a stale supplied lower role cannot deny a currently permitted administrator. Revoked grants, unavailable principals and required password changes refuse saved results as well as new requests. Existing approved/rejected outcomes remain available to authorized reviewers after restart without applying them again.
 
 See [the import procedure](IMPORTS.md#current-import-authority) and [local evidence](evidence/LOCAL-IMPORT-AUTHORITY-2026-10-02.md). These guards cover the three migration entry points, including both customer and catalog masters; they do not qualify all other internal owner APIs or production security/operating acceptance.
+
+
+## Current provider authority
+
+Provider effects/lists, pending queues, checkout/refund confirmations and accounting CSV use current active persisted grants and required-password state. Buyer effect access follows the current account assignment. Raw financial effects require finance/support/admin; public commercial/buyer lists retain their existing restricted visibility. Current finance/admin workers are required for checkout callback receipt, claim, completion and retry, with grants checked inside mutation transactions before duplicate results or effects. Support queue visibility does not permit callback writes.
+
+A revoked worker cannot finish an interrupted checkout callback; retained processing is recovered after the existing stale-attempt timeout for a qualified successor. Public reads after revocation deny access rather than exposing an uncertain financial result. Private owning-attempt failure cleanup remains conservative. See [provider recovery behavior](PROVIDERS.md#current-provider-queue-and-callback-authority) and [local evidence](evidence/LOCAL-INTEGRATION-AUTHORITY-2026-10-02.md). Staff visibility, other internal APIs, unbounded lists/separate snapshots and actual production acceptance remain unqualified.

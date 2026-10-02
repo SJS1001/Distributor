@@ -94,7 +94,9 @@ function facts(f: Awaited<ReturnType<typeof setup>>) {
         "SELECT * FROM billing_refunds WHERE org_id=? ORDER BY id",
         f.actor.orgId,
       ),
-    effect: f.app.integration.effect(f.actor, f.parent.id),
+    effect: f.app.database
+      .owned("integration")
+      .get("SELECT * FROM integration_effects WHERE id=?", f.parent.id),
   };
 }
 
@@ -508,6 +510,9 @@ test("completion rechecks consent, credential status and restore isolation, and 
       0,
     );
     if (restriction === "password") {
+      assert.throws(() => f.app.integration.effect(f.actor, f.parent.id), {
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
       assert.throws(() => f.app.inventory.stock(f.actor), {
         code: "PASSWORD_CHANGE_REQUIRED",
       });

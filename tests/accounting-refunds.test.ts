@@ -932,10 +932,26 @@ test("write checks fence a recovered claim and a revoked initiating principal af
         }
         return data;
       });
-      assert.equal(
-        (await f.app.integration.execute(f.actor, effect.id, adapter)).state,
-        "unknown",
-      );
+      if (change === "revoke") {
+        await assert.rejects(
+          f.app.integration.execute(f.actor, effect.id, adapter),
+          { code: "FORBIDDEN" },
+        );
+        assert.throws(() => f.app.integration.effect(f.actor, effect.id), {
+          code: "FORBIDDEN",
+        });
+        assert.equal(
+          f.app.database
+            .owned("integration")
+            .get("SELECT state FROM integration_effects WHERE id=?", effect.id)!
+            .state,
+          "unknown",
+        );
+      } else
+        assert.equal(
+          (await f.app.integration.execute(f.actor, effect.id, adapter)).state,
+          "unknown",
+        );
       assert.equal(mock.calls.filter((c) => c.body).length, 0);
     });
   }

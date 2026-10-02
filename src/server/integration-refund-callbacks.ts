@@ -127,6 +127,12 @@ export class IntegrationRefundCallbacks {
   list(actor: Actor) {
     actor = this.identity.currentActor(actor);
     permit(actor, ["finance", "support"]);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before accessing provider confirmations.",
+      403,
+    );
     return this.store
       .all<RefundCallback>(
         "SELECT * FROM integration_refund_callbacks WHERE org_id=? ORDER BY created_at DESC,id LIMIT 200",
