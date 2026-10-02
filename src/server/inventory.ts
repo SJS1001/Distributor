@@ -15,6 +15,7 @@ import { Catalog } from "./catalog.ts";
 import { Platform } from "./platform.ts";
 import { InventoryCosts } from "./inventory-costs.ts";
 import { Identity } from "./iam.ts";
+import type { CountReviewPolicy } from "./count-policy.ts";
 export type Unit = {
   id: string;
   org_id: string;
@@ -747,8 +748,14 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.custodyActor(actor, []);
         site(actor, this.unit(actor, input.unitId).warehouse_id);
+        check(
+          this.identity.countReviewPolicy(actor).mode !== "independent",
+          "COUNT_REVIEW_REQUIRED",
+          "Independent count review requires a saved observation and a separate administrator; direct corrections are disabled.",
+          403,
+        );
       },
       () => this.applyCount(actor, input, input.unitId),
     );
@@ -804,7 +811,8 @@ export class Inventory {
     return row;
   }
   counts(actor: Actor) {
-    permit(actor, ["warehouse", "support"]);
+    actor = this.custodyActor(actor, ["warehouse", "support"]);
+    const reviewPolicy = this.identity.countReviewPolicy(actor);
     return this.store
       .all<Count>(
         "SELECT * FROM inventory_counts WHERE org_id=? ORDER BY created_at DESC,id",
@@ -815,6 +823,12 @@ export class Inventory {
       )
       .map(({ start_hash, decision_result, ...c }) => ({
         ...c,
+        reviewPolicy,
+        canApprove:
+          actor.role === "admin" &&
+          c.state === "submitted" &&
+          (reviewPolicy.mode !== "independent" ||
+            (actor.id !== c.created_by && actor.id !== c.observed_by)),
         delta:
           c.observed_quantity === null
             ? null
@@ -832,7 +846,7 @@ export class Inventory {
     check(
       !this.identity.security(current).passwordChangeRequired,
       "PASSWORD_CHANGE_REQUIRED",
-      "Change your password before reviewing serial custody.",
+      "Change your password before reviewing stock custody.",
       403,
     );
     return current;
@@ -1220,7 +1234,7 @@ export class Inventory {
       key,
       input,
       (cached) => {
-        permit(actor, ["warehouse"]);
+        actor = this.custodyActor(actor, ["warehouse"]);
         if (cached) this.countRecord(actor, cached.id);
         else {
           const old = this.store.get<Count>(
@@ -1302,7 +1316,7 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, ["warehouse"]);
+        actor = this.custodyActor(actor, ["warehouse"]);
         this.countRecord(actor, input.countId);
       },
       () => {
@@ -1336,7 +1350,12 @@ export class Inventory {
   decideCount(
     actor: Actor,
     key: string,
-    input: { countId: string; decision: "approve" | "reject"; reason: string },
+    input: {
+      countId: string;
+      decision: "approve" | "reject";
+      reason: string;
+      policyRevision?: number;
+    },
   ) {
     return this.platform.command(
       actor,
@@ -1344,7 +1363,7 @@ export class Inventory {
       key,
       input,
       () => {
-        permit(actor, []);
+        actor = this.custodyActor(actor, []);
         this.countRecord(actor, input.countId);
       },
       () => {
@@ -1367,6 +1386,7 @@ export class Inventory {
             id: string;
             state: string;
             adjustment: ReturnType<Inventory["applyCount"]> | null;
+            reviewPolicy?: CountReviewPolicy;
           };
         }
         check(
@@ -1375,6 +1395,23 @@ export class Inventory {
           "STATE",
           "Submit the physical observation before approval.",
         );
+        const reviewPolicy = this.identity.countReviewPolicy(actor);
+        if (input.decision === "approve") {
+          check(
+            input.policyRevision === reviewPolicy.revision ||
+              (input.policyRevision === undefined &&
+                reviewPolicy.revision === 1),
+            "REVISION",
+            "Count review policy changed or was not reviewed; refresh before approving.",
+          );
+          check(
+            reviewPolicy.mode !== "independent" ||
+              (actor.id !== c.created_by && actor.id !== c.observed_by),
+            "SEPARATION_OF_DUTIES",
+            "A different administrator must approve this count; the starter and observer cannot approve their own count.",
+            403,
+          );
+        }
         const adjustment =
           input.decision === "approve"
             ? this.applyCount(
@@ -1388,7 +1425,7 @@ export class Inventory {
                 c.id,
               )
             : null;
-        const result = { id: c.id, state, adjustment };
+        const result = { id: c.id, state, adjustment, reviewPolicy };
         this.store.run(
           "UPDATE inventory_counts SET state=?,decision_reason=?,decided_by=?,decided_at=?,decision_result=? WHERE id=?",
           state,

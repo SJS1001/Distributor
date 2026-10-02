@@ -721,16 +721,28 @@ export function commands(
       schema: obj({ unitId: str, revision: num, countRef: str }),
       run: (a, k, p) => app.inventory.startCount(a, k, p),
     },
+    "count.policy": {
+      schema: obj({
+        mode: choice("administrator", "independent"),
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.identity.configureCountReview(a, k, p),
+    },
     "count.submit": {
       schema: obj({ countId: str, quantity: num, reason: str }),
       run: (a, k, p) => app.inventory.submitCount(a, k, p),
     },
     "count.decide": {
-      schema: obj({
-        countId: str,
-        decision: choice("approve", "reject"),
-        reason: str,
-      }),
+      schema: obj(
+        {
+          countId: str,
+          decision: choice("approve", "reject"),
+          reason: str,
+          policyRevision: num,
+        },
+        ["policyRevision"],
+      ),
       run: (a, k, p) => app.inventory.decideCount(a, k, p),
     },
     "transfer.dispatch": {
@@ -1466,6 +1478,9 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/counts", async (request) =>
     app.inventory.counts(actor(request)),
+  );
+  http.get("/api/count-review-policy", async (request) =>
+    app.identity.countReviewPolicy(actor(request)),
   );
   http.get("/api/imports/opening", async (request) =>
     app.migration.list(actor(request)),

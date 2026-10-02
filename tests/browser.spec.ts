@@ -8,6 +8,7 @@ import "./carrier-claim-browser-journey.ts";
 import "./carrier-configuration-browser-journey.ts";
 import "./dhl-warehouse-browser-journey.ts";
 import "./zpl-browser-journey.ts";
+import "./count-policy-browser-journey.ts";
 test("browser: checkout rechecks stale balance, refreshes expiry, cancels navigation reads and opens only after a fresh scoped request", async ({
   page,
   context,

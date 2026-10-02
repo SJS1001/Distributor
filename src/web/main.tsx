@@ -163,6 +163,7 @@ function App() {
       e.transfers = await request("/api/transfers");
       e.transferDestinations = await request("/api/transfer-destinations");
       e.counts = await request("/api/counts");
+      e.countReviewPolicy = await request("/api/count-review-policy");
       if (["admin", "warehouse"].includes(actor?.role ?? ""))
         e.labels = await request("/api/stock/labels");
     }
@@ -2043,6 +2044,51 @@ function App() {
                 )}
               />
             )}
+            {extra.countReviewPolicy && (
+              <section>
+                <h2>Count review policy</h2>
+                <p>
+                  {extra.countReviewPolicy.mode === "independent"
+                    ? "Independent review: a separate administrator must approve. The count starter and observer cannot approve; direct quantity corrections are disabled."
+                    : "Administrator review: an administrator may approve their own count and make direct quantity corrections."}{" "}
+                  Policy version {extra.countReviewPolicy.revision}.
+                </p>
+                {extra.countReviewPolicy.reason && (
+                  <p>{extra.countReviewPolicy.reason}</p>
+                )}
+                {admin &&
+                  button("Configure count review", () =>
+                    open(
+                      "Configure count review policy",
+                      [
+                        {
+                          name: "mode",
+                          label: "Approval duties",
+                          options: [
+                            {
+                              value: "administrator",
+                              label:
+                                "Administrator review (self-review allowed)",
+                            },
+                            {
+                              value: "independent",
+                              label: "Independent administrator review",
+                            },
+                          ],
+                          value: extra.countReviewPolicy.mode,
+                        },
+                        reason,
+                      ],
+                      (v) =>
+                        command("count.policy", {
+                          ...v,
+                          revision: extra.countReviewPolicy.revision,
+                        }),
+                      "This affects all new bulk count approvals in this organization immediately. Existing observations and decisions remain intact. Independent review needs an administrator other than the count starter and observer. Selecting administrator review permits self-review and direct corrections; record the operating reason.",
+                    ),
+                  )}
+              </section>
+            )}
             {extra.counts?.length > 0 && (
               <>
                 <h2>Cycle counts</h2>
@@ -2083,6 +2129,12 @@ function App() {
                       {c.state}
                       <small>{c.observation_reason ?? ""}</small>
                       <small>{c.decision_reason ?? ""}</small>
+                      {c.result?.reviewPolicy && (
+                        <small>
+                          Reviewed under {c.result.reviewPolicy.mode} policy
+                          version {c.result.reviewPolicy.revision}
+                        </small>
+                      )}
                     </>,
                     <div className="actions">
                       {c.state === "draft" &&
@@ -2105,7 +2157,7 @@ function App() {
                           ),
                         )}
                       {c.state === "submitted" &&
-                        admin &&
+                        c.canApprove &&
                         button("Approve count", () =>
                           open(
                             "Approve stock correction",
@@ -2115,10 +2167,16 @@ function App() {
                                 ...v,
                                 countId: c.id,
                                 decision: "approve",
+                                policyRevision: c.reviewPolicy.revision,
                               }),
                             `${c.count_ref}: ${c.expected_quantity} expected, ${c.observed_quantity} observed. Adjustment ${c.delta} units / ${money(c.valueDelta, currency)} at original unit cost. Approval does not post an accounting entry.`,
                           ),
                         )}
+                      {c.state === "submitted" && admin && !c.canApprove && (
+                        <small>
+                          A different administrator must review this count.
+                        </small>
+                      )}
                       {["draft", "submitted"].includes(c.state) &&
                         admin &&
                         button("Reject count", () =>

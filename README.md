@@ -28,6 +28,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |
+| [Bulk count review duties](docs/COUNT-REVIEWS.md) | Saved organization policy, independent approval, stale review and immutable decision history |
 | [Warranty and replacements](docs/WARRANTY.md) | Native returns, replacement collection/dispatch, manufacturer evidence and remaining qualification |
 | [Runtime installation](docs/RUNTIME.md) | Production dependencies, required package inputs and isolated local startup checks |
 | [Schema startup and upgrades](docs/SCHEMA-UPGRADES.md) | Atomic initialization, exact supported versions and reviewed fresh-file clones |

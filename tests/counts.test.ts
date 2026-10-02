@@ -4,6 +4,25 @@ import { fork, type ChildProcess } from "node:child_process";
 import { Application } from "../src/server/application.ts";
 import { fixture } from "./fixtures.ts";
 
+function user(
+  f: ReturnType<typeof fixture>,
+  name: string,
+  role: "admin" | "warehouse" = "warehouse",
+) {
+  const id = f.app.identity.createUser(f.actor, `user-${name}`, {
+    email: `${name}@example.test`,
+    name,
+    role,
+    sites: [f.w1],
+    password: "long-test-only-password",
+  }).id;
+  return f.app.identity.currentActor({ ...f.actor, id });
+}
+function sites(f: ReturnType<typeof fixture>, id: string, values: string[]) {
+  f.app.database
+    .owned("iam")
+    .run("UPDATE iam_users SET sites=? WHERE id=?", JSON.stringify(values), id);
+}
 function bulk(f: ReturnType<typeof fixture>) {
   const product = f.app.catalog.create(f.actor, "count-bulk", {
     sku: "COUNT-1",
@@ -72,12 +91,7 @@ test("saved bulk counts preserve original cost/condition, operator evidence and 
     reason: "Synthetic quarantine",
   });
   const current = f.app.inventory.unit(f.actor, unit.id);
-  const operator = {
-    ...f.actor,
-    id: "counter",
-    role: "warehouse" as const,
-    sites: [f.w1],
-  };
+  const operator = user(f, "counter");
   const input = {
     unitId: unit.id,
     revision: current.revision,
@@ -164,7 +178,7 @@ test("saved bulk counts preserve original cost/condition, operator evidence and 
   f.app = new Application(f.path);
   assert.deepEqual(
     f.app.inventory.decideCount(
-      { ...f.actor, id: "other-admin" },
+      user(f, "other-admin", "admin"),
       "new-admin-key",
       decision,
     ),
@@ -184,21 +198,12 @@ test("saved bulk counts preserve original cost/condition, operator evidence and 
     { code: "RECEIPT_CONFLICT" },
   );
   assert.throws(
-    () =>
-      f.app.inventory.decideCount(
-        { ...f.actor, role: "warehouse", sites: [f.w1] },
-        "approve",
-        decision,
-      ),
+    () => f.app.inventory.decideCount(operator, "approve", decision),
     { code: "FORBIDDEN" },
   );
+  sites(f, operator.id, [f.w2]);
   assert.throws(
-    () =>
-      f.app.inventory.submitCount(
-        { ...operator, sites: [f.w2] },
-        "observe",
-        observation,
-      ),
+    () => f.app.inventory.submitCount(operator, "observe", observation),
     { code: "FORBIDDEN" },
   );
   assert.throws(
@@ -208,12 +213,10 @@ test("saved bulk counts preserve original cost/condition, operator evidence and 
         "foreign",
         decision,
       ),
-    { code: "NOT_FOUND" },
+    { code: "FORBIDDEN" },
   );
-  assert.equal(
-    f.app.inventory.counts({ ...operator, sites: [f.w2] }).length,
-    0,
-  );
+  assert.equal(f.app.inventory.counts(operator).length, 0);
+  sites(f, operator.id, [f.w1]);
   const c = f.app.inventory.counts(operator)[0]!;
   assert.equal(c.expected_quantity, 6);
   assert.equal(c.observed_quantity, 8);
@@ -484,12 +487,7 @@ test(
 test("count history and retries retain the original site scope after the counted lot moves; revoked original grants deny cached results", (t) => {
   const f = fixture(t),
     unit = bulk(f),
-    operator = {
-      ...f.actor,
-      id: "original-counter",
-      role: "warehouse" as const,
-      sites: [f.w1],
-    };
+    operator = user(f, "original-counter");
   const input = {
     unitId: unit.id,
     revision: unit.revision,
@@ -539,7 +537,8 @@ test("count history and retries retain the original site scope after the counted
     result,
   );
   assert.equal(f.app.inventory.counts(operator)[0]!.warehouse_id, f.w1);
-  const revoked = { ...operator, sites: [f.w2] };
+  sites(f, operator.id, [f.w2]);
+  const revoked = operator;
   for (const key of ["start", "fresh-key"])
     assert.throws(() => f.app.inventory.startCount(revoked, key, input), {
       code: "FORBIDDEN",

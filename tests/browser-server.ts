@@ -5,6 +5,7 @@ import {
 import { claimBrowser } from "./carrier-claim-browser-fixture.ts";
 import { dhlBrowser } from "./dhl-warehouse-fixture.ts";
 import { configurationBrowser } from "./carrier-configuration-browser-fixture.ts";
+import { countPolicyBrowser } from "./count-policy-browser-fixture.ts";
 import { client as canadaPostCreation } from "./canada-post-creation-fixture.ts";
 import { manifestClient as canadaPostManifest } from "./canada-post-manifest-fixture.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
@@ -881,6 +882,7 @@ await cpHttp.listen({ host: "127.0.0.1", port: 3120 });
 const claimHttp = await claimBrowser((fn) => cleanup.push(fn));
 const configurationHttp = await configurationBrowser((fn) => cleanup.push(fn));
 const dhlHttp = await dhlBrowser((fn) => cleanup.push(fn));
+const countPolicyHttp = await countPolicyBrowser((fn) => cleanup.push(fn));
 
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
@@ -905,6 +907,7 @@ const stop = async () => {
   await cpHttp.close();
   await claimHttp.close();
   await configurationHttp.close();
+  await countPolicyHttp.close();
   for (const server of dhlHttp) await server.close();
   cleanup.forEach((fn) => fn());
   process.exit(0);

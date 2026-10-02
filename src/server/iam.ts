@@ -1,4 +1,9 @@
 import { validateMfaPolicy } from "./mfa-policy.ts";
+import {
+  countReviewMode,
+  readCountReviewPolicy,
+  type CountReviewMode,
+} from "./count-policy.ts";
 import { MultiFactor } from "./iam-mfa.ts";
 import { ProviderResidency, type ProviderAcceptance } from "./iam-residency.ts";
 import {
@@ -198,6 +203,65 @@ export class Identity {
   }
   organization(actor: Actor): Organization {
     return this.configurationOrganization(actor.orgId);
+  }
+  countReviewPolicy(actor: Actor) {
+    actor = this.currentActor(actor);
+    permit(actor, ["warehouse", "support"]);
+    check(
+      !this.passwordChangeRequired(actor.id),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing inventory counts.",
+      403,
+    );
+    return readCountReviewPolicy(JSON.parse(this.organization(actor).policy));
+  }
+  configureCountReview(
+    actor: Actor,
+    key: string,
+    input: { mode: CountReviewMode; revision: number; reason: string },
+  ) {
+    return this.platform.command(
+      actor,
+      "count.policy",
+      key,
+      input,
+      () => {
+        actor = this.currentActor(actor);
+        permit(actor, []);
+        this.countReviewPolicy(actor);
+      },
+      () => {
+        const policy = JSON.parse(this.organization(actor).policy) as Record<
+          string,
+          unknown
+        >;
+        const prior = readCountReviewPolicy(policy);
+        check(
+          integer(input.revision, "count policy revision", 1) ===
+            prior.revision,
+          "REVISION",
+          "Count review policy changed; refresh before saving.",
+        );
+        const selected = {
+          mode: countReviewMode(input.mode),
+          revision: prior.revision + 1,
+          reason: text(input.reason, "count policy review reason", 1000),
+          updatedBy: actor.id,
+          updatedAt: now(),
+        };
+        policy.inventoryCountReview = selected;
+        this.store.run(
+          "UPDATE iam_organizations SET policy=? WHERE id=?",
+          canonical(policy),
+          actor.orgId,
+        );
+        this.platform.event(actor, "CountReviewPolicyChanged", actor.orgId, {
+          previous: prior,
+          selected,
+        });
+        return selected;
+      },
+    );
   }
   // Trusted local startup may validate a binding without inventing a user/grant.
   // Browser/business callers must continue to use their current actor authority.
