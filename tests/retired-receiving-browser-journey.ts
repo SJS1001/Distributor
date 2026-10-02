@@ -21,6 +21,20 @@ test("browser: retired customer product receives saved and new delivery scans at
       .getByRole("button", { name: "Purchasing", exact: true })
       .click();
   await nav();
+  const initial = await (
+    await page.request.get(origin + "/api/purchases")
+  ).json();
+  const initialPo = initial.orders.find((p: any) =>
+    p.lines.some((l: any) => l.unit_cost === 4321),
+  );
+  const initialRow = page
+    .getByRole("row")
+    .filter({ has: page.getByTitle(initialPo.id, { exact: true }) });
+  await expect(initialRow).toContainText("RETIRED-DELIVERY");
+  await expect(initialRow).toContainText(
+    "Synthetic customer-retired equipment",
+  );
+  await expect(initialRow).toContainText("retired from customer ordering");
   const draft = (reference: string) =>
     page
       .getByRole("table")
@@ -83,6 +97,19 @@ test("browser: retired customer product receives saved and new delivery scans at
   await poRow
     .getByRole("button", { name: "Start receipt draft", exact: true })
     .click();
+  const lineChoice = page.getByLabel("Purchase line", { exact: true });
+  await expect(lineChoice.locator("option:checked")).toContainText(
+    "RETIRED-DELIVERY",
+  );
+  await expect(lineChoice.locator("option:checked")).toContainText(
+    "Synthetic customer-retired equipment",
+  );
+  await expect(lineChoice.locator("option:checked")).toContainText(
+    "retired from customer ordering",
+  );
+  await expect(lineChoice.locator("option:checked")).toContainText(
+    "1 remaining",
+  );
   await page
     .getByLabel("Supplier delivery reference", { exact: true })
     .fill("RETIRED-PART-2");

@@ -83,6 +83,8 @@ const money = (value: number, currency = "CAD") =>
   new Intl.NumberFormat("en", { style: "currency", currency }).format(
     value / 100,
   );
+const purchaseLineName = (line: Item) =>
+  `${line.product_sku} · ${line.product_name}${line.product_active === 0 ? " · retired from customer ordering" : ""}`;
 function App() {
   const [actor, setActor] = useState<Item | null>(null),
     [data, setData] = useState<Item | null>(null),
@@ -746,7 +748,7 @@ function App() {
                 "Purchase line",
                 po.lines.filter((l: Item) => l.received < l.quantity),
                 (l) =>
-                  `${productName(l.product_id)} · ${l.quantity - l.received} remaining`,
+                  `${purchaseLineName(l)} · ${l.quantity - l.received} remaining`,
               ),
               { name: "deliveryRef", label: "Supplier delivery reference" },
             ]),
@@ -2851,8 +2853,7 @@ function App() {
                 warehouseName(po.warehouse_id),
                 po.lines.map((l: Item) => (
                   <div key={l.id}>
-                    {productName(l.product_id)} · {l.received}/{l.quantity}{" "}
-                    received
+                    {purchaseLineName(l)} · {l.received}/{l.quantity} received
                   </div>
                 )),
                 po.state,

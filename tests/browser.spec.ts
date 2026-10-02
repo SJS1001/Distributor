@@ -3244,7 +3244,8 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const poRow = page
     .getByRole("row")
-    .filter({ hasText: "BROWSER-SCAN · 0/2 received" });
+    .filter({ hasText: "BROWSER-SCAN · Synthetic scanned equipment" });
+  await expect(poRow).toContainText("0/2 received");
   await poRow
     .getByRole("button", { name: "Start receipt draft", exact: true })
     .click();

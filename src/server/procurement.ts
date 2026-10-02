@@ -40,6 +40,15 @@ type PurchaseOrder = {
   state: string;
   created_at: string;
 };
+type PurchaseLine = {
+  id: string;
+  org_id: string;
+  po_id: string;
+  product_id: string;
+  quantity: number;
+  received: number;
+  unit_cost: number;
+};
 type PurchaseReceipt = {
   id: string;
   org_id: string;
@@ -441,11 +450,21 @@ export class Procurement {
   private orderView(actor: Actor, row: PurchaseOrder) {
     return {
       ...row,
-      lines: this.store.all(
-        "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=? ORDER BY id",
-        actor.orgId,
-        row.id,
-      ),
+      lines: this.store
+        .all<PurchaseLine>(
+          "SELECT * FROM procurement_lines WHERE org_id=? AND po_id=? ORDER BY id",
+          actor.orgId,
+          row.id,
+        )
+        .map((line) => {
+          const product = this.catalog.product(actor, line.product_id);
+          return {
+            ...line,
+            product_sku: product.sku,
+            product_name: product.name,
+            product_active: product.active,
+          };
+        }),
     };
   }
   order(actor: Actor, orderId: string) {

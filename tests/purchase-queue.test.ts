@@ -343,3 +343,115 @@ test("HTTP purchasing page and off-page details validate fields and revoke conti
     401,
   );
 });
+
+// Omitting catalog-owned descriptors loses retired SKU identity; using a catalog
+// page as a lookup also loses active products beyond that page. Reads must keep
+// original purchase facts and freshly enforce site access after restart.
+for (const region of ["CA", "US"] as const)
+  test(`purchase descriptors ${region}: scoped HTTP reads identify retired and off-page active lines without changing purchase facts`, async (t) => {
+    const f = fixture(t, {}, region);
+    for (let i = 0; i < 21; i++)
+      f.app.catalog.create(f.actor, `descriptor-filler-${i}`, {
+        sku: `FIRST-${i}`,
+        name: `A synthetic product ${i}`,
+        serialized: false,
+        unitPrice: 100,
+        taxBasisPoints: 0,
+      });
+    const retired = f.app.catalog.create(f.actor, "descriptor-retired", {
+      sku: "RETIRED-EXPECTED",
+      name: "Z synthetic retired equipment",
+      serialized: true,
+      unitPrice: 99900,
+      taxBasisPoints: 0,
+    }).id;
+    const active = f.app.catalog.create(f.actor, "descriptor-active", {
+      sku: "ZZ-ACTIVE-EXPECTED",
+      name: "Z synthetic active equipment",
+      serialized: false,
+      unitPrice: 88800,
+      taxBasisPoints: 0,
+    }).id;
+    const poId = f.app.procurement.create(f.actor, "descriptor-po", {
+      supplierId: f.supplier,
+      warehouseId: f.w1,
+      lines: [
+        { productId: retired, quantity: 2, unitCost: 4321 },
+        { productId: active, quantity: 5, unitCost: 1234 },
+      ],
+    }).id;
+    f.app.catalog.retire(f.actor, "descriptor-retire", {
+      productId: retired,
+      expectedHash: f.app.catalog.lifecycleReview(f.actor, retired)
+        .expectedHash,
+      reason: "Synthetic withdrawal from customer ordering",
+    });
+    const warehouse = user(f, "warehouse");
+    f.app.close();
+    f.app = new Application(f.path, region);
+    assert.ok(!f.app.catalog.products(warehouse).some((p) => p.id === retired));
+    assert.ok(
+      !f.app.catalog.productPage(warehouse).items.some((p) => p.id === active),
+    );
+    const { http, headers } = await session(f, "warehouse@example.test");
+    t.after(() => http.close());
+    const before = facts(f);
+    const expected = [
+      ["RETIRED-EXPECTED", "Z synthetic retired equipment", 0, 2, 0, 4321],
+      ["ZZ-ACTIVE-EXPECTED", "Z synthetic active equipment", 1, 5, 0, 1234],
+    ];
+    for (const url of [
+      "/api/purchases",
+      "/api/purchases/orders/page",
+      `/api/purchases/orders/${poId}`,
+    ]) {
+      const response = await http.inject({ method: "GET", url, headers });
+      assert.equal(response.statusCode, 200);
+      const body = response.json();
+      const order = url.endsWith(poId)
+        ? body
+        : (body.orders ?? body.items).find((p: any) => p.id === poId);
+      assert.deepEqual(
+        order.lines
+          .map((line: any) => [
+            line.product_sku,
+            line.product_name,
+            line.product_active,
+            line.quantity,
+            line.received,
+            line.unit_cost,
+          ])
+          .sort(),
+        expected,
+      );
+    }
+    assert.deepEqual(facts(f), before);
+    grants(f, warehouse, { sites: [f.w2] });
+    const revokedFacts = facts(f);
+    const denied = await http.inject({
+      method: "GET",
+      url: `/api/purchases/orders/${poId}`,
+      headers,
+    });
+    assert.equal(denied.statusCode, 401);
+    assert.ok(!denied.body.includes("RETIRED-EXPECTED"));
+    assert.deepEqual(facts(f), revokedFacts);
+    const refreshed = await session(f, "warehouse@example.test");
+    t.after(() => refreshed.http.close());
+    const refreshedFacts = facts(f);
+    const outsideSite = await refreshed.http.inject({
+      method: "GET",
+      url: `/api/purchases/orders/${poId}`,
+      headers: refreshed.headers,
+    });
+    assert.equal(outsideSite.statusCode, 404);
+    assert.ok(!outsideSite.body.includes("RETIRED-EXPECTED"));
+    const empty = await refreshed.http.inject({
+      method: "GET",
+      url: "/api/purchases/orders/page",
+      headers: refreshed.headers,
+    });
+    assert.equal(empty.statusCode, 200);
+    assert.deepEqual(empty.json(), { items: [], next: null });
+    assert.deepEqual(facts(f), refreshedFacts);
+  });
