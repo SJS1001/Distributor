@@ -280,7 +280,7 @@ export class Application {
       products:
         actor.role === "buyer"
           ? actor.accountId
-            ? this.catalog.customerProducts(actor, actor.accountId)
+            ? this.catalog.customerProductPage(actor, actor.accountId).items
             : []
           : this.catalog.products(actor),
       warehouses: this.inventory.warehouses(actor),

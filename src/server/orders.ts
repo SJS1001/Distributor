@@ -1,3 +1,8 @@
+import type {
+  OrderEntry,
+  CartLine,
+  SavedCartPage,
+} from "../shared/customer-products.ts";
 import type { SQLInputValue } from "node:sqlite";
 import {
   orderQueueStates,
@@ -256,6 +261,122 @@ export class Orders {
           quantity: number;
         }[],
       }));
+  }
+  cartPage(
+    actor: Actor,
+    after?: string,
+    accountId?: string,
+    warehouseId?: string,
+  ): SavedCartPage {
+    return this.database.transaction(() => {
+      actor = this.amendmentActor(actor, true);
+      // Recheck assignment even for an empty buyer page.
+      if (actor.role === "buyer") {
+        check(
+          actor.accountId,
+          "FORBIDDEN",
+          "Buyer customer assignment is unavailable.",
+          403,
+        );
+        this.identity.customer(actor, actor.accountId);
+      }
+      if (accountId !== undefined) {
+        accountId = text(accountId, "Customer ID", 128);
+        this.identity.customer(actor, accountId);
+      }
+      if (warehouseId !== undefined) {
+        warehouseId = text(warehouseId, "Warehouse ID", 128);
+        this.inventory.warehouse(actor, warehouseId);
+      }
+      const scope = this.orderScope(actor);
+      if (accountId !== undefined) {
+        scope.where += " AND account_id=?";
+        scope.params.push(accountId);
+      }
+      if (warehouseId !== undefined) {
+        scope.where += " AND warehouse_id=?";
+        scope.params.push(warehouseId);
+      }
+      const cursor =
+        after === undefined
+          ? undefined
+          : this.store.get<Cart>(
+              `SELECT * FROM orders_carts WHERE ${scope.where} AND id=?`,
+              ...scope.params,
+              text(after, "Cart cursor", 128),
+            );
+      check(
+        after === undefined || cursor,
+        "CURSOR",
+        "Cart cursor is unavailable in your current scope or filter.",
+        400,
+      );
+      if (cursor) {
+        scope.where += " AND (updated_at<? OR (updated_at=? AND id<?))";
+        scope.params.push(cursor.updated_at, cursor.updated_at, cursor.id);
+      }
+      const rows = this.store.all<Cart>(
+        `SELECT * FROM orders_carts WHERE ${scope.where} ORDER BY updated_at DESC,id DESC LIMIT 21`,
+        ...scope.params,
+      );
+      const items = rows.slice(0, 20).map((row) => {
+        const lines = JSON.parse(row.lines) as CartLine[];
+        check(
+          Array.isArray(lines) && lines.length <= 100,
+          "VALIDATION",
+          "Maximum 100 cart lines.",
+          400,
+        );
+        return {
+          id: row.id,
+          account_id: row.account_id,
+          warehouse_id: row.warehouse_id,
+          revision: row.revision,
+          updated_at: row.updated_at,
+          products: lines.length,
+          units: lines.reduce((sum, line) => sum + line.quantity, 0),
+        };
+      });
+      return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
+    });
+  }
+  orderEntry(actor: Actor, accountId: string, warehouseId: string): OrderEntry {
+    return this.database.transaction(() => {
+      actor = this.amendmentActor(actor, true);
+      accountId = text(accountId, "Customer ID", 128);
+      warehouseId = text(warehouseId, "Warehouse ID", 128);
+      this.identity.customer(actor, accountId);
+      this.inventory.warehouse(actor, warehouseId);
+      const row = this.store.get<Cart>(
+        "SELECT * FROM orders_carts WHERE org_id=? AND account_id=? AND warehouse_id=?",
+        actor.orgId,
+        accountId,
+        warehouseId,
+      );
+      if (!row) return { cart: null, products: [] };
+      const lines = JSON.parse(row.lines) as CartLine[];
+      check(
+        Array.isArray(lines) && lines.length <= 100,
+        "VALIDATION",
+        "Maximum 100 cart lines.",
+        400,
+      );
+      const products = this.catalog.selectedCustomerProducts(
+        actor,
+        accountId,
+        lines.map((line) => line.productId),
+      );
+      return {
+        cart: {
+          id: row.id,
+          account_id: row.account_id,
+          warehouse_id: row.warehouse_id,
+          revision: row.revision,
+          lines,
+        },
+        products,
+      };
+    });
   }
   saveCart(
     actor: Actor,

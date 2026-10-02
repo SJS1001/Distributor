@@ -1431,6 +1431,45 @@ export async function createHttp(app: Application, options: HttpOptions) {
     async (request) =>
       app.catalog.customerProducts(actor(request), request.query.accountId),
   );
+  http.get<{ Querystring: { accountId: string; after?: string; q?: string } }>(
+    "/api/catalog/customer-products/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            accountId: { type: "string", minLength: 1, maxLength: 128 },
+            after: { type: "string", minLength: 1, maxLength: 128 },
+            q: { type: "string", maxLength: 120 },
+          },
+          ["after", "q"],
+        ),
+      },
+    },
+    async (request) =>
+      app.catalog.customerProductPage(
+        actor(request),
+        request.query.accountId,
+        request.query.after,
+        request.query.q,
+      ),
+  );
+  http.get<{ Querystring: { accountId: string; warehouseId: string } }>(
+    "/api/carts/selection",
+    {
+      schema: {
+        querystring: obj({
+          accountId: { type: "string", minLength: 1, maxLength: 128 },
+          warehouseId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request) =>
+      app.orders.orderEntry(
+        actor(request),
+        request.query.accountId,
+        request.query.warehouseId,
+      ),
+  );
   http.get<{ Querystring: { after?: string; state?: OrderQueueState } }>(
     "/api/orders/page",
     {
@@ -1499,6 +1538,30 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor(request),
         request.params.accountId,
         Number(request.query.version),
+      ),
+  );
+  http.get<{
+    Querystring: { after?: string; accountId?: string; warehouseId?: string };
+  }>(
+    "/api/carts/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: { type: "string", minLength: 1, maxLength: 128 },
+            accountId: { type: "string", minLength: 1, maxLength: 128 },
+            warehouseId: { type: "string", minLength: 1, maxLength: 128 },
+          },
+          ["after", "accountId", "warehouseId"],
+        ),
+      },
+    },
+    async (request) =>
+      app.orders.cartPage(
+        actor(request),
+        request.query.after,
+        request.query.accountId,
+        request.query.warehouseId,
       ),
   );
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));

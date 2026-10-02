@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3138";
-const pattern = "**/api/catalog/customer-products?*";
+const pattern = "**/api/catalog/customer-products/page?*";
 async function login(page: Page, name: string) {
   await page.goto(origin);
   await page

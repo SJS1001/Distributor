@@ -291,7 +291,17 @@ test("browser: cart recovery permits correcting a definitive quantity refusal", 
 }) => {
   await login(page, "invalid");
   await prepare(page);
-  await page.getByLabel(quantityLabel, { exact: true }).fill("100001");
+  const quantity = page.getByLabel(quantityLabel, { exact: true });
+  await quantity.fill("100001");
+  expect(
+    await quantity.evaluate((input: HTMLInputElement) => input.checkValidity()),
+  ).toBe(false);
+  // The paged editor now blocks this at the browser boundary. Deliberately
+  // bypass only that constraint to exercise the real native refusal/recovery.
+  expect(await carts(page)).toEqual([]);
+  await quantity.evaluate((input: HTMLInputElement) =>
+    input.removeAttribute("max"),
+  );
   await proceed(page);
   await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
     "quantity must be an integer between 1 and 100000.",

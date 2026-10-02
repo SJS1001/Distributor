@@ -18,7 +18,11 @@ import {
 import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
 import { Platform } from "./platform.ts";
-import type { CustomerProduct } from "../shared/customer-products.ts";
+import type {
+  CustomerProduct,
+  CustomerProductPage,
+  SelectedCustomerProduct,
+} from "../shared/customer-products.ts";
 export type Product = {
   id: string;
   org_id: string;
@@ -108,6 +112,111 @@ export class Catalog {
           unit_tax: tax(product.unit_price, product.tax_bp),
         };
       });
+    });
+  }
+  customerProductPage(
+    actor: Actor,
+    accountId: string,
+    after?: string,
+    query = "",
+  ): CustomerProductPage {
+    return this.database.transaction(() => {
+      actor = this.catalogActor(actor, ["commercial", "buyer"]);
+      const customer = this.identity.customer(
+        actor,
+        text(accountId, "Customer ID", 128),
+      );
+      check(
+        typeof query === "string" && query.length <= 120,
+        "VALIDATION",
+        "Catalog search must be at most 120 characters.",
+        400,
+      );
+      const search = query.trim();
+      const cursor =
+        after === undefined
+          ? undefined
+          : this.store.get<Product>(
+              "SELECT * FROM catalog_products WHERE org_id=? AND id=?",
+              actor.orgId,
+              text(after, "Catalog cursor", 128),
+            );
+      check(
+        after === undefined || cursor,
+        "CURSOR",
+        "Catalog cursor is unavailable in your current scope.",
+        400,
+      );
+      const rows = this.store.all<Omit<CustomerProduct, "unit_tax">>(
+        `SELECT p.id,p.sku,p.name,p.serialized,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
+         FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
+         WHERE p.org_id=? AND p.active=1 AND (?='' OR instr(lower(p.sku),lower(?))>0 OR instr(lower(p.name),lower(?))>0)
+         ${cursor ? "AND (p.sku>? OR (p.sku=? AND p.id>?))" : ""}
+         ORDER BY p.sku,p.id LIMIT 21`,
+        customer.tier,
+        actor.orgId,
+        search,
+        search,
+        search,
+        ...(cursor ? [cursor.sku, cursor.sku, cursor.id] : []),
+      );
+      const items = rows.slice(0, 20).map((product) => {
+        check(
+          product.currency === customer.currency,
+          "CURRENCY",
+          "Cross-currency ordering is not supported.",
+        );
+        return {
+          ...product,
+          unit_tax: tax(product.unit_price, product.tax_bp),
+        };
+      });
+      return { items, next: rows.length > 20 ? items.at(-1)!.id : null };
+    });
+  }
+  // Owning exact selection inside the order-entry caller's database transaction.
+  // Inactive products remain identifiable; absence from a page is not inactivity.
+  selectedCustomerProducts(
+    actor: Actor,
+    accountId: string,
+    ids: string[],
+  ): SelectedCustomerProduct[] {
+    actor = this.catalogActor(actor, ["commercial", "buyer"]);
+    const customer = this.identity.customer(
+      actor,
+      text(accountId, "Customer ID", 128),
+    );
+    check(
+      Array.isArray(ids) &&
+        ids.length <= 100 &&
+        new Set(ids).size === ids.length,
+      "VALIDATION",
+      "Maximum 100 unique selected products.",
+      400,
+    );
+    ids.forEach((value) => text(value, "Product ID", 128));
+    if (!ids.length) return [];
+    const rows = this.store.all<Omit<SelectedCustomerProduct, "unit_tax">>(
+      `SELECT p.id,p.sku,p.name,p.serialized,p.active,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
+       FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
+       WHERE p.org_id=? AND p.id IN (${ids.map(() => "?").join(",")}) ORDER BY p.sku,p.id`,
+      customer.tier,
+      actor.orgId,
+      ...ids,
+    );
+    check(
+      rows.length === ids.length,
+      "NOT_FOUND",
+      "Saved product is unavailable in this organization.",
+      404,
+    );
+    return rows.map((product) => {
+      check(
+        product.active !== 1 || product.currency === customer.currency,
+        "CURRENCY",
+        "Cross-currency ordering is not supported.",
+      );
+      return { ...product, unit_tax: tax(product.unit_price, product.tax_bp) };
     });
   }
   productBySku(actor: Actor, sku: string) {

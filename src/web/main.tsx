@@ -6,7 +6,12 @@ import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
-import type { CustomerProduct } from "../shared/customer-products.ts";
+import type {
+  CustomerProductPage,
+  OrderEntry,
+} from "../shared/customer-products.ts";
+import { CartQuantities } from "./cart-quantities.tsx";
+import { SavedCarts } from "./saved-carts.tsx";
 import React, { useEffect, useState, useRef } from "react";
 import { providerChoices, providerNames } from "../shared/provider-choices.ts";
 import { createRoot } from "react-dom/client";
@@ -238,8 +243,10 @@ function App() {
       e.purchases = await request("/api/purchases");
     if (actor?.role === "admin")
       e.coveragePolicy = await request("/api/warranty/coverage-policy");
-    if (["admin", "commercial", "buyer"].includes(actor?.role ?? ""))
-      e.carts = await request("/api/carts");
+    if (["admin", "commercial", "buyer"].includes(actor?.role ?? "")) {
+      e.carts = await request("/api/carts/page");
+      e.cartRefresh = crypto.randomUUID();
+    }
     if (["admin", "warehouse", "support"].includes(actor?.role ?? "")) {
       e.transfers = await request("/api/transfers");
       e.transferDestinations = await request("/api/transfer-destinations");
@@ -696,8 +703,8 @@ function App() {
     admin = actor?.role === "admin",
     can = (...roles: string[]) => admin || roles.includes(actor?.role ?? "");
   const currency = data?.organization.currency ?? "CAD";
-  const productName = (pid: string) =>
-    data?.products.find((p: Item) => p.id === pid)?.sku ?? pid;
+  const productName = (pid: string, description?: string) =>
+    data?.products.find((p: Item) => p.id === pid)?.sku ?? description ?? pid;
   const warehouseName = (wid: string) =>
     data?.warehouses.find((w: Item) => w.id === wid)?.name ?? "Warehouse";
   const accountName = (aid: string) =>
@@ -779,13 +786,18 @@ function App() {
   const editCart = (
     accountId: string,
     warehouseId: string,
-    products: CustomerProduct[],
-    old?: Item,
+    catalogPage: CustomerProductPage,
+    entry: OrderEntry,
   ) => {
-    const availableIds = new Set(products.map((product) => product.id));
-    const unavailableLines: { productId: string; quantity: number }[] = (
-      old?.lines ?? []
-    ).filter((line: Item) => !availableIds.has(line.productId));
+    const old = entry.cart;
+    const unavailableIds = new Set(
+      entry.products
+        .filter((product) => product.active !== 1)
+        .map((product) => product.id),
+    );
+    const unavailableLines = (old?.lines ?? []).filter((line) =>
+      unavailableIds.has(line.productId),
+    );
     const unavailableUnits = unavailableLines.reduce(
       (total, line) => total + line.quantity,
       0,
@@ -824,13 +836,20 @@ function App() {
       savedLines = JSON.stringify(pendingSave.lines);
       pendingSave = undefined;
     };
-    const fields: Field[] = products.map((p) => ({
-      name: p.id,
-      label: `${p.sku} · ${p.name}`,
-      type: "number",
-      help: `Customer price ${money(p.unit_price, p.currency)} + ${money(p.unit_tax, p.currency)} tax per unit (${p.currency}).`,
-      value: old?.lines.find((l: Item) => l.productId === p.id)?.quantity ?? 0,
-    }));
+    const fields: Field[] = [
+      {
+        name: "basket",
+        label: "Order quantities",
+        content: (
+          <CartQuantities
+            accountId={accountId}
+            initial={catalogPage}
+            selected={entry.products}
+            lines={old?.lines ?? []}
+          />
+        ),
+      },
+    ];
     if (unavailableLines.length)
       fields.push({
         name: "removeUnavailableItems",
@@ -847,9 +866,10 @@ function App() {
           throw new Error(
             "Review removal of unavailable saved items before continuing.",
           );
-        const lines = products
-          .map((p) => ({ productId: p.id, quantity: Number(v[p.id]) }))
-          .filter((l) => l.quantity > 0);
+        const lines = JSON.parse(v.basket) as {
+          productId: string;
+          quantity: number;
+        }[];
         await finishSave();
         if (!savedCart || savedLines !== JSON.stringify(lines)) {
           pendingSave = { accountId, warehouseId, revision, lines };
@@ -890,10 +910,13 @@ function App() {
         const controller = new AbortController();
         orderEntryRead.current = controller;
         try {
-          const [carts, products] = await Promise.all([
-            request<Item[]>("/api/carts", { signal: controller.signal }),
-            request<CustomerProduct[]>(
-              `/api/catalog/customer-products?accountId=${encodeURIComponent(v.accountId)}`,
+          const [entry, products] = await Promise.all([
+            request<OrderEntry>(
+              `/api/carts/selection?accountId=${encodeURIComponent(v.accountId)}&warehouseId=${encodeURIComponent(v.warehouseId)}`,
+              { signal: controller.signal },
+            ),
+            request<CustomerProductPage>(
+              `/api/catalog/customer-products/page?accountId=${encodeURIComponent(v.accountId)}`,
               { signal: controller.signal },
             ),
           ]);
@@ -901,16 +924,7 @@ function App() {
             !controller.signal.aborted &&
             orderEntryRead.current === controller
           )
-            editCart(
-              v.accountId,
-              v.warehouseId,
-              products,
-              carts.find(
-                (c) =>
-                  c.account_id === v.accountId &&
-                  c.warehouse_id === v.warehouseId,
-              ),
-            );
+            editCart(v.accountId, v.warehouseId, products, entry);
           return { keepDialog: true, skipRefresh: true };
         } catch (error) {
           if (
@@ -1298,13 +1312,13 @@ function App() {
                 warehouseName(o.warehouse_id),
                 o.lines.map((l: Item) => (
                   <div key={l.id}>
-                    {productName(l.product_id)} · {l.quantity} ordered /{" "}
-                    {l.allocated} reserved / {l.shipped} shipped / {l.canceled}{" "}
-                    canceled
+                    {productName(l.product_id, l.description)} · {l.quantity}{" "}
+                    ordered / {l.allocated} reserved / {l.shipped} shipped /{" "}
+                    {l.canceled} canceled
                     {o.state === "open" &&
                       can("commercial", "buyer") &&
                       button(
-                        `Amend quantity: ${productName(l.product_id)}`,
+                        `Amend quantity: ${productName(l.product_id, l.description)}`,
                         () =>
                           open(
                             "Amend ordered quantity",
@@ -1339,9 +1353,9 @@ function App() {
                               }),
                             <>
                               <p>
-                                {productName(l.product_id)}: the quantity is the
-                                new total ordered, including shipped and
-                                canceled units.
+                                {productName(l.product_id, l.description)}: the
+                                quantity is the new total ordered, including
+                                shipped and canceled units.
                               </p>
                               <p>
                                 Accepted unit price{" "}
@@ -1532,7 +1546,7 @@ function App() {
                             "Order line",
                             o.lines,
                             (l) =>
-                              `${productName(l.product_id)} · ${l.quantity - l.shipped - l.canceled} open`,
+                              `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
                           ),
                           {
                             name: "quantity",
@@ -1987,27 +2001,19 @@ function App() {
                 </button>
               )}
             </section>
-            {extra.carts?.length > 0 && (
-              <>
-                <h2>Saved carts</h2>
-                {table(
-                  ["Customer", "Warehouse", "Items", "Actions"],
-                  extra.carts,
-                  (c: Item) => [
-                    accountName(c.account_id),
-                    warehouseName(c.warehouse_id),
-                    c.lines
-                      .map(
-                        (l: Item) =>
-                          `${productName(l.productId)} × ${l.quantity}`,
-                      )
-                      .join(", "),
-                    button("Resume", () =>
-                      placeOrder(c.account_id, c.warehouse_id, c.lines),
-                    ),
-                  ],
-                )}
-              </>
+            {extra.carts && (
+              <SavedCarts
+                key={extra.cartRefresh}
+                initial={extra.carts}
+                accounts={data.accounts}
+                warehouses={data.warehouses}
+                accountName={accountName}
+                warehouseName={warehouseName}
+                resume={(accountId, warehouseId) =>
+                  void placeOrder(accountId, warehouseId)
+                }
+                disabled={busy}
+              />
             )}
           </>
         )}

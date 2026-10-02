@@ -1,3 +1,4 @@
+import "./catalog-entry-browser-journey.ts";
 import { stockFactsDashboard } from "./stock-browser-facts.ts";
 import "./customer-pricing-browser-journey.ts";
 import "./cart-recovery-browser-journey.ts";
