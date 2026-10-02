@@ -201,7 +201,7 @@ export function PurchaseEntry({
     recovery.pending?.review ?? null,
   );
   const [supplier, setSupplier] = useState<SupplierChoice | null>(
-    suppliers.find((row) => row.active) ?? null,
+    () => suppliers.find((row) => row.active) ?? null,
   );
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [lines, setLines] = useState<Line[]>([]);
@@ -255,8 +255,37 @@ export function PurchaseEntry({
         );
         return;
       }
+      // Directory pages are observations. Recheck the selected supplier before
+      // review; the native command still checks again at the transaction boundary.
+      submitting.current = true;
+      setBusy(true);
+      let currentSupplier: SupplierChoice;
+      try {
+        currentSupplier = await request<SupplierChoice>(
+          `/api/purchases/suppliers/${encodeURIComponent(supplier.id)}`,
+        );
+        if (!active.current) return;
+        setSupplier(currentSupplier);
+        if (!currentSupplier.active) {
+          setError(
+            "This supplier is suspended for new purchasing. Choose an available supplier; your lines and costs are retained.",
+          );
+          return;
+        }
+      } catch (e) {
+        if (active.current)
+          setError(
+            e instanceof Error
+              ? e.message
+              : "Supplier availability could not be checked. Retry the review.",
+          );
+        return;
+      } finally {
+        submitting.current = false;
+        if (active.current) setBusy(false);
+      }
       setReview({
-        supplier,
+        supplier: currentSupplier,
         warehouse,
         currency,
         lines: lines.map((line, i) => ({
@@ -309,9 +338,25 @@ export function PurchaseEntry({
             // These native refusals occur only after fresh authority and before any
             // commit. Cached success would have returned before line validation.
             // Authority, key conflicts and transport failures remain uncertain.
-            if (e instanceof RequestError && [400, 404].includes(e.status)) {
+            if (
+              e instanceof RequestError &&
+              ([400, 404].includes(e.status) ||
+                (e.status === 409 && e.code === "SUPPLIER_INACTIVE"))
+            ) {
               localStorage.removeItem(storageKey);
-              if (active.current) setPending(null);
+              if (active.current) {
+                setPending(null);
+                if (e.code === "SUPPLIER_INACTIVE")
+                  setSupplier((value) =>
+                    value?.id === attempt.review.supplier.id
+                      ? { ...value, active: false }
+                      : {
+                          ...attempt.review.supplier,
+                          active: false,
+                          revision: 0,
+                        },
+                  );
+              }
             }
             throw e;
           }
@@ -512,6 +557,13 @@ export function PurchaseEntry({
         <button
           type="button"
           onClick={() => {
+            setLines(review.lines);
+            setWarehouseId(review.warehouse.id);
+            setSupplier((value) =>
+              value?.id === review.supplier.id
+                ? value
+                : { ...review.supplier, active: true, revision: 0 },
+            );
             setReview(null);
             setError("");
           }}

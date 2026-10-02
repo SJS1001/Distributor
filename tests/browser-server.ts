@@ -5,6 +5,7 @@ import { serialDossierBrowser } from "./serial-dossier-browser-fixture.ts";
 import { retiredReceivingBrowser } from "./retired-receiving-browser-fixture.ts";
 import { supplierReturnQueueBrowser } from "./supplier-return-queue-browser-fixture.ts";
 import { purchaseEntryBrowser } from "./purchase-entry-browser-fixture.ts";
+import { supplierAvailabilityBrowser } from "./supplier-availability-browser-fixture.ts";
 import { catalogLifecycleBrowser } from "./catalog-lifecycle-browser-fixture.ts";
 import { catalogEntryBrowser } from "./catalog-entry-browser-fixture.ts";
 import { stockQueueBrowser } from "./stock-queue-browser-fixture.ts";
@@ -921,6 +922,9 @@ const customerPricingHttp = await customerPricingBrowser((fn) =>
   cleanup.push(fn),
 );
 const purchaseEntryHttp = await purchaseEntryBrowser((fn) => cleanup.push(fn));
+const supplierAvailabilityHttp = await supplierAvailabilityBrowser((fn) =>
+  cleanup.push(fn),
+);
 const catalogLifecycleHttp = await catalogLifecycleBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -980,6 +984,7 @@ const stop = async () => {
   await catalogEntryHttp.close();
   await catalogLifecycleHttp.close();
   await purchaseEntryHttp.close();
+  await supplierAvailabilityHttp.close();
   await reconciliationHttp.close();
   await operationsHealthHttp.close();
   await binRelocationHttp.close();

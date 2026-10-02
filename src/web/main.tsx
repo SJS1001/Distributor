@@ -8,6 +8,7 @@ import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
 import { PurchaseEntry } from "./purchase-entry.tsx";
+import { SupplierAvailability } from "./supplier-availability.tsx";
 import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
@@ -3180,6 +3181,12 @@ function App() {
                   )
                 );
               })()}
+            <SupplierAvailability
+              key={`${actor.orgId}:${actor.id}`}
+              orgId={actor.orgId}
+              actorId={actor.id}
+              canManage={can("commercial")}
+            />
           </>
         )}
         {page === "Catalog" && (

@@ -57,8 +57,9 @@ function SupplierResults({
             Select…
           </option>
           {choices.map((row) => (
-            <option key={row.id} value={row.id}>
+            <option key={row.id} value={row.id} disabled={!row.active}>
               {row.name}
+              {row.active ? "" : " · Suspended for new purchasing"}
             </option>
           ))}
         </select>
@@ -148,7 +149,14 @@ export function SupplierPicker({
           setSelection({ ...selection, after, epoch: selection.epoch + 1 })
         }
       />
-      {selected && <p>Selected supplier: {selected.name}</p>}
+      {selected && (
+        <p>
+          Selected supplier: {selected.name}
+          {selected.active
+            ? ""
+            : " · Suspended for new purchasing; choose an available supplier."}
+        </p>
+      )}
     </section>
   );
 }

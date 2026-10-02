@@ -14,6 +14,7 @@ import "./stock-queue-browser-journey.ts";
 import "./invoice-queue-browser-journey.ts";
 import "./purchase-queue-browser-journey.ts";
 import "./purchase-entry-browser-journey.ts";
+import "./supplier-availability-browser-journey.ts";
 import "./order-queue-browser-journey.ts";
 import "./replacement-carrier-browser-journey.ts";
 import "./shipment-coverage-browser-journey.ts";
