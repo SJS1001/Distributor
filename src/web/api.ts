@@ -5,6 +5,10 @@ import {
   type EvidenceUpload,
 } from "../shared/warranty-evidence.ts";
 import type { StockLabelOutput } from "../shared/stock-label.ts";
+import {
+  reconciliationMaxBytes,
+  type ReconciliationReceipt,
+} from "../shared/reconciliation.ts";
 let csrf = "";
 export function setCsrf(value: string) {
   csrf = value;
@@ -31,22 +35,99 @@ export async function request<T = any>(
 }
 // Keep a durable key for the exact attempt until the caller observes success.
 // A lost response can be retried without creating a second business effect.
-export async function command(name: string, payload: unknown) {
+export async function command(
+  name: string,
+  payload: unknown,
+  signal?: AbortSignal,
+) {
   const signature = JSON.stringify({ name, payload });
   const hash = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(signature),
   );
   const storageKey = `distributor-command:${Array.from(new Uint8Array(hash), (v) => v.toString(16).padStart(2, "0")).join("")}`;
+  signal?.throwIfAborted();
   const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
   sessionStorage.setItem(storageKey, key);
   const result = await request(`/api/commands/${name}`, {
+    signal,
     method: "POST",
     headers: { "idempotency-key": key },
     body: JSON.stringify(payload),
   });
   sessionStorage.removeItem(storageKey);
   return result;
+}
+
+export async function downloadReconciliation(
+  receipt: ReconciliationReceipt,
+  signal: AbortSignal,
+) {
+  const response = await fetch(
+    `/api/operations/reconciliation/${encodeURIComponent(receipt.id)}/document`,
+    { credentials: "same-origin", signal },
+  );
+  if (!response.ok) {
+    const result = await response.json();
+    throw Error(
+      `${result.message ?? "Report download failed."}${result.code ? ` (${result.code})` : ""}`,
+    );
+  }
+  if (
+    !response.headers
+      .get("content-type")
+      ?.startsWith("application/octet-stream") ||
+    response.headers.get("x-document-media-type") !== "application/json" ||
+    response.headers.get("cache-control") !== "no-store" ||
+    response.headers.get("x-download-receipt") !== receipt.id ||
+    response.headers.get("x-document-sha256") !== receipt.contentHash ||
+    response.headers.get("content-disposition") !==
+      `attachment; filename="${receipt.filename}"` ||
+    !/^reconciliation-[a-f0-9-]{36}\.json$/.test(receipt.filename)
+  )
+    throw Error("Report download headers are invalid.");
+  const reader = response.body?.getReader();
+  if (!reader) throw Error("Report download body is missing.");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > reconciliationMaxBytes || size > receipt.bytes)
+        throw Error("Report exceeds its retained size limit.");
+      chunks.push(value);
+    }
+  } catch (e) {
+    await reader.cancel().catch(() => {});
+    throw e;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const hash = Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+    (v) => v.toString(16).padStart(2, "0"),
+  ).join("");
+  if (size !== receipt.bytes || hash !== receipt.contentHash)
+    throw Error("Report integrity check failed. Retry the download.");
+  signal.throwIfAborted();
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = receipt.filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 export async function uploadEvidence(claimId: string, payload: EvidenceUpload) {

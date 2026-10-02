@@ -65,6 +65,12 @@ export function commands(
     phone: str,
   });
   return {
+    "operations.reconciliation.prepare": {
+      schema: obj({
+        expectedHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+      }),
+      run: (a, k, p) => app.prepareReconciliation(a, k, p),
+    },
     "canada-post.group.prepare": {
       schema: obj({
         warehouseId: str,
@@ -2497,6 +2503,45 @@ export async function createHttp(app: Application, options: HttpOptions) {
   });
   http.get("/api/operations/reconciliation", async (request) =>
     app.reconciliation(actor(request)),
+  );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/operations/reconciliation/history",
+    {
+      schema: {
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.platform.reconciliationHistory(actor(request), request.query.after),
+  );
+  http.get<{ Params: { receiptId: string } }>(
+    "/api/operations/reconciliation/:receiptId/document",
+    {
+      schema: {
+        params: obj({
+          receiptId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request, reply) => {
+      const receipt = app.platform.reconciliationDocument(
+        actor(request),
+        request.params.receiptId,
+      );
+      return reply
+        .type("application/octet-stream")
+        .header("x-document-media-type", "application/json")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${receipt.filename}"`,
+        )
+        .header("x-document-sha256", receipt.contentHash)
+        .header("x-download-receipt", receipt.id)
+        .send(Buffer.from(receipt.content));
+    },
   );
   http.get("/api/audit", async (request) =>
     app.platform.audits(actor(request)),

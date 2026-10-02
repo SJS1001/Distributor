@@ -9,6 +9,17 @@ import {
   type Actor,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
+import type {
+  Reconciliation,
+  ReconciliationHistory,
+} from "../shared/reconciliation.ts";
+import {
+  reconciliationCommand,
+  retainReconciliation,
+  validateReconciliation,
+  reconciliationMetadata,
+  type RetainedReconciliation,
+} from "./reconciliation-receipt.ts";
 
 export class Platform {
   private store: Store;
@@ -145,6 +156,162 @@ export class Platform {
   }
   configureReadAuthority(authorize: (actor: Actor) => Actor) {
     this.readAuthority = authorize;
+  }
+  private reconciliationAuthority(actor: Actor) {
+    check(
+      this.readAuthority,
+      "AUTHORITY",
+      "Reconciliation authority is unavailable.",
+      503,
+    );
+    const current = this.readAuthority(actor);
+    permit(current, ["finance"]);
+    return current;
+  }
+  prepareReconciliation(
+    actor: Actor,
+    key: string,
+    input: { expectedHash: string },
+    snapshot: (actor: Actor) => Reconciliation,
+  ) {
+    actor = this.reconciliationAuthority(actor);
+    check(
+      typeof input?.expectedHash === "string" &&
+        /^[a-f0-9]{64}$/.test(input.expectedHash),
+      "REVIEW_HASH",
+      "Review the current reconciliation before saving.",
+      400,
+    );
+    let retained: RetainedReconciliation;
+    try {
+      retained = this.command<RetainedReconciliation>(
+        actor,
+        reconciliationCommand,
+        key,
+        input,
+        (cached) => {
+          actor = this.reconciliationAuthority(actor);
+          if (cached !== undefined) {
+            const r = validateReconciliation(cached, actor.orgId);
+            check(
+              r.preparedBy === actor.id,
+              "REPORT_INTEGRITY",
+              "Retained reconciliation evidence is unavailable. Investigate the original receipt.",
+              503,
+            );
+          }
+        },
+        () => {
+          const report = snapshot(actor);
+          check(
+            report.snapshotHash === input.expectedHash,
+            "STALE_RECONCILIATION",
+            "The controls have changed. Run reconciliation and review again before saving.",
+          );
+          return retainReconciliation(actor, report);
+        },
+      );
+    } catch (e) {
+      if (e instanceof SyntaxError)
+        check(
+          false,
+          "REPORT_INTEGRITY",
+          "Retained reconciliation evidence is unavailable. Investigate the original receipt.",
+          503,
+        );
+      throw e;
+    }
+    return reconciliationMetadata(retained);
+  }
+  private reconciliationRows(
+    actor: Actor,
+    suffix: string,
+    ...args: (string | number)[]
+  ) {
+    return this.store.all<{ auditId: string; actorId: string; result: string }>(
+      `SELECT a.id AS auditId,a.actor_id AS actorId,c.result FROM platform_audit_order o
+       JOIN platform_audit a ON a.id=o.audit_id AND a.org_id=o.org_id
+       JOIN platform_commands c ON c.org_id=a.org_id AND c.actor_id=a.actor_id AND c.name=a.action AND c.key=a.reference
+       WHERE o.org_id=? AND a.action=? ${suffix}`,
+      actor.orgId,
+      reconciliationCommand,
+      ...args,
+    );
+  }
+  private decodeReconciliation(result: string, orgId: string, actorId: string) {
+    let value: unknown;
+    try {
+      value = JSON.parse(result);
+    } catch {
+      check(
+        false,
+        "REPORT_INTEGRITY",
+        "Retained reconciliation evidence is unavailable. Investigate the original receipt.",
+        503,
+      );
+    }
+    const r = validateReconciliation(value, orgId);
+    check(
+      r.preparedBy === actorId,
+      "REPORT_INTEGRITY",
+      "Retained reconciliation evidence is unavailable. Investigate the original receipt.",
+      503,
+    );
+    return r;
+  }
+  reconciliationDocument(actor: Actor, receiptId: string) {
+    return this.database.transaction(() => {
+      actor = this.reconciliationAuthority(actor);
+      receiptId = text(receiptId, "Reconciliation receipt", 128);
+      const rows = this.reconciliationRows(
+        actor,
+        "AND CASE WHEN json_valid(c.result) THEN json_extract(c.result,'$.id') ELSE NULL END=? LIMIT 2",
+        receiptId,
+      );
+      check(
+        rows.length === 1,
+        "NOT_FOUND",
+        "Reconciliation receipt is unavailable.",
+        404,
+      );
+      return this.decodeReconciliation(
+        rows[0]!.result,
+        actor.orgId,
+        rows[0]!.actorId,
+      );
+    });
+  }
+  reconciliationHistory(actor: Actor, after?: string): ReconciliationHistory {
+    return this.database.transaction(() => {
+      actor = this.reconciliationAuthority(actor);
+      let before: number | null = null;
+      if (after !== undefined) {
+        after = text(after, "Reconciliation cursor", 128);
+        const cursor = this.store.get(
+          "SELECT o.sequence FROM platform_audit_order o JOIN platform_audit a ON a.id=o.audit_id AND a.org_id=o.org_id JOIN platform_commands c ON c.org_id=a.org_id AND c.actor_id=a.actor_id AND c.name=a.action AND c.key=a.reference WHERE o.org_id=? AND a.action=? AND a.id=?",
+          actor.orgId,
+          reconciliationCommand,
+          after,
+        );
+        check(cursor, "CURSOR", "Reconciliation cursor is unavailable.", 400);
+        before = Number(cursor.sequence);
+      }
+      const rows = this.reconciliationRows(
+        actor,
+        `${before === null ? "" : "AND o.sequence<?"} ORDER BY o.sequence DESC LIMIT 21`,
+        ...(before === null ? [] : [before]),
+      );
+      return {
+        items: rows
+          .slice(0, 20)
+          .map((r) =>
+            reconciliationMetadata(
+              this.decodeReconciliation(r.result, actor.orgId, r.actorId),
+            ),
+          ),
+        next: rows.length > 20 ? rows[19]!.auditId : null,
+      };
+    });
   }
   private authorizeRead(actor: Actor) {
     check(

@@ -1,6 +1,7 @@
 import { salesControls } from "./sales-controls.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
 import { check, permit, now, type Actor, type Role } from "./core.ts";
+import { reconciliationHash } from "./reconciliation-receipt.ts";
 import { Database } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity, type Region } from "./iam.ts";
@@ -198,22 +199,38 @@ export class Application {
         "Change your password before continuing.",
         403,
       );
-      const currency = this.identity.organization(current).currency;
-      return {
-        version: 1 as const,
-        checkedAt: now(),
-        currency,
-        stock: this.inventory.controlTotals(current),
-        billing: this.billing.controlTotals(current, currency),
-        sales: salesControls(
-          this.orders.salesEvidence(current),
-          this.fulfillment.salesEvidence(current),
-          this.inventory.salesEvidence(current),
-          this.billing.salesEvidence(current),
-          currency,
-        ),
-      };
+      return this.reconciliationSnapshot(current);
     });
+  }
+  prepareReconciliation(
+    actor: Actor,
+    key: string,
+    input: { expectedHash: string },
+  ) {
+    return this.platform.prepareReconciliation(actor, key, input, (current) =>
+      this.reconciliationSnapshot(current),
+    );
+  }
+  private reconciliationSnapshot(current: Actor) {
+    const currency = this.identity.organization(current).currency;
+    const report = {
+      version: 1 as const,
+      checkedAt: now(),
+      currency,
+      stock: this.inventory.controlTotals(current),
+      billing: this.billing.controlTotals(current, currency),
+      sales: salesControls(
+        this.orders.salesEvidence(current),
+        this.fulfillment.salesEvidence(current),
+        this.inventory.salesEvidence(current),
+        this.billing.salesEvidence(current),
+        currency,
+      ),
+    };
+    return {
+      ...report,
+      snapshotHash: reconciliationHash(current.orgId, report),
+    };
   }
   dashboard(actor: Actor) {
     actor = this.identity.currentActor(actor);

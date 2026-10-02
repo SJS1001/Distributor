@@ -52,8 +52,26 @@ export type SalesControls = {
 export type Reconciliation = {
   version: 1;
   checkedAt: string;
+  snapshotHash: string;
   currency: string;
   stock: StockControls;
   billing: BillingControls;
   sales: SalesControls;
+};
+
+export const reconciliationMaxBytes = 524288;
+export type ReconciliationReceipt = {
+  id: string;
+  checkedAt: string;
+  currency: string;
+  preparedBy: string;
+  snapshotHash: string;
+  discrepancies: number;
+  filename: string;
+  bytes: number;
+  contentHash: string;
+};
+export type ReconciliationHistory = {
+  items: ReconciliationReceipt[];
+  next: string | null;
 };
