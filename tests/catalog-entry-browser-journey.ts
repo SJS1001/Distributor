@@ -284,3 +284,75 @@ test("browser: saved cart pages preserve failed continuation and resume the sele
     ),
   ).toBe(true);
 });
+
+test("browser: removing selected off-page products keeps focus and cancel preserves the saved cart", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  const original = await (await page.request.get(`${origin}/api/carts`)).json();
+  let mutations = 0;
+  await page.route("**/api/commands/cart.*", async (route) => {
+    mutations++;
+    await route.continue();
+  });
+  await prepare(page);
+  await page.getByLabel("PAGE-00 · Paged product 0", { exact: true }).fill("2");
+  await page
+    .getByLabel("Search catalog", { exact: true })
+    .fill("no-synthetic-match");
+  await page
+    .getByRole("button", { name: "Search catalog", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("No matching products.");
+  const beforeBasket = JSON.parse(
+    await page.getByRole("dialog").locator('input[name="basket"]').inputValue(),
+  ) as { productId: string; quantity: number }[];
+  const removedLines = beforeBasket.filter((line) => line.quantity === 3);
+  expect(removedLines).toHaveLength(1);
+  const remove = page.getByRole("button", {
+    name: "Remove PAGE-44 · Paged product 44 from cart",
+    exact: true,
+  });
+  await remove.focus();
+  await page.keyboard.press("Enter");
+  await expect(remove).toHaveCount(0);
+  await expect(
+    page.getByLabel("PAGE-44 · Paged product 44", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("Search catalog", { exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByLabel("PAGE-00 · Paged product 0", { exact: true }),
+  ).toHaveValue("2");
+  expect(
+    JSON.parse(
+      await page
+        .getByRole("dialog")
+        .locator('input[name="basket"]')
+        .inputValue(),
+    ),
+  ).toEqual(
+    beforeBasket.filter(
+      (line) => line.productId !== removedLines[0]!.productId,
+    ),
+  );
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  expect(mutations).toBe(0);
+  expect(await (await page.request.get(`${origin}/api/carts`)).json()).toEqual(
+    original,
+  );
+  await prepare(page);
+  await expect(
+    page.getByLabel("PAGE-44 · Paged product 44", { exact: true }),
+  ).toHaveValue("3");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});

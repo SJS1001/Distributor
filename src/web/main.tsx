@@ -11,6 +11,7 @@ import type {
   OrderEntry,
 } from "../shared/customer-products.ts";
 import { CartQuantities } from "./cart-quantities.tsx";
+import { UnavailableCartItems } from "./unavailable-cart-items.tsx";
 import { SavedCarts } from "./saved-carts.tsx";
 import React, { useEffect, useState, useRef } from "react";
 import { providerChoices, providerNames } from "../shared/provider-choices.ts";
@@ -798,10 +799,6 @@ function App() {
     const unavailableLines = (old?.lines ?? []).filter((line) =>
       unavailableIds.has(line.productId),
     );
-    const unavailableUnits = unavailableLines.reduce(
-      (total, line) => total + line.quantity,
-      0,
-    );
     let revision = old?.revision ?? 0;
     let savedCart: Item | undefined;
     let savedLines: string | undefined;
@@ -852,20 +849,30 @@ function App() {
     ];
     if (unavailableLines.length)
       fields.push({
-        name: "removeUnavailableItems",
-        label: "Remove unavailable items from this saved cart",
-        type: "checkbox",
-        value: false,
-        help: `${unavailableUnits} saved ${unavailableUnits === 1 ? "unit" : "units"} across ${unavailableLines.length} unavailable ${unavailableLines.length === 1 ? "item" : "items"}. These items cannot be ordered from the current catalog. Continuing removes them before requesting a quote. Canceling after submission does not undo a saved change.`,
+        name: "unavailableRemoval",
+        label: "Review unavailable saved items",
+        content: (
+          <UnavailableCartItems
+            products={entry.products}
+            lines={unavailableLines}
+          />
+        ),
       });
     open(
       "Edit order quantities",
       fields,
       async (v) => {
-        if (unavailableLines.length && !v.removeUnavailableItems)
-          throw new Error(
-            "Review removal of unavailable saved items before continuing.",
-          );
+        if (unavailableLines.length) {
+          const removal = JSON.parse(v.unavailableRemoval) as string[];
+          if (
+            !Array.isArray(removal) ||
+            new Set(removal).size !== unavailableLines.length ||
+            !unavailableLines.every((line) => removal.includes(line.productId))
+          )
+            throw new Error(
+              "Review removal of unavailable saved items before continuing.",
+            );
+        }
         const lines = JSON.parse(v.basket) as {
           productId: string;
           quantity: number;

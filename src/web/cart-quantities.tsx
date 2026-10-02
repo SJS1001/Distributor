@@ -50,6 +50,7 @@ export function CartQuantities({
     after: string | null;
   } | null>(null);
   const prefix = useId();
+  const searchInput = useRef<HTMLInputElement | null>(null);
   useEffect(
     () => () => {
       pending.current?.abort();
@@ -134,6 +135,21 @@ export function CartQuantities({
         {money(product.unit_tax, product.currency)} tax per unit (
         {product.currency}).
       </small>
+      {basket[product.id] && (
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={() => {
+            change(product, "0");
+            // An off-page row disappears when removed. Keep keyboard focus on
+            // a stable control instead of leaving it on the discarded button.
+            searchInput.current?.focus();
+          }}
+        >
+          Remove {product.sku} · {product.name} from cart
+        </button>
+      )}
     </div>
   );
   const chosen = Object.values(basket);
@@ -171,6 +187,7 @@ export function CartQuantities({
       <label htmlFor={`${prefix}-search`}>Search catalog</label>
       <input
         id={`${prefix}-search`}
+        ref={searchInput}
         value={query}
         maxLength={120}
         disabled={busy}

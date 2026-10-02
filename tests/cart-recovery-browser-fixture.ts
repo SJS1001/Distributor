@@ -32,6 +32,7 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
     "unavailable",
     "unavailable-staff",
     "unavailable-empty",
+    "unavailable-review",
   ]) {
     const account = f.app.identity.createCustomer(f.actor, `cart-${name}`, {
       name: `Cart recovery ${name}`,
@@ -54,6 +55,27 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
         unitPrice: 5000,
         taxBasisPoints: 1300,
       }).id;
+      const reviewLines = [];
+      if (name === "unavailable-review") {
+        const secondRetired = f.app.catalog.create(f.actor, "review-retired", {
+          sku: "RETIRED-SECOND",
+          name: "Second retired synthetic product",
+          serialized: false,
+          unitPrice: 4321,
+          taxBasisPoints: 1300,
+        }).id;
+        const available = f.app.catalog.create(f.actor, "review-available", {
+          sku: "REVIEW-ACTIVE",
+          name: "Available synthetic review product",
+          serialized: false,
+          unitPrice: 1234,
+          taxBasisPoints: 1300,
+        }).id;
+        reviewLines.push(
+          { productId: secondRetired, quantity: 3 },
+          { productId: available, quantity: 2 },
+        );
+      }
       f.app.orders.saveCart(f.actor, `retired-cart-${name}`, {
         accountId: account,
         warehouseId: f.w1,
@@ -63,12 +85,20 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
             ? []
             : [{ productId: f.product, quantity: 1 }]),
           { productId: retired, quantity: 2 },
+          ...reviewLines,
         ],
       });
       // Simulate a catalog product becoming inactive after a native draft save.
       f.app.database
         .owned("catalog")
         .run("UPDATE catalog_products SET active=0 WHERE id=?", retired);
+      if (name === "unavailable-review")
+        f.app.database
+          .owned("catalog")
+          .run(
+            "UPDATE catalog_products SET active=0 WHERE id=?",
+            reviewLines[0]!.productId,
+          );
     }
   }
   const http = await createHttp(f.app, { origin: "http://127.0.0.1:3139" });

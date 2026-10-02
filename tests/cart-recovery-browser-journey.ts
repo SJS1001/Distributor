@@ -524,3 +524,147 @@ test("browser: explicitly removing the only unavailable item clears the cart wit
   ).toBeVisible();
   expect((await carts(page))[0].revision).toBe(3);
 });
+
+test("browser: individual unavailable item reviews and active removals preserve cancellation and exact save recovery", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await login(page, "unavailable-review");
+  const original = (await carts(page))[0];
+  expect(original.lines).toHaveLength(4);
+  const saves: { key: string | undefined; data: any }[] = [];
+  let quotes = 0;
+  await page.route(saveRoute, async (route) => {
+    saves.push({
+      key: route.request().headers()["idempotency-key"],
+      data: route.request().postDataJSON(),
+    });
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    if (saves.length === 1) await route.fulfill(unavailable);
+    else await route.fulfill({ response });
+  });
+  await page.route(quoteRoute, async (route) => {
+    quotes++;
+    await route.continue();
+  });
+  await prepare(page);
+  const section = page.getByRole("region", {
+    name: "Unavailable saved items",
+    exact: true,
+  });
+  await expect(section).toContainText(
+    "5 saved units across 2 unavailable items",
+  );
+  const first = section.getByRole("checkbox", {
+    name: "Remove RETIRED-unavailable-review · Retired synthetic unavailable-review (2 saved units)",
+    exact: true,
+  });
+  const second = section.getByRole("checkbox", {
+    name: "Remove RETIRED-SECOND · Second retired synthetic product (3 saved units)",
+    exact: true,
+  });
+  const all = section.getByRole("checkbox", {
+    name: "Remove unavailable items from this saved cart",
+    exact: true,
+  });
+  await expect(first).not.toBeChecked();
+  await expect(second).not.toBeChecked();
+  await first.check();
+  await expect(section).toContainText(
+    "1 of 2 unavailable items selected for removal.",
+  );
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Review removal of unavailable saved items before continuing.",
+  );
+  expect(saves).toEqual([]);
+  expect(quotes).toBe(0);
+  expect((await carts(page))[0]).toEqual(original);
+  await page
+    .getByRole("button", {
+      name: "Remove REVIEW-ACTIVE · Available synthetic review product from cart",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByLabel("REVIEW-ACTIVE · Available synthetic review product", {
+      exact: true,
+    }),
+  ).toHaveValue("0");
+  await expect(
+    page.getByLabel("Search catalog", { exact: true }),
+  ).toBeFocused();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  expect((await carts(page))[0]).toEqual(original);
+  await prepare(page);
+  await expect(first).not.toBeChecked();
+  await expect(second).not.toBeChecked();
+  await expect(
+    page.getByLabel("REVIEW-ACTIVE · Available synthetic review product", {
+      exact: true,
+    }),
+  ).toHaveValue("2");
+  await all.check();
+  await expect(first).toBeChecked();
+  await expect(second).toBeChecked();
+  await second.uncheck();
+  await expect(all).not.toBeChecked();
+  await proceed(page);
+  expect(saves).toEqual([]);
+  expect(quotes).toBe(0);
+  await second.check();
+  await expect(all).toBeChecked();
+  await page
+    .getByRole("button", {
+      name: "Remove REVIEW-ACTIVE · Available synthetic review product from cart",
+      exact: true,
+    })
+    .click();
+  await proceed(page);
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Synthetic quote unavailable",
+  );
+  const firstSave = (await carts(page))[0];
+  expect(firstSave.revision).toBe(2);
+  expect(firstSave.lines).toEqual([original.lines[0]]);
+  await page.getByLabel(quantityLabel, { exact: true }).fill("2");
+  await proceed(page);
+  await expect(
+    page.getByRole("heading", { name: "Review and accept order", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("Total: CA$226.00");
+  expect(saves).toHaveLength(3);
+  expect(saves[0]!.key).toBeTruthy();
+  expect(saves[1]).toEqual(saves[0]);
+  expect(saves[2]!.key).not.toBe(saves[0]!.key);
+  expect(saves[2]!.data.revision).toBe(2);
+  expect(saves[2]!.data.lines).toEqual([
+    { productId: original.lines[0].productId, quantity: 2 },
+  ]);
+  expect(quotes).toBe(1);
+  expect((await carts(page))[0].revision).toBe(3);
+  expect(
+    (await (await page.request.get(`${origin}/api/dashboard`)).json()).orders,
+  ).toEqual([]);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await prepare(page);
+  await expect(section).toHaveCount(0);
+  await expect(page.getByLabel(quantityLabel, { exact: true })).toHaveValue(
+    "2",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
