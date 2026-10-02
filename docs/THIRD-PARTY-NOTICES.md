@@ -23,11 +23,11 @@ Its [full SIL Open Font License 1.1](../src/server/assets/notosans/OFL.txt), Cop
 
 An earlier Google Fonts variable candidate (commit `8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5`, binary SHA-256 `bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d`) was rejected after rasterized visual inspection exposed missing glyphs despite successful text extraction. That binary is no longer a runtime asset; failed synthetic PDF/PNG evidence remains labeled in the local receipt.
 
-## Test-only rendering components
+## Local PDF raster components
 
-pdfjs-dist 6.3.289 independently parses/rasterizes generated PDFs; it is a development dependency. Its installed [Apache-2.0 license](licenses/billing/pdfjs-Apache-2.0.txt) and separate notices for CMaps, Foxit/Liberation fonts, ICC data, OpenJPEG, QCMS and JBIG2 are retained under `docs/licenses/billing/`. These assets are not copied into the production renderer; packaging them requires their respective terms. Exact license files, rather than default-branch labels, remain the source.
+pdfjs-dist 6.3.289 independently parses/rasterizes generated PDFs; it is now a runtime dependency for the original stock-label ZPL raster export (previously development-only). Its installed [Apache-2.0 license](licenses/billing/pdfjs-Apache-2.0.txt) and separate notices for CMaps, Foxit/Liberation fonts, ICC data, OpenJPEG, QCMS and JBIG2 are retained under `docs/licenses/billing/`. The renderer imports the installed package without copying vendor implementation into application source; shipping the installed assets still requires their respective terms. Exact license files, rather than default-branch labels, remain the source.
 
-@napi-rs/canvas 1.0.9 provides test-only raster output. Its installed [MIT wrapper notice](licenses/billing/napi-canvas-MIT.txt), Copyright 2020 lynweklm@gmail.com, is retained. Native platform/Skia dependency distribution remains a separate packaging review; no binary runtime deployment has been authorized. This inventory covers this checkpoint's additions, not a certified license audit of all application dependencies.
+@napi-rs/canvas 1.0.9 now provides runtime raster output for the stock-label ZPL export as well as independent test rendering. Its installed [MIT wrapper notice](licenses/billing/napi-canvas-MIT.txt), Copyright 2020 lynweklm@gmail.com, is retained. Native platform/Skia dependency distribution remains a separate packaging review; no binary runtime deployment has been authorized. This inventory covers this checkpoint's additions, not a certified license audit of all application dependencies.
 
 ## Stock QR label checkpoint — 2026-10-01
 
@@ -70,3 +70,6 @@ The installed dijkstrajs notice identifies Wyatt Baldwin's copyright and MIT lic
 | y18n 4.0.3 | ISC | [Actual installed text](licenses/labels/y18n-LICENSE.txt) |
 | yargs 15.4.1 | MIT | [Actual installed text](licenses/labels/yargs-LICENSE.txt) |
 | yargs-parser 18.1.3 | ISC | [Actual installed text](licenses/labels/yargs-parser-LICENSE.txt.txt) |
+
+
+The ZPL checkpoint changes only dependency classification: exact package versions, resolution URLs and integrity values remain unchanged. Installed pdfjs-dist and canvas license texts were re-read and match the retained notices. A production-only offline install and native rendering are checked on macOS arm64; Linux, Windows, other architectures and full transitive/native distribution provenance remain unqualified. No deployment or publication is authorized.

@@ -1717,16 +1717,24 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.post<{
     Params: { unitId: string };
-    Body: { revision: number; copies: number };
+    Body: {
+      revision: number;
+      copies: number;
+      output?: "pdf" | "zpl-8" | "zpl-12";
+    };
   }>(
     "/api/stock/:unitId/label",
     {
       schema: {
         params: obj({ unitId: str }),
-        body: obj({
-          revision: { type: "integer", minimum: 1, maximum: 1000000000 },
-          copies: { type: "integer", minimum: 1, maximum: 20 },
-        }),
+        body: obj(
+          {
+            revision: { type: "integer", minimum: 1, maximum: 1000000000 },
+            copies: { type: "integer", minimum: 1, maximum: 20 },
+            output: { type: "string", enum: ["pdf", "zpl-8", "zpl-12"] },
+          },
+          ["output"],
+        ),
         headers: {
           type: "object",
           properties: {
@@ -1745,7 +1753,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
         () => app.identity.session(request.cookies.distributor_session).actor,
       );
       return reply
-        .type("application/pdf")
+        .type(
+          request.body.output?.startsWith("zpl-")
+            ? "application/octet-stream"
+            : "application/pdf",
+        )
         .header(
           "Content-Disposition",
           `attachment; filename="${result.receipt.filename}"`,

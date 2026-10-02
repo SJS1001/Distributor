@@ -20,6 +20,12 @@ import {
   renderLabel,
   type LabelFacts,
 } from "./label-pdf.ts";
+import {
+  stockLabelOutputs,
+  type StockLabelInput,
+  type StockLabelOutput,
+} from "../shared/stock-label.ts";
+import { renderZpl, zplRendererHash } from "./label-zpl.ts";
 
 export class StockLabels {
   private store: Store;
@@ -38,6 +44,12 @@ export class StockLabels {
   }
   private current(actor: Actor) {
     actor = this.identity.currentActor(actor);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before preparing labels.",
+      403,
+    );
     permit(actor, ["warehouse"]);
     return actor;
   }
@@ -92,18 +104,39 @@ export class StockLabels {
     actor: Actor,
     key: string,
     unitId: string,
-    input: { revision: number; copies: number },
+    input: StockLabelInput,
     reauthenticate: () => Actor = () => this.identity.currentActor(actor),
   ) {
     actor = this.current(actor);
-    const facts = this.facts(actor, unitId, input.revision, input.copies),
+    check(
+      stockLabelOutputs.some(
+        (o) => o.value === (input.output === undefined ? "pdf" : input.output),
+      ),
+      "VALIDATION",
+      "Select a supported label output.",
+    );
+    const output = input.output ?? "pdf";
+    // Preserve the original PDF facts and command payload for historical retries.
+    const commandInput = {
+      revision: input.revision,
+      copies: input.copies,
+      ...(output === "pdf" ? {} : { output }),
+    };
+    const facts = {
+        ...this.facts(actor, unitId, input.revision, input.copies),
+        ...(output === "pdf"
+          ? {}
+          : { output, dotsPerMm: output === "zpl-8" ? 8 : 12 }),
+      },
       serialized = canonical(facts),
       hash = digest(serialized);
     const existing = this.rendition(actor, hash);
     if (existing) this.verify(existing, hash);
     const bytes = existing
       ? Buffer.from(existing.bytes as Uint8Array)
-      : await renderLabel(facts);
+      : output === "pdf"
+        ? await renderLabel(facts)
+        : await renderZpl(facts, output === "zpl-8" ? 8 : 12);
     const refreshed = reauthenticate();
     check(
       refreshed.id === actor.id && refreshed.orgId === actor.orgId,
@@ -116,11 +149,15 @@ export class StockLabels {
       actor,
       "inventory.label.download",
       key,
-      { unitId, ...input },
+      { unitId, ...commandInput },
       () => {
         check(
-          canonical(this.facts(actor, unitId, input.revision, input.copies)) ===
-            serialized,
+          canonical({
+            ...this.facts(actor, unitId, input.revision, input.copies),
+            ...(output === "pdf"
+              ? {}
+              : { output, dotsPerMm: output === "zpl-8" ? 8 : 12 }),
+          }) === serialized,
           "STALE_REVISION",
           "Label identity changed. Reload before preparing labels.",
         );
@@ -133,7 +170,7 @@ export class StockLabels {
             actor.orgId,
             hash,
             serialized,
-            labelRendererHash,
+            output === "pdf" ? labelRendererHash : zplRendererHash,
             bytes,
             digest(bytes),
           );
@@ -145,7 +182,10 @@ export class StockLabels {
           unitId,
           revision: input.revision,
           copies: input.copies,
-          filename: `Stock_${unitId}.pdf`,
+          filename:
+            output === "pdf"
+              ? `Stock_${unitId}.pdf`
+              : `Stock_${unitId}_${output}.zpl`,
           contentHash: String(row.content_hash),
           size: (row.bytes as Uint8Array).length,
           requestedAt: now(),
@@ -193,6 +233,12 @@ export class StockLabels {
         actor.orgId,
         ...(actor.role === "admin" ? [] : actor.sites),
       )
-      .map((r) => ({ ...r, facts: JSON.parse(String(r.facts)) }));
+      .map(
+        (
+          r,
+        ): Row & {
+          facts: LabelFacts & { output?: StockLabelOutput; dotsPerMm?: 8 | 12 };
+        } => ({ ...r, facts: JSON.parse(String(r.facts)) }),
+      );
   }
 }

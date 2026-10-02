@@ -4,6 +4,7 @@ import {
   type EvidenceFile,
   type EvidenceUpload,
 } from "../shared/warranty-evidence.ts";
+import type { StockLabelOutput } from "../shared/stock-label.ts";
 let csrf = "";
 export function setCsrf(value: string) {
   csrf = value;
@@ -142,7 +143,19 @@ export async function downloadStockLabel(
   unitId: string,
   revision: number,
   copies: number,
+  output: StockLabelOutput = "pdf",
 ) {
+  if (output !== "pdf")
+    return downloadPdf(
+      `/api/stock/${encodeURIComponent(unitId)}/label`,
+      { revision, copies, output },
+      `distributor-label:${unitId}:${revision}:${copies}:${output}`,
+      {
+        mediaType: "application/octet-stream",
+        filename: `Stock_${unitId}_${output}.zpl`,
+        maxBytes: 4000000,
+      },
+    );
   return downloadPdf(
     `/api/stock/${encodeURIComponent(unitId)}/label`,
     { revision, copies },
@@ -158,7 +171,12 @@ export async function downloadInboxDocument(publicationId: string) {
   );
 }
 
-async function downloadPdf(path: string, payload: unknown, storageKey: string) {
+async function downloadPdf(
+  path: string,
+  payload: unknown,
+  storageKey: string,
+  expected?: { mediaType: string; filename: string; maxBytes: number },
+) {
   const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
   sessionStorage.setItem(storageKey, key);
   const response = await fetch(path, {
@@ -177,25 +195,60 @@ async function downloadPdf(path: string, payload: unknown, storageKey: string) {
       `${error.message ?? "Download failed"} (${error.code ?? response.status})`,
     );
   }
-  const bytes = await response.arrayBuffer();
+  let bytes: ArrayBuffer;
+  if (expected) {
+    const reader = response.body?.getReader();
+    if (!reader)
+      throw Error("Label download body is missing. Retry the download.");
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        size += next.value.byteLength;
+        if (size > expected.maxBytes) {
+          await reader.cancel();
+          throw Error(
+            "Label download exceeds its size limit. Retry the download.",
+          );
+        }
+        chunks.push(next.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const combined = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    bytes = combined.buffer;
+  } else bytes = await response.arrayBuffer();
   const hash = Array.from(
     new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
     (v) => v.toString(16).padStart(2, "0"),
   ).join("");
   if (
-    !response.headers.get("content-type")?.startsWith("application/pdf") ||
+    response.headers.get("content-type")?.split(";")[0]?.trim() !==
+      (expected?.mediaType ?? "application/pdf") ||
+    (expected &&
+      (bytes.byteLength === 0 ||
+        response.headers.get("content-disposition") !==
+          `attachment; filename="${expected.filename}"`)) ||
     hash !== response.headers.get("x-document-sha256")
   )
-    throw new Error("PDF integrity check failed. Retry the download.");
+    throw new Error("Document integrity check failed. Retry the download.");
   const receipt = response.headers.get("x-download-receipt");
   if (!receipt?.trim())
-    throw new Error("Download receipt is missing. Retry the PDF.");
+    throw new Error("Download receipt is missing. Retry the download.");
   const filename =
     response.headers
       .get("content-disposition")
       ?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1] ?? "document.pdf";
   const url = URL.createObjectURL(
-    new Blob([bytes], { type: "application/pdf" }),
+    new Blob([bytes], { type: expected?.mediaType ?? "application/pdf" }),
   );
   const link = document.createElement("a");
   link.href = url;

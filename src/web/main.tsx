@@ -33,6 +33,7 @@ import { WarrantyEvidence } from "./warranty-evidence.tsx";
 import { WarrantyDecisions } from "./warranty-decisions.tsx";
 import { SoldCoverage } from "./warranty-coverage.tsx";
 import { SoldSerialSelect } from "./sold-serial-select.tsx";
+import { stockLabelOutputs } from "../shared/stock-label.ts";
 import {
   QuickBooksCallback,
   QuickBooksConnection,
@@ -1849,6 +1850,12 @@ function App() {
                         "Prepare stock QR label",
                         [
                           {
+                            name: "output",
+                            label: "Label output",
+                            value: "pdf",
+                            options: [...stockLabelOutputs],
+                          },
+                          {
                             name: "copies",
                             label: "Copies (including deliberate duplicates)",
                             type: "number",
@@ -1857,8 +1864,14 @@ function App() {
                             max: 20,
                           },
                         ],
-                        (v) => downloadStockLabel(u.id, u.revision, v.copies),
-                        `100 × 50 mm identity label. SKU ${data.products.find((p: Item) => p.id === u.product_id)?.sku ?? "unavailable"}; ${u.serial ? `serial ${u.serial}` : "bulk product: QR contains the SKU"}. Review the identity and copy count. Download preparation does not confirm printing. Open the PDF and print at actual size; verify a sample before attaching labels.`,
+                        (v) =>
+                          downloadStockLabel(
+                            u.id,
+                            u.revision,
+                            v.copies,
+                            v.output,
+                          ),
+                        `100 × 50 mm identity label. SKU ${data.products.find((p: Item) => p.id === u.product_id)?.sku ?? "unavailable"}; ${u.serial ? `serial ${u.serial}` : "bulk product: QR contains the SKU"}. Review the identity and copy count. Download preparation does not confirm printing. Print PDFs at actual size. For Zebra ZPL, select the printer's actual 8 or 12 dots per mm head; verify 100 × 50 mm media, ZPL mode and calibration. Transfer the file using your approved printer tool and verify a sample scan before attaching labels.`,
                         "Prepare and download",
                       ),
                     )}
@@ -1948,14 +1961,17 @@ function App() {
               <>
                 <h2>Prepared stock labels</h2>
                 <p>
-                  These receipts record PDF preparation only. Printing and
+                  These receipts record file preparation only. Printing and
                   attachment require physical verification.
                 </p>
                 {table(
-                  ["SKU / serial", "Copies", "Prepared", "Receipt"],
+                  ["SKU / serial", "Output", "Copies", "Prepared", "Receipt"],
                   extra.labels,
                   (r: Item) => [
                     `${r.facts.sku} / ${r.facts.serial ?? "bulk SKU"}`,
+                    stockLabelOutputs.find(
+                      (o) => o.value === (r.facts.output ?? "pdf"),
+                    )?.label ?? "Unrecognized output",
                     r.copies,
                     r.requested_at,
                     r.id,

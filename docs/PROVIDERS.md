@@ -64,7 +64,7 @@ For each record origin, service, contract, currency, limits, insurance, duties/t
 | [Brother QL/TD](https://www.brother-usa.com/c/shop/label-makers-printers/thermal-printers-labelers/desktop) | Exact width/media/connectivity and compatible stock/shipping formats. |
 | iOS Safari / Android Chrome cameras | Selected devices/browser versions, permission denial, poor light, duplicate/wrong-task scans and manual fallback. |
 
-No physical device is qualified. Manual/keyboard-wedge input and feature-detected native browser camera input exist locally; see the [scanning runbook](SCANNING.md). Automated browser evidence uses a synthetic decoder and canvas stream. Actual camera/browser qualification and label generation/printing remain pending. Record model/firmware, cable/cradle, OS/browser, symbology and label size/material. Test actual reads and durability after handling. Text input does not prove pairing or SDK compatibility. Purchasing remains outside authorization; approved existing equipment may later supply receipts.
+No physical device is qualified. Manual/keyboard-wedge input and feature-detected native browser camera input exist locally; see the [scanning runbook](SCANNING.md). Automated browser evidence uses a synthetic decoder and canvas stream. Original identity PDF and explicitly selected Zebra ZPL label-file generation exist locally; actual camera/browser, printer, physical label and scanner qualification remain pending. Record model/firmware, cable/cradle, OS/browser, symbology and label size/material. Test actual reads and durability after handling. Text input does not prove pairing or SDK compatibility. Purchasing remains outside authorization; approved existing equipment may later supply receipts.
 
 ## Current executable provider boundary
 
