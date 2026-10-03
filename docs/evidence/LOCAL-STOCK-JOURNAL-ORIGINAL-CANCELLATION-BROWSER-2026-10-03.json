@@ -1227,6 +1227,17 @@
     "private_signin_mode": "600"
   },
   "publication": {
-    "status": "Final regression passed; pending byte review and authorized normal push"
+    "source_commit": "8d53e29aff8eea45fc8c6adc533ccdab9c43f8ab",
+    "remote": "https://github.com/SJS1001/Distributor.git",
+    "branch": "codex/local-distributor-checkpoint",
+    "exact_remote_head_verified": true,
+    "checkout_clean_at_source_verification": true,
+    "tested_inputs_verified": 539,
+    "runtime_source_inputs_verified": 273,
+    "generated_assets_verified": 3,
+    "private_evidence_verified": 104,
+    "workflows": 0,
+    "actions_runs": 0,
+    "note": "Publication metadata follows in a companion documentation commit; tested inputs unchanged."
   }
 }
