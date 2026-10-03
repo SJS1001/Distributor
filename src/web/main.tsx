@@ -1,3 +1,4 @@
+import { OrganizationQuickBooksRevocation } from "./organization-revocation.tsx";
 import {
   OrganizationQuickBooksConnection,
   OrganizationQuickBooksCallback,
@@ -3467,6 +3468,12 @@ function App() {
             {can("finance") && (
               <OrganizationQuickBooksConnection
                 key={`org-oauth:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
+                orgId={actor.orgId}
+              />
+            )}
+            {can("finance") && (
+              <OrganizationQuickBooksRevocation
+                key={`org-revocation:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
                 orgId={actor.orgId}
               />
             )}

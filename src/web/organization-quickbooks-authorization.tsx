@@ -648,3 +648,9 @@ export function OrganizationQuickBooksCallback() {
     </main>
   );
 }
+
+export {
+  authority as organizationAuthority,
+  Terms as OrganizationTerms,
+  Stamp as OrganizationStamp,
+};

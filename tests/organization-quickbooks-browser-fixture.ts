@@ -7,8 +7,8 @@ export async function organizationQuickBooksBrowser(
   after: (fn: () => void) => void,
 ) {
   const servers: Awaited<ReturnType<typeof createHttp>>[] = [];
-  for (let n = 0; n < 7; n++) {
-    const region = n === 1 ? "US" : "CA";
+  for (let n = 0; n < 15; n++) {
+    const region = n === 1 || n === 8 ? "US" : "CA";
     const f = fixture(
       { after },
       { providerEncryptionKey: "ab".repeat(32) },
@@ -36,18 +36,39 @@ export async function organizationQuickBooksBrowser(
         },
       });
     const origin = `http://127.0.0.1:${3220 + n}`;
+    const binding = {
+      id: "synthetic-org-browser",
+      orgId: f.actor.orgId,
+      workerUserId: f.actor.id,
+      realm: "1234",
+      clientId: "synthetic-client",
+      redirectUri: `${origin}/quickbooks/organization/callback`,
+    };
+    if (n >= 7) {
+      f.app.providerCredentials.ledger.install(
+        binding,
+        0,
+        {
+          accessToken: `synthetic-org-browser-access-${n}`,
+          refreshToken: `synthetic-org-browser-revoke-${n}`,
+          accessExpiresAt: Date.now() + 3600000,
+          refreshExpiresAt: Date.now() + 86400000,
+        },
+        r.permission(f.actor, binding.realm),
+      );
+      f.app.identity.createUser(f.actor, "browser-revocation-finance", {
+        email: "finance@example.test",
+        name: "Synthetic finance",
+        password: "long-test-only-password",
+        role: "finance",
+        sites: [],
+      });
+    }
     const http = await createHttp(f.app, {
       origin,
       organizationQuickbooksBrowser: new OrganizationQuickBooksBrowser(
         f.app,
-        {
-          id: "synthetic-org-browser",
-          orgId: f.actor.orgId,
-          workerUserId: f.actor.id,
-          realm: "1234",
-          clientId: "synthetic-client",
-          redirectUri: `${origin}/quickbooks/organization/callback`,
-        },
+        binding,
         "synthetic-org-client-secret",
         origin,
       ),

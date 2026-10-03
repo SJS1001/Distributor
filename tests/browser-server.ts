@@ -842,6 +842,25 @@ globalThis.fetch = async (url, init) => {
     "https://sandbox-quickbooks.api.intuit.com/v3/company/1234/companyinfo/1234"
   )
     return Response.json({ CompanyInfo: { Id: "1234" } });
+  if (
+    String(url) ===
+      "https://developer.api.intuit.com/v2/oauth2/tokens/revoke" &&
+    init?.method === "POST"
+  ) {
+    const token = JSON.parse(String(init.body)).token;
+    if (
+      ![7, 8, 9, 10, 11, 12, 13, 14].some(
+        (n) => token === `synthetic-org-browser-revoke-${n}`,
+      )
+    )
+      throw Error("Synthetic revocation token differs");
+    if (
+      token === "synthetic-org-browser-revoke-9" ||
+      token === "synthetic-org-browser-revoke-10"
+    )
+      throw Error("Synthetic unknown provider response");
+    return new Response(null, { status: 200 });
+  }
   throw Error(
     "Browser fixture permits only synthetic authorization endpoints.",
   );
