@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — receipt history abandonment and close, 2026-10-02
+
+- Published transfer-loading checkpoint `b4ac227fce7f671f4bc6ddd238f84b08884b7dbb` is the verified parent on `codex/local-distributor-checkpoint`. Continued under owner authorization for coding and Distributor snapshot publication. Direct workstation checks only; no CI runner, cloud/delegated session, live provider IO, PR, merge or deployment.
+- Controlled old-build journeys reproduced late receipt history reopening after navigation, late errors affecting another page, sign-out refresh errors and read-only Close reporting Saved. A scoped cancellable read and response fence now discard abandoned outcomes. Close and Cancel perform no command or dashboard refresh. Native source/schema/dependencies remain unchanged.
+- Five focused production browser journeys pass. Fresh complete suite, source/config hashes, TypeScript/build/format and static diagnostic details are recorded in the [receipt](evidence/LOCAL-RECEIPT-HISTORY-2026-10-02.md). Preserve fixture failures, valid red reproductions and interrupted invalid background-click tests privately. Existing bundle and full-App static limitations remain; no fresh native result is claimed.
+- Self-review checks active errors/retry, busy-state recovery, navigation/session boundaries, cancellation and unchanged purchasing facts. Product/provider/device/residency/operator acceptance remains open; all 44 tasks and 10 gates NOT VERIFIED. Full system incomplete.
+- Complete this checkpoint's publication review and normal authorized branch push, then implement durable count observation/approval/rejection recovery. Keep original inputs/keys/policy and stock snapshot, current native authority, storage/tab coordination and historical receipts distinct from current custody. Other-device/browser storage protection and production acceptance remain open.
+
 ## Latest continuation — preserve transfer reviews during initial loading, 2026-10-02
 
 - Resumed published parent `2ec8c3fd376b2e8d2827c1ecba2973a00b8f941d` on `codex/local-distributor-checkpoint` under the owner's instruction to continue all coding tasks and authorized snapshot publication. Direct workstation checks only; no CI runner, cloud/delegated session, provider IO, PR, merge or deployment.

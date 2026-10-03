@@ -190,6 +190,17 @@ function App() {
   const shipmentEpoch = useRef(0);
   const dashboardEpoch = useRef(0);
   const orderEntryRead = useRef<AbortController | null>(null);
+  const receiptHistoryRead = useRef<AbortController | null>(null);
+  const stopReceiptHistoryRead = () => {
+    if (receiptHistoryRead.current) {
+      receiptHistoryRead.current.abort();
+      receiptHistoryRead.current = null;
+      setBusy(false);
+    }
+    setDialog((current) =>
+      current?.title === "Receipt draft history" ? null : current,
+    );
+  };
   const cartEditorEpoch = useRef(0);
   const stopOrderEntryRead = () => {
     cartEditorEpoch.current++;
@@ -209,6 +220,7 @@ function App() {
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
   const refresh = async () => {
+    stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
@@ -423,6 +435,7 @@ function App() {
       void refresh().catch((e) => setError(e.message));
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    stopReceiptHistoryRead();
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
     orderQueue.stop();
@@ -476,6 +489,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
@@ -545,6 +559,47 @@ function App() {
     setNotice("");
     setError("");
     setDialog({ title, fields, perform, description, submitLabel });
+  };
+  const showReceiptHistory = async (draftId: string) => {
+    stopReceiptHistoryRead();
+    const controller = new AbortController();
+    receiptHistoryRead.current = controller;
+    setBusy(true);
+    setNotice("");
+    setError("");
+    try {
+      const history = await request<Item[]>(
+        `/api/purchases/drafts/${encodeURIComponent(draftId)}/history`,
+        { signal: controller.signal },
+      );
+      if (
+        receiptHistoryRead.current !== controller ||
+        controller.signal.aborted
+      )
+        return;
+      open(
+        "Receipt draft history",
+        [],
+        async () => ({}),
+        history
+          .map(
+            (entry) =>
+              `v${entry.revision} · ${entry.state} · ${entry.created_at} · ${entry.actor_id} · ${entry.reason} · SKU ${entry.input.observedSku} · ${entry.input.quantity} units · ${entry.input.bin} · ${entry.input.serials.join(", ") || "bulk"}`,
+          )
+          .join("\n"),
+      );
+    } catch (e) {
+      if (
+        receiptHistoryRead.current === controller &&
+        !controller.signal.aborted
+      )
+        setError((e as Error).message);
+    } finally {
+      if (receiptHistoryRead.current === controller) {
+        receiptHistoryRead.current = null;
+        setBusy(false);
+      }
+    }
   };
   const options = (items: Item[], label: (i: Item) => string) =>
     (items ?? []).map((i) => ({ value: String(i.id), label: label(i) }));
@@ -1304,6 +1359,7 @@ function App() {
               key={p}
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
+                stopReceiptHistoryRead();
                 stopOrderEntryRead();
                 stopCatalogRead();
                 orderQueue.stop();
@@ -2983,23 +3039,7 @@ function App() {
                   )}
                   {button(
                     "View draft history",
-                    () =>
-                      void run(async () => {
-                        const history = await request(
-                          `/api/purchases/drafts/${encodeURIComponent(draft.id)}/history`,
-                        );
-                        open(
-                          "Receipt draft history",
-                          [],
-                          async () => ({}),
-                          history
-                            .map(
-                              (entry: Item) =>
-                                `v${entry.revision} · ${entry.state} · ${entry.created_at} · ${entry.actor_id} · ${entry.reason} · SKU ${entry.input.observedSku} · ${entry.input.quantity} units · ${entry.input.bin} · ${entry.input.serials.join(", ") || "bulk"}`,
-                            )
-                            .join("\n"),
-                        );
-                      }),
+                    () => void showReceiptHistory(draft.id),
                   )}
                 </div>,
               ],
@@ -6150,12 +6190,17 @@ function App() {
           busy={busy}
           error={error}
           close={() => {
+            stopReceiptHistoryRead();
             stopOrderEntryRead();
             stopCatalogRead();
             setDialog(null);
           }}
           submit={async (values) => {
             try {
+              if (dialog.title === "Receipt draft history") {
+                setDialog(null);
+                return;
+              }
               if (dialog.title === "Serial history") {
                 await dialog.perform(values);
                 return;
