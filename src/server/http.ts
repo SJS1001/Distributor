@@ -298,22 +298,49 @@ export function commands(
       }),
       run: (a, k, p) => app.integration.costs.corrections.prepare(a, k, p),
     },
-    "accounting.cost.correction.observe": {
+    "accounting.cost.correction.retry.prepare": {
       schema: obj({
         correctionId: str,
         contentHash: str,
         leg: choice("reversal", "replacement"),
+        previousAttemptId: { anyOf: [str, { type: "null" }] },
         previousRevision: costNumber,
-        outcome: choice("posted", "cancelled-unposted", "unknown"),
-        receiverRef: str,
-        receiverRegion: choice("CA", "US"),
-        currency: choice("CAD", "USD"),
+        previousEvidenceHash: str,
+        policyRevision: costNumber,
         externalRef: str,
-        debit: costNumber,
-        credit: costNumber,
-        postingDate: { anyOf: [str, { type: "null" }] },
-        evidence: str,
+        reason: str,
       }),
+      run: (a, k, p) => app.integration.costs.corrections.prepareRetry(a, k, p),
+    },
+    "accounting.cost.correction.retry.decide": {
+      schema: obj({
+        retryId: str,
+        reviewHash: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.corrections.decideRetry(a, k, p),
+    },
+    "accounting.cost.correction.observe": {
+      schema: obj(
+        {
+          attemptId: str,
+          correctionId: str,
+          contentHash: str,
+          leg: choice("reversal", "replacement"),
+          previousRevision: costNumber,
+          outcome: choice("posted", "cancelled-unposted", "unknown"),
+          receiverRef: str,
+          receiverRegion: choice("CA", "US"),
+          currency: choice("CAD", "USD"),
+          externalRef: str,
+          debit: costNumber,
+          credit: costNumber,
+          postingDate: { anyOf: [str, { type: "null" }] },
+          evidence: str,
+        },
+        ["attemptId"],
+      ),
       run: (a, k, p) => app.integration.costs.corrections.observe(a, k, p),
     },
     "accounting.cost.correction.decide": {
@@ -3223,6 +3250,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor(request),
         request.params.packetId,
       ),
+  );
+  http.get<{ Params: { retryId: string } }>(
+    "/api/accounting/cost-correction-retries/:retryId",
+    { schema: { params: obj({ retryId: str }) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.corrections.retryDetail(
+        actor(request),
+        request.params.retryId,
+      );
+    },
   );
   http.get<{ Params: { correctionId: string } }>(
     "/api/accounting/cost-corrections/:correctionId",

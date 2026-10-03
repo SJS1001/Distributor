@@ -109,6 +109,7 @@ export function outcomeInput(
     journal = state.legs.find((l) => l.leg === leg)!;
   return {
     correctionId,
+    ...(journal.attemptId ? { attemptId: journal.attemptId } : {}),
     contentHash: state.contentHash,
     leg,
     previousRevision: journal.current?.revision ?? 0,
@@ -116,7 +117,7 @@ export function outcomeInput(
     receiverRef: state.receiverRef,
     receiverRegion: state.receiverRegion,
     currency: state.currency,
-    externalRef: journal.current?.input.externalRef ?? `synthetic-${leg}`,
+    externalRef: journal.externalRef ?? `synthetic-${leg}`,
     debit: journal.debit,
     credit: journal.credit,
     postingDate: null,

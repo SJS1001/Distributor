@@ -1,3 +1,4 @@
+import { CostCorrectionRetryReview } from "./cost-correction-retry-review.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import type {
   CostCorrections,
@@ -84,6 +85,20 @@ export function CostCorrectionOutcomes({
             Current observation: {leg.current?.input.outcome ?? "none recorded"}{" "}
             · revision {leg.current?.revision ?? 0}.
           </p>
+          <p>Current attempt: {leg.attemptId ?? "initial approved journal"}.</p>
+          {leg.attemptId && (
+            <details>
+              <summary>Initial attempt observations</summary>
+              <ol>
+                {leg.initialHistory.map((o) => (
+                  <li key={o.revision}>
+                    {o.input.outcome} · {o.input.externalRef} ·{" "}
+                    {o.input.evidence} · {o.evidenceHash}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
           <ol>
             {leg.history.map((o) => (
               <li key={o.revision}>
@@ -105,7 +120,7 @@ export function CostCorrectionOutcomes({
           )}
           {(!leg.current || leg.current.input.outcome === "unknown") && (
             <form
-              key={`${leg.leg}-${leg.current?.revision ?? 0}`}
+              key={`${leg.leg}-${leg.attemptId ?? "initial"}-${leg.current?.revision ?? 0}`}
               aria-label={`Record ${leg.leg} ledger observation`}
               onSubmit={(e) => {
                 e.preventDefault();
@@ -115,6 +130,7 @@ export function CostCorrectionOutcomes({
                   ) as CorrectionOutcomeInput["outcome"];
                 const input: CorrectionOutcomeInput = {
                   correctionId,
+                  ...(leg.attemptId ? { attemptId: leg.attemptId } : {}),
                   contentHash,
                   leg: leg.leg,
                   previousRevision: leg.current?.revision ?? 0,
@@ -125,8 +141,7 @@ export function CostCorrectionOutcomes({
                   credit: leg.credit,
                   outcome,
                   externalRef:
-                    leg.current?.input.externalRef ??
-                    String(values.get("externalRef")),
+                    leg.externalRef ?? String(values.get("externalRef")),
                   postingDate:
                     outcome === "posted"
                       ? String(values.get("postingDate"))
@@ -175,8 +190,8 @@ export function CostCorrectionOutcomes({
                     name="externalRef"
                     required
                     maxLength={160}
-                    defaultValue={leg.current?.input.externalRef ?? ""}
-                    readOnly={!!leg.current}
+                    defaultValue={leg.externalRef ?? ""}
+                    readOnly={!!leg.externalRef}
                   />
                 </div>
                 <div className="form-field">
@@ -206,6 +221,14 @@ export function CostCorrectionOutcomes({
               </fieldset>
             </form>
           )}
+          <CostCorrectionRetryReview
+            state={state}
+            busy={busy}
+            leg={leg}
+            recoveryHold={recoveryHold}
+            run={run}
+            load={load}
+          />
         </section>
       ))}
     </section>

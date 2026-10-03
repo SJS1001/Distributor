@@ -408,6 +408,119 @@ test("HTTP correction commands require fresh finance authority, CSRF and strict 
   assert.equal(history.statusCode, 200);
   assert.equal(history.headers["cache-control"], "no-store");
   assert.equal(history.json().legs[0].current.input.outcome, "unknown");
+  const cancelled = await post(
+    "correction.observe",
+    {
+      ...observation,
+      previousRevision: 1,
+      outcome: "cancelled-unposted",
+      evidence:
+        "Synthetic final cancellation and independently verified non-posting",
+    },
+    "cancel",
+    reviewer,
+  );
+  assert.equal(cancelled.statusCode, 200, cancelled.body);
+  const retryInput = {
+    correctionId: p.id,
+    contentHash: observation.contentHash,
+    leg: "reversal",
+    previousAttemptId: null,
+    previousRevision: 2,
+    previousEvidenceHash: cancelled.json().evidenceHash,
+    policyRevision: 1,
+    externalRef: "synthetic-http-retry",
+    reason: "Synthetic separately approved retry",
+  };
+  assert.equal(
+    (
+      await post("correction.retry.prepare", retryInput, "csrf-retry", {
+        ...admin,
+        "x-csrf-token": "bad",
+      })
+    ).statusCode,
+    403,
+  );
+  assert.equal(
+    (
+      await post(
+        "correction.retry.prepare",
+        {
+          ...retryInput,
+          approval: "forged",
+        },
+        "fields-retry",
+      )
+    ).statusCode,
+    400,
+  );
+  const retryResponse = await post(
+    "correction.retry.prepare",
+    retryInput,
+    "prepare-retry",
+  );
+  assert.equal(retryResponse.statusCode, 200, retryResponse.body);
+  const retry = retryResponse.json(),
+    retryDecision = {
+      retryId: retry.id,
+      reviewHash: retry.reviewHash,
+      decision: "approve",
+      reason: "Synthetic separate current finance review",
+    };
+  assert.equal(
+    (await post("correction.retry.decide", retryDecision, "self-retry"))
+      .statusCode,
+    403,
+  );
+  assert.equal(
+    (
+      await post(
+        "correction.retry.decide",
+        {
+          ...retryDecision,
+          reviewHash: "0".repeat(64),
+        },
+        "stale-retry",
+        reviewer,
+      )
+    ).statusCode,
+    409,
+  );
+  assert.equal(
+    (
+      await post(
+        "correction.retry.decide",
+        retryDecision,
+        "approve-retry",
+        reviewer,
+      )
+    ).statusCode,
+    200,
+  );
+  const retryDetail = await http.inject({
+    url: `/api/accounting/cost-correction-retries/${retry.id}`,
+    headers: reviewer,
+  });
+  assert.equal(retryDetail.statusCode, 200);
+  assert.equal(retryDetail.headers["cache-control"], "no-store");
+  assert.equal(retryDetail.json().state, "reviewed");
+  const retryObservation = {
+    ...observation,
+    attemptId: retry.id,
+    previousRevision: 0,
+    externalRef: retryInput.externalRef,
+  };
+  assert.equal(
+    (
+      await post(
+        "correction.observe",
+        retryObservation,
+        "retry-observation",
+        reviewer,
+      )
+    ).statusCode,
+    200,
+  );
   const user = f.app.identity
     .users(f.actor)
     .find((u) => u.email === "finance@example.test")!;
@@ -438,6 +551,37 @@ test("HTTP correction commands require fresh finance authority, CSRF and strict 
   assert.equal(
     (await post("correction.observe", observation, "observe", reviewer))
       .statusCode,
+    401,
+  );
+  assert.equal(
+    (
+      await post(
+        "correction.retry.decide",
+        retryDecision,
+        "approve-retry",
+        reviewer,
+      )
+    ).statusCode,
+    401,
+  );
+  assert.equal(
+    (
+      await post(
+        "correction.observe",
+        retryObservation,
+        "retry-observation",
+        reviewer,
+      )
+    ).statusCode,
+    401,
+  );
+  assert.equal(
+    (
+      await http.inject({
+        url: `/api/accounting/cost-correction-retries/${retry.id}`,
+        headers: reviewer,
+      })
+    ).statusCode,
     401,
   );
 });

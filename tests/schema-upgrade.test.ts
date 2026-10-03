@@ -1,4 +1,5 @@
-import { approvedCorrection } from "./cost-correction-fixture.ts";
+import versionNine from "./schema-version-nine.json" with { type: "json" };
+import { approvedCorrection, outcomeInput } from "./cost-correction-fixture.ts";
 import versionEight from "./schema-version-eight.json" with { type: "json" };
 import versionSeven from "./schema-version-seven.json" with { type: "json" };
 import versionSix from "./schema-version-six.json" with { type: "json" };
@@ -280,6 +281,35 @@ function frozenVersionEight(
     db.exec("COMMIT");
   });
 }
+function frozenVersionNine(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionEight(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionNine.additions) db.exec(object.sql);
+    for (const object of versionNine.additions) {
+      if (object.type !== "table") continue;
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=9,schema_hash=?",
+    ).run(
+      eventReports ? versionNine.hashes.enabled : versionNine.hashes.disabled,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -330,7 +360,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -348,6 +378,9 @@ function conservedUpgrade(
     "warranty_claim_coverage",
     "fulfillment_coverage",
     "procurement_supplier_changes",
+    "integration_cost_retry_outcomes",
+    "integration_cost_retry_references",
+    "integration_cost_correction_retries",
     "integration_cost_correction_outcomes",
     "integration_cost_correction_references",
     "integration_cost_policies",
@@ -367,6 +400,14 @@ function conservedUpgrade(
       ["integration_cost_policies", "integration_cost_corrections"].includes(
         name,
       )
+    )
+      continue;
+    if (
+      sourceVersion >= 9 &&
+      [
+        "integration_cost_correction_outcomes",
+        "integration_cost_correction_references",
+      ].includes(name)
     )
       continue;
     assert.deepEqual(
@@ -431,7 +472,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
       test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
@@ -440,7 +481,18 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
           providerEncryptionKey: "ab".repeat(32),
         };
         const f = fixture(t, security, region);
-        if (sourceVersion === 8) approvedCorrection(f);
+        if (sourceVersion >= 8) {
+          const { c, reviewer, approved } = approvedCorrection(f);
+          if (sourceVersion >= 9)
+            c.observe(
+              reviewer,
+              "historical-cancelled",
+              outcomeInput(f, approved.id, "reversal", {
+                outcome: "cancelled-unposted",
+                evidence: "Synthetic historical cancellation",
+              }),
+            );
+        }
         const nativeShipment = ship(f, accept(f).id);
         const invoice = nativeShipment.invoiceId;
         // Versions before six could not retain shipment policy.
@@ -481,7 +533,7 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
         });
         const dir = directory(t),
           source = join(dir, `v${sourceVersion}.db`),
-          destination = join(dir, "v9.db");
+          destination = join(dir, "upgraded-v10.db");
         if (sourceVersion >= 2) {
           // Retain a locally prepared group, without claiming a provider response.
           f.app.database
@@ -531,7 +583,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
                     ? frozenVersionSix
                     : sourceVersion === 7
                       ? frozenVersionSeven
-                      : frozenVersionEight)(
+                      : sourceVersion === 8
+                        ? frozenVersionEight
+                        : frozenVersionNine)(
           f.path,
           source,
           eventReports,
@@ -559,7 +613,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
                           ? versionSix.hashes
                           : sourceVersion === 7
                             ? versionSeven.hashes
-                            : versionEight.hashes
+                            : sourceVersion === 8
+                              ? versionEight.hashes
+                              : versionNine.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -575,7 +631,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
                           ? versionSix.hashes
                           : sourceVersion === 7
                             ? versionSeven.hashes
-                            : versionEight.hashes
+                            : sourceVersion === 8
+                              ? versionEight.hashes
+                              : versionNine.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -604,10 +662,10 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 9);
+        assert.equal(upgraded.version, 10);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 9);
+        assert.equal(inspection.version, 10);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);

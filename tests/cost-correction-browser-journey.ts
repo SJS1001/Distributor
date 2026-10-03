@@ -385,6 +385,164 @@ test("browser: phone correction retries exact attempts, requires separate financ
       "unknown",
       "cancelled-unposted",
     ]);
+    const retryPrepare = leg("replacement").getByRole("form", {
+      name: "Prepare replacement posting retry",
+    });
+    await retryPrepare
+      .getByLabel("New replacement retry request reference", { exact: true })
+      .fill("synthetic-browser-replacement-retry");
+    await retryPrepare
+      .getByLabel("replacement retry reason", { exact: true })
+      .fill("Synthetic verified cancellation needs separately approved retry");
+    const retryAttempts: string[] = [];
+    await other.route(
+      "**/api/commands/accounting.cost.correction.retry.prepare",
+      async (route) => {
+        retryAttempts.push(route.request().postData()!);
+        if (retryAttempts.length === 1) {
+          await route.fetch();
+          await route.abort();
+        } else await route.continue();
+      },
+    );
+    await retryPrepare
+      .getByRole("button", {
+        name: "Prepare replacement posting retry",
+        exact: true,
+      })
+      .click();
+    await expect(panel(other).getByRole("alert")).toBeVisible();
+    await retryPrepare
+      .getByRole("button", {
+        name: "Prepare replacement posting retry",
+        exact: true,
+      })
+      .click();
+    const retryReview = leg("replacement").getByRole("region", {
+      name: "replacement saved posting retry",
+      exact: true,
+    });
+    await expect(retryReview).toBeVisible();
+    expect(retryAttempts).toHaveLength(2);
+    expect(retryAttempts[1]).toBe(retryAttempts[0]);
+    await other.unrouteAll({ behavior: "wait" });
+    const selfRetryDecision = retryReview.getByRole("form", {
+      name: "Decide replacement posting retry",
+    });
+    await selfRetryDecision
+      .getByLabel("replacement retry decision", { exact: true })
+      .selectOption("approve");
+    await selfRetryDecision
+      .getByLabel("replacement retry review reason", { exact: true })
+      .fill("Synthetic self approval refused");
+    await selfRetryDecision
+      .getByRole("button", { name: "Save replacement retry decision" })
+      .click();
+    await expect(panel(other).getByRole("alert")).toContainText(
+      /different|separate/i,
+    );
+    await page.reload();
+    await signInIfNeeded();
+    async function signInIfNeeded() {
+      // The original preparer's session remains signed in after reload.
+      await page
+        .getByRole("navigation")
+        .getByRole("button", { name: "Billing", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "Load stock cost review", exact: true })
+        .click();
+      await page
+        .getByRole("button", {
+          name: "Review CORRECTION-ORIGINAL",
+          exact: true,
+        })
+        .click();
+      await panel(page)
+        .getByRole("button", { name: "Load cost corrections", exact: true })
+        .click();
+      await panel(page)
+        .getByRole("button", { name: /^Open cost correction / })
+        .click();
+    }
+    const adminLedger = review(page).getByRole("region", {
+      name: "Correction ledger observations",
+      exact: true,
+    });
+    await adminLedger
+      .getByRole("button", { name: "Load ledger observations", exact: true })
+      .click();
+    await adminLedger.getByRole("button", { name: /^Review retry / }).click();
+    const adminRetry = adminLedger.getByRole("form", {
+      name: "Decide replacement posting retry",
+    });
+    await adminRetry
+      .getByLabel("replacement retry decision", { exact: true })
+      .selectOption("approve");
+    await adminRetry
+      .getByLabel("replacement retry review reason", { exact: true })
+      .fill("Synthetic independent retry approval");
+    const retryDecisions: string[] = [];
+    await page.route(
+      "**/api/commands/accounting.cost.correction.retry.decide",
+      async (route) => {
+        retryDecisions.push(route.request().postData()!);
+        if (retryDecisions.length === 1) {
+          await route.fetch();
+          await route.abort();
+        } else await route.continue();
+      },
+    );
+    await adminRetry
+      .getByRole("button", { name: "Save replacement retry decision" })
+      .click();
+    await expect(panel(page).getByRole("alert")).toBeVisible();
+    await adminRetry
+      .getByRole("button", { name: "Save replacement retry decision" })
+      .click();
+    await expect(adminLedger).toContainText("reviewed");
+    expect(retryDecisions).toHaveLength(2);
+    expect(retryDecisions[1]).toBe(retryDecisions[0]);
+    await page.unrouteAll({ behavior: "wait" });
+    const adminObservation = adminLedger.getByRole("form", {
+      name: "Record replacement ledger observation",
+    });
+    await expect(
+      adminObservation.getByLabel("replacement journal or request reference", {
+        exact: true,
+      }),
+    ).toHaveValue("synthetic-browser-replacement-retry");
+    await expect(
+      adminObservation.getByLabel("replacement journal or request reference", {
+        exact: true,
+      }),
+    ).toHaveAttribute("readonly", "");
+    await adminObservation
+      .getByLabel("Observed replacement outcome", { exact: true })
+      .selectOption("posted");
+    await adminObservation
+      .getByLabel("replacement observed posting date (posted only)", {
+        exact: true,
+      })
+      .fill("2026-10-03");
+    await adminObservation
+      .getByLabel("replacement receiver outcome evidence", { exact: true })
+      .fill("Synthetic independently verified retry posting");
+    await adminObservation
+      .getByRole("button", {
+        name: "Record replacement ledger observation",
+        exact: true,
+      })
+      .click();
+    await expect(adminLedger).toContainText(
+      "Current observation: posted · revision 1",
+    );
+    await expect(adminLedger).toContainText("cancelled-unposted");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
     const originalCorrection = await other.request.get(
       `${origin}/api/accounting/cost-corrections/${artifact.correctionId}/file`,
     );

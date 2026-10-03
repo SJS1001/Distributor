@@ -1,3 +1,4 @@
+import { COST_CORRECTION_RETRY_INITIALIZE_DDL } from "./cost-correction-retry-schema.ts";
 import { COST_CORRECTION_OUTCOME_INITIALIZE_DDL } from "./cost-correction-outcome-schema.ts";
 import {
   canonical,
@@ -33,7 +34,35 @@ export type CostPolicyInput = {
   mappings: { type: string; offsetAccount: string }[];
   financeEvidence: string;
 };
+export type CorrectionRetryInput = {
+  correctionId: string;
+  contentHash: string;
+  leg: "reversal" | "replacement";
+  previousAttemptId: string | null;
+  previousRevision: number;
+  previousEvidenceHash: string;
+  policyRevision: number;
+  externalRef: string;
+  reason: string;
+};
+type Retry = {
+  id: string;
+  org_id: string;
+  correction_id: string;
+  leg: "reversal" | "replacement";
+  predecessor: string;
+  input: string;
+  plan: string;
+  review_hash: string;
+  state: "ready" | "reviewed" | "rejected";
+  created_by: string;
+  created_at: string;
+  decision_by: string | null;
+  decision_at: string | null;
+  decision_reason: string | null;
+};
 export type CorrectionOutcomeInput = {
+  attemptId?: string;
   correctionId: string;
   contentHash: string;
   leg: "reversal" | "replacement";
@@ -138,6 +167,7 @@ export class CostCorrections {
     this.store = database.owned("integration");
     this.store.migrate(COST_CORRECTION_INITIALIZE_DDL);
     this.store.migrate(COST_CORRECTION_OUTCOME_INITIALIZE_DDL);
+    this.store.migrate(COST_CORRECTION_RETRY_INITIALIZE_DDL);
   }
   private principal(actor: Actor) {
     actor = this.identity.currentActor(actor);
@@ -674,11 +704,17 @@ export class CostCorrections {
   ) {
     check(
       !this.store.get(
-        "SELECT correction_id FROM integration_cost_correction_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+        "SELECT retry_id FROM integration_cost_retry_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
         actor.orgId,
         receiver,
         external,
       ) &&
+        !this.store.get(
+          "SELECT correction_id FROM integration_cost_correction_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+          actor.orgId,
+          receiver,
+          external,
+        ) &&
         !this.store.get(
           "SELECT id FROM integration_cost_corrections WHERE org_id=? AND state='reviewed' AND json_extract(input,'$.receiverRef')=? AND json_extract(input,'$.externalRef')=? AND original_id<>?",
           actor.orgId,
@@ -688,6 +724,304 @@ export class CostCorrections {
         ),
       "COST_REFERENCE_CONFLICT",
       "Ledger reference is already reserved by a correction or its original outcome.",
+    );
+  }
+  private retryRow(actor: Actor, retryId: string) {
+    const row = this.store.get(
+      "SELECT * FROM integration_cost_correction_retries WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(retryId, "Retry ID"),
+    ) as unknown as Retry | undefined;
+    check(row, "NOT_FOUND", "Correction retry not found.", 404);
+    const plan = JSON.parse(row.plan);
+    check(
+      digest(canonical(plan)) === row.review_hash &&
+        canonical(plan.input) === row.input &&
+        plan.correctionId === row.correction_id &&
+        plan.leg === row.leg &&
+        (plan.input.previousAttemptId ?? "initial") === row.predecessor,
+      "COST_INTEGRITY",
+      "Correction retry failed its integrity check.",
+    );
+    return row;
+  }
+  private retryView(row: Retry) {
+    return {
+      id: row.id,
+      input: JSON.parse(row.input) as CorrectionRetryInput,
+      reviewHash: row.review_hash,
+      state: row.state,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      decisionBy: row.decision_by,
+      decisionAt: row.decision_at,
+      decisionReason: row.decision_reason,
+    };
+  }
+  retryDetail(actor: Actor, retryId: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const row = this.retryRow(actor, retryId);
+      return {
+        ...this.retryView(row),
+        plan: JSON.parse(row.plan),
+        history: this.retryObservations(actor, row),
+      };
+    });
+  }
+  private retryObservations(
+    actor: Actor,
+    row: Retry,
+  ): CorrectionOutcomeObservation[] {
+    return this.store
+      .all(
+        "SELECT * FROM integration_cost_retry_outcomes WHERE org_id=? AND retry_id=? ORDER BY revision DESC LIMIT 100",
+        actor.orgId,
+        row.id,
+      )
+      .reverse()
+      .map((record) => {
+        const input = JSON.parse(
+          String(record.input),
+        ) as CorrectionOutcomeInput;
+        const observation = {
+          revision: Number(record.revision),
+          input,
+          recordedBy: String(record.recorded_by),
+          recordedAt: String(record.recorded_at),
+        };
+        check(
+          digest(canonical(observation)) === record.evidence_hash &&
+            input.attemptId === row.id &&
+            input.correctionId === row.correction_id &&
+            input.leg === row.leg &&
+            input.previousRevision === observation.revision - 1,
+          "COST_INTEGRITY",
+          "Retry observation failed its integrity check.",
+        );
+        return { ...observation, evidenceHash: String(record.evidence_hash) };
+      });
+  }
+  private retryPlan(actor: Actor, input: CorrectionRetryInput) {
+    const state = this.outcomeSnapshot(actor, input.correctionId);
+    check(
+      state.contentHash === input.contentHash,
+      "COST_INTEGRITY",
+      "Retry requires the exact approved correction.",
+    );
+    const leg = state.legs.find((l) => l.leg === input.leg);
+    check(
+      leg && leg.current?.input.outcome === "cancelled-unposted",
+      "COST_RETRY_CANCELLED",
+      "A new attempt requires retained final cancellation and verified non-posting of the current attempt.",
+    );
+    check(
+      leg.attemptId === input.previousAttemptId &&
+        leg.current.revision === input.previousRevision &&
+        leg.current.evidenceHash === input.previousEvidenceHash,
+      "COST_REVIEW_CHANGED",
+      "Review the exact current cancelled attempt and evidence.",
+    );
+    const policy = this.current(actor);
+    check(
+      policy &&
+        policy.revision === input.policyRevision &&
+        policy.hash === state.policyHash,
+      "COST_POLICY",
+      "This retry must retain the correction's current approved policy; changed mappings need a separate correction.",
+    );
+    check(
+      !policy.input.closedThrough ||
+        leg.postingDate > policy.input.closedThrough,
+      "COST_PERIOD",
+      "The approved journal date is now closed; a retry cannot change its date.",
+    );
+    this.assertFreshLegReference(actor, state.receiverRef, input.externalRef);
+    return {
+      correctionId: input.correctionId,
+      leg: input.leg,
+      contentHash: state.contentHash,
+      receiverRef: state.receiverRef,
+      receiverRegion: state.receiverRegion,
+      currency: state.currency,
+      debit: leg.debit,
+      credit: leg.credit,
+      postingDate: leg.postingDate,
+      policyHash: policy.hash,
+      previous: leg.current,
+      input,
+    };
+  }
+  prepareRetry(actor: Actor, key: string, input: CorrectionRetryInput) {
+    actor = this.principal(actor);
+    return this.platform.command(
+      actor,
+      "accounting.cost.correction.retry.prepare",
+      key,
+      input,
+      () => {
+        actor = this.principal(actor);
+        this.platform.assertProviderAccess();
+      },
+      () => {
+        const normalized: CorrectionRetryInput = {
+          correctionId: text(input.correctionId, "Correction ID"),
+          contentHash: hash(input.contentHash),
+          leg: input.leg,
+          previousAttemptId:
+            input.previousAttemptId === null
+              ? null
+              : text(input.previousAttemptId, "Previous attempt ID"),
+          previousRevision: integer(
+            input.previousRevision,
+            "Previous cancellation revision",
+            1,
+            Number.MAX_SAFE_INTEGER,
+          ),
+          previousEvidenceHash: hash(input.previousEvidenceHash),
+          policyRevision: integer(
+            input.policyRevision,
+            "Policy revision",
+            1,
+            Number.MAX_SAFE_INTEGER,
+          ),
+          externalRef: text(
+            input.externalRef,
+            "New ledger request reference",
+            160,
+          ),
+          reason: text(input.reason, "Retry reason", 2000),
+        };
+        const plan = this.retryPlan(actor, normalized),
+          retryId = id();
+        this.store.run(
+          "INSERT INTO integration_cost_correction_retries(id,org_id,correction_id,leg,predecessor,input,plan,review_hash,state,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+          retryId,
+          actor.orgId,
+          normalized.correctionId,
+          normalized.leg,
+          normalized.previousAttemptId ?? "initial",
+          canonical(normalized),
+          canonical(plan),
+          digest(canonical(plan)),
+          "ready",
+          actor.id,
+          now(),
+        );
+        this.platform.audit(
+          actor,
+          "accounting.cost.correction.retry.prepared",
+          retryId,
+          {
+            correctionId: normalized.correctionId,
+            reviewHash: digest(canonical(plan)),
+          },
+        );
+        return this.retryView(this.retryRow(actor, retryId));
+      },
+    );
+  }
+  decideRetry(
+    actor: Actor,
+    key: string,
+    input: {
+      retryId: string;
+      reviewHash: string;
+      decision: "approve" | "reject";
+      reason: string;
+    },
+  ) {
+    actor = this.principal(actor);
+    return this.platform.command(
+      actor,
+      "accounting.cost.correction.retry.decide",
+      key,
+      input,
+      () => {
+        actor = this.principal(actor);
+        this.platform.assertProviderAccess();
+        this.retryRow(actor, input.retryId);
+      },
+      () => {
+        const row = this.retryRow(actor, input.retryId),
+          reason = text(input.reason, "Retry review reason", 2000);
+        check(
+          ["approve", "reject"].includes(input.decision),
+          "VALIDATION",
+          "Invalid retry decision.",
+          400,
+        );
+        check(
+          row.review_hash === input.reviewHash,
+          "COST_REVIEW_CHANGED",
+          "Review the exact frozen retry.",
+        );
+        if (row.state !== "ready") {
+          check(
+            row.state ===
+              (input.decision === "approve" ? "reviewed" : "rejected") &&
+              row.decision_by === actor.id &&
+              row.decision_reason === reason,
+            "COST_DECISION_CONFLICT",
+            "Retry already has another decision.",
+          );
+          return this.retryView(row);
+        }
+        check(
+          actor.id !== row.created_by,
+          "COST_SEPARATE_REVIEW",
+          "A different current finance principal must review the retry.",
+          403,
+        );
+        if (input.decision === "approve") {
+          const plan = this.retryPlan(actor, JSON.parse(row.input));
+          check(
+            digest(canonical(plan)) === row.review_hash,
+            "COST_REVIEW_CHANGED",
+            "Retry policy or cancellation evidence changed.",
+          );
+          this.store.run(
+            "INSERT INTO integration_cost_retry_references VALUES(?,?,?,?)",
+            actor.orgId,
+            plan.receiverRef,
+            plan.input.externalRef,
+            row.id,
+          );
+        }
+        this.store.run(
+          "UPDATE integration_cost_correction_retries SET state=?,decision_by=?,decision_at=?,decision_reason=? WHERE org_id=? AND id=?",
+          input.decision === "approve" ? "reviewed" : "rejected",
+          actor.id,
+          now(),
+          reason,
+          actor.orgId,
+          row.id,
+        );
+        this.platform.audit(
+          actor,
+          "accounting.cost.correction.retry.decided",
+          row.id,
+          { decision: input.decision, reviewHash: row.review_hash },
+        );
+        return this.retryView(this.retryRow(actor, row.id));
+      },
+    );
+  }
+  private assertFreshLegReference(
+    actor: Actor,
+    receiver: string,
+    external: string,
+  ) {
+    this.assertReferenceAvailable(actor, receiver, external);
+    check(
+      !this.store.get(
+        "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+        actor.orgId,
+        receiver,
+        external,
+      ),
+      "COST_REFERENCE_CONFLICT",
+      "Ledger reference already identifies an original cost handoff.",
     );
   }
   private observations(
@@ -737,6 +1071,7 @@ export class CostCorrections {
       region: "CA" | "US";
       currency: "CAD" | "USD";
       input: CorrectionInput;
+      policy: { hash: string; revision: number };
       reversal: JournalLine[];
       replacement: JournalLine[];
     };
@@ -752,10 +1087,14 @@ export class CostCorrections {
       receiverRef: artifact.input.receiverRef,
       receiverRegion: artifact.region,
       currency: artifact.currency,
+      policyHash: artifact.policy.hash,
+      policyRevision: artifact.policy.revision,
       legs: (["reversal", "replacement"] as const)
         .filter((leg) => artifact[leg].length > 0)
         .map((leg) => {
-          const history = observations.filter((o) => o.input.leg === leg);
+          const initialHistory = observations.filter(
+            (o) => o.input.leg === leg,
+          );
           const total = artifact[leg].reduce(
             (sum, l) =>
               sum +
@@ -784,15 +1123,56 @@ export class CostCorrections {
             leg,
           );
           check(
-            history.length
+            initialHistory.length
               ? reference?.receiver_ref === artifact.input.receiverRef &&
-                  reference.external_ref === history.at(-1)!.input.externalRef
+                  reference.external_ref ===
+                    initialHistory.at(-1)!.input.externalRef
               : !reference,
             "COST_INTEGRITY",
             "Ledger observation does not match its retained request reservation.",
           );
+          const active = this.store.get(
+            "SELECT r.id FROM integration_cost_correction_retries r WHERE r.org_id=? AND r.correction_id=? AND r.leg=? AND r.state='reviewed' AND NOT EXISTS(SELECT 1 FROM integration_cost_correction_retries child WHERE child.predecessor=r.id AND child.state='reviewed')",
+            actor.orgId,
+            correctionId,
+            leg,
+          );
+          const retry = active ? this.retryRow(actor, String(active.id)) : null;
+          const history = retry
+            ? this.retryObservations(actor, retry)
+            : initialHistory;
+          if (retry) {
+            const reserved = this.store.get(
+                "SELECT * FROM integration_cost_retry_references WHERE org_id=? AND retry_id=?",
+                actor.orgId,
+                retry.id,
+              ),
+              input = JSON.parse(retry.input) as CorrectionRetryInput;
+            check(
+              reserved?.receiver_ref === artifact.input.receiverRef &&
+                reserved.external_ref === input.externalRef &&
+                (!history.length ||
+                  history.at(-1)!.input.externalRef === input.externalRef),
+              "COST_INTEGRITY",
+              "Approved retry reference reservation changed.",
+            );
+          }
+          const retries = this.store
+            .all(
+              "SELECT id FROM integration_cost_correction_retries WHERE org_id=? AND correction_id=? AND leg=? ORDER BY created_at DESC,id DESC LIMIT 100",
+              actor.orgId,
+              correctionId,
+              leg,
+            )
+            .map((r) => this.retryView(this.retryRow(actor, String(r.id))));
           return {
             leg,
+            attemptId: retry?.id ?? null,
+            externalRef: retry
+              ? (JSON.parse(retry.input) as CorrectionRetryInput).externalRef
+              : (history.at(-1)?.input.externalRef ?? null),
+            initialHistory,
+            retries,
             debit: Number(total),
             credit: Number(total),
             postingDate: artifact[leg][0]!.date,
@@ -873,6 +1253,11 @@ export class CostCorrections {
         const leg = state.legs.find((l) => l.leg === normalized.leg);
         check(leg, "COST_LEG", "This approved correction has no such journal.");
         check(
+          (normalized.attemptId ?? null) === leg.attemptId,
+          "COST_ATTEMPT_CHANGED",
+          "Reload and observe the current approved attempt; earlier attempts stay immutable.",
+        );
+        check(
           leg.debit === normalized.debit &&
             leg.credit === normalized.credit &&
             (normalized.outcome === "posted"
@@ -902,7 +1287,13 @@ export class CostCorrections {
             "COST_REFERENCE_CONFLICT",
             "Resolve the same uncertain request reference; changing it risks a duplicate posting.",
           );
-        else {
+        else if (leg.attemptId) {
+          check(
+            leg.externalRef === normalized.externalRef,
+            "COST_REFERENCE_CONFLICT",
+            "Observe the separately approved retry reference.",
+          );
+        } else {
           this.assertReferenceAvailable(
             actor,
             normalized.receiverRef,
@@ -930,7 +1321,7 @@ export class CostCorrections {
             "Retain verified reversal posting evidence before replacement posting evidence.",
           );
         }
-        if (!leg.current)
+        if (!leg.current && !leg.attemptId)
           this.store.run(
             "INSERT INTO integration_cost_correction_references VALUES(?,?,?,?,?)",
             actor.orgId,
@@ -946,23 +1337,36 @@ export class CostCorrections {
           recordedAt: now(),
         };
         const evidenceHash = digest(canonical(observation));
-        this.store.run(
-          "INSERT INTO integration_cost_correction_outcomes VALUES(?,?,?,?,?,?,?,?)",
-          state.correctionId,
-          normalized.leg,
-          observation.revision,
-          actor.orgId,
-          canonical(normalized),
-          evidenceHash,
-          actor.id,
-          observation.recordedAt,
-        );
+        if (leg.attemptId)
+          this.store.run(
+            "INSERT INTO integration_cost_retry_outcomes VALUES(?,?,?,?,?,?,?)",
+            leg.attemptId,
+            observation.revision,
+            actor.orgId,
+            canonical(normalized),
+            evidenceHash,
+            actor.id,
+            observation.recordedAt,
+          );
+        else
+          this.store.run(
+            "INSERT INTO integration_cost_correction_outcomes VALUES(?,?,?,?,?,?,?,?)",
+            state.correctionId,
+            normalized.leg,
+            observation.revision,
+            actor.orgId,
+            canonical(normalized),
+            evidenceHash,
+            actor.id,
+            observation.recordedAt,
+          );
         this.platform.audit(
           actor,
           "accounting.cost.correction.observed",
           state.correctionId,
           {
             leg: normalized.leg,
+            attemptId: leg.attemptId,
             outcome: normalized.outcome,
             revision: observation.revision,
             evidenceHash,
