@@ -303,7 +303,7 @@ export class IntegrationCheckouts {
       "Invoice balance changed; finance must review the checkout before sending.",
     );
   }
-  private assertIdentity(actor: Actor, effect: Effect) {
+  assertIdentity(actor: Actor, effect: Effect) {
     const p = JSON.parse(effect.payload);
     const invoice = this.billing.invoice(actor, this.invoiceId(effect));
     check(

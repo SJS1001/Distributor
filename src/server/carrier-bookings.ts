@@ -1,4 +1,7 @@
-import { assertCarrierConfiguration } from "./carrier-configuration.ts";
+import {
+  assertCarrierConfiguration,
+  captureCarrierConfiguration,
+} from "./carrier-configuration.ts";
 import { captureDhlReview } from "./dhl-shipping-review.ts";
 import {
   canonical,
@@ -662,6 +665,361 @@ export class CarrierBookings {
       })),
       createdAt: group.created_at,
     };
+  }
+  /** Read-only native history, not provider non-posting or restore-release authority. */
+  reviewCanceledCanadaPostMember(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+  ) {
+    return this.database.transaction(() =>
+      this.canceledCanadaPostMemberDispositionInTransaction(
+        actor,
+        groupId,
+        bookingId,
+      ),
+    );
+  }
+  // A maintenance consumer must retain its native writer transaction and supply
+  // current scoped authority. No coordinator or hold exception is installed here.
+  canceledCanadaPostMemberDispositionInTransaction(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+  ) {
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    text(groupId, "Canada Post group", 128);
+    text(bookingId, "Canada Post member", 128);
+    const assert = (condition: unknown) =>
+      check(
+        condition,
+        "CARRIER_DISPOSITION_UNRESOLVED",
+        "Complete retained unused Canada Post cancellation evidence is required.",
+      );
+    // Bound malformed membership before invoking the ordinary integrity reader.
+    assert(
+      this.store.all(
+        "SELECT booking_id FROM integration_canada_post_members WHERE group_id=? LIMIT 101",
+        groupId,
+      ).length <= 100,
+    );
+    const { group, members } = this.canadaPostGroup(actor, groupId);
+    assert(
+      group.state === "canceled" &&
+        group.token === null &&
+        group.started_at === null &&
+        group.observation === null &&
+        group.manifest_bytes === null &&
+        group.manifest_hash === null &&
+        group.provider_group_id === group.id.replaceAll("-", "") &&
+        /^[a-f0-9]{64}$/.test(group.configuration_hash) &&
+        members.some((m) => m.booking_id === bookingId),
+    );
+
+    // Narrow maintenance reads of platform-owned immutable command/audit/event
+    // receipts. No platform writes, arbitrary queries or business repair proxy.
+    const history = this.database.owned("platform");
+    const parse = (value: unknown): unknown => {
+      assert(typeof value === "string" && value.length <= 262144);
+      try {
+        return JSON.parse(String(value));
+      } catch {
+        assert(false);
+      }
+    };
+    const equal = (actual: unknown, expected: unknown) =>
+      assert(canonical(actual) === canonical(expected));
+    const command = (
+      name: string,
+      result: { id: string; reviewHash?: string },
+      payload?: unknown,
+    ) => {
+      const rows = history.all(
+        "SELECT * FROM platform_commands WHERE org_id=? AND name=? AND CASE WHEN json_valid(result) THEN json_extract(result,'$.id') END=? LIMIT 2",
+        actor.orgId,
+        name,
+        result.id,
+      );
+      assert(rows.length === 1);
+      const row = rows[0]!;
+      assert(
+        typeof row.actor_id === "string" &&
+          row.actor_id.length <= 128 &&
+          typeof row.key === "string" &&
+          row.key.length <= 128,
+      );
+      text(String(row.actor_id), "Historical carrier actor", 128);
+      text(String(row.key), "Historical carrier command key", 128);
+      equal(parse(row.result), result);
+      assert(typeof row.hash === "string" && /^[a-f0-9]{64}$/.test(row.hash));
+      if (payload !== undefined)
+        assert(row.hash === digest(canonical(payload)));
+      const audits = history.all(
+        "SELECT a.*,o.sequence FROM platform_audit a JOIN platform_audit_order o ON o.audit_id=a.id AND o.org_id=a.org_id WHERE a.org_id=? AND a.actor_id=? AND a.action=? AND a.reference=? LIMIT 2",
+        actor.orgId,
+        String(row.actor_id),
+        name,
+        String(row.key),
+      );
+      assert(audits.length === 1);
+      const audit = audits[0]!;
+      equal(parse(audit.detail), { requestHash: row.hash });
+      assert(
+        Number.isSafeInteger(audit.sequence) && Number(audit.sequence) > 0,
+      );
+      return {
+        actorId: String(row.actor_id),
+        key: String(row.key),
+        requestHash: String(row.hash),
+        receiptHash: digest(canonical(row)),
+        auditHash: digest(canonical(audit)),
+        sequence: Number(audit.sequence),
+      };
+    };
+    const entityAudit = (reference: string, action: string) => {
+      // Any extra dispatch, unknown or claim history makes this narrow subtype
+      // unresolved, even if its mutable row was later made to look unused.
+      const rows = history.all(
+        "SELECT a.*,o.sequence FROM platform_audit a LEFT JOIN platform_audit_order o ON o.audit_id=a.id AND o.org_id=a.org_id WHERE a.org_id=? AND a.reference=? AND a.action LIKE 'carrier.%' AND a.action NOT IN('carrier.prepare','carrier.cancel','carrier.canada-post.group.prepare','carrier.canada-post.group.cancel') LIMIT 2",
+        actor.orgId,
+        reference,
+      );
+      assert(rows.length === 1 && rows[0]!.action === action);
+      const row = rows[0]!;
+      assert(Number.isSafeInteger(row.sequence) && Number(row.sequence) > 0);
+      return row;
+    };
+    const events = (
+      reference: string,
+      expected: { type: string; payload: unknown }[],
+    ) => {
+      const rows = history.all(
+        "SELECT * FROM platform_events WHERE org_id=? AND reference=? AND type LIKE 'carrier.%' ORDER BY type,id LIMIT 3",
+        actor.orgId,
+        reference,
+      );
+      assert(rows.length === expected.length);
+      for (const item of expected) {
+        const matches = rows.filter((r) => r.type === item.type);
+        assert(matches.length === 1 && matches[0]!.version === 1);
+        equal(parse(matches[0]!.payload), item.payload);
+      }
+      return digest(canonical(rows));
+    };
+    const prepared = command("carrier.canada-post.group.prepare", {
+      id: group.id,
+      reviewHash: group.review_hash,
+    });
+    const audit = entityAudit(group.id, "carrier.canada-post.group.canceled");
+    const detail = parse(audit.detail) as {
+      reviewHash?: unknown;
+      reason?: unknown;
+    };
+    assert(detail && typeof detail.reason === "string");
+    const reason = clean(detail.reason, "Cancellation reason", 1000);
+    equal(detail, { reviewHash: group.review_hash, reason });
+    const canceled = command(
+      "carrier.canada-post.group.cancel",
+      { id: group.id },
+      { groupId: group.id, reviewHash: group.review_hash, reason },
+    );
+    assert(
+      audit.actor_id === canceled.actorId &&
+        prepared.sequence < Number(audit.sequence) &&
+        Number(audit.sequence) < canceled.sequence,
+    );
+    const groupEventsHash = events(group.id, [
+      {
+        type: "carrier.canada-post.group.prepared",
+        payload: {
+          reviewHash: group.review_hash,
+          warehouseId: group.warehouse_id,
+          count: members.length,
+        },
+      },
+      {
+        type: "carrier.canada-post.group.canceled",
+        payload: { reviewHash: group.review_hash },
+      },
+    ]);
+    let firstOrigin: string | undefined;
+    let firstConfiguration: string | undefined;
+    const qualified = members.map((member) => {
+      assert(
+        member.active === 0 &&
+          member.state === "pending" &&
+          member.token === null &&
+          member.started_at === null &&
+          member.provider_shipment_id === null &&
+          member.tracking === null &&
+          member.label_bytes === null &&
+          member.label_hash === null,
+      );
+      const booking = this.booking(actor, member.booking_id),
+        intent = this.intent(booking);
+      assert(
+        ["pending", "canceled"].includes(booking.state) &&
+          booking.token === null &&
+          booking.started_at === null &&
+          booking.reference === null &&
+          booking.tracking === null &&
+          booking.label_bytes === null &&
+          booking.label_type === null &&
+          booking.label_hash === null &&
+          booking.error === null,
+      );
+      // Legacy opaque group hashes alone do not establish a carrier account.
+      assert(
+        intent.configuration &&
+          intent.configurationHash === group.configuration_hash,
+      );
+      const configuration = captureCarrierConfiguration(
+        intent.configuration!,
+        "canada-post",
+      );
+      assertCarrierConfiguration(intent, configuration);
+      const configurationBytes = canonical(configuration);
+      firstConfiguration ??= configurationBytes;
+      assert(configurationBytes === firstConfiguration);
+      assert(
+        configuration.hash === group.configuration_hash &&
+          configuration.services.some((s) => s.service === intent.service),
+      );
+      const snapshot = this.shipment(actor, booking.shipment_id);
+      assert(
+        snapshot.org_id === actor.orgId &&
+          snapshot.account_id === intent.nativeSnapshot.account_id &&
+          snapshot.warehouse_id === group.warehouse_id,
+      );
+      text(snapshot.account_id, "Native customer identity", 128);
+      // Physical handover may advance mutable status after cancellation; the
+      // originally reviewed immutable shipment contents must still agree.
+      if (!("kind" in snapshot) && !("kind" in intent.nativeSnapshot)) {
+        const immutableShipment = (s: Shipment) => ({
+          id: s.id,
+          org_id: s.org_id,
+          order_id: s.order_id,
+          account_id: s.account_id,
+          warehouse_id: s.warehouse_id,
+          mode: s.mode,
+          address: s.address,
+          lines: s.lines,
+          units: s.units,
+          created_at: s.created_at,
+        });
+        equal(
+          immutableShipment(snapshot),
+          immutableShipment(intent.nativeSnapshot),
+        );
+      } else equal(snapshot, intent.nativeSnapshot);
+      const previous = this.store.get<Booking>(
+        "SELECT * FROM integration_carrier_bookings WHERE org_id=? AND shipment_id=? AND sequence<? ORDER BY sequence DESC LIMIT 1",
+        actor.orgId,
+        booking.shipment_id,
+        booking.sequence,
+      );
+      assert((previous?.id ?? null) === intent.previousId);
+      if (previous) {
+        this.intent(previous);
+        assert(previous.state === "canceled");
+      }
+      const normalizedOrigin = address(intent.origin),
+        normalizedDestination = address(intent.destination);
+      equal(normalizedOrigin, intent.origin);
+      equal(normalizedDestination, intent.destination);
+      equal(parcel(intent.parcel), intent.parcel);
+      assert(
+        normalizedOrigin.country === "CA" &&
+          normalizedDestination.country === "CA",
+      );
+      const originHash = digest(canonical(normalizedOrigin));
+      firstOrigin ??= originHash;
+      assert(originHash === firstOrigin);
+      const bookingPrepared = command("carrier.prepare", {
+        id: booking.id,
+        reviewHash: booking.review_hash,
+      });
+      assert(bookingPrepared.sequence < prepared.sequence);
+      const target = this.targetReference(booking);
+      const expectedEvents = [
+        {
+          type: "carrier.booking.prepared",
+          payload: {
+            ...target,
+            reviewHash: booking.review_hash,
+            provider: "canada-post",
+          } as unknown,
+        },
+      ];
+      let bookingCanceled: ReturnType<typeof command> | null = null;
+      if (booking.state === "canceled") {
+        const a = entityAudit(booking.id, "carrier.booking.canceled"),
+          d = parse(a.detail) as { reason?: unknown };
+        assert(d && typeof d.reason === "string");
+        const bookingReason = clean(d.reason, "Cancellation reason", 1000);
+        equal(d, { reviewHash: booking.review_hash, reason: bookingReason });
+        bookingCanceled = command(
+          "carrier.cancel",
+          { id: booking.id },
+          {
+            bookingId: booking.id,
+            reviewHash: booking.review_hash,
+            reason: bookingReason,
+          },
+        );
+        assert(
+          a.actor_id === bookingCanceled.actorId &&
+            canceled.sequence < Number(a.sequence) &&
+            Number(a.sequence) < bookingCanceled.sequence,
+        );
+        expectedEvents.push({
+          type: "carrier.booking.canceled",
+          payload: target,
+        });
+      } else {
+        assert(
+          !history.get(
+            "SELECT 1 FROM platform_audit WHERE org_id=? AND reference=? AND action LIKE 'carrier.%' AND action NOT IN('carrier.prepare','carrier.cancel','carrier.canada-post.group.prepare','carrier.canada-post.group.cancel') LIMIT 1",
+            actor.orgId,
+            booking.id,
+          ),
+        );
+      }
+      return {
+        bookingId: booking.id,
+        reviewHash: booking.review_hash,
+        accountId: snapshot.account_id,
+        nativeSnapshotHash: digest(canonical(intent.nativeSnapshot)),
+        intentHash: digest(booking.intent),
+        configurationHash: configuration.hash,
+        configurationSnapshotHash: digest(canonical(configuration)),
+        memberHash: digest(canonical(member)),
+        bookingHash: digest(canonical(booking)),
+        prepared: bookingPrepared,
+        canceled: bookingCanceled,
+        eventsHash: events(booking.id, expectedEvents),
+      };
+    });
+    const body = {
+      version: 1 as const,
+      disposition: "canceled-unused-membership" as const,
+      orgId: actor.orgId,
+      groupId: group.id,
+      bookingId,
+      warehouseId: group.warehouse_id,
+      configurationHash: group.configuration_hash,
+      providerGroupId: group.provider_group_id,
+      reviewHash: group.review_hash,
+      groupHash: digest(canonical(group)),
+      memberSetHash: digest(canonical(qualified)),
+      members: qualified,
+      prepared,
+      canceled,
+      cancellationAuditHash: digest(canonical(audit)),
+      groupEventsHash,
+    };
+    return immutable({ ...body, evidenceHash: digest(canonical(body)) });
   }
   canadaPostGroupBookings(actor: Actor, groupId: string) {
     actor = this.principal(actor);

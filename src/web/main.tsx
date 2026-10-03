@@ -1,3 +1,7 @@
+import {
+  InventoryQuantity,
+  type QuantitySelection,
+} from "./inventory-quantity.tsx";
 import { OrganizationQuickBooksRevocation } from "./organization-revocation.tsx";
 import {
   OrganizationQuickBooksConnection,
@@ -162,6 +166,8 @@ function App() {
     serial?: string;
   } | null>(null);
   const stockHistoryOpener = useRef<HTMLElement | null>(null);
+  const [quantitySelection, setQuantitySelection] =
+    useState<QuantitySelection | null>(null);
   const [valuationSelection, setValuationSelection] =
     useState<ValuationSelection | null>(null);
   const [binSelection, setBinSelection] = useState<BinSelection | null>(null);
@@ -256,12 +262,16 @@ function App() {
     [password, setPassword] = useState(""),
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
-  const refresh = async (signal?: AbortSignal) => {
+  const refresh = async (
+    signal?: AbortSignal,
+    options: { preserveQuantitySelection?: boolean } = {},
+  ) => {
     signal?.throwIfAborted();
     stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
     setValuationSelection(null);
+    if (!options.preserveQuantitySelection) setQuantitySelection(null);
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
@@ -411,7 +421,9 @@ function App() {
       setShipmentFilter("");
       setShipmentFilterReady(true);
     }
-    setEventViewEpoch((value) => value + 1);
+    // Initial recovery panels already use this snapshot. Completing its extra
+    // reads must preserve their explicit review; later refreshes invalidate it.
+    if (data) setEventViewEpoch((value) => value + 1);
     setExtra(e);
   };
   const loadShipments = async (
@@ -524,6 +536,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setValuationSelection(null);
+    setQuantitySelection(null);
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
@@ -557,6 +570,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setValuationSelection(null);
+    setQuantitySelection(null);
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
@@ -1509,6 +1523,7 @@ function App() {
                 setStockHistory(null);
                 setBinSelection(null);
                 setValuationSelection(null);
+                setQuantitySelection(null);
                 setArrivalSelection(null);
                 setLossSelection(null);
                 setDispatchSelection(null);
@@ -2470,8 +2485,22 @@ function App() {
               />
             )}
             {can("finance") && (
+              <InventoryQuantity
+                key={`quantity:${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                region={data.organization.region}
+                currency={data.organization.currency}
+                selection={quantitySelection}
+                close={() => setQuantitySelection(null)}
+                saved={(signal) =>
+                  refresh(signal, { preserveQuantitySelection: true })
+                }
+              />
+            )}
+            {can("finance") && (
               <InventoryValuation
-                key={`${actor.orgId}:${actor.id}`}
+                key={`valuation:${actor.orgId}:${actor.id}`}
                 orgId={actor.orgId}
                 actorId={actor.id}
                 selection={valuationSelection}
@@ -2480,7 +2509,7 @@ function App() {
             )}
             {can("warehouse") && (
               <BinRelocation
-                key={`${actor.orgId}:${actor.id}`}
+                key={`bin-relocation:${actor.orgId}:${actor.id}`}
                 orgId={actor.orgId}
                 actorId={actor.id}
                 selection={binSelection}
@@ -2570,6 +2599,16 @@ function App() {
                       document.activeElement as HTMLElement;
                     setStockHistory({ unitId: u.id });
                   })}
+                  {can("finance") &&
+                    !u.serial &&
+                    u.state === "stock" &&
+                    button("Quantity correction", () =>
+                      setQuantitySelection({
+                        unitId: u.id,
+                        product: productName(u.product_id),
+                        warehouse: warehouseName(u.warehouse_id),
+                      }),
+                    )}
                   {can("finance") &&
                     button("Stock valuation", () =>
                       setValuationSelection({

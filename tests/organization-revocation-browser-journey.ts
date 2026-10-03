@@ -496,26 +496,78 @@ test("organization browser revocation retains a review that never reached the se
     expect(body).toEqual(original);
     return route.continue();
   });
+  const failedReview = page.waitForEvent("requestfailed", {
+    predicate: (r) =>
+      r.method() === "POST" && r.url().endsWith(`${endpoint}/review`),
+  });
   await p
     .getByRole("button", {
       name: "Record organization revocation evidence",
       exact: true,
     })
     .click();
+  await failedReview;
+  await expect(p.getByRole("alert")).toBeVisible();
   await expect(
     p.getByRole("button", {
       name: "Read retained organization revocation receipt",
       exact: true,
     }),
   ).toBeEnabled();
+  const retained = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) =>
+      k.startsWith("distributor:organization-revocation:v1:"),
+    )!;
+    return { key, raw: localStorage.getItem(key)! };
+  });
+  expect(JSON.parse(retained.raw).kind).toBe("review");
+  expect(JSON.parse(retained.raw).payload).toEqual(original);
+  expect(writes).toBe(1);
+  await test.info().attach("retained-organization-review", {
+    body: retained.raw,
+    contentType: "application/json",
+  });
+
+  // Complete the initial dashboard snapshot only AFTER the explicit recovery
+  // read. This reproduces the real remount ordering without timing sleeps.
+  let releaseSnapshot!: () => void;
+  const snapshotGate = new Promise<void>((resolve) => {
+    releaseSnapshot = resolve;
+  });
+  await page.route("**/api/security", async (route) => {
+    const response = await route.fetch();
+    await snapshotGate;
+    await route.fulfill({ response });
+  });
   await page.reload();
   const fresh = await panel(page);
+  await expect(
+    page.getByRole("heading", {
+      name: "Billing identities and terms",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await fresh
     .getByRole("button", {
       name: "Read retained organization revocation receipt",
       exact: true,
     })
     .click();
+  await expect(
+    fresh.getByText("Evidence reference: synthetic:operator-confirmed-grant", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  releaseSnapshot();
+  await expect(
+    page.getByRole("heading", {
+      name: "Billing identities and terms",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate((k) => localStorage.getItem(k), retained.key),
+  ).toBe(retained.raw);
   await expect(
     fresh.getByText("Evidence reference: synthetic:operator-confirmed-grant", {
       exact: true,

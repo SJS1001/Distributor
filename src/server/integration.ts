@@ -1,4 +1,9 @@
 import {
+  IntegrationRestoreDispositions,
+  type IntegrationDispositionBinding,
+  type IntegrationDispositionReceipts,
+} from "./integration-restore-dispositions.ts";
+import {
   account,
   canonical,
   check,
@@ -196,6 +201,23 @@ export class Integration {
     );
   }
   readonly checkouts: IntegrationCheckouts;
+  // Trusted restore orchestration reads only; caller must already hold its writer transaction.
+  restoreDispositionInTransaction(
+    actor: Actor,
+    binding: IntegrationDispositionBinding,
+    receipts: IntegrationDispositionReceipts,
+  ) {
+    return new IntegrationRestoreDispositions(
+      this.database,
+      this.identity,
+      this.billing,
+      this.checkouts,
+      receipts,
+      (a, creditId) => this.refundCredit(a, creditId),
+      (a, creditId) => this.creditApplicationCapacity(a, creditId),
+    ).getInTransaction(actor, binding);
+  }
+
   private principal(actor: Actor, roles: Role[]) {
     const current = this.identity.currentActor(actor);
     permit(current, roles);

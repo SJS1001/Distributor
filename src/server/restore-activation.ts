@@ -89,6 +89,9 @@ export type RestoreRelease = {
   revision: number;
   state: State;
   phase: Phase;
+  // False distinguishes an interrupted control from a proven/possible effect.
+  // Older forward-held records lack that distinction and remain closed.
+  forwardRecoveryRequired?: boolean;
   releaseApprovals?: RestoreApproval[];
   inputHash: string;
   dossier: RestoreDossier;
@@ -491,14 +494,24 @@ export class RestoreActivation {
     );
     this.sameFile(r);
     if (method !== "stopCandidate") this.releaseAuthority(r);
-    const result = this.configured()[method](this.control(r)) as unknown;
+    const adapter = this.configured();
+    check(
+      adapter.identity === r.adapter,
+      "RESTORE_AUTHORITY",
+      "Restore adapter changed.",
+    );
+    const result = adapter[method](this.control(r)) as unknown;
     check(
       !result || typeof (result as { then?: unknown }).then !== "function",
       "RESTORE_ADAPTER",
       "Operations adapters must complete synchronously; inspect uncertain outcome before retry.",
     );
   }
-  private hold(r: RestoreRelease, state: "held" | "forward-held" = "held") {
+  private hold(
+    r: RestoreRelease,
+    state: "held" | "forward-held" = "held",
+    forwardRecoveryRequired = false,
+  ) {
     // Preserve an uncertain intent even when the wall clock fails.
     this.database.transaction(() => {
       const current = this.get(r.id);
@@ -507,6 +520,13 @@ export class RestoreActivation {
         ...current,
         revision: current.revision + 1,
         state,
+        ...(state === "forward-held"
+          ? {
+              forwardRecoveryRequired:
+                current.forwardRecoveryRequired === true ||
+                forwardRecoveryRequired,
+            }
+          : {}),
         history: [
           ...current.history,
           { state, phase: current.phase, at: current.at },
@@ -610,7 +630,15 @@ export class RestoreActivation {
       this.approvals(r);
       const o = this.observe(r);
       this.releaseAuthority(r);
+      // Observation/trust callbacks can advance another connection or replace
+      // the path. Never grant from the snapshot taken before those callbacks.
+      this.sameFile(r);
+      const current = this.current();
       return (
+        current?.id === r.id &&
+        current.revision === r.revision &&
+        current.state === "released" &&
+        this.configured().identity === r.adapter &&
         this.clock() < o.validUntil &&
         o.sourceFenced === true &&
         o.route === "candidate" &&
@@ -638,6 +666,21 @@ export class RestoreActivation {
       "RESTORE_STATE",
       "Release is already terminal.",
     );
+    if (
+      r.forwardRecoveryRequired === true ||
+      (r.state === "forward-held" && r.forwardRecoveryRequired !== false)
+    )
+      return r;
+    // Keep this outside the transaction: a failed final check must retain the
+    // positive/unknown effect evidence even when its transaction rolls back.
+    let forwardRecoveryRequired = false;
+    const unchangedCandidate = () => {
+      const same =
+        canonical(captureRestoreCandidate(this.database.path)) ===
+        canonical(r.dossier.candidate);
+      if (!same) forwardRecoveryRequired = true;
+      return same;
+    };
     try {
       if (!["stopping", "returning"].includes(r.phase)) {
         r = this.database.transaction(() =>
@@ -648,16 +691,17 @@ export class RestoreActivation {
       if (r.phase === "stopping") {
         r = this.database.transaction(() => {
           const o = this.observe(r, false);
+          if (o.externalEffects !== "none") forwardRecoveryRequired = true;
           check(
             o.candidateFenced === true && o.sourceFenced === true,
             "RESTORE_FENCING",
             "Candidate and source must be stopped before rollback.",
           );
-          const same =
-            canonical(captureRestoreCandidate(this.database.path)) ===
-            canonical(r.dossier.candidate);
-          if (!same || o.externalEffects !== "none")
-            return this.write(r, "forward-held");
+          if (!unchangedCandidate() || forwardRecoveryRequired)
+            return this.write(
+              { ...r, forwardRecoveryRequired: true },
+              "forward-held",
+            );
           this.releaseAuthority(r);
           return this.write(r, "returning", "returning");
         });
@@ -667,12 +711,12 @@ export class RestoreActivation {
         this.database.transaction(() => {
           this.approvals(r);
           const o = this.observe(r, false);
+          if (o.externalEffects !== "none") forwardRecoveryRequired = true;
           check(
             o.candidateFenced === true &&
               o.sourceFenced === true &&
               o.externalEffects === "none" &&
-              canonical(captureRestoreCandidate(this.database.path)) ===
-                canonical(r.dossier.candidate),
+              unchangedCandidate(),
             "RESTORE_ROLLBACK",
             "Effects changed before source routing.",
           );
@@ -683,12 +727,12 @@ export class RestoreActivation {
       r = this.database.transaction(() => {
         this.approvals(r);
         const o = this.observe(r, false);
+        if (o.externalEffects !== "none") forwardRecoveryRequired = true;
         check(
           o.candidateFenced === true &&
             o.route === "source" &&
             o.externalEffects === "none" &&
-            canonical(captureRestoreCandidate(this.database.path)) ===
-              canonical(r.dossier.candidate),
+            unchangedCandidate(),
           "RESTORE_ROLLBACK",
           "Source rollback is not proven; retain the hold.",
         );
@@ -697,7 +741,7 @@ export class RestoreActivation {
       });
       return r;
     } catch (error) {
-      this.hold(r, "forward-held");
+      this.hold(r, "forward-held", forwardRecoveryRequired);
       throw error;
     }
   }

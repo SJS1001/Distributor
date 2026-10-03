@@ -243,7 +243,7 @@ export class InventoryQuantityCorrections {
         this.unit(actor, input.unitId);
         if (cached) {
           this.reconcile(actor);
-          const retained = this.get(actor, cached.id);
+          const retained = this.authorizedRecord(actor, cached.id);
           check(
             cached.createdBy === actor.id &&
               canonical({
@@ -470,8 +470,9 @@ export class InventoryQuantityCorrections {
     }
     return value;
   }
-  get(actor: Actor, correctionId: string) {
-    actor = this.actor(actor);
+  // Caller has refreshed authority inside the enclosing database transaction.
+  private authorizedRecord(actor: Actor, correctionId: string) {
+    this.database.requireTransaction();
     const value = this.retained(
       actor.orgId,
       text(correctionId, "Correction ID"),
@@ -479,17 +480,28 @@ export class InventoryQuantityCorrections {
     this.unit(actor, value.unitId);
     return value;
   }
+  get(actor: Actor, correctionId: string) {
+    return this.database.transaction(() => {
+      actor = this.actor(actor);
+      const value = this.authorizedRecord(actor, correctionId);
+      // A well-shaped record alone cannot prove its carrying effect or ancestry.
+      // Read the complete owning evidence in the same snapshot as the response.
+      this.reconcile(actor);
+      return value;
+    });
+  }
   history(actor: Actor, unitId: string, afterId?: string) {
     return this.database.transaction(() => {
       actor = this.actor(actor);
       this.unit(actor, unitId);
       if (afterId)
         check(
-          this.get(actor, afterId).unitId === unitId,
+          this.authorizedRecord(actor, afterId).unitId === unitId,
           "VALIDATION",
           "History cursor belongs to another stock layer.",
           400,
         );
+      this.reconcile(actor);
       const rows = this.store.all<{ id: string }>(
         "SELECT id FROM inventory_quantity_corrections WHERE org_id=? AND unit_id=? AND rowid>COALESCE((SELECT rowid FROM inventory_quantity_corrections WHERE org_id=? AND id=?),0) ORDER BY rowid LIMIT 21",
         actor.orgId,
@@ -498,7 +510,7 @@ export class InventoryQuantityCorrections {
         afterId ?? "",
       );
       return {
-        items: rows.slice(0, 20).map((r) => this.get(actor, r.id)),
+        items: rows.slice(0, 20).map((r) => this.authorizedRecord(actor, r.id)),
         next: rows.length > 20 ? rows[19]!.id : null,
       };
     });
@@ -512,7 +524,7 @@ export class InventoryQuantityCorrections {
       (cached) => {
         actor = this.actor(actor);
         this.platform.assertProviderAccess();
-        const value = this.get(actor, input.correctionId);
+        const value = this.authorizedRecord(actor, input.correctionId);
         if (cached) {
           this.reconcile(actor);
           check(
@@ -523,7 +535,7 @@ export class InventoryQuantityCorrections {
         }
       },
       () => {
-        const value = this.get(actor, input.correctionId);
+        const value = this.authorizedRecord(actor, input.correctionId);
         check(
           value.state === "ready",
           "QUANTITY_STATE",
