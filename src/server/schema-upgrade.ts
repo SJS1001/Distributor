@@ -1,3 +1,4 @@
+import { ORGANIZATION_RESIDENCY_DDL } from "./organization-residency-schema.ts";
 import { COST_CORRECTION_RETRY_DDL } from "./cost-correction-retry-schema.ts";
 import { COST_CORRECTION_OUTCOME_DDL } from "./cost-correction-outcome-schema.ts";
 import { COST_CORRECTION_DDL } from "./cost-correction-schema.ts";
@@ -200,6 +201,7 @@ export async function upgradeSchema(
         copied.exec(COST_CORRECTION_DDL);
         copied.exec(COST_CORRECTION_OUTCOME_DDL);
         copied.exec(COST_CORRECTION_RETRY_DDL);
+        copied.exec(ORGANIZATION_RESIDENCY_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -218,7 +220,8 @@ export async function upgradeSchema(
         if (before.version! <= 6) copied.exec(SUPPLIER_AVAILABILITY_DDL);
         if (before.version! <= 7) copied.exec(COST_CORRECTION_DDL);
         if (before.version! <= 8) copied.exec(COST_CORRECTION_OUTCOME_DDL);
-        copied.exec(COST_CORRECTION_RETRY_DDL);
+        if (before.version! <= 9) copied.exec(COST_CORRECTION_RETRY_DDL);
+        copied.exec(ORGANIZATION_RESIDENCY_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

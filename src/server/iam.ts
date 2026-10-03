@@ -1,3 +1,4 @@
+import { OrganizationResidency } from "./organization-residency.ts";
 import { coverageDays, readCoveragePolicy } from "./coverage-policy.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
 import {
@@ -71,6 +72,7 @@ export class Identity {
   readonly mfa: MultiFactor;
   private readonly mfaRequiredRoles: readonly Role[];
   readonly residency: ProviderResidency;
+  readonly organizationResidency: OrganizationResidency;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -98,6 +100,13 @@ export class Identity {
       region,
       (actor) => this.residencyActor(actor),
       (actor, accountId) => this.customer(actor, accountId),
+    );
+    this.organizationResidency = new OrganizationResidency(
+      database,
+      platform,
+      region,
+      (actor) => this.residencyActor(actor),
+      (actor) => this.organization(actor),
     );
     this.mfa = new MultiFactor(
       database,

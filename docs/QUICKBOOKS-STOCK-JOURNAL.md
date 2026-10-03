@@ -18,7 +18,7 @@ Lookup performs GET only. An absent record returns no confirmed result. It is no
 
 ## Native engineering still required
 
-The guard is an explicit contract, not an implemented authorization service. Before wiring this adapter, build an organization-owned integration operation with:
+The injected guard still requires native delivery wiring. [Organization-owned residency terms, choices and current permission stamps](ORGANIZATION-LEDGER-RESIDENCY.md) now exist independently of buyer consent. They do not supply credentials or queue/lease authority. Before wiring this adapter, complete an organization-owned integration operation with:
 
 - Current finance/operator and worker authority, named QuickBooks organization residency choice, current disclosure acceptance/withdrawal and an exact configured realm. Buyer consent must not be borrowed for organization records.
 - Current provider/recovery hold, approved source hash, posting owner and period policy, reviewed immutable receiver account mapping, permanent per-date/per-leg effect/reference reservations and exclusive durable lease ownership.

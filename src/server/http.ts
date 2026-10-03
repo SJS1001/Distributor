@@ -518,6 +518,69 @@ export function commands(
       schema: obj({ accountId: str, held: bool, reason: str }),
       run: (a, k, p) => app.identity.setHold(a, k, p),
     },
+    "organization.ledger-disclosure.publish": {
+      schema: obj({
+        region: choice("CA", "US"),
+        previousDisclosureId: { anyOf: [str, { type: "null" }] },
+        version: str,
+        purposes: str,
+        minimumData: {
+          ...arr({ ...str, maxLength: 200 }),
+          minItems: 1,
+          maxItems: 30,
+          uniqueItems: true,
+        },
+        processingCountries: {
+          ...arr({ type: "string", pattern: "^[A-Z]{2}$" }),
+          minItems: 1,
+          maxItems: 30,
+          uniqueItems: true,
+        },
+        subprocessors: {
+          ...arr({ ...str, maxLength: 200 }),
+          maxItems: 30,
+          uniqueItems: true,
+        },
+        retention: str,
+        withdrawal: str,
+        termsReference: str,
+        reviewEvidence: str,
+      }),
+      run: (a, k, p) => app.identity.organizationResidency.publish(a, k, p),
+    },
+    "organization.ledger-disclosure.withdraw": {
+      schema: obj({ disclosureId: str, reason: str }),
+      run: (a, k, p) =>
+        app.identity.organizationResidency.withdrawDisclosure(a, k, p),
+    },
+    "organization.ledger-residency.choose": {
+      schema: obj(
+        {
+          region: choice("CA", "US"),
+          revision: {
+            type: "integer",
+            minimum: 1,
+            maximum: Number.MAX_SAFE_INTEGER - 1,
+          },
+          mode: choice("strict", "provider-exception"),
+          realm: {
+            anyOf: [
+              { type: "string", pattern: "^[1-9][0-9]{0,39}$" },
+              { type: "null" },
+            ],
+          },
+          acknowledgment: str,
+          acceptance: obj({
+            disclosureId: str,
+            disclosureHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            representative: { ...str, maxLength: 200 },
+            evidenceRef: str,
+          }),
+        },
+        ["acceptance"],
+      ),
+      run: (a, k, p) => app.identity.organizationResidency.choose(a, k, p),
+    },
     "provider.disclosure.publish": {
       schema: obj({
         provider: choice(...providerNames),
@@ -1671,6 +1734,47 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor(request),
         request.query.after,
         request.query.state,
+      ),
+  );
+
+  http.get(
+    "/api/organization/ledger-residency",
+    { schema: { querystring: obj({}) } },
+    async (request) =>
+      app.identity.organizationResidency.current(actor(request)),
+  );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/organization/ledger-residency/history",
+    {
+      schema: {
+        querystring: obj(
+          {
+            after: {
+              type: "string",
+              pattern: "^[1-9][0-9]{0,15}$",
+            },
+          },
+          ["after"],
+        ),
+      },
+    },
+    async (request) =>
+      app.identity.organizationResidency.history(
+        actor(request),
+        request.query.after === undefined
+          ? undefined
+          : Number(request.query.after),
+      ),
+  );
+  http.get<{ Params: { disclosureId: string } }>(
+    "/api/organization/ledger-disclosures/:disclosureId",
+    {
+      schema: { params: obj({ disclosureId: str }), querystring: obj({}) },
+    },
+    async (request) =>
+      app.identity.organizationResidency.disclosure(
+        actor(request),
+        request.params.disclosureId,
       ),
   );
 
