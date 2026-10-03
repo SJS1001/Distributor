@@ -1,3 +1,4 @@
+import { IntegrationOfflineRefundReview } from "./integration-offline-refund-review.ts";
 import type { CarrierBookings } from "./carrier-bookings.ts";
 import {
   IntegrationRestoreDispositions,
@@ -203,6 +204,14 @@ export class Integration {
     );
   }
   readonly checkouts: IntegrationCheckouts;
+  reviewOfflineFailedRefundInTransaction(actor: Actor, effectId: string) {
+    return new IntegrationOfflineRefundReview(
+      this.database,
+      this.identity,
+      this.billing,
+    ).getInTransaction(actor, effectId);
+  }
+
   // Trusted restore orchestration reads only; caller must already hold its writer transaction.
   restoreDispositionInTransaction(
     actor: Actor,
