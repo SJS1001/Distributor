@@ -260,6 +260,20 @@ async function regionCheck(region) {
     await command(["run", "provider:authorize"], runtime, config, "", 1),
     /OAUTH_INPUT:/,
   );
+  assert.match(
+    await command(["run", "provider:ledger-authorize"], runtime, config, "", 1),
+    /OAUTH_INPUT:/,
+  );
+  assert.match(
+    await command(
+      ["run", "provider:ledger-authorize", "--", "complete"],
+      runtime,
+      config,
+      "",
+      1,
+    ),
+    /PROVIDER_DISABLED:/,
+  );
   let original, unit, prepared;
   for (let cycle = 0; cycle < 2; cycle++) {
     const selectedPort = await port(),

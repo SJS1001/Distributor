@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { Application } from "../src/server/application.ts";
 import { fixture, syntheticDisclosure } from "./fixtures.ts";
 
@@ -70,6 +72,286 @@ function token() {
     x_refresh_token_expires_in: 8640000,
   });
 }
+function operator(f: ReturnType<typeof setup>) {
+  const env = {
+    PATH: process.env.PATH,
+    DATABASE_PATH: f.path,
+    DATA_REGION: f.app.identity.region,
+    PROVIDER_BINDING_ID: f.binding.id,
+    PROVIDER_ORG_ID: f.binding.orgId,
+    PROVIDER_WORKER_USER_ID: f.binding.workerUserId,
+    QUICKBOOKS_REALM_ID: f.binding.realm,
+    QUICKBOOKS_CLIENT_ID: f.binding.clientId,
+    QUICKBOOKS_REDIRECT_URI: f.binding.redirectUri,
+    PROVIDER_ENCRYPTION_KEY: config.providerEncryptionKey,
+    PROVIDERS_ENABLED: "false",
+  };
+  return (
+    args: string[],
+    input: string | Buffer,
+    overrides: NodeJS.ProcessEnv = {},
+    transport = false,
+  ) =>
+    new Promise<{ code: number | null; out: string; err: string }>(
+      (resolve, reject) => {
+        const child = spawn(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            ...(transport
+              ? ["--import", "./tests/organization-authorization-transport.ts"]
+              : []),
+            "src/server/organization-authorization-cli.ts",
+            ...args,
+          ],
+          { env: { ...env, ...overrides }, stdio: ["pipe", "pipe", "pipe"] },
+        );
+        let out = "",
+          err = "";
+        const timeout = setTimeout(() => child.kill(), 15000);
+        child.on("error", reject);
+        child.stdout.on("data", (data) => (out += String(data)));
+        child.stderr.on("data", (data) => (err += String(data)));
+        child.on("close", (code) => {
+          clearTimeout(timeout);
+          resolve({ code, out, err });
+        });
+        child.stdin.on("error", () => {}); // Refusals may exit before reading stdin.
+        child.stdin.end(input);
+      },
+    );
+}
+test("organization authorization operator can begin, inspect and cancel offline with exact reviewed authority", async (t) => {
+  const f = setup(t),
+    run = operator(f);
+  const started = await run(
+    ["begin"],
+    JSON.stringify({ revision: 0, authority: f.authority }),
+  );
+  assert.equal(started.code, 0, started.err);
+  const start = JSON.parse(started.out);
+  assert.equal(start.state, "pending");
+  assert.equal(
+    new URL(start.authorizationUrl).searchParams.get("client_id"),
+    "synthetic-client",
+  );
+  assert.equal(
+    new URL(start.authorizationUrl).searchParams.get("scope"),
+    "com.intuit.quickbooks.accounting",
+  );
+  const input = JSON.stringify({ attemptId: start.id });
+  const status = await run(["status"], input, { PROVIDER_ENCRYPTION_KEY: "" });
+  assert.equal(status.code, 0, status.err);
+  assert.equal(JSON.parse(status.out).state, "pending");
+  assert.ok(!status.out.includes("authorizationUrl"));
+  const canceled = await run(["cancel"], input, {
+    PROVIDER_ENCRYPTION_KEY: "",
+  });
+  assert.equal(canceled.code, 0, canceled.err);
+  assert.equal(JSON.parse(canceled.out).state, "canceled");
+  assert.equal(f.flow.status(f.binding, start.id).state, "canceled");
+  assert.equal(
+    f.app.providerCredentials.ledger.status(f.binding).state,
+    "missing",
+  );
+  assert.equal(f.app.providerCredentials.status(f.binding).state, "missing");
+});
+for (const region of ["CA", "US"] as const)
+  test(`${region} organization operator explicitly completes sandbox proof without exposing secrets or installing buyer credentials`, async (t) => {
+    const f = setup(t, region),
+      run = operator(f),
+      start = f.flow.begin(f.binding, 0, f.authority),
+      callbackUrl = callback(start, f.binding);
+    const input = JSON.stringify({ attemptId: start.id, callbackUrl });
+    const completed = await run(
+      ["complete"],
+      input,
+      {
+        PROVIDERS_ENABLED: "true",
+        QUICKBOOKS_CLIENT_SECRET: "synthetic-secret",
+        SYNTHETIC_EXPECT_REQUESTS: "2",
+      },
+      true,
+    );
+    assert.equal(completed.code, 0, completed.err);
+    assert.equal(JSON.parse(completed.out).state, "completed");
+    assert.equal(JSON.parse(completed.out).installedRevision, 1);
+    assert.equal(
+      f.app.providerCredentials.ledger.status(f.binding).state,
+      "ready",
+    );
+    assert.equal(f.app.providerCredentials.status(f.binding).state, "missing");
+    const status = await run(
+      ["status"],
+      JSON.stringify({ attemptId: start.id }),
+    );
+    assert.equal(status.code, 0, status.err);
+    assert.equal(JSON.parse(status.out).state, "completed");
+    const replay = await run(
+      ["complete"],
+      input,
+      {
+        PROVIDERS_ENABLED: "true",
+        QUICKBOOKS_CLIENT_SECRET: "synthetic-secret",
+        SYNTHETIC_EXPECT_REQUESTS: "0",
+      },
+      true,
+    );
+    assert.equal(replay.code, 1);
+    assert.match(replay.err, /OAUTH_USED:/);
+    for (const secret of [
+      callbackUrl,
+      "synthetic-code",
+      "synthetic-secret",
+      "synthetic-org-access",
+      "synthetic-org-refresh",
+    ]) {
+      assert.ok(!completed.out.includes(secret));
+      assert.ok(!completed.err.includes(secret));
+      assert.ok(!status.out.includes(secret));
+      assert.ok(!replay.out.includes(secret));
+      assert.ok(!replay.err.includes(secret));
+    }
+  });
+test("organization operator refuses malformed, oversized and surplus protected input before opening a new store", async (t) => {
+  const f = setup(t),
+    run = operator(f),
+    path = f.path.replace("app.db", "refused.db"),
+    secret = "synthetic-private-callback";
+  for (const [args, input] of [
+    [
+      ["begin", secret],
+      JSON.stringify({ revision: 0, authority: f.authority }),
+    ],
+    [["unknown"], secret],
+    [["begin"], "null"],
+    [["begin"], "[]"],
+    [["begin"], "{"],
+    [["begin"], JSON.stringify({ revision: 0 })],
+    [["begin"], JSON.stringify({ revision: -1, authority: f.authority })],
+    [["begin"], JSON.stringify({ revision: 0, authority: null })],
+    [
+      ["begin"],
+      JSON.stringify({
+        revision: 0,
+        authority: f.authority,
+        accountId: secret,
+      }),
+    ],
+    [["status"], JSON.stringify({ attemptId: "", callbackUrl: secret })],
+    [["cancel"], JSON.stringify({ attemptId: "", extra: secret })],
+    [["status"], JSON.stringify({ attemptId: secret.repeat(3000) })],
+    [["status"], Buffer.from([0xc3, 0x28])],
+    [
+      ["complete"],
+      JSON.stringify({ attemptId: "missing", callbackUrl: secret, secret }),
+    ],
+    [
+      ["complete"],
+      JSON.stringify({ attemptId: "missing", callbackUrl: "x".repeat(16385) }),
+    ],
+  ] as [string[], string | Buffer][]) {
+    const refused = await run(
+      args,
+      input,
+      {
+        DATABASE_PATH: path,
+        PROVIDERS_ENABLED: "true",
+        QUICKBOOKS_CLIENT_SECRET: "synthetic-secret",
+        SYNTHETIC_EXPECT_REQUESTS: "0",
+      },
+      true,
+    );
+    assert.equal(refused.code, 1);
+    assert.equal(refused.out, "");
+    assert.ok(!refused.err.includes(secret));
+    assert.ok(!refused.err.includes("synthetic-secret"));
+    assert.equal(existsSync(path), false);
+  }
+});
+test("organization operator completion needs explicit enablement, exact callback and current permission while offline cancellation survives withdrawal", async (t) => {
+  const f = setup(t),
+    run = operator(f),
+    start = f.flow.begin(f.binding, 0, f.authority),
+    callbackUrl = callback(start, f.binding),
+    input = JSON.stringify({ attemptId: start.id, callbackUrl });
+  const disabled = await run(["complete"], input, {
+    QUICKBOOKS_CLIENT_SECRET: "synthetic-secret",
+  });
+  assert.equal(disabled.code, 1);
+  assert.match(disabled.err, /PROVIDER_DISABLED:/);
+  const noSecret = await run(["complete"], input, {
+    PROVIDERS_ENABLED: "true",
+  });
+  assert.equal(noSecret.code, 1);
+  assert.match(noSecret.err, /PROVIDER_CONFIG:/);
+  const wrongCallback = await run(
+    ["complete"],
+    JSON.stringify({
+      attemptId: start.id,
+      callbackUrl: callbackUrl.replace(
+        "organization-callback",
+        "buyer-callback",
+      ),
+    }),
+    {
+      PROVIDERS_ENABLED: "true",
+      QUICKBOOKS_CLIENT_SECRET: "synthetic-secret",
+      SYNTHETIC_EXPECT_REQUESTS: "0",
+    },
+    true,
+  );
+  assert.equal(wrongCallback.code, 1);
+  assert.equal(f.flow.status(f.binding, start.id).state, "pending");
+  const stale = await run(
+    ["begin"],
+    JSON.stringify({
+      revision: 0,
+      authority: { ...f.authority, revision: 99 },
+    }),
+  );
+  assert.equal(stale.code, 1);
+  assert.match(stale.err, /RESIDENCY_CHANGED:/);
+  assert.equal(f.flow.status(f.binding, start.id).state, "pending");
+  const r = f.app.identity.organizationResidency;
+  r.choose(f.actor, "operator-withdraw", {
+    region: "CA",
+    revision: r.current(f.actor).choice.revision,
+    mode: "strict",
+    realm: null,
+    acknowledgment: "Synthetic withdrawal",
+  });
+  const withdrawn = await run(
+    ["complete"],
+    input,
+    {
+      PROVIDERS_ENABLED: "true",
+      QUICKBOOKS_CLIENT_SECRET: "synthetic-secret",
+      SYNTHETIC_EXPECT_REQUESTS: "0",
+    },
+    true,
+  );
+  assert.equal(withdrawn.code, 1);
+  assert.equal(
+    f.app.providerCredentials.ledger.status(f.binding).state,
+    "missing",
+  );
+  assert.equal(f.flow.status(f.binding, start.id).state, "pending");
+  const status = await run(
+    ["status"],
+    JSON.stringify({ attemptId: start.id }),
+    { PROVIDER_ENCRYPTION_KEY: "invalid" },
+  );
+  assert.equal(status.code, 0, status.err);
+  const canceled = await run(
+    ["cancel"],
+    JSON.stringify({ attemptId: start.id }),
+    { PROVIDER_ENCRYPTION_KEY: "invalid" },
+  );
+  assert.equal(canceled.code, 0, canceled.err);
+  assert.equal(JSON.parse(canceled.out).state, "canceled");
+});
 test("organization connection verifies its sandbox company and persists independently of buyer credentials", async (t) => {
   const f = setup(t),
     start = f.flow.begin(f.binding, 0, f.authority);
