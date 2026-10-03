@@ -26,6 +26,8 @@ import Fastify from "fastify";
 import { providerNames } from "../shared/provider-choices.ts";
 import { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
+import type { OrganizationQuickBooksBrowser } from "./organization-quickbooks-browser.ts";
+import type { LedgerAuthority } from "./organization-residency.ts";
 import type { QuickBooksBrowser } from "./quickbooks-browser.ts";
 import type { JournalQueueInput } from "./stock-journal-delivery.ts";
 import helmet from "@fastify/helmet";
@@ -1519,6 +1521,7 @@ export type HttpOptions = {
   providers?: ProviderRuntime;
   carriers?: CarrierRuntime;
   quickbooksBrowser?: QuickBooksBrowser;
+  organizationQuickbooksBrowser?: OrganizationQuickBooksBrowser;
 };
 export async function createHttp(app: Application, options: HttpOptions) {
   const origin = new URL(options.origin).origin;
@@ -3969,6 +3972,101 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.body.callbackUrl,
       ),
   );
+  const organizationAuthorization = () => {
+    check(
+      options.organizationQuickbooksBrowser,
+      "PROVIDER_DISABLED",
+      "Organization QuickBooks browser authorization is disabled.",
+      503,
+    );
+    return options.organizationQuickbooksBrowser;
+  };
+  http.get("/api/quickbooks/organization/authorization", async (request) => {
+    const principal = app.identity.currentActor(actor(request));
+    permit(principal, ["finance"]);
+    check(
+      !principal.accountId,
+      "FORBIDDEN",
+      "Organization authorization requires unbound finance authority.",
+      403,
+    );
+    return options.organizationQuickbooksBrowser
+      ? organizationAuthorization().status(request.cookies.distributor_session!)
+      : { enabled: false };
+  });
+  http.post<{ Body: { revision: number; authority: LedgerAuthority } }>(
+    "/api/quickbooks/organization/authorization/begin",
+    {
+      schema: {
+        body: obj({
+          revision: { type: "integer", minimum: 0, maximum: 1000000000 },
+          authority: ledgerAuthority(),
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().begin(
+        request.cookies.distributor_session!,
+        request.body.revision,
+        request.body.authority,
+      ),
+  );
+  http.post<{ Body: { attemptId: string } }>(
+    "/api/quickbooks/organization/authorization/cancel",
+    {
+      schema: {
+        body: obj({
+          attemptId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().cancel(
+        request.cookies.distributor_session!,
+        request.body.attemptId,
+      ),
+  );
+  http.post<{ Body: { attemptId: string; callbackUrl: string } }>(
+    "/api/quickbooks/organization/authorization/complete",
+    {
+      schema: {
+        body: obj({
+          attemptId: { type: "string", minLength: 1, maxLength: 128 },
+          callbackUrl: { type: "string", minLength: 1, maxLength: 16384 },
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().complete(
+        request.cookies.distributor_session!,
+        request.body.attemptId,
+        request.body.callbackUrl,
+      ),
+  );
+  http.post<{ Body: { revision: number } }>(
+    "/api/quickbooks/organization/authorization/disconnect",
+    {
+      schema: {
+        body: obj({
+          revision: { type: "integer", minimum: 0, maximum: 1000000000 },
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().disconnect(
+        request.cookies.distributor_session!,
+        request.body.revision,
+      ),
+  );
+  // This cross-site GET never exchanges a code; completion requires the original
+  // live login, exact same-origin POST and CSRF. The browser UI is a separate step.
+  http.get("/quickbooks/organization/callback", async (_request, reply) => {
+    reply.header("Referrer-Policy", "no-referrer");
+    return reply.code(503).send({
+      code: "UNAVAILABLE",
+      message: "Organization browser callback controls are not available yet.",
+    });
+  });
   // The cross-site GET performs no exchange. The page removes the query before
   // an explicit authenticated same-origin POST; Strict cookies remain Strict.
   http.get("/quickbooks/callback", async (_request, reply) => {

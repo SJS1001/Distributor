@@ -65,6 +65,7 @@ const env = {
   PROVIDERS_ENABLED: "false",
   CARRIERS_ENABLED: "false",
   QUICKBOOKS_BROWSER_AUTH_ENABLED: "false",
+  QUICKBOOKS_LEDGER_BROWSER_AUTH_ENABLED: "false",
   EVENT_REPORTS: "enabled",
   LOCAL_EVENT_REPORTS: "disabled",
   HOST: "127.0.0.1",

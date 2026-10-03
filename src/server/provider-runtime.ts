@@ -411,6 +411,7 @@ export class ProviderRuntime {
 export function configuredProviders(
   app: Application,
   env: NodeJS.ProcessEnv = process.env,
+  options: { organizationAuthorizationConfigured?: boolean } = {},
 ) {
   if (env.PROVIDERS_ENABLED !== "true") return undefined;
   const required = (name: string) => {
@@ -434,6 +435,10 @@ export function configuredProviders(
   );
   const hasQbo =
     managedQbo || !!env.QUICKBOOKS_REALM_ID || !!env.QUICKBOOKS_ACCESS_TOKEN;
+  // A separately validated organization authorization service does not grant
+  // buyer payment/accounting delivery and needs no buyer credentials.
+  if (!hasStripe && !hasQbo && options.organizationAuthorizationConfigured)
+    return undefined;
   check(
     hasStripe || hasQbo,
     "PROVIDER_CONFIG",

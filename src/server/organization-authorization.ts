@@ -1,5 +1,13 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { check, digest, DomainError, id, integer, type Actor } from "./core.ts";
+import {
+  check,
+  digest,
+  DomainError,
+  id,
+  integer,
+  permit,
+  type Actor,
+} from "./core.ts";
 import { type Database, type Store } from "./database.ts";
 import { type Identity } from "./iam.ts";
 import { type Platform } from "./platform.ts";
@@ -50,6 +58,10 @@ export class OrganizationLedgerAuthorization {
         binding: CredentialBinding,
       ) => ReturnType<ProviderCredentials["status"]>;
       currentKey: () => void;
+      disable: (
+        binding: CredentialBinding,
+        revision: number,
+      ) => ReturnType<ProviderCredentials["status"]>;
     },
     // Credential owner provides a write within this class's completion transaction.
     private install: (
@@ -181,19 +193,146 @@ export class OrganizationLedgerAuthorization {
       startedAt: row.started_at,
     };
   }
-  private initiator(row: Attempt) {
+  private browserPrincipal(
+    binding: OrganizationAuthorizationBinding,
+    sessionToken: string,
+  ) {
+    const session = this.identity.session(sessionToken);
+    permit(session.actor, ["finance"]);
     check(
-      /^[a-f0-9]{64}$/.test(row.state_hash),
-      "OAUTH_STATE",
-      "Authorization state binding is invalid.",
+      session.actor.orgId === binding.orgId && !session.actor.accountId,
+      "FORBIDDEN",
+      "Authorization is outside this workspace.",
+      403,
     );
-    return row.state_hash;
+    check(
+      !session.passwordChangeRequired && !session.mfaEnrollmentRequired,
+      "OAUTH_SECURITY",
+      "Complete current sign-in security requirements first.",
+      403,
+    );
+    return session.actor;
   }
-  status(binding: OrganizationAuthorizationBinding, attemptId: string) {
+  private initiator(
+    binding: OrganizationAuthorizationBinding,
+    row: Attempt,
+    sessionToken?: string,
+  ) {
+    const parts = row.state_hash.split(":");
+    if (parts.length === 1) {
+      check(
+        !sessionToken,
+        "OAUTH_BROWSER",
+        "This attempt belongs to the protected operator flow.",
+        403,
+      );
+      check(
+        /^[a-f0-9]{64}$/.test(row.state_hash),
+        "OAUTH_STATE",
+        "Authorization state binding is invalid.",
+      );
+      return row.state_hash;
+    }
+    check(
+      parts.length === 3 &&
+        parts[0] === "b1" &&
+        parts.slice(1).every((p) => /^[a-f0-9]{64}$/.test(p)),
+      "OAUTH_BROWSER",
+      "Authorization session binding is invalid.",
+      403,
+    );
+    check(
+      sessionToken,
+      "OAUTH_BROWSER",
+      "Use the login session that started this connection.",
+      403,
+    );
+    this.browserPrincipal(binding, sessionToken);
+    check(
+      timingSafeEqual(
+        Buffer.from(parts[1]!, "hex"),
+        Buffer.from(digest(sessionToken), "hex"),
+      ),
+      "OAUTH_BROWSER",
+      "Use the login session that started this connection.",
+      403,
+    );
+    return parts[2]!;
+  }
+  browserStatus(
+    binding: OrganizationAuthorizationBinding,
+    sessionToken: string,
+  ) {
+    return this.database.transaction(() => {
+      this.browserPrincipal(binding, sessionToken);
+      const current = this.current(binding, false);
+      // Only hashes are retained. This session cannot discover another initiator's attempt.
+      const row = this.store.get<Attempt>(
+        "SELECT * FROM integration_ledger_authorizations WHERE org_id=? AND binding_id=? AND state_hash LIKE ? ORDER BY rowid DESC LIMIT 1",
+        binding.orgId,
+        binding.id,
+        `b1:${digest(sessionToken)}:%`,
+      );
+      if (row) {
+        this.row(binding, row.id);
+        this.initiator(binding, row, sessionToken);
+        this.expireAttempt(row);
+      }
+      return {
+        enabled: true as const,
+        realm: binding.realm,
+        scope: "organization" as const,
+        credentials: current.credentials,
+        attempt: row ? this.metadata(this.row(binding, row.id)) : null,
+      };
+    });
+  }
+  disconnect(
+    binding: OrganizationAuthorizationBinding,
+    sessionToken: string,
+    revision: number,
+  ) {
+    integer(revision, "credential revision");
+    return this.database.transaction(() => {
+      const actor = this.browserPrincipal(binding, sessionToken);
+      this.current(binding, false);
+      // Withdraw local access without requiring consent, a key, or provider IO.
+      // The credential revision and attempt claims fence every late response.
+      const credentials = this.vault.disable(binding, revision);
+      const canceled = Number(
+        this.store.run(
+          "UPDATE integration_ledger_authorizations SET state='canceled',claim=NULL WHERE org_id=? AND binding_id=? AND state IN('pending','exchanging')",
+          binding.orgId,
+          binding.id,
+        ).changes,
+      );
+      this.platform.audit(
+        actor,
+        "provider.ledger-authorization.disconnect",
+        binding.id,
+        {
+          provider: "quickbooks",
+          environment: "sandbox",
+          purpose: "stock-cost-journal",
+          credentialScope: "organization",
+          workerUserId: binding.workerUserId,
+          revision: credentials.revision,
+          canceledAttempts: canceled,
+          providerRevocationConfirmed: false,
+        },
+      );
+      return credentials;
+    });
+  }
+  status(
+    binding: OrganizationAuthorizationBinding,
+    attemptId: string,
+    sessionToken?: string,
+  ) {
     return this.database.transaction(() => {
       this.current(binding, false);
       const row = this.row(binding, attemptId);
-      this.initiator(row);
+      this.initiator(binding, row, sessionToken);
       this.expireAttempt(row);
       return this.metadata(this.row(binding, attemptId));
     });
@@ -202,11 +341,14 @@ export class OrganizationLedgerAuthorization {
     binding: OrganizationAuthorizationBinding,
     revision: number,
     authority: LedgerAuthority,
+    sessionToken?: string,
   ) {
     binding = Object.freeze({ ...binding });
     authority = Object.freeze({ ...authority });
     integer(revision, "credential revision");
     return this.database.transaction(() => {
+      if (sessionToken !== undefined)
+        this.browserPrincipal(binding, sessionToken);
       const { actor, credentials } = this.current(binding);
       this.identity.organizationResidency.assertAllowedInTransaction(
         actor,
@@ -246,12 +388,14 @@ export class OrganizationLedgerAuthorization {
         binding.realm,
         binding.clientId,
         binding.redirectUri,
-        digest(nonce),
+        sessionToken === undefined
+          ? digest(nonce)
+          : `b1:${digest(sessionToken)}:${digest(nonce)}`,
         revision,
         canonical(authority),
         expiresAt,
       );
-      this.audit(actor, "begin", attemptId, binding);
+      this.audit(actor, "begin", attemptId, binding, sessionToken);
       const url = new URL("https://appcenter.intuit.com/connect/oauth2");
       url.search = new URLSearchParams({
         client_id: binding.clientId,
@@ -266,11 +410,15 @@ export class OrganizationLedgerAuthorization {
       };
     });
   }
-  cancel(binding: OrganizationAuthorizationBinding, attemptId: string) {
+  cancel(
+    binding: OrganizationAuthorizationBinding,
+    attemptId: string,
+    sessionToken?: string,
+  ) {
     return this.database.transaction(() => {
       const { actor } = this.current(binding, false),
         row = this.row(binding, attemptId);
-      this.initiator(row);
+      this.initiator(binding, row, sessionToken);
       check(
         ["pending", "exchanging", "canceled"].includes(row.state),
         "OAUTH_USED",
@@ -281,7 +429,7 @@ export class OrganizationLedgerAuthorization {
           "UPDATE integration_ledger_authorizations SET state='canceled',claim=NULL WHERE id=?",
           row.id,
         );
-        this.audit(actor, "cancel", row.id, binding);
+        this.audit(actor, "cancel", row.id, binding, sessionToken);
       }
       return this.metadata(this.row(binding, attemptId));
     });
@@ -359,13 +507,14 @@ export class OrganizationLedgerAuthorization {
     attemptId: string,
     clientSecret: string,
     callbackUrl: string,
+    sessionToken?: string,
   ) {
     binding = Object.freeze({ ...binding });
     const callback = this.callback(binding, callbackUrl);
     const claimed = this.database.transaction(() => {
       const current = this.current(binding),
         row = this.row(binding, attemptId);
-      const stateHash = this.initiator(row);
+      const stateHash = this.initiator(binding, row, sessionToken);
       check(
         timingSafeEqual(
           Buffer.from(stateHash, "hex"),
@@ -404,7 +553,7 @@ export class OrganizationLedgerAuthorization {
           "UPDATE integration_ledger_authorizations SET state='denied' WHERE id=?",
           row.id,
         );
-        this.audit(current.actor, "deny", row.id, binding);
+        this.audit(current.actor, "deny", row.id, binding, sessionToken);
         return { denied: this.metadata(this.row(binding, row.id)) } as const;
       }
       // Validate the secret before consuming state or initiating network I/O.
@@ -422,7 +571,7 @@ export class OrganizationLedgerAuthorization {
         Date.now(),
         row.id,
       );
-      this.audit(current.actor, "exchange", row.id, binding);
+      this.audit(current.actor, "exchange", row.id, binding, sessionToken);
       return { row, claim } as const;
     });
     if ("terminal" in claimed)
@@ -434,14 +583,14 @@ export class OrganizationLedgerAuthorization {
     const { row, claim } = claimed;
     try {
       // Recheck before outbound IO even though the claim transaction just authorized it.
-      this.assertClaim(binding, row, claim);
+      this.assertClaim(binding, row, claim, sessionToken);
       const tokens = await exchangeQuickBooksToken(binding, clientSecret, {
         grant_type: "authorization_code",
         code: callback.code!,
         redirect_uri: row.redirect_uri,
       });
       // Prove access to the exact sandbox company before retaining the issued tokens.
-      this.assertClaim(binding, row, claim);
+      this.assertClaim(binding, row, claim, sessionToken);
       const company = await readQuickBooksJson(
         await fetch(
           `https://sandbox-quickbooks.api.intuit.com/v3/company/${binding.realm}/companyinfo/${binding.realm}`,
@@ -464,7 +613,7 @@ export class OrganizationLedgerAuthorization {
       return this.database.transaction(() => {
         const current = this.current(binding),
           active = this.row(binding, attemptId);
-        this.initiator(active);
+        this.initiator(binding, active, sessionToken);
         check(
           active.state === "exchanging" && active.claim === claim,
           "OAUTH_STALE",
@@ -483,7 +632,7 @@ export class OrganizationLedgerAuthorization {
           installed.revision,
           row.id,
         );
-        this.audit(current.actor, "complete", row.id, binding);
+        this.audit(current.actor, "complete", row.id, binding, sessionToken);
         return this.metadata(this.row(binding, row.id));
       });
     } catch (error) {
@@ -505,10 +654,11 @@ export class OrganizationLedgerAuthorization {
     binding: OrganizationAuthorizationBinding,
     row: Attempt,
     claim: string,
+    sessionToken?: string,
   ) {
     this.database.transaction(() => {
       const active = this.row(binding, row.id);
-      this.initiator(active);
+      this.initiator(binding, active, sessionToken);
       check(
         active.state === "exchanging" && active.claim === claim,
         "OAUTH_STALE",
@@ -544,7 +694,10 @@ export class OrganizationLedgerAuthorization {
     action: string,
     attemptId: string,
     binding: OrganizationAuthorizationBinding,
+    sessionToken?: string,
   ) {
+    if (sessionToken !== undefined)
+      actor = this.browserPrincipal(binding, sessionToken);
     this.platform.audit(
       actor,
       `provider.ledger-authorization.${action}`,

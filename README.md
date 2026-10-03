@@ -51,7 +51,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Stock-journal review controls](docs/STOCK-JOURNAL-CONTROLS.md) | Authenticated local preparation/independent decisions, scoped queues and complete paged observations |
 | [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md) | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order |
 | [Organization ledger residency](docs/ORGANIZATION-LEDGER-RESIDENCY.md) | Separate native sandbox company consent, retained terms/revisions and execution permission fences |
-| [Organization ledger authorization](docs/ORGANIZATION-LEDGER-AUTHORIZATION.md) | Separate native sandbox OAuth/company proof, protected operator commands, exact permission fences and remaining connection controls |
+| [Organization ledger authorization](docs/ORGANIZATION-LEDGER-AUTHORIZATION.md) | Separate native sandbox OAuth/company proof, operator and login-bound HTTP controls, local disconnect and remaining callback UI |
 | [Organization ledger credentials](docs/ORGANIZATION-LEDGER-CREDENTIALS.md) | Separate encrypted sandbox tokens, exact consent checks, exclusive refresh and protected offline operator controls |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |

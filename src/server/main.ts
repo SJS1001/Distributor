@@ -5,6 +5,7 @@ import { createHttp } from "./http.ts";
 import { check } from "./core.ts";
 import { type Region } from "./iam.ts";
 import { configuredProviders } from "./provider-runtime.ts";
+import { configuredOrganizationQuickBooksBrowser } from "./organization-quickbooks-browser.ts";
 import { configuredQuickBooksBrowser } from "./quickbooks-browser.ts";
 import { configuredCarriers } from "./carrier-config.ts";
 const host = process.env.HOST ?? "127.0.0.1",
@@ -34,16 +35,23 @@ const app = new Application(
     providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
   },
 );
+const organizationQuickbooksBrowser = configuredOrganizationQuickBooksBrowser(
+  app,
+  origin,
+);
 const http = await createHttp(app, {
   origin,
   secureCookies,
-  providers: configuredProviders(app),
+  providers: configuredProviders(app, process.env, {
+    organizationAuthorizationConfigured: !!organizationQuickbooksBrowser,
+  }),
   quickbooksBrowser: configuredQuickBooksBrowser(app, origin),
+  organizationQuickbooksBrowser,
   carriers: configuredCarriers(app),
 });
 // Local application maintenance only. Startup also processes one batch; each
 // minute erases at most 100 expired enrollment bundles and terminalizes at most
-// 100 expired/interrupted OAuth attempts. Neither operation makes provider I/O.
+// 100 expired/interrupted OAuth attempts per scope. No cleanup makes provider I/O.
 const localMaintenance = setInterval(() => {
   try {
     app.identity.mfa.purgeExpiredEnrollments();
@@ -54,6 +62,7 @@ const localMaintenance = setInterval(() => {
   }
   try {
     app.providerCredentials.authorization.expireAttempts();
+    app.providerCredentials.ledger.authorization.expireAttempts();
   } catch {
     process.stderr.write(
       "QuickBooks authorization cleanup did not complete; retrying next minute.\n",

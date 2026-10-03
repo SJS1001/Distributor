@@ -122,6 +122,11 @@ export class ProviderCredentials {
       {
         status: (binding) => publicStatus(binding, this.ledgerBinding(binding)),
         currentKey: () => this.assertCurrentKey(),
+        disable: (binding, revision) => {
+          const internal = this.ledgerBinding(binding);
+          this.writeDisable(internal, revision);
+          return publicStatus(binding, internal);
+        },
       },
       (binding, revision, bundle, authority) =>
         this.writeInstall(
