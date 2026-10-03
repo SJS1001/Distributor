@@ -917,7 +917,8 @@
     "tested-inputs.json": "906cbd53f5bc689ddf1cacf265dd2f278f64238c94b94d0c728957ad0e9e0c95",
     "typecheck-final.log": "8a702e6f87c8a6ca129035a44568229aa0a0ce49ce48d85c056ac1c3a87c0c57",
     "typecheck-initial.log": "b7badcff02bc847a42135a45770475a2ea41a868897c993d91ac1df51c464fdc",
-    "typecheck.log": "8a702e6f87c8a6ca129035a44568229aa0a0ce49ce48d85c056ac1c3a87c0c57"
+    "typecheck.log": "8a702e6f87c8a6ca129035a44568229aa0a0ce49ce48d85c056ac1c3a87c0c57",
+    "self-review-initial.log": "d7a38d03ca7ec7aec219934cf67c14ec62f7ffff50d4fedd3956229d4dc41f50"
   },
   "gatesVerified": false,
   "limitations": [
@@ -929,8 +930,15 @@
     "All 44 tasks and ten gates NOT VERIFIED; full system incomplete"
   ],
   "publication": {
-    "status": "pending",
+    "status": "normally pushed; exact remote equality verified",
+    "identity": "SJS1001",
+    "permission": "ADMIN",
     "workflows": 0,
-    "actionsRuns": 0
+    "actionsRuns": 0,
+    "sourceCommit": "d13673baf4eb1e481fe4d7d5562c2c12a3c46f5c",
+    "testedCommittedInputsMatched": 516,
+    "runtimeCommittedInputsMatched": 262,
+    "runtimeGeneratedBuildInputsMatched": 3,
+    "privateEvidenceMatched": 65
   }
 }
