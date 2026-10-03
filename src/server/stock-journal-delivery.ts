@@ -41,6 +41,12 @@ import {
   type OriginalCancellationInput,
 } from "./stock-journal-original-cancellation.ts";
 
+import {
+  assertCapturedOfflineOriginalEvidence,
+  StockJournalOfflineOriginalEvidence,
+  type CapturedOfflineOriginalEvidence,
+} from "./stock-journal-offline-original-evidence.ts";
+
 // Fixed offline profile; no caller-selected SQL, source or validation port.
 const offlineOriginalProfile = Object.freeze({
   rowsPerTable: 128,
@@ -130,6 +136,56 @@ function offlineOriginalFreeze<T>(value: T): OfflineFrozen<T> {
     Object.freeze(value);
   }
   return value as OfflineFrozen<T>;
+}
+
+function offlineCancellationHash(value: unknown): asserts value is string {
+  check(
+    !types.isProxy(value) &&
+      typeof value === "string" &&
+      /^[a-f0-9]{64}$/.test(value),
+    "OFFLINE_ORIGINAL_APPLICATION",
+    "Use an exact retained observation hash.",
+  );
+}
+function offlineCancellationActor(value: Actor): Actor {
+  const locator = offlineOriginalActor(value);
+  // Discarded grants must still be inert: never execute nested caller values.
+  const fields = Object.getOwnPropertyDescriptors(value);
+  for (const [key, descriptor] of Object.entries(fields)) {
+    const v: unknown = descriptor.value;
+    offlineOriginalCheck(!types.isProxy(v));
+    if (key === "sites") {
+      offlineOriginalCheck(
+        Array.isArray(v) && Object.getPrototypeOf(v) === Array.prototype,
+      );
+      const keys = Reflect.ownKeys(v);
+      offlineOriginalBound(keys.length <= 129);
+      const ds = Object.getOwnPropertyDescriptors(v) as unknown as Record<
+        string,
+        PropertyDescriptor
+      >;
+      const length = ds.length!.value;
+      offlineOriginalCheck(
+        Number.isSafeInteger(length) &&
+          length >= 0 &&
+          length <= 128 &&
+          keys.length === length + 1,
+      );
+      for (let i = 0; i < length; i++) {
+        const d = ds[String(i)];
+        offlineOriginalCheck(d && d.enumerable && "value" in d);
+        offlineOriginalId(d.value);
+      }
+    } else {
+      offlineOriginalCheck(
+        v === null ||
+          (typeof v === "string" &&
+            Buffer.byteLength(v) <= 2000 &&
+            !v.includes("\0")),
+      );
+    }
+  }
+  return locator;
 }
 
 export type JournalDeliveryInput = {
@@ -880,6 +936,19 @@ export class StockJournalDelivery {
   /** Read-only restored UNKNOWN original; no external evidence or authority.
    * All mutable state is refreshed in the caller's actual existing writer. */
   readOfflineOriginalInTransaction(actor: Actor, journalId: string) {
+    return this.readOfflineOriginalFactsInTransaction(
+      actor,
+      journalId,
+      "unknown",
+    );
+  }
+  // Fixed shared validator only; the public UNKNOWN reader keeps its original
+  // purpose, fields, hash and refusals. No caller can choose this state profile.
+  private readOfflineOriginalFactsInTransaction(
+    actor: Actor,
+    journalId: string,
+    state: "unknown" | "cancelled",
+  ) {
     this.database.requireTransaction();
     offlineOriginalId(journalId);
     actor = this.principal(offlineOriginalActor(actor));
@@ -997,9 +1066,7 @@ export class StockJournalDelivery {
       actor.orgId,
       journalId,
     );
-    offlineOriginalCheck(
-      raw && raw.leg === "original" && raw.state === "unknown",
-    );
+    offlineOriginalCheck(raw && raw.leg === "original" && raw.state === state);
     offlineOriginalCheck(
       this.store.get(
         `SELECT COUNT(*) AS n FROM integration_cost_sources s LEFT JOIN integration_cost_packets p ON p.id=s.packet_id WHERE p.id IS NULL OR s.org_id<>p.org_id`,
@@ -1307,6 +1374,204 @@ export class StockJournalDelivery {
       structuredClone({ ...facts, hash: digest(encoded) }),
     );
   }
+  /** Trusted internal owner write only. Caller must qualify evidence/authority
+   * and fence through COMMIT, and propagate EVERY error through its outer writer.
+   * Process-issued comparison identity is not that qualification or a grant. */
+  applyOfflineOriginalCancellationInTransaction(
+    evidenceActorInput: Actor,
+    cancellationActorInput: Actor,
+    captured: CapturedOfflineOriginalEvidence,
+    reason: string,
+  ): OfflineOriginalCancellationProof {
+    // Identity check precedes native hooks and any input field traversal.
+    assertCapturedOfflineOriginalEvidence(captured);
+    const evidenceLocator = offlineCancellationActor(evidenceActorInput),
+      cancellationLocator = offlineCancellationActor(cancellationActorInput);
+    check(
+      !types.isProxy(reason) &&
+        typeof reason === "string" &&
+        reason.length > 0 &&
+        reason.trim() === reason &&
+        Buffer.byteLength(reason) <= 2000 &&
+        !reason.includes("\0") &&
+        Buffer.from(reason).toString() === reason,
+      "OFFLINE_ORIGINAL_APPLICATION",
+      "Use an exact bounded independent cancellation reason.",
+    );
+    this.database.requireTransaction();
+    const evidenceActor = this.principal(evidenceLocator),
+      cancellationActor = this.principal(cancellationLocator);
+    check(
+      evidenceActor.orgId === cancellationActor.orgId &&
+        evidenceActor.id !== cancellationActor.id,
+      "JOURNAL_CANCELLATION",
+      "Two distinct current organization finance principals are required.",
+    );
+    const fresh = new StockJournalOfflineOriginalEvidence(
+      this.database,
+      this.identity,
+      this,
+    ).captureInTransaction(evidenceActor, captured.native.journalId, {
+      version: 1,
+      source: captured.native,
+      candidate: captured.native,
+      providerClaims: [captured.claim],
+    });
+    check(
+      canonical(fresh) === canonical(captured),
+      "JOURNAL_REVIEW_CHANGED",
+      "Recapture the exact complete original assertions before applying them.",
+    );
+    const journalId = fresh.native.journalId;
+    this.offlineOriginalNoDescendants(journalId);
+    // The actual native reader preflighted the complete sets immediately above.
+    // Leave two observation slots; the post-write proof also preflights all bytes.
+    offlineOriginalBound(
+      Number(
+        this.store.get(
+          "SELECT COUNT(*) AS n FROM integration_stock_journal_observations",
+        )!.n,
+      ) +
+        2 <=
+        offlineOriginalProfile.rowsPerTable,
+    );
+    const row = this.row(evidenceActor, journalId),
+      input = structuredClone(fresh.claim.attestation),
+      snapshot = this.originalCancellationSnapshot(evidenceActor, row);
+    offlineOriginalCheck(
+      canonical(snapshot) === canonical(fresh.cancellationSnapshot),
+    );
+    originalCancellationEvidenceInput(input);
+    // Same bodies/owner audit path as ordinary record/cancel, no Platform.command.
+    const evidenceObservation = this.observe(evidenceActor, row, {
+      kind: "original-cancellation-evidence",
+      input,
+      snapshot,
+    });
+    const evidence = this.originalCancellationEvidence(evidenceActor, row);
+    // Refresh after the first audit; exceptions must roll back that observation too.
+    this.principal(evidenceLocator);
+    this.principal(cancellationLocator);
+    offlineOriginalCheck(
+      canonical(this.platform.rawRecoveryHoldInTransaction()) ===
+        canonical(fresh.native.hold),
+    );
+    const cancellation = this.observe(cancellationActor, row, {
+      outcome: "cancelled-unposted",
+      evidenceHash: evidence.evidenceHash,
+      reason,
+      requestRef: input.requestRef,
+    });
+    // Exact same native clear fields, with a state/review CAS for this new writer.
+    const changed = this.store.run(
+      "UPDATE integration_stock_journals SET state='cancelled',lease_id=NULL,lease_actor=NULL,lease_started=NULL,lease_mode=NULL,external_id=NULL WHERE org_id=? AND id=? AND state='unknown' AND review_hash=? AND external_id IS NULL AND lease_id IS NULL AND lease_actor IS NULL AND lease_started IS NULL AND lease_mode IS NULL",
+      row.org_id,
+      row.id,
+      row.review_hash,
+    );
+    offlineOriginalCheck(changed.changes === 1);
+    this.principal(evidenceLocator);
+    const proof = this.readOfflineOriginalCancellationInTransaction(
+      cancellationLocator,
+      journalId,
+      evidence.evidenceHash,
+      cancellation.hash,
+    );
+    const {
+      hash: _beforeHash,
+      purpose: _beforePurpose,
+      ...expected
+    } = structuredClone(fresh.native);
+    const target = expected.attempts.find((a) => a.row.id === journalId)!;
+    // structuredClone detaches the frozen capture; only these native differences
+    // are admitted. Any audit/trigger corruption elsewhere refuses the writer.
+    const mutable = target as unknown as {
+      row: Journal;
+      history: Row[];
+      observations: ReturnType<StockJournalDelivery["observe"]>[];
+    };
+    mutable.row.state = "cancelled";
+    for (const o of [evidenceObservation, cancellation]) {
+      mutable.observations.push(o);
+      mutable.history.push({
+        journal_id: journalId,
+        org_id: row.org_id,
+        revision: o.revision,
+        body: canonical(o.body),
+        hash: o.hash,
+        recorded_by: o.recordedBy,
+        recorded_at: o.recordedAt,
+      });
+    }
+    const {
+      hash: _afterHash,
+      purpose: _afterPurpose,
+      proof: _proof,
+      ...actual
+    } = proof;
+    offlineOriginalCheck(canonical(actual) === canonical(expected));
+    return proof;
+  }
+  private offlineOriginalNoDescendants(journalId: string) {
+    // Existence only, across all scopes, after complete owning SQL preflight.
+    offlineOriginalCheck(
+      this.store.get(
+        "SELECT COUNT(*) AS n FROM integration_stock_journals WHERE attempt_id=?",
+        journalId,
+      )!.n === 0,
+    );
+  }
+  /** Exact retained native outcome, not an offline provenance/authority receipt.
+   * Both hashes must come from the caller's separately durable root provenance. */
+  readOfflineOriginalCancellationInTransaction(
+    actor: Actor,
+    journalId: string,
+    evidenceHash: string,
+    cancellationHash: string,
+  ): OfflineOriginalCancellationProof {
+    offlineOriginalId(journalId);
+    offlineCancellationHash(evidenceHash);
+    offlineCancellationHash(cancellationHash);
+    actor = offlineCancellationActor(actor);
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    const before = this.store.get("SELECT total_changes() AS n")!.n;
+    const {
+      hash: _internalHash,
+      purpose: _internalPurpose,
+      ...native
+    } = this.readOfflineOriginalFactsInTransaction(
+      actor,
+      journalId,
+      "cancelled",
+    );
+    this.offlineOriginalNoDescendants(journalId);
+    const proof = this.originalCancelledProof(
+      actor,
+      this.row(actor, journalId),
+    );
+    offlineOriginalCheck(
+      proof.evidence.evidenceHash === evidenceHash &&
+        proof.cancellation.hash === cancellationHash,
+    );
+    const facts = {
+      ...native,
+      purpose:
+        "distributor-stock-journal-offline-original-cancellation-v1" as const,
+      proof,
+    };
+    const encoded = canonical(facts);
+    offlineOriginalBound(
+      Buffer.byteLength(encoded) + 75 <= offlineOriginalProfile.totalBytes,
+    );
+    offlineOriginalCheck(
+      this.store.get("SELECT total_changes() AS n")!.n === before,
+    );
+    return offlineOriginalFreeze(
+      structuredClone({ ...facts, hash: digest(encoded) }),
+    );
+  }
+
   originalReconciliationInTransaction(actor: Actor, packetId: string) {
     this.database.requireTransaction();
     actor = this.principal(actor);
@@ -3021,4 +3286,12 @@ export class StockJournalDelivery {
 
 export type OfflineOriginalJournalReview = ReturnType<
   StockJournalDelivery["readOfflineOriginalInTransaction"]
+>;
+
+export type OfflineOriginalCancellationProof = OfflineFrozen<
+  Omit<OfflineOriginalJournalReview, "hash" | "purpose"> & {
+    purpose: "distributor-stock-journal-offline-original-cancellation-v1";
+    proof: ReturnType<StockJournalDelivery["originalCancelledProof"]>;
+    hash: string;
+  }
 >;
