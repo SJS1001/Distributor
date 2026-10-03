@@ -1,3 +1,4 @@
+import { OrganizationLedgerAuthorization } from "./organization-authorization.ts";
 import {
   createCipheriv,
   createDecipheriv,
@@ -50,6 +51,7 @@ export class ProviderCredentials {
   private key?: Buffer;
   private generation = 0;
   readonly ledger: {
+    authorization: OrganizationLedgerAuthorization;
     status: (
       binding: CredentialBinding,
     ) => ReturnType<ProviderCredentials["status"]>;
@@ -112,7 +114,25 @@ export class ProviderCredentials {
       ...this.status(internal),
       bindingId: binding.id,
     });
+    const ledgerAuthorization = new OrganizationLedgerAuthorization(
+      database,
+      platform,
+      identity,
+      this.store,
+      {
+        status: (binding) => publicStatus(binding, this.ledgerBinding(binding)),
+        currentKey: () => this.assertCurrentKey(),
+      },
+      (binding, revision, bundle, authority) =>
+        this.writeInstall(
+          this.ledgerBinding(binding),
+          revision,
+          bundle,
+          this.ledgerStamp(authority),
+        ),
+    );
     this.ledger = Object.freeze({
+      authorization: ledgerAuthorization,
       status: (binding: CredentialBinding) =>
         publicStatus(binding, this.ledgerBinding(binding)),
       install: (
@@ -347,7 +367,7 @@ export class ProviderCredentials {
           );
         }
         const scopes = this.store.all<{ org_id: string }>(
-          "SELECT org_id FROM integration_credentials UNION SELECT org_id FROM integration_authorizations WHERE state IN('pending','exchanging') LIMIT 101",
+          "SELECT org_id FROM integration_credentials UNION SELECT org_id FROM integration_authorizations WHERE state IN('pending','exchanging') UNION SELECT org_id FROM integration_ledger_authorizations WHERE state IN('pending','exchanging') LIMIT 101",
         );
         check(
           scopes.length <= 100 && scopes.every((row) => actors.has(row.org_id)),
@@ -356,7 +376,7 @@ export class ProviderCredentials {
         );
         check(
           !this.store.get(
-            "SELECT 1 FROM integration_credentials WHERE state='refreshing' UNION ALL SELECT 1 FROM integration_authorizations WHERE state='exchanging' LIMIT 1",
+            "SELECT 1 FROM integration_credentials WHERE state='refreshing' UNION ALL SELECT 1 FROM integration_authorizations WHERE state='exchanging' UNION ALL SELECT 1 FROM integration_ledger_authorizations WHERE state='exchanging' LIMIT 1",
           ),
           "CREDENTIAL_BUSY",
           "Resolve active or interrupted provider exchanges before rotating.",
@@ -398,7 +418,9 @@ export class ProviderCredentials {
             row.binding_id,
           );
         }
-        const canceled = this.authorization.invalidateRestoredAttempts();
+        const canceled =
+          this.authorization.invalidateRestoredAttempts() +
+          this.ledger.authorization.invalidateRestoredAttempts();
         this.store.run(
           "INSERT INTO integration_credential_key VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET generation=excluded.generation,fingerprint=excluded.fingerprint",
           generation + 1,
@@ -759,6 +781,7 @@ export class ProviderCredentials {
   invalidateRestoredCredentials() {
     this.revocation.invalidateRestored();
     this.authorization.invalidateRestoredAttempts();
+    this.ledger.authorization.invalidateRestoredAttempts();
     return Number(
       this.store.run(
         "UPDATE integration_credentials SET revision=revision+1,state='disabled',material=NULL,claim=NULL,started_at=NULL",
