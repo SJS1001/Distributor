@@ -1,6 +1,6 @@
 # Stock-journal review and history controls
 
-D-034/D-036/D-039 engineering continuation. Authenticated task-shaped HTTP operations expose the integration-owned [native journal queue](STOCK-JOURNAL-DELIVERY.md). These operations prepare and review local instructions, read retained records and link separately reviewed correction cancellation evidence. They do not send, look up or claim a provider operation. Creating an application does not connect the [disabled transport](STOCK-JOURNAL-TRANSPORT.md). Browser review forms remain dependent work. All tasks and gates remain NOT VERIFIED.
+D-034/D-036/D-039 engineering continuation. Authenticated task-shaped HTTP operations expose the integration-owned [native journal queue](STOCK-JOURNAL-DELIVERY.md). These operations prepare and review local instructions, read retained records and link separately reviewed correction cancellation evidence. They do not send, look up or claim a provider operation. Creating an application does not connect the [disabled transport](STOCK-JOURNAL-TRANSPORT.md). [Browser independent decision review and recovery](STOCK-JOURNAL-BROWSER.md) are now connected; preparation/cancellation forms remain dependent work. All tasks and gates remain NOT VERIFIED.
 
 ## Review commands
 
@@ -14,7 +14,7 @@ Use the existing authenticated command endpoint with a same-origin request, curr
 
 Receiver company and account IDs are positive numeric strings of at most thirty digits. Source/observation hashes are lowercase SHA-256 strings. The permission stamp names QuickBooks, stock-cost-journal, sandbox, organization, CA/US region, exact company, current choice revision and disclosure ID/hash. Buyer payment consent cannot supply this organization permission. The server verifies the full native contract; valid JSON alone is insufficient.
 
-An exact retry uses the original body and key. A retained preparation receipt does not bypass fresh authority; independent decision and native delivery fences still apply. A lost command reply may represent a committed local effect. Closing a browser or aborting its fetch cannot undo that effect. Durable browser review/recovery has not been implemented for these new commands.
+An exact retry uses the original body and key. A retained preparation receipt does not bypass fresh authority; independent decision and native delivery fences still apply. A lost command reply may represent a committed local effect. Closing a browser or aborting its fetch cannot undo that effect. Independent decision review has [durable browser recovery](STOCK-JOURNAL-BROWSER.md); preparation/cancellation remain API operations.
 
 ## Read operations
 
@@ -36,4 +36,4 @@ Correction approval now captures one decision timestamp for both its canonical a
 
 ## Verification and next work
 
-The [local controls receipt](evidence/LOCAL-STOCK-JOURNAL-CONTROLS-2026-10-03.md) binds fresh workstation synthetic checks to tested source/configuration hashes and retained private failures. No actual provider, independent finance reconciliation, browser qualification, production database performance, device, infrastructure or residency acceptance is established. Connect scoped browser review/history and exact uncertain-attempt recovery next; explicit permission replacement, organization OAuth/company verification/remote revocation, original cancellation/retry and multiple-date reconciliation remain separate contracts.
+The [local controls receipt](evidence/LOCAL-STOCK-JOURNAL-CONTROLS-2026-10-03.md) binds fresh workstation synthetic checks to tested source/configuration hashes and retained private failures. No actual provider, independent finance reconciliation, browser qualification, production database performance, device, infrastructure or residency acceptance is established. Scoped browser review/history and exact uncertain-decision recovery are now connected; browser preparation/cancellation, explicit permission replacement, organization OAuth/company verification/remote revocation, original cancellation/retry and multiple-date reconciliation remain separate contracts.

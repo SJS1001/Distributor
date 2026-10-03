@@ -1,5 +1,4 @@
 // Synthetic native journal ownership fixtures. No provider I/O or real finance approval.
-import type { TestContext } from "node:test";
 import { fixture, syntheticDisclosure } from "./fixtures.ts";
 import {
   setup,
@@ -13,7 +12,7 @@ import type {
 import { stockJournalReceiver } from "../src/server/stock-journal-delivery.ts";
 import type { EffectResult } from "../src/server/integration.ts";
 export function journalFixture(
-  t: TestContext,
+  t: Parameters<typeof fixture>[0],
   region: "CA" | "US" = "CA",
   correction = false,
 ) {

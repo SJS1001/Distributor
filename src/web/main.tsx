@@ -56,6 +56,7 @@ import { CanadaPostWarehouse } from "./canada-post.tsx";
 import { CarrierBooking } from "./carrier-booking.tsx";
 import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
+import { StockJournals } from "./stock-journals.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundPaymentSelect } from "./refund-payment-select.tsx";
@@ -3459,6 +3460,13 @@ function App() {
           <>
             {can("finance") && <QuickBooksConnection key={eventViewEpoch} />}
             {can("finance") && <AccountingCosts />}
+            {can("finance") && (
+              <StockJournals
+                key={`${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+              />
+            )}
             <div className="actions">
               {can("finance") && (
                 <a className="button secondary" href="/api/accounting.csv">

@@ -1,3 +1,4 @@
+import { stockJournalBrowser } from "./stock-journal-browser-fixture.ts";
 import { costCorrectionBrowser } from "./cost-correction-browser-fixture.ts";
 import { pdfBoundaryBrowser } from "./pdf-browser-fixture.ts";
 import { countRecoveryBrowser } from "./count-recovery-browser-fixture.ts";
@@ -965,6 +966,7 @@ const serialDossierHttp = await serialDossierBrowser((fn) => cleanup.push(fn));
 const retiredReceivingHttp = await retiredReceivingBrowser((fn) =>
   cleanup.push(fn),
 );
+const stockJournalHttp = await stockJournalBrowser((fn) => cleanup.push(fn));
 const costCorrectionHttp = await costCorrectionBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -986,6 +988,7 @@ const http = await createHttp(f.app, {
 await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
   await http.close();
+  await stockJournalHttp.close();
   await costCorrectionHttp.close();
   await paymentHttp.close();
   await authorizationHttp.close();
