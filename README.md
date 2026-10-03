@@ -42,6 +42,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks and remaining transport qualification |
 | [Explicit stock journal transport](docs/STOCK-JOURNAL-TRANSPORT.md) | Disabled one-operation coordinator, revision fences and lookup-only uncertainty |
 | [Stock-journal permission replacement](docs/STOCK-JOURNAL-PERMISSIONS.md) | Independent native/API/browser approval, fixed review and exact receipt recovery, immutable journal and lookup-only uncertainty |
+| [Original stock-journal reconciliation](docs/STOCK-JOURNAL-RECONCILIATION.md) | Complete per-date native evidence, separate finance attestations and immutable acceptance recovery |
 | [Stock-journal preparation](docs/STOCK-JOURNAL-PREPARATION.md) | Approved source/date/account mapping, fixed confirmation and original receipt recovery |
 | [Stock-journal browser review](docs/STOCK-JOURNAL-BROWSER.md) | Frozen independent review, queue/history paging and exact uncertain-decision recovery |
 | [Stock-journal correction cancellation](docs/STOCK-JOURNAL-CANCELLATION.md) | Final evidence, separate finance confirmation and exact uncertain-cancellation recovery |

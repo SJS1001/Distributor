@@ -16,6 +16,12 @@ import { Inventory } from "./inventory.ts";
 import type { CostWindow } from "./inventory-costs.ts";
 import { Platform } from "./platform.ts";
 import { CostCorrections } from "./cost-corrections.ts";
+import {
+  reconciliationInput,
+  reconciliationControls,
+  type JournalReconciliationInput,
+  type JournalReconciliationReceipt,
+} from "./stock-journal-reconciliation.ts";
 
 export type CostInput = {
   version: 1;
@@ -92,6 +98,7 @@ export type CostPacketView = {
     reason: string;
     recordedBy: string;
     recordedAt: string;
+    nativeReconciliation?: JournalReconciliationReceipt;
   } | null;
 };
 const accountCode = (raw: string) => {
@@ -670,7 +677,38 @@ export class IntegrationCosts {
       packet = this.packet(actor, packetId);
     const document = JSON.parse(file.bytes),
       input = JSON.parse(packet.input),
-      report = JSON.parse(packet.report);
+      report = JSON.parse(packet.report),
+      receipt = packet.receipt
+        ? (JSON.parse(packet.receipt) as CostPacketView["receipt"])
+        : null;
+    if (packet.receipt) {
+      check(
+        packet.state === "accepted" &&
+          receipt &&
+          receipt.contentHash === packet.content_hash &&
+          receipt.receiverRegion === packet.region &&
+          receipt.debit === report.debit &&
+          receipt.credit === report.credit &&
+          this.store.get(
+            "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+            actor.orgId,
+            receipt.receiverRef,
+            receipt.externalRef,
+          )?.packet_id === packet.id,
+        "COST_INTEGRITY",
+        "Accepted cost evidence must retain its original controls and permanent reference.",
+      );
+    } else
+      check(
+        packet.state !== "accepted" &&
+          !this.store.get(
+            "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND packet_id=?",
+            actor.orgId,
+            packet.id,
+          ),
+        "COST_INTEGRITY",
+        "An unaccepted cost artifact cannot own acceptance evidence.",
+      );
     check(
       document.organizationId === actor.orgId &&
         document.packetId === packet.id &&
@@ -696,12 +734,161 @@ export class IntegrationCosts {
     return {
       file,
       accepted: !!packet.receipt,
+      reconciliation: receipt?.nativeReconciliation ?? null,
       superseded: !!this.store.get(
         "SELECT id FROM integration_cost_corrections WHERE org_id=? AND original_id=? AND state='reviewed'",
         actor.orgId,
         packetId,
       ),
     };
+  }
+  journalReconciliation(actor: Actor, packetId: string) {
+    return this.database.transaction(() =>
+      this.journals.originalReconciliationInTransaction(actor, packetId),
+    );
+  }
+  reconcileJournals(
+    actor: Actor,
+    key: string,
+    raw: JournalReconciliationInput,
+  ) {
+    actor = this.principal(actor);
+    const input = reconciliationInput(raw);
+    return this.platform.command(
+      actor,
+      "accounting.cost.reconcile-journals",
+      key,
+      input,
+      (cached?: CostPacketView) => {
+        actor = this.principal(actor);
+        this.platform.assertProviderAccess();
+        const review = this.journals.originalReconciliationInTransaction(
+          actor,
+          input.packetId,
+        );
+        check(
+          review.contentHash === input.contentHash &&
+            review.reviewHash === input.reviewHash,
+          "COST_RECONCILIATION_STALE",
+          "Reload the complete source-date review before confirming.",
+        );
+        if (cached)
+          check(
+            canonical(cached) ===
+              canonical(this.view(actor, this.packet(actor, input.packetId))),
+            "COST_INTEGRITY",
+            "Cached reconciliation differs from its retained receipt.",
+          );
+      },
+      () => {
+        const review = this.journals.originalReconciliationInTransaction(
+            actor,
+            input.packetId,
+          ),
+          packet = this.packet(actor, input.packetId);
+        const {
+          reviewHash,
+          issues: _issues,
+          canConfirm: _can,
+          accepted: _accepted,
+          superseded: _superseded,
+          ...snapshot
+        } = review;
+        check(
+          review.receiverRef,
+          "COST_NATIVE_OUTCOME",
+          "All dates require one native company binding.",
+        );
+        const evidence = {
+          receiverRef: review.receiverRef,
+          receiverRegion: review.region,
+          externalRef: input.externalRef,
+          contentHash: input.contentHash,
+          debit: review.debit,
+          credit: review.credit,
+          reason: input.reason,
+          nativeReconciliation: {
+            reviewHash,
+            snapshot,
+            journals: input.journals,
+          },
+        };
+        if (packet.receipt) {
+          const {
+            recordedBy: _by,
+            recordedAt: _at,
+            ...old
+          } = JSON.parse(packet.receipt);
+          check(
+            canonical(old) === canonical(evidence),
+            "COST_ACCEPTANCE_CONFLICT",
+            "This cost artifact already has different acceptance evidence.",
+          );
+          return this.view(actor, packet);
+        }
+        check(
+          review.canConfirm,
+          "COST_NATIVE_OUTCOME",
+          "Every source date needs final posted evidence, one company and separate finance reconciliation; superseded originals cannot be accepted.",
+        );
+        check(
+          reconciliationControls(review.dates, input.journals),
+          "COST_RECONCILIATION_CONTROL",
+          "Independent ledger evidence must match every original source date exactly and in order.",
+        );
+        check(
+          !this.store.get(
+            "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+            actor.orgId,
+            review.receiverRef,
+            input.externalRef,
+          ) &&
+            !this.store.get(
+              "SELECT id FROM integration_stock_journals WHERE org_id=? AND realm=? AND external_id=?",
+              actor.orgId,
+              review.dates[0]!.journal!.realm,
+              input.externalRef,
+            ),
+          "COST_REFERENCE_CONFLICT",
+          "Use an independent reconciliation reference that is not already reserved.",
+        );
+        this.corrections.assertReferenceAvailable(
+          actor,
+          review.receiverRef,
+          input.externalRef,
+        );
+        const receipt = {
+          ...evidence,
+          recordedBy: actor.id,
+          recordedAt: now(),
+        };
+        this.store.run(
+          "INSERT INTO integration_cost_receipts VALUES(?,?,?,?)",
+          actor.orgId,
+          review.receiverRef,
+          input.externalRef,
+          packet.id,
+        );
+        this.store.run(
+          "UPDATE integration_cost_packets SET state='accepted',receipt=? WHERE org_id=? AND id=?",
+          canonical(receipt),
+          actor.orgId,
+          packet.id,
+        );
+        this.platform.audit(
+          actor,
+          "accounting.cost.journals-reconciled",
+          packet.id,
+          {
+            contentHash: input.contentHash,
+            reviewHash,
+            externalRef: input.externalRef,
+            journals: input.journals.map((row) => row.journalId),
+          },
+        );
+        return this.view(actor, this.packet(actor, packet.id));
+      },
+    );
   }
   accept(
     actor: Actor,
@@ -740,6 +927,9 @@ export class IntegrationCosts {
         Number.MAX_SAFE_INTEGER,
       ),
     };
+    let nativeReview: ReturnType<
+      StockJournalDelivery["originalReconciliationInTransaction"]
+    > | null = null;
     return this.platform.command(
       actor,
       "accounting.cost.accept",
@@ -749,6 +939,17 @@ export class IntegrationCosts {
         actor = this.principal(actor);
         this.platform.assertProviderAccess();
         this.packet(actor, input.packetId);
+        if (
+          this.store.get(
+            "SELECT id FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg='original' AND state<>'rejected'",
+            actor.orgId,
+            input.packetId,
+          )
+        )
+          nativeReview = this.journals.originalReconciliationInTransaction(
+            actor,
+            input.packetId,
+          );
       },
       () => {
         const packet = this.packet(actor, input.packetId),
@@ -775,20 +976,16 @@ export class IntegrationCosts {
           "COST_CONTROL",
           "Receiver debit and credit totals must match the reviewed journal.",
         );
-        const native = this.store.all(
-          "SELECT realm,state,external_id FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg='original' AND state<>'rejected'",
-          actor.orgId,
-          packet.id,
-        );
-        if (native.length)
+        if (nativeReview)
           check(
-            native.length === 1 &&
-              native[0]!.state === "posted" &&
-              normalized.receiverRef ===
-                `quickbooks-sandbox:${native[0]!.realm}` &&
-              normalized.externalRef === native[0]!.external_id,
+            nativeReview.dates.length === 1 &&
+              nativeReview.dates[0]!.journal?.posted &&
+              (packet.receipt || nativeReview.canConfirm) &&
+              normalized.receiverRef === nativeReview.receiverRef &&
+              normalized.externalRef ===
+                nativeReview.dates[0]!.journal.posted.externalId,
             "COST_NATIVE_OUTCOME",
-            "Acceptance must match the reconciled native original; multi-date native outcomes require separate qualification.",
+            "Acceptance requires the complete independently reconciled single-date native original. Use date-by-date reconciliation for multiple dates.",
           );
         const { packetId: _packetId, ...evidence } = normalized;
         if (packet.receipt) {

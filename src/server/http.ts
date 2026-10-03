@@ -495,6 +495,31 @@ export function commands(
       }),
       run: (a, k, p) => app.integration.costs.accept(a, k, p),
     },
+    "accounting.cost.reconcile-journals": {
+      schema: obj({
+        packetId: { type: "string", minLength: 1, maxLength: 160 },
+        contentHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        externalRef: { type: "string", minLength: 1, maxLength: 160 },
+        reason: str,
+        confirmation: { const: "all-dates-reconciled" },
+        journals: {
+          type: "array",
+          minItems: 1,
+          maxItems: 500,
+          items: obj({
+            journalId: { type: "string", minLength: 1, maxLength: 160 },
+            postingDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+            externalId: { type: "string", pattern: "^[1-9][0-9]{0,29}$" },
+            syncToken: { type: "string", pattern: "^[0-9]{1,2000}$" },
+            debit: costNumber,
+            credit: costNumber,
+            evidenceRef: { type: "string", minLength: 1, maxLength: 1000 },
+          }),
+        },
+      }),
+      run: (a, k, p) => app.integration.costs.reconcileJournals(a, k, p),
+    },
     "billing.portal.publish": {
       schema: obj({ downloadId: str, reason: str }),
       run: (a, k, p) => app.billing.delivery.publish(a, k, p),
@@ -3423,6 +3448,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
     { schema: { params: obj({ packetId: str }) } },
     async (request) =>
       app.integration.costs.detail(actor(request), request.params.packetId),
+  );
+  http.get<{ Params: { packetId: string } }>(
+    "/api/accounting/costs/:packetId/journal-reconciliation",
+    { schema: { params: obj({ packetId: str }), querystring: obj({}) } },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journalReconciliation(
+        actor(request),
+        request.params.packetId,
+      );
+    },
   );
   http.get<{ Params: { packetId: string } }>(
     "/api/accounting/costs/:packetId/file",

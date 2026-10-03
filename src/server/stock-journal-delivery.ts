@@ -22,6 +22,11 @@ import {
 } from "./quickbooks-stock-journal.ts";
 import { STOCK_JOURNAL_INITIALIZE_DDL } from "./stock-journal-schema.ts";
 import {
+  reconciliationControls,
+  type JournalReconciliationDate,
+  type JournalReconciliationSnapshot,
+} from "./stock-journal-reconciliation.ts";
+import {
   journalPermissions,
   permissionInput,
   permissionDecision,
@@ -722,6 +727,258 @@ export class StockJournalDelivery {
       "Journal observation failed integrity.",
     );
     return { revision, hash: String(r.hash), body, recordedBy, recordedAt };
+  }
+  originalReconciliationInTransaction(actor: Actor, packetId: string) {
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    const source = this.costs.deliverySourceInTransaction(actor, packetId),
+      document = JSON.parse(source.file.bytes),
+      organization = this.identity.organization(actor),
+      grouped = new Map<string, { debit: bigint; credit: bigint }>();
+    check(
+      document.region === organization.region &&
+        document.currency === organization.currency &&
+        Array.isArray(document.report.journal) &&
+        document.report.journal.length > 0 &&
+        document.report.journal.length <= 1000,
+      "COST_INTEGRITY",
+      "Use the complete original regional stock journal.",
+    );
+    for (const line of document.report.journal as JournalLine[]) {
+      check(
+        typeof line.date === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(line.date) &&
+          Number.isFinite(Date.parse(line.date)) &&
+          new Date(line.date).toISOString().slice(0, 10) === line.date &&
+          Number.isSafeInteger(line.debit) &&
+          line.debit >= 0 &&
+          Number.isSafeInteger(line.credit) &&
+          line.credit >= 0 &&
+          ((line.debit > 0 && line.credit === 0) ||
+            (line.credit > 0 && line.debit === 0)),
+        "COST_INTEGRITY",
+        "Original journal dates and amounts must be exact.",
+      );
+      const totals = grouped.get(line.date) ?? { debit: 0n, credit: 0n };
+      totals.debit += BigInt(line.debit);
+      totals.credit += BigInt(line.credit);
+      grouped.set(line.date, totals);
+    }
+    const dates: JournalReconciliationDate[] = [...grouped]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([postingDate, totals]) => {
+        check(
+          totals.debit === totals.credit &&
+            totals.debit > 0n &&
+            totals.debit <= BigInt(Number.MAX_SAFE_INTEGER),
+          "COST_INTEGRITY",
+          "Every original posting date must balance exactly.",
+        );
+        return {
+          postingDate,
+          debit: Number(totals.debit),
+          credit: Number(totals.credit),
+          journal: null,
+        };
+      });
+    const rows = this.store.all<Journal>(
+      "SELECT * FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg='original' AND state<>'rejected' ORDER BY posting_date,id",
+      actor.orgId,
+      packetId,
+    );
+    const issues: { code: string; message: string }[] = [];
+    for (const raw of rows) {
+      const row = this.checkedRow(raw),
+        plan = JSON.parse(row.plan) as Plan,
+        date = dates.find((d) => d.postingDate === row.posting_date);
+      check(
+        date &&
+          !date.journal &&
+          row.attempt_id === "" &&
+          plan.intent.source.hash === source.file.hash &&
+          plan.intent.source.bytes === source.file.bytes,
+        "JOURNAL_INTEGRITY",
+        "Every native original must identify one unchanged source date.",
+      );
+      const history = this.store
+        .all(
+          "SELECT * FROM integration_stock_journal_observations WHERE org_id=? AND journal_id=? ORDER BY revision",
+          actor.orgId,
+          row.id,
+        )
+        .map((r) => this.observation(actor, row.id, r));
+      check(
+        history.every((r, i) => r.revision === i + 1),
+        "JOURNAL_INTEGRITY",
+        "Journal observation history is incomplete.",
+      );
+      journalPermissions(
+        row.id,
+        row.review_hash,
+        plan.input.authority,
+        history,
+      );
+      if (row.state !== "ready") {
+        const reserved = this.store.get(
+          "SELECT journal_id FROM integration_stock_journal_references WHERE org_id=? AND realm=? AND request_ref=?",
+          actor.orgId,
+          row.realm,
+          requestRef(row.id),
+        );
+        check(
+          row.decision_by &&
+            row.decision_by !== row.created_by &&
+            row.decision_at &&
+            row.decision_reason &&
+            reserved?.journal_id === row.id,
+          "JOURNAL_INTEGRITY",
+          "An approved journal must retain its independent decision and permanent reference.",
+        );
+      }
+      const last = history.at(-1);
+      let posted: NonNullable<JournalReconciliationDate["journal"]>["posted"] =
+        null;
+      if (row.state === "posted") {
+        const body = last?.body,
+          result = body?.result,
+          received = result?.result;
+        check(
+          last &&
+            body.outcome === "posted" &&
+            body.requestRef === requestRef(row.id) &&
+            typeof body.leaseId === "string" &&
+            body.leaseId.length > 0 &&
+            canonical(Object.keys(body).sort()) ===
+              canonical(
+                ["leaseId", "outcome", "requestRef", "result"].sort(),
+              ) &&
+            result &&
+            canonical(Object.keys(result).sort()) ===
+              canonical(["reference", "result"]) &&
+            typeof result.reference === "string" &&
+            /^[1-9][0-9]{0,29}$/.test(result.reference) &&
+            result.reference === row.external_id &&
+            received &&
+            canonical(Object.keys(received).sort()) ===
+              canonical(
+                [
+                  "realmId",
+                  "sourceHash",
+                  "leg",
+                  "postingDate",
+                  "currency",
+                  "debit",
+                  "credit",
+                  "syncToken",
+                ].sort(),
+              ) &&
+            received.realmId === row.realm &&
+            received.sourceHash === source.file.hash &&
+            received.leg === "original" &&
+            received.postingDate === date.postingDate &&
+            received.currency === document.currency &&
+            received.debit === date.debit &&
+            received.credit === date.credit &&
+            typeof received.syncToken === "string" &&
+            /^[0-9]+$/.test(received.syncToken) &&
+            row.lease_id === null &&
+            row.lease_actor === null &&
+            row.lease_started === null &&
+            row.lease_mode === null,
+          "JOURNAL_INTEGRITY",
+          "Posted original must retain exact final native evidence and cleared lease ownership.",
+        );
+        posted = {
+          externalId: result.reference,
+          syncToken: received.syncToken,
+          observationHash: last.hash,
+          revision: last.revision,
+          recordedBy: last.recordedBy,
+          recordedAt: last.recordedAt,
+        };
+        if (last.recordedBy === actor.id)
+          issues.push({
+            code: "INDEPENDENT_REVIEW",
+            message: `Another finance principal must reconcile ${date.postingDate}; you recorded its transport outcome.`,
+          });
+      } else
+        check(
+          row.external_id === null,
+          "JOURNAL_INTEGRITY",
+          "Unposted originals cannot retain a posted identity.",
+        );
+      date.journal = {
+        id: row.id,
+        reviewHash: row.review_hash,
+        requestRef: requestRef(row.id),
+        realm: row.realm,
+        bindingId: row.binding_id,
+        state: row.state,
+        historyHash: digest(canonical(history.map((r) => r.hash))),
+        posted,
+      };
+    }
+    for (const date of dates)
+      if (!date.journal?.posted)
+        issues.push({
+          code: "DATE_INCOMPLETE",
+          message: `${date.postingDate} has no final posted native original.`,
+        });
+    const companies = new Set(
+      rows.map((r) => canonical([r.realm, r.binding_id])),
+    );
+    if (companies.size > 1)
+      issues.push({
+        code: "COMPANY_MISMATCH",
+        message:
+          "All source dates must reconcile to one reviewed company binding.",
+      });
+    const total = dates.reduce((n, d) => n + BigInt(d.debit), 0n);
+    check(
+      total <= BigInt(Number.MAX_SAFE_INTEGER) &&
+        Number(total) === document.report.debit &&
+        Number(total) === document.report.credit,
+      "COST_INTEGRITY",
+      "Complete date totals must equal the original journal controls.",
+    );
+    const snapshot: JournalReconciliationSnapshot = {
+      version: 1,
+      packetId,
+      organizationId: actor.orgId,
+      contentHash: source.file.hash,
+      region: organization.region,
+      currency: organization.currency,
+      debit: Number(total),
+      credit: Number(total),
+      receiverRef:
+        companies.size === 1 ? stockJournalReceiver(rows[0]!.realm) : null,
+      dates,
+    };
+    const reviewHash = digest(canonical(snapshot));
+    if (source.reconciliation)
+      check(
+        Object.keys(source.reconciliation).sort().join("|") ===
+          "journals|reviewHash|snapshot" &&
+          source.reconciliation.reviewHash === reviewHash &&
+          canonical(source.reconciliation.snapshot) === canonical(snapshot) &&
+          reconciliationControls(dates, source.reconciliation.journals),
+        "COST_INTEGRITY",
+        "Accepted reconciliation must match the complete original native evidence.",
+      );
+    if (this.platform.recoveryHold())
+      issues.push({
+        code: "RECOVERY_HOLD",
+        message:
+          "The restored store remains isolated; confirmation requires its separately authorized release.",
+      });
+    return {
+      ...snapshot,
+      reviewHash,
+      issues,
+      accepted: source.accepted,
+      superseded: source.superseded,
+      canConfirm: !source.accepted && !source.superseded && issues.length === 0,
+    };
   }
   private position(after: string | undefined, scope: string, maximum: number) {
     if (after === undefined) return { high: maximum, before: maximum + 1 };

@@ -1,0 +1,27 @@
+# Local original stock-journal reconciliation receipt — 2026-10-03
+
+Parent: `15e52bcbf09e44d0f06ddff8dc2418e75075a641`. Branch: `codex/local-distributor-checkpoint`. Environment: macOS arm64, Node 24.16.0, disposable synthetic CA/US stores and production Chromium. Direct workstation verification only.
+
+[Native/API original reconciliation](../STOCK-JOURNAL-RECONCILIATION.md) binds all approved source dates, complete native observation/permission histories, permanent references and exact final posted evidence to one company binding. Separate finance supplies explicit date attestations and an independent reconciliation reference. One immutable receipt, reservation, command cache and audits commit atomically. Fresh authority, restore hold, stale-review and retained-evidence checks precede cached recovery. Partial multiple-date posting cannot be accepted through the legacy single-date bridge. Stock, movement costs, source artifacts, export cursors and native journal histories are conserved.
+
+## Verification
+
+Final focused native checks pass 25/25 in 3,350.973667 ms. Fresh full native regression passes 2,284/2,284 in 88,836.767375 ms, with no failures, skips or cancellations. TypeScript, formatting and production build pass; the existing large-chunk warning remains. The initial affected stock-cost/count browser regression passes 2/2 in 16.7 seconds. The affected journal preparation/permission/cancellation/review and correction browser regression passes 33/33 in 48.0 seconds. No new reconciliation browser form or full browser-suite result is claimed.
+
+The new cases cover CA/US complete dates, immutable same-key/new-key recovery, independent final recorder, missing/non-posted/mixed-company outcomes, restored hold/restart, more than one hundred retained observations, stale review after lookup, exact strict controls, permanently reserved and whitespace-alias references, damaged cached packet/date attestation/permanent batch references, fresh role/activity/password/account/organization authority, authenticated no-store/CSRF/noncoercing API checks, late audit rollback and competing independent finance processes. Controlled fault injection uses disposable synthetic stores; public owner/API assertions check business effects.
+
+Isolated production-only installation/build/startup/PDF/ZPL/encrypted restore passes for CA and US: 271 copied inputs, 69 development-only packages absent, 27 retained hashed command logs, two startup cycles per region, PDF/ZPL-8/ZPL-12 output and local encrypted restore. The harness asserts expected disabled worker/credential/authorization refusals. All 531 tested inputs and 271 runtime inputs match current bytes. The [machine receipt](LOCAL-STOCK-JOURNAL-RECONCILIATION-2026-10-03.json) binds tested inputs and private evidence. Planning structure/local links pass: 243 Markdown files, 1,372 local links, 44 tasks and ten gates; structure only. Generated assets, private logs, raw traces and temporary databases remain excluded from Git.
+
+## Failures and self-review
+
+Preserved red reproductions establish missing read/confirmation/API behavior, restore-hold eligibility, the previous partial multiple-date acceptance, whitespace reference alias, substituted cached packet, missing permanent accepted batch reference and changed retained date debit. Their subsequent green checks pass. An intermediate state run failed because its synthetic unresolved cause was outside the actual native enum; the fixture now uses `transport-uncertain`. Both the failed fixture run and corrected result remain private. No historical failed receipt is overwritten.
+
+Self-review checks integration ownership, source/hash/region/date/amount binding, complete rather than newest-only history, separate finance duties, fresh persisted authority before cached return, permanent reference ownership, accepted receipt consistency, stale-review refusal, synchronous atomic rollback and competing-process outcomes. Original source and synthetic fixtures are used; schema 12, dependencies, licenses and frontend are unchanged. No copied private/third-party source, workflow or provider execution route was introduced.
+
+## Limits and publication
+
+The owner-requested frontend/proxy remains available on loopback 5173; backend 3000 was restarted with this source and retains its separate ignored synthetic CA database. Fresh backend and proxied health checks return HTTP 200/CA; the private sign-in file remains mode 600. Providers are disabled. Opening the preview panel returned queued; browser navigation is available through the frontend link.
+
+Browser fixed reconciliation review/date attestations/exact-attempt recovery, organization OAuth/company verification/remote revocation, original cancellation/fresh retry, multiple-date mapping corrections and further journal/valuation/quantity corrections remain open. Native complete-history transaction scan cost is unqualified. Actual provider outcomes, customer finance mappings, terms, hardware, residency infrastructure, security/load/recovery and operator/release acceptance remain unqualified. All 44 tasks and ten gates remain NOT VERIFIED; the full system is incomplete.
+
+No CI runner/job/workflow, provider IO/account, delegated/cloud session, PR, merge or deployment was created. Fresh read-only GitHub access confirms push/admin rights and zero workflows/Actions runs. Normal source/test/documentation publication is authorized on the current branch; exact published commit equality is checked after push.
