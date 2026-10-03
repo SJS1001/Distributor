@@ -1,3 +1,4 @@
+import { types } from "node:util";
 import {
   canonical,
   check,
@@ -39,6 +40,97 @@ import {
   type OriginalCancellationEvidenceInput,
   type OriginalCancellationInput,
 } from "./stock-journal-original-cancellation.ts";
+
+// Fixed offline profile; no caller-selected SQL, source or validation port.
+const offlineOriginalProfile = Object.freeze({
+  rowsPerTable: 128,
+  totalRows: 512,
+  fieldBytes: 2_000_000,
+  rowBytes: 4_000_000,
+  totalBytes: 8_000_000,
+  jsonNodes: 8192,
+  jsonContainers: 512,
+});
+const offlineOriginalColumns = {
+  integration_stock_journals:
+    "id org_id realm binding_id source_id leg posting_date attempt_id plan review_hash state created_by created_at decision_by decision_at decision_reason lease_id lease_actor lease_started lease_mode dispatched external_id",
+  integration_stock_journal_observations:
+    "journal_id revision org_id body hash recorded_by recorded_at",
+  integration_stock_journal_references: "org_id realm request_ref journal_id",
+  integration_cost_packets:
+    "sequence id org_id batch_ref region currency input input_hash report review_hash state created_by created_at decision_by decision_at decision_reason artifact content_hash receipt",
+  integration_cost_policies:
+    "org_id revision input policy_hash created_by created_at",
+  integration_cost_corrections:
+    "id org_id original_id original_hash input plan review_hash state created_by created_at decision_by decision_at decision_reason artifact content_hash",
+  integration_cost_receipts: "org_id receiver_ref external_ref packet_id",
+  integration_cost_sources: "org_id movement_id packet_id",
+} as const;
+function offlineOriginalCheck(value: unknown): asserts value {
+  check(
+    value,
+    "OFFLINE_ORIGINAL_REVIEW",
+    "Native original journal history is inconsistent or unsupported.",
+  );
+}
+function offlineOriginalBound(value: unknown): asserts value {
+  check(
+    value,
+    "OFFLINE_ORIGINAL_LIMIT",
+    "Native original journal exceeds its bounded profile.",
+  );
+}
+function offlineOriginalId(value: unknown): asserts value is string {
+  check(
+    !types.isProxy(value) &&
+      typeof value === "string" &&
+      value.length > 0 &&
+      value.length <= 160 &&
+      value.trim() === value &&
+      /^[A-Za-z0-9_-]+$/.test(value),
+    "OFFLINE_ORIGINAL_INPUT",
+    "Use exact native actor and journal identities.",
+    400,
+  );
+}
+function offlineOriginalActor(actor: Actor): Actor {
+  check(
+    !types.isProxy(actor) &&
+      actor !== null &&
+      typeof actor === "object" &&
+      [Object.prototype, null].includes(Object.getPrototypeOf(actor)),
+    "OFFLINE_ORIGINAL_INPUT",
+    "Use a native actor locator.",
+    400,
+  );
+  const fields = Object.getOwnPropertyDescriptors(actor);
+  for (const key of Reflect.ownKeys(fields))
+    check(
+      typeof key === "string" &&
+        ["id", "orgId", "role", "accountId", "sites", "name"].includes(key) &&
+        "value" in fields[key]! &&
+        fields[key]!.enumerable,
+      "OFFLINE_ORIGINAL_INPUT",
+      "Use native actor data fields.",
+      400,
+    );
+  const id = fields.id?.value,
+    orgId = fields.orgId?.value;
+  offlineOriginalId(id);
+  offlineOriginalId(orgId);
+  // Only primitive locators survive capture; supplied grants are discarded.
+  return { id, orgId } as Actor;
+}
+type OfflineFrozen<T> = T extends object
+  ? { readonly [K in keyof T]: OfflineFrozen<T[K]> }
+  : T;
+function offlineOriginalFreeze<T>(value: T): OfflineFrozen<T> {
+  if (value && typeof value === "object") {
+    Object.values(value).forEach(offlineOriginalFreeze);
+    Object.freeze(value);
+  }
+  return value as OfflineFrozen<T>;
+}
 
 export type JournalDeliveryInput = {
   sourceId: string;
@@ -784,6 +876,436 @@ export class StockJournalDelivery {
       "Journal observation failed integrity.",
     );
     return { revision, hash: String(r.hash), body, recordedBy, recordedAt };
+  }
+  /** Read-only restored UNKNOWN original; no external evidence or authority.
+   * All mutable state is refreshed in the caller's actual existing writer. */
+  readOfflineOriginalInTransaction(actor: Actor, journalId: string) {
+    this.database.requireTransaction();
+    offlineOriginalId(journalId);
+    actor = this.principal(offlineOriginalActor(actor));
+    const unchanged = this.store.get("SELECT total_changes() AS n")!.n;
+    const hold = this.platform.rawRecoveryHoldInTransaction();
+    check(hold, "RECOVERY_HOLD", "A raw restored-store hold is required.");
+    let totalRows = 0,
+      totalBytes = 0;
+    // These source tables are Integration-owned. Preflight the complete sets
+    // before calling the actual IntegrationCosts source/policy readers. Never
+    // query Inventory/Identity/Platform tables through this store.
+    for (const [table, list] of Object.entries(offlineOriginalColumns)) {
+      const n = Number(
+        this.store.get(
+          `SELECT COUNT(*) AS n FROM (SELECT 1 FROM ${table} LIMIT ?)`,
+          offlineOriginalProfile.rowsPerTable + 1,
+        )!.n,
+      );
+      offlineOriginalBound(
+        n <= offlineOriginalProfile.rowsPerTable &&
+          (totalRows += n) <= offlineOriginalProfile.totalRows,
+      );
+      const fields = list.split(" "),
+        sizes = fields.map((c) => `COALESCE(length(CAST(${c} AS BLOB)),0)`),
+        sum = sizes.join("+");
+      const integers = ["revision", "sequence", "lease_started", "dispatched"];
+      const nullable = [
+        "decision_by",
+        "decision_at",
+        "decision_reason",
+        "lease_id",
+        "lease_actor",
+        "lease_started",
+        "lease_mode",
+        "external_id",
+        "artifact",
+        "content_hash",
+        "receipt",
+      ];
+      const stats = this.store.get<{
+        field: number;
+        row: number;
+        total: number;
+        bad: number;
+      }>(
+        `SELECT COALESCE(MAX(MAX(${sizes.join(",")})),0) AS field,COALESCE(MAX(${sum}),0) AS row,COALESCE(SUM(${sum}),0) AS total,
+         COALESCE(SUM(CASE WHEN ${fields.map((c) => `(typeof(${c}) NOT IN ('${integers.includes(c) ? "integer" : "text"}'${nullable.includes(c) ? ",'null'" : ""}) OR instr(CAST(${c} AS BLOB),x'00')>0)`).join(" OR ")} THEN 1 ELSE 0 END),0) AS bad FROM ${table}`,
+      )!;
+      offlineOriginalBound(
+        [stats.field, stats.row, stats.total].every(
+          (x) => Number.isSafeInteger(x) && x >= 0,
+        ) &&
+          stats.field <= offlineOriginalProfile.fieldBytes &&
+          stats.row <= offlineOriginalProfile.rowBytes &&
+          stats.total <= offlineOriginalProfile.totalBytes - totalBytes,
+      );
+      offlineOriginalCheck(stats.bad === 0);
+      totalBytes += stats.total;
+    }
+    // Scalar-only SQL: json_tree would violate native owner table isolation.
+    // Count punctuation conservatively (including inside strings) BEFORE JSON
+    // validity or any JavaScript parse. Container count is also a depth bound.
+    const documents = `SELECT plan AS raw FROM integration_stock_journals UNION ALL SELECT body FROM integration_stock_journal_observations UNION ALL SELECT input FROM integration_cost_packets UNION ALL SELECT report FROM integration_cost_packets UNION ALL SELECT artifact FROM integration_cost_packets WHERE artifact IS NOT NULL UNION ALL SELECT receipt FROM integration_cost_packets WHERE receipt IS NOT NULL UNION ALL SELECT input FROM integration_cost_policies`;
+    const complexity = this.store.get<{ nodes: number; containers: number }>(
+      `WITH docs AS (${documents}) SELECT COALESCE(MAX(1+length(raw)-length(replace(replace(replace(replace(raw,',',''),':',''),'[',''),'{',''))),0) AS nodes, COALESCE(MAX(length(raw)-length(replace(replace(raw,'[',''),'{',''))),0) AS containers FROM docs`,
+    )!;
+    offlineOriginalBound(
+      complexity.nodes <= offlineOriginalProfile.jsonNodes &&
+        complexity.containers <= offlineOriginalProfile.jsonContainers,
+    );
+    offlineOriginalCheck(
+      this.store.get(
+        `WITH docs AS (${documents}) SELECT COUNT(*) AS n FROM docs WHERE NOT json_valid(raw)`,
+      )!.n === 0,
+    );
+    // Source bytes are JSON nested inside a JSON string. Escaped brackets in
+    // that string are invisible to the outer lexical complexity preflight.
+    // Decode only in SQLite, then preflight the decoded bytes before checkedRow
+    // or the protocol validator can materialize/parse that inner document.
+    const embedded = this.store.get<{
+      bytes: number;
+      nodes: number;
+      containers: number;
+      bad: number;
+    }>(`WITH docs AS (SELECT json_extract(plan,'$.intent.source.bytes') AS raw,json_type(plan,'$.intent.source.bytes') AS kind FROM integration_stock_journals)
+      SELECT COALESCE(MAX(length(CAST(raw AS BLOB))),0) AS bytes,
+      COALESCE(MAX(1+length(raw)-length(replace(replace(replace(replace(raw,',',''),':',''),'[',''),'{',''))),0) AS nodes,
+      COALESCE(MAX(length(raw)-length(replace(replace(raw,'[',''),'{',''))),0) AS containers,
+      COALESCE(SUM(CASE WHEN kind IS NULL OR kind<>'text' THEN 1 ELSE 0 END),0) AS bad FROM docs`)!;
+    offlineOriginalBound(
+      embedded.bytes <= offlineOriginalProfile.fieldBytes &&
+        embedded.nodes <= offlineOriginalProfile.jsonNodes &&
+        embedded.containers <= offlineOriginalProfile.jsonContainers,
+    );
+    offlineOriginalCheck(embedded.bad === 0);
+    // Existence-only checks cover contradictory org copies and orphan history.
+    // Complete global sets were preflighted; no foreign tenant row is returned.
+    offlineOriginalCheck(
+      this.store.get(
+        `SELECT COUNT(*) AS n FROM integration_stock_journal_observations o LEFT JOIN integration_stock_journals j ON j.id=o.journal_id WHERE j.id IS NULL OR o.org_id<>j.org_id`,
+      )!.n === 0,
+    );
+    offlineOriginalCheck(
+      this.store.get(
+        `SELECT COUNT(*) AS n FROM integration_stock_journal_references r LEFT JOIN integration_stock_journals j ON j.id=r.journal_id WHERE j.id IS NULL OR r.org_id<>j.org_id OR r.realm<>j.realm`,
+      )!.n === 0,
+    );
+    offlineOriginalCheck(
+      this.store.get(
+        `SELECT COUNT(*) AS n FROM integration_stock_journals j LEFT JOIN integration_cost_packets p ON p.id=j.source_id WHERE j.leg='original' AND (p.id IS NULL OR p.org_id<>j.org_id)`,
+      )!.n === 0,
+    );
+    const raw = this.store.get<Journal>(
+      `SELECT ${offlineOriginalColumns.integration_stock_journals.split(" ").join(",")} FROM integration_stock_journals WHERE org_id=? AND id=?`,
+      actor.orgId,
+      journalId,
+    );
+    offlineOriginalCheck(
+      raw && raw.leg === "original" && raw.state === "unknown",
+    );
+    offlineOriginalCheck(
+      this.store.get(
+        `SELECT COUNT(*) AS n FROM integration_cost_sources s LEFT JOIN integration_cost_packets p ON p.id=s.packet_id WHERE p.id IS NULL OR s.org_id<>p.org_id`,
+      )!.n === 0,
+    );
+    offlineOriginalCheck(
+      this.store.get(
+        `SELECT COUNT(*) AS n FROM integration_cost_corrections WHERE original_id=? AND org_id<>?`,
+        raw.source_id,
+        actor.orgId,
+      )!.n === 0,
+    );
+    offlineOriginalCheck(
+      this.store.get(
+        `SELECT COUNT(*) AS n FROM integration_cost_receipts WHERE packet_id=?`,
+        raw.source_id,
+      )!.n === 0,
+    );
+    const source = this.costs.deliverySourceInTransaction(actor, raw.source_id);
+    offlineOriginalCheck(!source.accepted && !source.superseded);
+    const packet = this.store.get(
+      `SELECT ${offlineOriginalColumns.integration_cost_packets.split(" ").join(",")} FROM integration_cost_packets WHERE org_id=? AND id=?`,
+      actor.orgId,
+      raw.source_id,
+    )!;
+    const organization = this.identity.organization(actor),
+      document = JSON.parse(source.file.bytes);
+    offlineOriginalCheck(
+      document.region === organization.region &&
+        document.currency === organization.currency &&
+        Array.isArray(document.report.journal) &&
+        document.report.journal.length > 0 &&
+        document.report.journal.length <= 1000,
+    );
+    const totals = new Map<string, { debit: bigint; credit: bigint }>();
+    for (const line of document.report.journal as JournalLine[]) {
+      offlineOriginalCheck(
+        typeof line.date === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(line.date) &&
+          Number.isFinite(Date.parse(line.date)) &&
+          new Date(line.date).toISOString().slice(0, 10) === line.date &&
+          Number.isSafeInteger(line.debit) &&
+          Number.isSafeInteger(line.credit) &&
+          ((line.debit > 0 && line.credit === 0) ||
+            (line.credit > 0 && line.debit === 0)),
+      );
+      const t = totals.get(line.date) ?? { debit: 0n, credit: 0n };
+      t.debit += BigInt(line.debit);
+      t.credit += BigInt(line.credit);
+      totals.set(line.date, t);
+    }
+    const dates = [...totals]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([postingDate, t]) => {
+        offlineOriginalCheck(
+          t.debit > 0n &&
+            t.debit === t.credit &&
+            t.debit <= BigInt(Number.MAX_SAFE_INTEGER),
+        );
+        return {
+          postingDate,
+          debit: Number(t.debit),
+          credit: Number(t.credit),
+        };
+      });
+    const total = dates.reduce((n, d) => n + BigInt(d.debit), 0n);
+    offlineOriginalCheck(
+      total <= BigInt(Number.MAX_SAFE_INTEGER) &&
+        Number(total) === document.report.debit &&
+        Number(total) === document.report.credit,
+    );
+    const rows = this.store.all<Journal>(
+      `SELECT ${offlineOriginalColumns.integration_stock_journals.split(" ").join(",")} FROM integration_stock_journals WHERE org_id=? AND source_id=? ORDER BY posting_date,id`,
+      actor.orgId,
+      raw.source_id,
+    );
+    offlineOriginalCheck(rows.every((r) => r.leg === "original"));
+    const currentPolicy =
+      this.costs.corrections.deliveryPolicyInTransaction(actor);
+    offlineOriginalCheck(
+      currentPolicy &&
+        currentPolicy.input.inventoryPostingOwner === "distributor",
+    );
+    const attempts = rows.map((row) => {
+      this.checkedRow(row);
+      const plan = JSON.parse(row.plan) as Plan,
+        lineage = this.originalLineage(actor, row),
+        date = dates.find((d) => d.postingDate === row.posting_date);
+      offlineOriginalCheck(
+        date &&
+          plan.intent.source.bytes === source.file.bytes &&
+          plan.intent.source.hash === source.file.hash &&
+          row.realm === raw.realm &&
+          row.binding_id === raw.binding_id &&
+          plan.policyHash === currentPolicy.hash &&
+          plan.input.policyRevision === currentPolicy.revision &&
+          (!currentPolicy.input.closedThrough ||
+            row.posting_date > currentPolicy.input.closedThrough),
+      );
+      offlineOriginalCheck(
+        plan.input.authority.orgId === actor.orgId &&
+          plan.input.authority.region === organization.region &&
+          plan.input.authority.realm === row.realm,
+      );
+      const history = this.store.all(
+        `SELECT ${offlineOriginalColumns.integration_stock_journal_observations.split(" ").join(",")} FROM integration_stock_journal_observations WHERE journal_id=? ORDER BY revision`,
+        row.id,
+      );
+      const observations = history.map((r) =>
+        this.observation(actor, row.id, r),
+      );
+      offlineOriginalCheck(observations.every((o, i) => o.revision === i + 1));
+      const outcomeLeases = new Set<string>();
+      for (const [index, observation] of observations.entries()) {
+        const body = observation.body;
+        offlineOriginalCheck(
+          body && typeof body === "object" && !Array.isArray(body),
+        );
+        if (body.outcome === "unknown") {
+          const expired = ["expired-lease", "clock-rollback"].includes(
+            body.cause,
+          );
+          offlineOriginalCheck(
+            canonical(Object.keys(body).sort()) ===
+              canonical(
+                (expired
+                  ? ["outcome", "cause", "leaseId"]
+                  : ["outcome", "cause", "leaseId", "requestRef"]
+                ).sort(),
+              ) &&
+              [
+                "lookup-miss",
+                "transport-uncertain",
+                "authority-changed",
+                "expired-lease",
+                "clock-rollback",
+              ].includes(body.cause) &&
+              typeof body.leaseId === "string" &&
+              body.leaseId.length > 0 &&
+              body.leaseId.length <= 160 &&
+              !outcomeLeases.has(body.leaseId) &&
+              (expired || body.requestRef === requestRef(row.id)),
+          );
+          outcomeLeases.add(body.leaseId);
+        } else if (
+          body.kind === "permission-replacement.review" ||
+          body.kind === "permission-replacement.decision"
+        ) {
+          // Exact contents/independent decisions are reduced below by the owner.
+        } else if (body.kind === "original-cancellation-evidence") {
+          this.originalCancellationEvidence(actor, row, observation.hash);
+        } else if (body.outcome === "cancelled-unposted") {
+          offlineOriginalCheck(
+            row.state === "cancelled" && index === observations.length - 1,
+          );
+        } else offlineOriginalCheck(false);
+      }
+      const permission = journalPermissions(
+        row.id,
+        row.review_hash,
+        plan.input.authority,
+        observations,
+      );
+      // Validate the initial authority with the same strict permission grammar,
+      // without asserting that a historical permission remains current authority.
+      permissionInput({
+        journalId: row.id,
+        reviewHash: row.review_hash,
+        previousPermissionHash: digest(canonical(plan.input.authority)),
+        authority: plan.input.authority,
+        mode: "lookup",
+        reason: "Native offline permission shape",
+      });
+      offlineOriginalCheck(
+        this.store.get(
+          `SELECT COUNT(*) AS n FROM integration_stock_journal_references WHERE realm=? AND request_ref=? AND journal_id<>?`,
+          row.realm,
+          requestRef(row.id),
+          row.id,
+        )!.n === 0,
+      );
+      const references = this.store.all(
+        `SELECT ${offlineOriginalColumns.integration_stock_journal_references.split(" ").join(",")} FROM integration_stock_journal_references WHERE journal_id=? ORDER BY request_ref`,
+        row.id,
+      );
+      if (row.state === "ready" || row.state === "rejected")
+        offlineOriginalCheck(
+          references.length === 0 &&
+            history.length === 0 &&
+            row.external_id === null &&
+            row.lease_id === null &&
+            row.lease_actor === null &&
+            row.lease_started === null &&
+            row.lease_mode === null &&
+            row.dispatched === 0,
+        );
+      else
+        offlineOriginalCheck(
+          references.length === 1 &&
+            references[0]!.request_ref === requestRef(row.id) &&
+            row.decision_by &&
+            row.decision_by !== row.created_by &&
+            row.decision_at &&
+            row.decision_reason,
+        );
+      // This first subtype supports unresolved leaf + final cancelled ancestors.
+      // Other dates may remain ready/pending; posted/running competing histories
+      // conservatively require a separately designed complete projection.
+      offlineOriginalCheck(
+        ["ready", "rejected", "pending", "unknown", "cancelled"].includes(
+          row.state,
+        ),
+      );
+      offlineOriginalCheck(
+        row.external_id === null &&
+          row.lease_id === null &&
+          row.lease_actor === null &&
+          row.lease_started === null &&
+          row.lease_mode === null,
+      );
+      if (row.state === "unknown") this.originalCancellationFacts(actor, row);
+      if (row.state === "cancelled") this.originalCancelledProof(actor, row);
+      if (row.state === "pending")
+        offlineOriginalCheck(history.length === 0 && row.dispatched === 0);
+      return {
+        row: { ...row },
+        plan,
+        lineage,
+        history,
+        observations,
+        references,
+        permission: {
+          authority: permission.authority,
+          mode: permission.mode,
+          reviews: [...permission.reviews.values()],
+        },
+      };
+    });
+    const active = rows.filter((r) => r.state !== "rejected");
+    for (const date of dates) {
+      const same = active.filter((r) => r.posting_date === date.postingDate);
+      const leaves = same.filter(
+        (r) => !same.some((x) => x.attempt_id === r.id),
+      );
+      offlineOriginalCheck(leaves.length <= 1);
+      for (const predecessor of same.filter((r) =>
+        same.some((x) => x.attempt_id === r.id),
+      ))
+        offlineOriginalCheck(predecessor.state === "cancelled");
+      if (date.postingDate === raw.posting_date)
+        offlineOriginalCheck(
+          leaves.length === 1 && leaves[0]!.id === journalId,
+        );
+    }
+    const sourceReservations = this.store.all(
+      `SELECT org_id,movement_id,packet_id FROM integration_cost_sources WHERE packet_id=? ORDER BY movement_id`,
+      raw.source_id,
+    );
+    const sourceMovements = [
+      ...new Set(
+        (document.report.journal as JournalLine[]).map((l) => l.movementId),
+      ),
+    ].sort();
+    offlineOriginalCheck(
+      canonical(sourceReservations.map((r) => r.movement_id).sort()) ===
+        canonical(sourceMovements),
+    );
+    const policies = this.store.all(
+      `SELECT ${offlineOriginalColumns.integration_cost_policies.split(" ").join(",")} FROM integration_cost_policies WHERE org_id=? ORDER BY revision`,
+      actor.orgId,
+    );
+    const facts = {
+      version: 1 as const,
+      sourceReservations,
+      policies,
+      purpose: "distributor-stock-journal-offline-original-review-v1" as const,
+      profile: offlineOriginalProfile,
+      orgId: actor.orgId,
+      region: organization.region,
+      currency: organization.currency,
+      journalId,
+      hold,
+      source,
+      packet,
+      currentPolicy,
+      dates,
+      debit: Number(total),
+      credit: Number(total),
+      attempts,
+      blockers: [
+        "EXTERNAL_POSTING_TRUTH_UNVERIFIED",
+        "SOURCE_COMPLETENESS_UNQUALIFIED",
+        "CURRENT_EXTERNAL_AUTHORITY_REQUIRED",
+        "RECOVERY_HOLD_RETAINED",
+      ] as const,
+    };
+    offlineOriginalCheck(
+      this.store.get("SELECT total_changes() AS n")!.n === unchanged,
+    );
+    const encoded = canonical(facts);
+    offlineOriginalBound(
+      Buffer.byteLength(encoded) <= offlineOriginalProfile.totalBytes,
+    );
+    return offlineOriginalFreeze(
+      structuredClone({ ...facts, hash: digest(encoded) }),
+    );
   }
   originalReconciliationInTransaction(actor: Actor, packetId: string) {
     this.database.requireTransaction();
@@ -2496,3 +3018,7 @@ export class StockJournalDelivery {
     );
   }
 }
+
+export type OfflineOriginalJournalReview = ReturnType<
+  StockJournalDelivery["readOfflineOriginalInTransaction"]
+>;
