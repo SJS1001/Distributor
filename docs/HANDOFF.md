@@ -1,5 +1,11 @@
 # Distributor setup handoff
 
+## Captured refund projection integrated — 2026-10-03T21:59:36.111421+00:00
+
+Exact tested `d8e30aac7974455e687ff7d3db145d322f8310e8`; full3886/3886pass97797.050459ms, affected203/203pass260.971417ms, TypeScript/owned format/whitespacepass. All658 frozen inputs match committed blobs; [local receipt](evidence/LOCAL-REFUND-NATIVE-PROJECTION-2026-10-03.md). Prior Billing closing fdd47c64cda43841ee330bf21a77fe8ee3a61a71 published, fresh remote matched. Projection closing publication pending. No provider truth/import/retry/release authority; full product and all gates incomplete.
+
+Cloud projection owner returned/idle; exact patch verified and integrated. Negative-history owner returned ea28a97884f1ab500572192b107207fa6b59b428, full two-chunk transfer captured, review/integration pending; its150 cloudpasses unverified locally. Checkout turn01a103b7-9abf-70d7-89e0-513f6b66c24d remains active at21:59 compact snapshot. Cap3; no duplicate controller, CI or PR. Refill projection only after verified publication with accepted carrier evidence comparison. Root retains shared coordinator/Application/schema and exact cross-owner recovery.
+
 ## Verified exact Billing recovery checkpoint — 2026-10-03T21:55:59.376233+00:00
 
 Exact tested code/test commit `be4e09afc466be2c415a20be1ef80d485912cd2b`: full native3860/3860 pass, zero failures/cancellations/skips/todos,96871.645ms, exit0; five affected suites128/128 pass2926.387041ms. Complete TypeScript, owned formatting and whitespace pass. All657 frozen input hashes match committed blobs; public manifestSHA256a52816295423499f1a2ab79d4295cf74689b6da924d92790ab2a8af0633f0569. [Local receipt](evidence/LOCAL-BILLING-OFFLINE-FAILED-REFUND-RECOVERY-2026-10-03.md) records original two fixture failures and initial missing-forward-link planning failure, both retained privately. Final planning structure340Markdown/1940links passes; no gate qualification. Reader demonstrates exact retained Billing observation/notice consistency including later ignored observations/acknowledgements, fresh native authority and bounded complete facts; no import/provider truth or retry/release grant. Root source committed; closing docs publication pending.
