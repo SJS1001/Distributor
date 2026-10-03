@@ -21,6 +21,13 @@ import {
   type StockJournalIntent,
 } from "./quickbooks-stock-journal.ts";
 import { STOCK_JOURNAL_INITIALIZE_DDL } from "./stock-journal-schema.ts";
+import {
+  journalPermissions,
+  permissionInput,
+  permissionDecision,
+  type JournalPermissionInput,
+  type JournalPermissionDecision,
+} from "./stock-journal-permissions.ts";
 
 export type JournalDeliveryInput = {
   sourceId: string;
@@ -893,7 +900,283 @@ export class StockJournalDelivery {
       };
     });
   }
-  private effect(row: Journal): Effect {
+  private permissions(actor: Actor, row: Journal) {
+    const observations = this.store
+      .all(
+        "SELECT * FROM integration_stock_journal_observations WHERE org_id=? AND journal_id=? ORDER BY revision",
+        actor.orgId,
+        row.id,
+      )
+      .map((r) => this.observation(actor, row.id, r));
+    return journalPermissions(
+      row.id,
+      row.review_hash,
+      (JSON.parse(row.plan) as Plan).input.authority,
+      observations,
+    );
+  }
+  private permissionMode(row: Journal): "write" | "lookup" {
+    const instant = integer(
+      Date.now(),
+      "Permission review clock",
+      0,
+      Number.MAX_SAFE_INTEGER - leaseDuration,
+    );
+    const expired =
+      row.state === "running" &&
+      row.lease_started !== null &&
+      (instant < row.lease_started ||
+        instant >= row.lease_started + leaseDuration);
+    check(
+      row.state === "unknown" ||
+        expired ||
+        (row.state === "pending" && !row.dispatched),
+      "JOURNAL_PERMISSION_STATE",
+      "Only an undispatched pending journal, unknown outcome or expired lease may review replacement permission.",
+    );
+    return row.state === "unknown" || expired ? "lookup" : "write";
+  }
+  private permissionFacts(
+    actor: Actor,
+    row: Journal,
+    authority: LedgerAuthority,
+    mode: "write" | "lookup",
+    enforceOrder = false,
+  ) {
+    this.identity.organizationResidency.assertAllowedInTransaction(
+      actor,
+      authority,
+    );
+    const original = JSON.parse(row.plan) as Plan;
+    if (mode === "write") {
+      const current = this.plan(
+        actor,
+        { ...original.input, authority },
+        enforceOrder,
+      );
+      check(
+        canonical({
+          ...current,
+          input: { ...current.input, authority: original.input.authority },
+        }) === row.plan,
+        "JOURNAL_REVIEW_CHANGED",
+        "Source, period, accounts or policy changed from the original reviewed journal.",
+      );
+    } else {
+      check(
+        this.source(actor, original.input, false).hash ===
+          original.intent.source.hash,
+        "JOURNAL_SOURCE",
+        "Retained approved source changed.",
+      );
+    }
+  }
+  permissionReview(actor: Actor, journalId: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      this.platform.assertProviderAccess();
+      const row = this.row(actor, journalId),
+        previous = this.permissions(actor, row),
+        authority =
+          this.identity.organizationResidency.currentPermissionInTransaction(
+            actor,
+          ),
+        mode = this.permissionMode(row);
+      permissionInput(
+        {
+          journalId,
+          reviewHash: row.review_hash,
+          previousPermissionHash: digest(canonical(previous.authority)),
+          authority,
+          mode,
+          reason: "Prospective replacement review",
+        },
+        (JSON.parse(row.plan) as Plan).input.authority,
+      );
+      check(
+        canonical(authority) !== canonical(previous.authority),
+        "JOURNAL_PERMISSION_UNCHANGED",
+        "The journal already retains this permission stamp.",
+      );
+      check(
+        previous.mode !== "lookup" || mode === "lookup",
+        "JOURNAL_PERMISSION_STATE",
+        "Lookup permission cannot grant another write.",
+      );
+      this.permissionFacts(actor, row, authority, mode);
+      return {
+        journal: this.view(row),
+        previousAuthority: previous.authority,
+        previousPermissionHash: digest(canonical(previous.authority)),
+        authority,
+        mode,
+        disclosure: this.identity.organizationResidency.disclosure(
+          actor,
+          authority.disclosureId,
+        ),
+      };
+    });
+  }
+  permissionHistory(actor: Actor, journalId: string, reviewId?: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const row = this.row(actor, journalId),
+        current = this.permissions(actor, row);
+      const reviews = [...current.reviews.values()].reverse();
+      if (reviewId !== undefined) {
+        text(reviewId, "Permission review identity", 160);
+        check(
+          current.reviews.has(reviewId),
+          "NOT_FOUND",
+          "Permission review not found.",
+          404,
+        );
+      }
+      return {
+        journalId: row.id,
+        reviewHash: row.review_hash,
+        authority: current.authority,
+        mode: current.mode,
+        reviews:
+          reviewId === undefined
+            ? reviews.slice(0, 20)
+            : [current.reviews.get(reviewId)!],
+        olderReviews: reviewId === undefined && reviews.length > 20,
+      };
+    });
+  }
+  preparePermission(actor: Actor, key: string, raw: JournalPermissionInput) {
+    const input = structuredClone(raw);
+    permissionInput(input);
+    return this.platform.command(
+      actor,
+      "accounting.journal.permission.prepare",
+      key,
+      input,
+      (cached) => {
+        actor = this.principal(actor);
+        const row = this.row(actor, input.journalId),
+          history = this.permissions(actor, row);
+        permissionInput(input, (JSON.parse(row.plan) as Plan).input.authority);
+        if (cached !== undefined) {
+          check(
+            cached && typeof cached === "object",
+            "JOURNAL_INTEGRITY",
+            "Permission preparation receipt is damaged.",
+          );
+          const retained = history.reviews.get(cached.id);
+          check(
+            retained &&
+              canonical({ ...retained, decision: null }) === canonical(cached),
+            "JOURNAL_INTEGRITY",
+            "Retained permission receipt differs from its original review.",
+          );
+        } else this.platform.assertProviderAccess();
+      },
+      () => {
+        const row = this.row(actor, input.journalId),
+          history = this.permissions(actor, row);
+        check(
+          input.reviewHash === row.review_hash &&
+            input.previousPermissionHash ===
+              digest(canonical(history.authority)),
+          "JOURNAL_PERMISSION_CHANGED",
+          "Review the current permission chain and original journal.",
+        );
+        check(
+          input.mode === this.permissionMode(row) &&
+            (history.mode !== "lookup" || input.mode === "lookup"),
+          "JOURNAL_PERMISSION_STATE",
+          "Review the exact permitted operation.",
+        );
+        check(
+          canonical(input.authority) !== canonical(history.authority),
+          "JOURNAL_PERMISSION_UNCHANGED",
+          "The journal already retains this permission stamp.",
+        );
+        this.permissionFacts(actor, row, input.authority, input.mode);
+        const reviewId = id(),
+          reviewHash = digest(canonical(input)),
+          observation = this.observe(actor, row, {
+            kind: "permission-replacement.review",
+            version: 1,
+            id: reviewId,
+            input,
+            reviewHash,
+          });
+        return { id: reviewId, input, reviewHash, observation, decision: null };
+      },
+    );
+  }
+  decidePermission(actor: Actor, key: string, raw: JournalPermissionDecision) {
+    const input = structuredClone(raw);
+    permissionDecision(input);
+    return this.platform.command(
+      actor,
+      "accounting.journal.permission.decide",
+      key,
+      input,
+      (cached) => {
+        actor = this.principal(actor);
+        const row = this.row(actor, input.journalId),
+          history = this.permissions(actor, row);
+        if (cached !== undefined) {
+          const retained = history.reviews.get(
+            input.permissionReviewId,
+          )?.decision;
+          check(
+            retained && canonical(retained) === canonical(cached),
+            "JOURNAL_INTEGRITY",
+            "Retained permission decision receipt changed.",
+          );
+        } else this.platform.assertProviderAccess();
+      },
+      () => {
+        const row = this.row(actor, input.journalId),
+          history = this.permissions(actor, row),
+          review = history.reviews.get(input.permissionReviewId);
+        check(
+          review &&
+            review.reviewHash === input.permissionReviewHash &&
+            !review.decision,
+          "JOURNAL_PERMISSION_REVIEW",
+          "Select the exact undecided permission review.",
+        );
+        check(
+          review.observation.recordedBy !== actor.id,
+          "JOURNAL_SEPARATE_REVIEW",
+          "A different current finance principal must decide this replacement permission.",
+          403,
+        );
+        if (input.decision === "approve") {
+          check(
+            review.input.previousPermissionHash ===
+              digest(canonical(history.authority)),
+            "JOURNAL_PERMISSION_CHANGED",
+            "Permission chain changed after preparation.",
+          );
+          check(
+            review.input.mode === this.permissionMode(row) &&
+              (history.mode !== "lookup" || review.input.mode === "lookup"),
+            "JOURNAL_PERMISSION_STATE",
+            "The reviewed operation changed after preparation.",
+          );
+          this.permissionFacts(
+            actor,
+            row,
+            review.input.authority,
+            review.input.mode,
+          );
+        }
+        return this.observe(actor, row, {
+          kind: "permission-replacement.decision",
+          version: 1,
+          input,
+        });
+      },
+    );
+  }
+  private effect(row: Journal, authority: LedgerAuthority): Effect {
     const plan = JSON.parse(row.plan) as Plan;
     return {
       id: row.id,
@@ -907,7 +1190,7 @@ export class StockJournalDelivery {
       external_ref: row.external_id,
       result: null,
       created_at: row.created_at,
-      residency_version: plan.input.authority.revision,
+      residency_version: authority.revision,
       started_at: row.lease_started,
       error: null,
     };
@@ -988,10 +1271,10 @@ export class StockJournalDelivery {
           0,
           Number.MAX_SAFE_INTEGER - leaseDuration,
         ),
-        plan = JSON.parse(row.plan) as Plan;
+        permission = this.permissions(actor, row);
       this.identity.organizationResidency.assertAllowedInTransaction(
         actor,
-        plan.input.authority,
+        permission.authority,
       );
       if (row.state === "running") {
         check(
@@ -1020,20 +1303,12 @@ export class StockJournalDelivery {
         "JOURNAL_STATE",
         "Only pending journals may write; unknown outcomes require read-only reconciliation.",
       );
-      if (mode === "write")
-        check(
-          digest(canonical(this.plan(actor, plan.input, true))) ===
-            row.review_hash,
-          "JOURNAL_REVIEW_CHANGED",
-          "Journal authority, source or policy changed since review.",
-        );
-      else
-        check(
-          this.source(actor, plan.input, false).hash ===
-            plan.intent.source.hash,
-          "JOURNAL_SOURCE",
-          "Retained approved source changed.",
-        );
+      check(
+        mode !== "write" || permission.mode === "write",
+        "JOURNAL_PERMISSION_STATE",
+        "Replacement lookup permission cannot grant a write.",
+      );
+      this.permissionFacts(actor, row, permission.authority, mode, true);
       const leaseId = id();
       this.store.run(
         "UPDATE integration_stock_journals SET state='running',lease_id=?,lease_actor=?,lease_started=?,lease_mode=? WHERE org_id=? AND id=?",
@@ -1052,10 +1327,10 @@ export class StockJournalDelivery {
         leaseId,
         started: instant,
         mode,
-        effect: Object.freeze(this.effect(row)),
+        effect: Object.freeze(this.effect(row, permission.authority)),
         bindingId: row.binding_id,
         realm: row.realm,
-        authority: Object.freeze(structuredClone(plan.input.authority)),
+        authority: Object.freeze(structuredClone(permission.authority)),
       });
       this.leases.add(lease);
       this.platform.audit(actor, "accounting.journal.claimed", row.id, {
@@ -1090,30 +1365,24 @@ export class StockJournalDelivery {
   private authority(lease: JournalLease, row: Journal) {
     const actor = this.principal(lease.actor);
     this.platform.assertProviderAccess();
+    const permission = this.permissions(actor, row);
+    check(
+      canonical(permission.authority) === canonical(lease.authority) &&
+        (lease.mode !== "write" || permission.mode === "write"),
+      "JOURNAL_PERMISSION_CHANGED",
+      "Issued lease permission differs from the retained approved chain.",
+    );
     this.identity.organizationResidency.assertAllowedInTransaction(
       actor,
       lease.authority,
     );
-    const plan = JSON.parse(row.plan) as Plan;
     check(
-      canonical(this.effect(row)) ===
+      canonical(this.effect(row, permission.authority)) ===
         canonical({ ...lease.effect, external_ref: row.external_id }),
       "JOURNAL_INTEGRITY",
       "Issued effect differs from retained journal.",
     );
-    if (lease.mode === "write")
-      check(
-        digest(canonical(this.plan(actor, plan.input, true))) ===
-          row.review_hash,
-        "JOURNAL_REVIEW_CHANGED",
-        "Current journal write authority changed.",
-      );
-    else
-      check(
-        this.source(actor, plan.input, false).hash === plan.intent.source.hash,
-        "JOURNAL_SOURCE",
-        "Retained source changed.",
-      );
+    this.permissionFacts(actor, row, permission.authority, lease.mode, true);
     return actor;
   }
   private transportFence(fence?: () => void) {

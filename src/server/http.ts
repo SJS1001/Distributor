@@ -51,6 +51,18 @@ type Schema = Record<string, unknown>;
 const str: Schema = { type: "string", minLength: 1, maxLength: 2000 },
   num: Schema = { type: "integer", minimum: 0, maximum: 1e12 },
   bool: Schema = { type: "boolean" };
+const ledgerAuthority = () =>
+  obj({
+    provider: { const: "quickbooks" },
+    purpose: { const: "stock-cost-journal" },
+    environment: { const: "sandbox" },
+    orgId: str,
+    region: choice("CA", "US"),
+    realm: { type: "string", pattern: "^[1-9][0-9]{0,29}$" },
+    revision: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+    disclosureId: str,
+    disclosureHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+  });
 const arr = (items: Schema): Schema => ({
   type: "array",
   items,
@@ -335,6 +347,29 @@ export function commands(
         reason: str,
       }),
       run: (a, k, p) => app.integration.costs.journals.decide(a, k, p),
+    },
+    "accounting.journal.permission.prepare": {
+      schema: obj({
+        journalId: { ...str, maxLength: 160 },
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        previousPermissionHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        authority: ledgerAuthority(),
+        mode: choice("write", "lookup"),
+        reason: str,
+      }),
+      run: (a, k, p) =>
+        app.integration.costs.journals.preparePermission(a, k, p),
+    },
+    "accounting.journal.permission.decide": {
+      schema: obj({
+        journalId: { ...str, maxLength: 160 },
+        permissionReviewId: { ...str, maxLength: 160 },
+        permissionReviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) =>
+        app.integration.costs.journals.decidePermission(a, k, p),
     },
     "accounting.journal.cancel-correction": {
       schema: obj({
@@ -3497,6 +3532,39 @@ export async function createHttp(app: Application, options: HttpOptions) {
       return app.integration.costs.journals.detail(
         actor(request),
         request.params.journalId,
+      );
+    },
+  );
+  http.get<{ Params: { journalId: string } }>(
+    "/api/accounting/journals/:journalId/permission-review",
+    { schema: { params: obj({ journalId: str }), querystring: obj({}) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.permissionReview(
+        actor(request),
+        request.params.journalId,
+      );
+    },
+  );
+  http.get<{
+    Params: { journalId: string };
+    Querystring: { reviewId?: string };
+  }>(
+    "/api/accounting/journals/:journalId/permissions",
+    {
+      schema: {
+        params: obj({ journalId: str }),
+        querystring: obj({ reviewId: { ...str, maxLength: 160 } }, [
+          "reviewId",
+        ]),
+      },
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.permissionHistory(
+        actor(request),
+        request.params.journalId,
+        request.query.reviewId,
       );
     },
   );
