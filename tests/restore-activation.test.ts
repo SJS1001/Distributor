@@ -527,7 +527,7 @@ for (const reports of [false, true])
   test(`v16/${reports} exact fresh-file upgrade preserves hold and source bytes`, async (t) => {
     const s = setup(t, "CA", reports),
       source = join(dirname(s.f.path), "v16.db"),
-      dest = join(dirname(s.f.path), "v17.db");
+      dest = join(dirname(s.f.path), "v18.db");
     const db = new DatabaseSync(s.f.path);
     try {
       db.prepare("VACUUM INTO ?").run(source);
@@ -536,6 +536,9 @@ for (const reports of [false, true])
     }
     const old = new DatabaseSync(source);
     try {
+      old.exec(
+        "DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
+      );
       old.exec("DROP TABLE platform_restore_releases");
       old.exec("DROP TABLE inventory_quantity_corrections");
       old
@@ -558,7 +561,7 @@ for (const reports of [false, true])
       inspected.schemaHash,
       "CA",
     );
-    assert.equal(upgraded.version, 17);
+    assert.equal(upgraded.version, 18);
     assert.deepEqual(readFileSync(source), bytes);
     const app = new Application(dest, "CA", { eventReports: reports });
     try {

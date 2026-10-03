@@ -238,7 +238,7 @@ for (const region of ["CA", "US"] as const) {
         "backup must leave every source row and exact schema unchanged",
       );
       assert.equal(receipt.version, 1);
-      assert.equal(receipt.schemaVersion, 17);
+      assert.equal(receipt.schemaVersion, 18);
       assert.equal(receipt.eventReports, eventReports);
       assert.equal(receipt.schemaHash, before.schemaHash);
       assert.equal(
@@ -262,7 +262,7 @@ for (const region of ["CA", "US"] as const) {
       ship(f, accept(f, 1, "later-order").id);
       const after = inspect(f.path);
       const restored = await restoreBackup(archive, target, region, key);
-      assert.equal(restored.schemaVersion, 17);
+      assert.equal(restored.schemaVersion, 18);
       assert.equal(restored.eventReports, eventReports);
       assert.equal(restored.schemaHash, before.schemaHash);
       assert.equal(restored.snapshotHash, receipt.snapshotHash);
@@ -572,6 +572,9 @@ for (const sourceVersion of [
                                     ? versionFifteen.hashes.disabled
                                     : versionSixteen.hashes.disabled;
     try {
+      db.exec(
+        "DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
+      );
       db.exec("DROP TABLE inventory_quantity_corrections");
       db.exec("DROP TABLE platform_restore_releases");
       if (sourceVersion < 16)
@@ -667,7 +670,7 @@ test("operator CLI backs up/restores disabled US profile through protected stdin
   assert.equal(restored.code, 0, restored.err);
   for (const result of [backed, restored]) {
     const receipt = JSON.parse(result.out);
-    assert.equal(receipt.schemaVersion, 17);
+    assert.equal(receipt.schemaVersion, 18);
     assert.equal(receipt.eventReports, false);
     assert.equal(receipt.schemaHash, before.schemaHash);
     assert.equal(receipt.region, region);

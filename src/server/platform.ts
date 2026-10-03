@@ -1,3 +1,4 @@
+import { RestoreOfflineStorage } from "./restore-offline-storage.ts";
 import { RestoreActivation } from "./restore-activation.ts";
 import {
   canonical,
@@ -28,6 +29,7 @@ import {
 
 export class Platform {
   readonly restore: RestoreActivation;
+  readonly offline: RestoreOfflineStorage;
   private store: Store;
   private projection?: () => number;
   private readAuthority?: (actor: Actor) => Actor;
@@ -41,6 +43,7 @@ export class Platform {
       CREATE TABLE IF NOT EXISTS platform_recovery (id INTEGER PRIMARY KEY CHECK(id=1), snapshot_hash TEXT NOT NULL, restored_at TEXT NOT NULL, source_completed_at TEXT NOT NULL) STRICT;
     `);
     this.restore = new RestoreActivation(database);
+    this.offline = new RestoreOfflineStorage(database);
     // Preserve existing IDs/bytes. A durable sequence avoids timestamp ties,
     // clock rollback and rowid changes during later SQLite maintenance.
     this.database.transaction(() =>

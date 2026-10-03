@@ -38,6 +38,40 @@ import versionTwo from "./schema-version-two.json" with { type: "json" };
 import versionFour from "./schema-version-four.json" with { type: "json" };
 import versionThree from "./schema-version-three.json" with { type: "json" };
 
+// Frozen at published d6f8818; independent literal schema-17 additions/hashes.
+const versionSeventeen = {
+  hashes: {
+    enabled: "d5b701319d5933f2357392e90a0ce48dedf0f78540237fd473de4e05d1206f41",
+    disabled:
+      "338cd156fd11a564935dae8c1f7afb34ee0cbb2547f1f98a97e37c91fb020d1c",
+  },
+  additions: [
+    {
+      type: "table",
+      name: "inventory_quantity_corrections",
+      tbl_name: "inventory_quantity_corrections",
+      sql: "CREATE TABLE inventory_quantity_corrections(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,reference TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','reviewed','rejected')),record TEXT NOT NULL,hash TEXT NOT NULL,UNIQUE(org_id,reference)) STRICT",
+    },
+    {
+      type: "index",
+      name: "inventory_quantity_pending",
+      tbl_name: "inventory_quantity_corrections",
+      sql: "CREATE UNIQUE INDEX inventory_quantity_pending ON inventory_quantity_corrections(org_id,unit_id) WHERE state='ready'",
+    },
+    {
+      type: "table",
+      name: "platform_restore_releases",
+      tbl_name: "platform_restore_releases",
+      sql: "CREATE TABLE platform_restore_releases(id TEXT PRIMARY KEY,state TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),record TEXT NOT NULL,hash TEXT NOT NULL) STRICT",
+    },
+    {
+      type: "index",
+      name: "platform_restore_single_release",
+      tbl_name: "platform_restore_releases",
+      sql: "CREATE UNIQUE INDEX platform_restore_single_release ON platform_restore_releases((1)) WHERE state NOT IN('rolled-back','superseded')",
+    },
+  ],
+};
 const metadata = "platform_schema_version";
 // Independent historical DDL and literal fingerprints; do not derive this fixture
 // from the new schema inspector or current module constructors.
@@ -548,6 +582,37 @@ function frozenVersionSixteen(
     db.exec("COMMIT");
   });
 }
+function frozenVersionSeventeen(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionSixteen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN");
+    for (const object of versionSeventeen.additions) db.exec(object.sql);
+    for (const object of versionSeventeen.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=17,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionSeventeen.hashes.enabled
+        : versionSeventeen.hashes.disabled,
+    );
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -598,7 +663,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -609,6 +674,10 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "platform_offline_head",
+    "platform_offline_receipts",
+    "platform_offline_journal",
+    "platform_offline_generations",
     "platform_restore_releases",
     "inventory_quantity_corrections",
     "inventory_valuation_policies",
@@ -639,6 +708,13 @@ function conservedUpgrade(
     "integration_cost_policies",
     "integration_cost_corrections",
   ]) {
+    if (
+      sourceVersion >= 17 &&
+      ["platform_restore_releases", "inventory_quantity_corrections"].includes(
+        name,
+      )
+    )
+      continue;
     if (
       sourceVersion >= 16 &&
       (name.startsWith("inventory_valuation") ||
@@ -748,7 +824,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
 });
 
 for (const sourceVersion of [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
 ])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
@@ -938,7 +1014,9 @@ for (const sourceVersion of [
                                     ? frozenVersionFourteen
                                     : sourceVersion === 15
                                       ? frozenVersionFifteen
-                                      : frozenVersionSixteen)(
+                                      : sourceVersion === 16
+                                        ? frozenVersionSixteen
+                                        : frozenVersionSeventeen)(
           f.path,
           source,
           eventReports,
@@ -982,7 +1060,9 @@ for (const sourceVersion of [
                                           ? versionFourteen.hashes
                                           : sourceVersion === 15
                                             ? versionFifteen.hashes
-                                            : versionSixteen.hashes
+                                            : sourceVersion === 16
+                                              ? versionSixteen.hashes
+                                              : versionSeventeen.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -1014,7 +1094,9 @@ for (const sourceVersion of [
                                           ? versionFourteen.hashes
                                           : sourceVersion === 15
                                             ? versionFifteen.hashes
-                                            : versionSixteen.hashes
+                                            : sourceVersion === 16
+                                              ? versionSixteen.hashes
+                                              : versionSeventeen.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -1043,10 +1125,10 @@ for (const sourceVersion of [
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 17);
+        assert.equal(upgraded.version, 18);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 17);
+        assert.equal(inspection.version, 18);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);
