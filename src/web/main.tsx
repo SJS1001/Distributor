@@ -1,4 +1,9 @@
 import {
+  CountReview,
+  type CountSelection,
+  type CountKind,
+} from "./count-review.tsx";
+import {
   TransferDispatch,
   type DispatchSelection,
 } from "./transfer-dispatch.tsx";
@@ -147,6 +152,10 @@ function App() {
   } | null>(null);
   const stockHistoryOpener = useRef<HTMLElement | null>(null);
   const [binSelection, setBinSelection] = useState<BinSelection | null>(null);
+  const [countSelection, setCountSelection] = useState<{
+    kind: CountKind;
+    count: CountSelection;
+  } | null>(null);
   const [dispatchSelection, setDispatchSelection] =
     useState<DispatchSelection | null>(null);
   const [arrivalSelection, setArrivalSelection] =
@@ -226,6 +235,7 @@ function App() {
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
+    setCountSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
@@ -465,6 +475,7 @@ function App() {
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
+    setCountSelection(null);
     stockHistoryOpener.current = null;
     setReservationOrderId(null);
     reservationOpener.current = null;
@@ -495,6 +506,7 @@ function App() {
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
+    setCountSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
     stopCatalogRead();
@@ -898,6 +910,25 @@ function App() {
     admin = actor?.role === "admin",
     can = (...roles: string[]) => admin || roles.includes(actor?.role ?? "");
   const currency = data?.organization.currency ?? "CAD";
+  const reviewCount = (c: Item, kind: CountKind) =>
+    setCountSelection({
+      kind,
+      count: {
+        id: c.id,
+        unitId: c.unit_id,
+        reference: c.count_ref,
+        product: productName(c.product_id),
+        warehouse: warehouseName(c.warehouse_id),
+        bin: c.bin,
+        condition: c.condition,
+        stockRevision: c.stock_revision,
+        expected: c.expected_quantity,
+        observed: c.observed_quantity,
+        unitCost: c.unit_cost,
+        policyMode: c.reviewPolicy.mode,
+        policyRevision: c.reviewPolicy.revision,
+      },
+    });
   const productName = (pid: string, description?: string) =>
     data?.products.find((p: Item) => p.id === pid)?.sku ?? description ?? pid;
   const warehouseName = (wid: string) =>
@@ -1374,6 +1405,7 @@ function App() {
                 setArrivalSelection(null);
                 setLossSelection(null);
                 setDispatchSelection(null);
+                setCountSelection(null);
                 stockHistoryOpener.current = null;
                 setPurchaseEntryOpen(false);
                 setDialog((current) =>
@@ -2682,6 +2714,28 @@ function App() {
                   )}
               </section>
             )}
+            {(["observation", "approve", "reject"] as const).map((kind) => {
+              if (kind === "observation" ? !can("warehouse") : !admin)
+                return null;
+              const selected =
+                countSelection?.kind === kind ? countSelection.count : null;
+              return (
+                <CountReview
+                  key={`${actor.orgId}:${actor.id}:${kind}:${selected?.id ?? ""}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  kind={kind}
+                  selection={selected}
+                  close={() => setCountSelection(null)}
+                  saved={async () => {
+                    await refresh();
+                    setNotice(
+                      "Count operation confirmed. Review current stock and count history before further work.",
+                    );
+                  }}
+                />
+              );
+            })}
             {extra.counts && (
               <CountQueue
                 key={extra.countRefresh}
@@ -2738,37 +2792,12 @@ function App() {
                           {c.state === "draft" &&
                             can("warehouse") &&
                             button("Record observation", () =>
-                              simple(
-                                "Record count observation",
-                                [
-                                  {
-                                    name: "quantity",
-                                    label: "Physical units observed",
-                                    type: "number",
-                                    value: c.expected_quantity,
-                                    max: 100000,
-                                  },
-                                  reason,
-                                ],
-                                "count.submit",
-                                (v) => ({ ...v, countId: c.id }),
-                              ),
+                              reviewCount(c, "observation"),
                             )}
                           {c.state === "submitted" &&
                             c.canApprove &&
                             button("Approve count", () =>
-                              open(
-                                "Approve stock correction",
-                                [reason],
-                                (v) =>
-                                  command("count.decide", {
-                                    ...v,
-                                    countId: c.id,
-                                    decision: "approve",
-                                    policyRevision: c.reviewPolicy.revision,
-                                  }),
-                                `${c.count_ref}: ${c.expected_quantity} expected, ${c.observed_quantity} observed. Adjustment ${c.delta} units / ${money(c.valueDelta, currency)} at original unit cost. Approval does not post an accounting entry.`,
-                              ),
+                              reviewCount(c, "approve"),
                             )}
                           {c.state === "submitted" &&
                             admin &&
@@ -2781,16 +2810,7 @@ function App() {
                           {["draft", "submitted"].includes(c.state) &&
                             admin &&
                             button("Reject count", () =>
-                              simple(
-                                "Reject stock count",
-                                [reason],
-                                "count.decide",
-                                (v) => ({
-                                  ...v,
-                                  countId: c.id,
-                                  decision: "reject",
-                                }),
-                              ),
+                              reviewCount(c, "reject"),
                             )}
                         </div>,
                       ],

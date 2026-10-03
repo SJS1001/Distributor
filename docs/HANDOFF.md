@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Current continuation — retained count reviews, 2026-10-02
+
+- Receipt-history parent `9e784f7fb5a3bd6a34761b768c7c216464431ee9`; authorized current branch is `codex/local-distributor-checkpoint`. Count recovery source/test/docs are ready for normal commit and push. No CI runner, cloud/delegated session, provider IO, PR, merge or deployment.
+- Old-build lost-success reproductions fail for observation/approval/rejection reload recovery. Dedicated exact-attempt reviews now retain immutable original evidence, restore readonly reviews and coordinate tabs; native authority remains current. Native inputs/schema/dependencies unchanged.
+- Fresh full production Chromium suite passes 208/208 in 3.8 minutes, including nineteen new count journeys. TypeScript/build/format pass. Changed-source React scan has zero errors and three warnings; existing bundle and full-App diagnostic limitations remain. [Count receipt](evidence/LOCAL-COUNT-RECOVERY-2026-10-02.md) preserves failed and interrupted fixtures and obsolete legacy selector failure; private artifacts stay excluded.
+- Self-review covers immutable replay, policy/stock drift, authority, refusals, persistence/locks, cleanup, original cost/quantity and dialog identity/focus. Finish publication review and verify exact remote commit. Next reproduce shared application/PDF completions after navigation/sign-out before changing them. The [coding inventory](CODING-REMAINDER.md) records current gaps and Purolator's inaccessible official contract prerequisite. Historical superseded items are not a current backlog.
+- Actual operators/devices/providers, infrastructure residency, security/load/recovery and commercial policy acceptance remain open. All 44 tasks and 10 gates NOT VERIFIED; full system incomplete.
+
 ## Latest continuation — receipt history abandonment and close, 2026-10-02
 
 - Published transfer-loading checkpoint `b4ac227fce7f671f4bc6ddd238f84b08884b7dbb` is the verified parent on `codex/local-distributor-checkpoint`. Continued under owner authorization for coding and Distributor snapshot publication. Direct workstation checks only; no CI runner, cloud/delegated session, live provider IO, PR, merge or deployment.

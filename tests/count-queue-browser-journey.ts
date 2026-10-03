@@ -172,7 +172,7 @@ test("browser: phone count pages replace twenty rows, retry exact cursors and re
       .click();
     await expect(approval.getByRole("alert")).toBeVisible();
     await approval
-      .getByRole("button", { name: "Continue", exact: true })
+      .getByRole("button", { name: "Retry exact count operation", exact: true })
       .click();
     await expect(approval).toHaveCount(0);
     expect(attempts).toHaveLength(2);

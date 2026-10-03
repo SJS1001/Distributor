@@ -1,3 +1,4 @@
+import "./count-recovery-browser-journey.ts";
 import "./receipt-history-browser-journey.ts";
 import "./count-queue-browser-journey.ts";
 import "./transfer-loss-browser-journey.ts";
@@ -2445,7 +2446,10 @@ test("browser: warehouse count observation survives reload, administrator retry 
     .fill("Supervisor verified the count evidence");
   await next(page);
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Retry exact count operation", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(count).toContainText("approved");
   await findLot();
