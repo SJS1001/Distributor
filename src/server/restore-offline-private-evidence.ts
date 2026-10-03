@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import { types } from "node:util";
-import { canonical, check, digest, DomainError } from "./core.ts";
+import { canonical, check, digest, DomainError, type Actor } from "./core.ts";
 import {
   compareOfflineFailedRefundEvidence,
   type OfflineFailedRefundComparison,
@@ -11,10 +11,26 @@ import {
 } from "./restore-offline-envelope.ts";
 import {
   readRestorePrivateEvidence,
+  readRestorePrivateOriginalEvidence,
   type RestoreEvidenceCapture,
   type RestoreEvidenceManifest,
 } from "./restore-private-evidence.ts";
 
+import { Database } from "./database.ts";
+import { Identity } from "./iam.ts";
+import { StockJournalDelivery } from "./stock-journal-delivery.ts";
+import {
+  StockJournalOfflineOriginalEvidence,
+  type OfflineOriginalEvidenceInput,
+  type CapturedOfflineOriginalEvidence,
+} from "./stock-journal-offline-original-evidence.ts";
+
+export const offlineOriginalPrivateTask = Object.freeze({
+  owner: "integration",
+  name: "integration.quickbooks-original-cancelled.import",
+  version: 1,
+});
+const originalBytes = 16_016_384;
 const MiB = 1024 ** 2;
 function requireValue(value: unknown): asserts value {
   check(
@@ -105,33 +121,42 @@ function record(input: unknown, keys: string[]): Record<string, unknown> {
 
 // Only JSON.parse output from the bounded private buffer reaches this walk.
 // Iterative preflight must finish BEFORE recursive canonicalization/comparison.
-function refundJsonShape(input: unknown) {
+function boundedJsonShape(input: unknown, original = false) {
   const stack = [{ value: input, depth: 0 }];
   let nodes = 0;
   while (stack.length) {
     const { value, depth } = stack.pop()!;
-    requireValue(++nodes <= 4096 && depth <= 16);
+    requireValue(
+      ++nodes <= (original ? 1_100_000 : 4096) && depth <= (original ? 64 : 16),
+    );
     if (value === null || typeof value === "boolean") continue;
     if (typeof value === "number") {
       requireValue(Number.isSafeInteger(value) && !Object.is(value, -0));
       continue;
     }
     if (typeof value === "string") {
-      requireValue(value.length <= 8192 && !/[\ud800-\udfff]/u.test(value));
+      requireValue(
+        value.length <= (original ? 2_000_000 : 8192) &&
+          !/[\ud800-\udfff]/u.test(value) &&
+          (!original ||
+            (!value.includes("\0") && Buffer.byteLength(value) <= 2_000_000)),
+      );
       continue;
     }
     requireValue(typeof value === "object");
     if (Array.isArray(value)) {
-      requireValue(value.length <= 128);
+      requireValue(value.length <= (original ? 8192 : 128));
       for (const child of value) stack.push({ value: child, depth: depth + 1 });
     } else {
       const keys = Object.keys(value);
-      requireValue(keys.length <= 64);
+      requireValue(keys.length <= (original ? 128 : 64));
       for (const key of keys) {
         requireValue(
-          key.length <= 128 &&
+          key.length <= (original ? 160 : 128) &&
             !/[\ud800-\udfff]/u.test(key) &&
-            !["__proto__", "constructor", "prototype"].includes(key),
+            (original
+              ? /^[A-Za-z0-9_-]{1,160}$/.test(key)
+              : !["__proto__", "constructor", "prototype"].includes(key)),
         );
         stack.push({
           value: (value as Record<string, unknown>)[key],
@@ -144,12 +169,15 @@ function refundJsonShape(input: unknown) {
 
 // Fixed comparator JSON domain: code-unit key order, preserving array order.
 // This does NOT replace the legacy evidence-set canonical/hash convention.
-function refundCanonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(refundCanonical).join(",")}]`;
+function fixedJsonCanonical(value: unknown): string {
+  if (Array.isArray(value))
+    return `[${value.map(fixedJsonCanonical).join(",")}]`;
   if (value !== null && typeof value === "object")
     return `{${Object.entries(value)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, child]) => `${JSON.stringify(key)}:${refundCanonical(child)}`)
+      .map(
+        ([key, child]) => `${JSON.stringify(key)}:${fixedJsonCanonical(child)}`,
+      )
       .join(",")}}`;
   return JSON.stringify(value);
 }
@@ -164,12 +192,16 @@ export type OfflinePrivateEvidenceSummary = Readonly<{
 }>;
 
 /** Opaque, process-local lifetime. No byte/map getter or parser callback port.
- * The one fixed refund comparator consumes a completed capture once and erases
+ * Each fixed comparator consumes a completed capture once and erases
  * every capture on success or refusal. Its result is historical consistency only.
  * Always dispose in finally (or use `using`), including on authority failure. */
 export type OfflinePrivateEvidenceHandle = Readonly<{
   complete(): OfflinePrivateEvidenceSummary;
   compareFailedRefund(reference: unknown): OfflineFailedRefundComparison;
+  captureOriginalJournal(
+    reference: unknown,
+    actor: Actor,
+  ): CapturedOfflineOriginalEvidence;
   dispose(): void;
   [Symbol.dispose](): void;
 }>;
@@ -180,6 +212,49 @@ export function readOfflinePrivateEvidence(
   envelopeInput: unknown,
   manifestInput: unknown,
   captureInput?: unknown,
+): OfflinePrivateEvidenceHandle {
+  return readPrivateEvidence(envelopeInput, manifestInput, captureInput);
+}
+
+/** Trusted internal composition: provide the actual same native owners.
+ * No Application route is installed; captures provide consistency, not authority. */
+export class RestoreOfflineOriginalPrivateEvidence {
+  readonly #native: StockJournalOfflineOriginalEvidence;
+  constructor(
+    database: Database,
+    identity: Identity,
+    journals: StockJournalDelivery,
+  ) {
+    for (const [owner, prototype] of [
+      [database, Database.prototype],
+      [identity, Identity.prototype],
+      [journals, StockJournalDelivery.prototype],
+    ] as const)
+      requireValue(
+        owner &&
+          !types.isProxy(owner) &&
+          Object.getPrototypeOf(owner) === prototype,
+      );
+    this.#native = new StockJournalOfflineOriginalEvidence(
+      database,
+      identity,
+      journals,
+    );
+  }
+  read(envelopeInput: unknown, manifestInput: unknown, captureInput: unknown) {
+    return readPrivateEvidence(
+      envelopeInput,
+      manifestInput,
+      captureInput,
+      this.#native,
+    );
+  }
+}
+function readPrivateEvidence(
+  envelopeInput: unknown,
+  manifestInput: unknown,
+  captureInput?: unknown,
+  original?: StockJournalOfflineOriginalEvidence,
 ): OfflinePrivateEvidenceHandle {
   let pending: ReturnType<typeof readRestorePrivateEvidence> | undefined;
   let captured: ReadonlyMap<string, Buffer> | undefined;
@@ -258,20 +333,20 @@ export function readOfflinePrivateEvidence(
       requireValue(
         Array.isArray(c.references) &&
           c.references.length > 0 &&
-          c.references.length <= 16,
+          c.references.length <= (original ? 1 : 16),
       );
       requireValue(
         typeof c.maxBytes === "number" &&
           Number.isSafeInteger(c.maxBytes) &&
           c.maxBytes > 0 &&
-          c.maxBytes <= 4 * MiB,
+          c.maxBytes <= (original ? originalBytes : 4 * MiB),
       );
       const selected = new Set<string>();
       let bytes = 0;
       for (const ref of c.references) {
         requireValue(typeof ref === "string" && !selected.has(ref));
         const item = items.find((item) => item.reference === ref);
-        requireValue(item && item.bytes <= MiB);
+        requireValue(item && item.bytes <= (original ? originalBytes : MiB));
         selected.add(ref);
         bytes += item.bytes;
       }
@@ -279,7 +354,15 @@ export function readOfflinePrivateEvidence(
       capture = { references: [...selected], maxBytes: c.maxBytes };
     }
     const envelopeBinding = offlineTaskBinding(envelope);
-    pending = readRestorePrivateEvidence(expected, manifest, capture);
+    if (original) {
+      requireValue(
+        capture &&
+          envelope.task.owner === offlineOriginalPrivateTask.owner &&
+          envelope.task.name === offlineOriginalPrivateTask.name &&
+          envelope.task.version === offlineOriginalPrivateTask.version,
+      );
+      pending = readRestorePrivateOriginalEvidence(expected, manifest, capture);
+    } else pending = readRestorePrivateEvidence(expected, manifest, capture);
     const handle = {
       dispose,
       [Symbol.dispose]: dispose,
@@ -323,48 +406,104 @@ export function readOfflinePrivateEvidence(
     // Non-enumerable addition preserves the original public method enumeration
     // and serialization. This property is fixed and non-replaceable, not a port.
     return Object.freeze(
-      Object.defineProperty(handle, "compareFailedRefund", {
-        value(reference: unknown): OfflineFailedRefundComparison {
-          try {
-            requireValue(state === "completed" && captured);
-            requireValue(
-              envelope.task.owner === "integration" &&
-                envelope.task.name ===
-                  "integration.stripe-refund-failed.import" &&
-                envelope.task.version === 1,
-            );
-            requireValue(
-              typeof reference === "string" &&
-                reference.length > 0 &&
-                reference.length <= 2000 &&
-                items.some((item) => item.reference === reference),
-            );
-            const bytes = captured.get(reference);
-            requireValue(
-              bytes && bytes.length > 0 && bytes.length <= 64 * 1024,
-            );
-            // Pass the OWNED captured allocation directly; no copy, getter or
-            // second read. Retain BOM so JSON parsing refuses it rather than
-            // silently stripping it. Fatal UTF-8 rejects replacement decoding.
-            const text = new TextDecoder("utf-8", {
-              fatal: true,
-              ignoreBOM: true,
-            }).decode(bytes);
-            const input: unknown = JSON.parse(text);
-            refundJsonShape(input);
-            // Duplicate keys and every alternative serialization differ from
-            // this exact canonical form even if JSON.parse normalized them.
-            requireValue(refundCanonical(input) === text);
-            return compareOfflineFailedRefundEvidence(input);
-          } catch {
-            fail();
-          } finally {
-            dispose();
-          }
+      Object.defineProperties(handle, {
+        compareFailedRefund: {
+          value(reference: unknown): OfflineFailedRefundComparison {
+            try {
+              requireValue(state === "completed" && captured);
+              requireValue(
+                envelope.task.owner === "integration" &&
+                  envelope.task.name ===
+                    "integration.stripe-refund-failed.import" &&
+                  envelope.task.version === 1,
+              );
+              requireValue(
+                typeof reference === "string" &&
+                  reference.length > 0 &&
+                  reference.length <= 2000 &&
+                  items.some((item) => item.reference === reference),
+              );
+              const bytes = captured.get(reference);
+              requireValue(
+                bytes && bytes.length > 0 && bytes.length <= 64 * 1024,
+              );
+              // Pass the OWNED captured allocation directly; no copy, getter or
+              // second read. Retain BOM so JSON parsing refuses it rather than
+              // silently stripping it. Fatal UTF-8 rejects replacement decoding.
+              const text = new TextDecoder("utf-8", {
+                fatal: true,
+                ignoreBOM: true,
+              }).decode(bytes);
+              const input: unknown = JSON.parse(text);
+              boundedJsonShape(input);
+              // Duplicate keys and every alternative serialization differ from
+              // this exact canonical form even if JSON.parse normalized them.
+              requireValue(fixedJsonCanonical(input) === text);
+              return compareOfflineFailedRefundEvidence(input);
+            } catch {
+              fail();
+            } finally {
+              dispose();
+            }
+          },
+          enumerable: false,
+          writable: false,
+          configurable: false,
         },
-        enumerable: false,
-        writable: false,
-        configurable: false,
+        captureOriginalJournal: {
+          value(
+            reference: unknown,
+            actor: Actor,
+          ): CapturedOfflineOriginalEvidence {
+            try {
+              requireValue(state === "completed" && captured && original);
+              requireValue(
+                typeof reference === "string" &&
+                  reference.length > 0 &&
+                  reference.length <= 2000 &&
+                  items.some((item) => item.reference === reference),
+              );
+              const bytes = captured.get(reference);
+              requireValue(
+                bytes && bytes.length > 0 && bytes.length <= originalBytes,
+              );
+              const text = new TextDecoder("utf-8", {
+                fatal: true,
+                ignoreBOM: true,
+              }).decode(bytes);
+              const input: unknown = JSON.parse(text);
+              boundedJsonShape(input, true);
+              requireValue(
+                fixedJsonCanonical(input) === text &&
+                  envelope.task.payloadHash === digest(canonical(input)),
+              );
+              const result = original.captureInTransaction(
+                actor,
+                envelope.task.subjectId,
+                input as OfflineOriginalEvidenceInput,
+              );
+              const attempt = result.native.attempts.find(
+                (a) => a.row.id === result.native.journalId,
+              )!;
+              requireValue(
+                envelope.task.orgId === result.native.orgId &&
+                  envelope.task.expectedStateHash === result.native.hash &&
+                  envelope.task.expectedRevision ===
+                    attempt.observations.at(-1)?.revision &&
+                  envelope.task.siteIds.length === 0 &&
+                  envelope.task.priorClaim === null,
+              );
+              return result;
+            } catch {
+              fail();
+            } finally {
+              dispose();
+            }
+          },
+          enumerable: false,
+          writable: false,
+          configurable: false,
+        },
       }),
     ) as OfflinePrivateEvidenceHandle;
   } catch {

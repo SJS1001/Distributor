@@ -148,6 +148,31 @@ export function readRestorePrivateEvidence(
   manifestInput: RestoreEvidenceManifest,
   capture?: RestoreEvidenceCapture,
 ) {
+  return readPrivateEvidence(expectedInput, manifestInput, capture, {
+    references: 16,
+    fileBytes: 1024 ** 2,
+    totalBytes: 4 * 1024 ** 2,
+  });
+}
+
+/** Fixed original-journal profile; other reader callers retain legacy limits. */
+export function readRestorePrivateOriginalEvidence(
+  expectedInput: ReadonlyMap<string, string>,
+  manifestInput: RestoreEvidenceManifest,
+  capture: RestoreEvidenceCapture,
+) {
+  return readPrivateEvidence(expectedInput, manifestInput, capture, {
+    references: 1,
+    fileBytes: 16_016_384,
+    totalBytes: 16_016_384,
+  });
+}
+function readPrivateEvidence(
+  expectedInput: ReadonlyMap<string, string>,
+  manifestInput: RestoreEvidenceManifest,
+  capture: RestoreEvidenceCapture | undefined,
+  profile: { references: number; fileBytes: number; totalBytes: number },
+) {
   const captures = new Map<string, Buffer>();
   const buffer = Buffer.alloc(64 * 1024);
   let active = true;
@@ -202,12 +227,12 @@ export function readRestorePrivateEvidence(
       capturedBytes = 0;
     if (capture !== undefined) {
       record(capture, ["references", "maxBytes"]);
-      list(capture.references, 16);
+      list(capture.references, profile.references);
       requireEvidence(
         Number.isSafeInteger(capture.maxBytes) &&
           capture.maxBytes > 0 &&
-          capture.maxBytes <= 4 * 1024 ** 2,
-        "Explicit evidence capture requires a positive total byte budget up to 4 MiB.",
+          capture.maxBytes <= profile.totalBytes,
+        "Explicit evidence capture requires a positive budget within its fixed profile.",
       );
       captureLimit = capture.maxBytes;
       for (const ref of capture.references) {
@@ -221,7 +246,7 @@ export function readRestorePrivateEvidence(
     }
     const captureSize = (size: number) => {
       requireEvidence(
-        size <= 1024 ** 2 && capturedBytes + size <= captureLimit,
+        size <= profile.fileBytes && capturedBytes + size <= captureLimit,
         "Selected evidence exceeds the capture byte limit.",
       );
       capturedBytes += size;
