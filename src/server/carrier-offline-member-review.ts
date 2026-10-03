@@ -1,3 +1,5 @@
+import { types } from "node:util";
+import { carrierNames } from "../shared/carrier-booking.ts";
 import {
   canonical,
   check,
@@ -126,6 +128,146 @@ const inventory = {
 type Table = keyof typeof inventory;
 const MAX_BUDGET = 16 * 1024 * 1024;
 
+function proposedPair(input: unknown) {
+  intact(input !== null && typeof input === "object" && !types.isProxy(input));
+  intact(
+    Object.getPrototypeOf(input) === Object.prototype ||
+      Object.getPrototypeOf(input) === null,
+  );
+  let count = 0;
+  for (const key in input) intact(++count <= 4 && Object.hasOwn(input, key));
+  intact(Reflect.ownKeys(input).length === 4 && count === 4);
+  const values: Record<string, string> = Object.create(null);
+  for (const key of [
+    "groupId",
+    "bookingId",
+    "providerShipmentId",
+    "tracking",
+  ]) {
+    const d = Object.getOwnPropertyDescriptor(input, key);
+    intact(d && "value" in d && d.enumerable);
+    identifier(d.value);
+    values[key] = d.value;
+  }
+  intact(
+    /^[A-Za-z0-9_-]{1,32}$/.test(values.providerShipmentId!) &&
+      /^\d{11,16}$/.test(values.tracking!),
+  );
+  return Object.freeze({
+    groupId: values.groupId!,
+    bookingId: values.bookingId!,
+    providerShipmentId: values.providerShipmentId!,
+    tracking: values.tracking!,
+  });
+}
+
+function referencePair(reference: unknown, tracking: unknown) {
+  intact(
+    typeof reference === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(reference),
+  );
+  intact(typeof tracking === "string" && /^\d{11,16}$/.test(tracking));
+  return { providerShipmentId: reference, tracking };
+}
+function pdf(bytes: unknown, labelHash: unknown) {
+  intact(bytes instanceof Uint8Array);
+  hash(labelHash);
+  intact(digest(bytes) === labelHash);
+  validateCarrierLabel({
+    mediaType: "application/pdf",
+    bytes: Buffer.from(bytes),
+  });
+}
+
+// Fixed retained-manifest consistency, matching the existing native confirmation
+// layout. This is neither provider truth nor authority to hand over a shipment.
+function promotedManifest(group: Row, members: Row[]) {
+  intact(
+    group.token === null &&
+      group.started_at === null &&
+      typeof group.observation === "string",
+  );
+  pdf(group.manifest_bytes, group.manifest_hash);
+  const c = json(group.observation);
+  intact(canonical(c) === group.observation);
+  record(c, [
+    "kind",
+    "groupReviewHash",
+    "memberHash",
+    "identity",
+    "result",
+    "documentHash",
+  ]);
+  intact(
+    c.kind === "manifest-confirmed" &&
+      c.groupReviewHash === group.review_hash &&
+      c.documentHash === group.manifest_hash,
+  );
+  intact(
+    members.every(
+      (m) =>
+        m.state === "created" &&
+        m.active === 1 &&
+        m.token === null &&
+        m.started_at === null,
+    ),
+  );
+  intact(
+    c.memberHash ===
+      digest(
+        canonical(
+          members.map((m) => ({
+            bookingId: m.booking_id,
+            reviewHash: m.review_hash,
+            shipmentId: m.provider_shipment_id,
+            tracking: m.tracking,
+            labelHash: m.label_hash,
+          })),
+        ),
+      ),
+  );
+  const keys = [
+    "manifestId",
+    "groupId",
+    "configurationHash",
+    "reviewHash",
+    "customerReference",
+    "shipmentIds",
+  ];
+  record(c.identity, keys);
+  hash(c.identity.reviewHash);
+  intact(
+    c.identity.manifestId === group.id &&
+      c.identity.groupId === group.provider_group_id &&
+      c.identity.configurationHash === group.configuration_hash &&
+      c.identity.customerReference ===
+        "D" + c.identity.reviewHash.slice(0, 11).toUpperCase(),
+  );
+  const ids = members.map((m) => String(m.provider_shipment_id)).sort();
+  intact(
+    new Set(ids).size === ids.length &&
+      canonical(c.identity.shipmentIds) === canonical(ids),
+  );
+  record(c.result, [...keys, "poNumber", "manifestDate", "totalCents"]);
+  for (const key of keys)
+    intact(canonical(c.result[key]) === canonical(c.identity[key]));
+  intact(
+    typeof c.result.poNumber === "string" &&
+      /^[A-Za-z0-9]{1,10}$/.test(c.result.poNumber),
+  );
+  intact(
+    typeof c.result.manifestDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(c.result.manifestDate) &&
+      Number.isFinite(Date.parse(c.result.manifestDate)) &&
+      new Date(c.result.manifestDate).toISOString().slice(0, 10) ===
+        c.result.manifestDate,
+  );
+  intact(
+    Number.isSafeInteger(c.result.totalCents) &&
+      c.result.totalCents >= 0 &&
+      c.result.totalCents <= 100000000,
+  );
+}
+
 /** Internal native read only. No supplied evidence, SQL, adapters or callbacks. */
 export class CarrierOfflineMemberReview {
   private readonly store: Store;
@@ -136,10 +278,301 @@ export class CarrierOfflineMemberReview {
   ) {
     this.store = database.owned("integration");
   }
+  /** Native consistency only; no reservation, provider truth or import authority. */
+  reviewProposedReferencesInTransaction(actor: Actor, input: unknown) {
+    this.database.requireTransaction();
+    const proposed = proposedPair(input);
+    const unchanged = this.store.get("SELECT total_changes() AS n")!.n;
+    // Single inventory scan, with the same fixed preflights/current IAM/hold/site
+    // checks as the historical reader. No alternate port or transaction boundary.
+    const { facts, bookings, groups, members, capturedIntents } =
+      this.readUnknownMember(actor, proposed.groupId, proposed.bookingId, true);
+    const bookingById = new Map(bookings.map((b) => [b.id, b]));
+    const groupById = new Map(groups.map((g) => [g.id, g]));
+    intact(
+      bookingById.size === bookings.length && groupById.size === groups.length,
+    );
+    const targetGroup = groupById.get(proposed.groupId)!;
+    const configurationHash = String(targetGroup.configuration_hash);
+    type Reference = {
+      bookingId: string;
+      groupId: string | null;
+      configurationHash: string | null;
+      providerShipmentId: string;
+      tracking: string;
+      labelHash: string;
+    };
+    const references: Reference[] = [];
+    let memberReferences = 0,
+      bookingReferences = 0,
+      promotedCopies = 0;
+    // Validate linkage across the entire scanned inventory BEFORE org/provider
+    // selection. A copied SQL org/provider must not hide a contradictory intent.
+    for (const b of bookings) {
+      identifier(b.id);
+      identifier(b.org_id);
+      identifier(b.shipment_id);
+      hash(b.review_hash);
+      iso(b.created_at);
+      claim(b);
+      const i = capturedIntents.get(String(b.id));
+      intact(i && canonical(i) === b.intent && i.nativeSnapshot);
+      const { bookingId, reviewHash, ...review } = i;
+      intact(
+        bookingId === b.id &&
+          reviewHash === b.review_hash &&
+          digest(canonical(review)) === reviewHash &&
+          i.nativeSnapshot.org_id === b.org_id &&
+          carrierNames.includes(i.provider),
+      );
+      identifier(i.shipmentId);
+      intact(i.nativeSnapshot.id === i.shipmentId);
+      intact(
+        i.replacementId === undefined
+          ? i.shipmentId === b.shipment_id &&
+              i.nativeSnapshot.kind === undefined
+          : i.replacementId === i.shipmentId &&
+              i.nativeSnapshot.kind === "replacement" &&
+              b.shipment_id === `replacement:${i.shipmentId}`,
+      );
+      identifier(i.nativeSnapshot.warehouse_id);
+      intact(
+        ["pending", "running", "unknown", "booked", "canceled"].includes(
+          String(b.state),
+        ),
+      );
+    }
+    for (const g of groups) {
+      identifier(g.id);
+      identifier(g.org_id);
+      identifier(g.warehouse_id);
+      hash(g.configuration_hash);
+      hash(g.review_hash);
+      iso(g.created_at);
+      claim(g);
+      intact(
+        g.provider_group_id === String(g.id).replaceAll("-", "") &&
+          /^[A-Za-z0-9_-]{1,32}$/.test(String(g.provider_group_id)),
+      );
+      const entries = members.filter((m) => m.group_id === g.id);
+      intact(entries.length >= 1 && entries.length <= 100);
+      intact(
+        [
+          "prepared",
+          "creating",
+          "closed",
+          "transmitting",
+          "unknown",
+          "transmitted",
+          "canceled",
+        ].includes(String(g.state)),
+      );
+      const states = entries.map((m) => m.state);
+      if (g.state === "transmitted") promotedManifest(g, entries);
+      else {
+        intact(g.manifest_bytes === null && g.manifest_hash === null);
+        if (g.state === "closed" || g.state === "transmitting")
+          intact(states.every((s) => s === "created"));
+        if (g.state === "prepared" || g.state === "canceled")
+          intact(states.every((s) => s === "pending"));
+      }
+      intact(
+        g.review_hash ===
+          digest(
+            canonical({
+              configurationHash: g.configuration_hash,
+              providerGroupId: g.provider_group_id,
+              warehouseId: g.warehouse_id,
+              entries: entries.map((m) => ({
+                bookingId: m.booking_id,
+                reviewHash: m.review_hash,
+              })),
+            }),
+          ),
+      );
+    }
+    for (const m of members) {
+      const g = groupById.get(m.group_id),
+        b = bookingById.get(m.booking_id);
+      intact(g && b);
+      const i = capturedIntents.get(String(b.id));
+      intact(
+        m.org_id === g.org_id &&
+          m.org_id === b.org_id &&
+          m.review_hash === b.review_hash &&
+          i.provider === "canada-post" &&
+          i.nativeSnapshot.warehouse_id === g.warehouse_id &&
+          (i.configurationHash === undefined ||
+            i.configurationHash === g.configuration_hash),
+      );
+      intact(
+        ["pending", "creating", "unknown", "created"].includes(String(m.state)),
+      );
+      intact(m.active === Number(g.state !== "canceled"));
+      claim(m);
+      if (m.active === 1)
+        intact(b.state === (g.state === "transmitted" ? "booked" : "pending"));
+      if (g.state === "canceled")
+        intact(m.token === null && m.started_at === null);
+      if (m.state !== "created") {
+        intact(
+          [
+            m.provider_shipment_id,
+            m.tracking,
+            m.label_bytes,
+            m.label_hash,
+          ].every((v) => v === null),
+        );
+        if (m.state === "pending") intact(m.token === null);
+        if (m.state === "creating") intact(m.token !== null);
+        continue;
+      }
+      intact(m.active === 1 && m.token === null && m.started_at === null);
+      const pair = referencePair(m.provider_shipment_id, m.tracking);
+      pdf(m.label_bytes, m.label_hash);
+      if (m.org_id !== facts.orgId) continue;
+      memberReferences++;
+      references.push({
+        bookingId: String(b.id),
+        groupId: String(g.id),
+        configurationHash: String(g.configuration_hash),
+        ...pair,
+        labelHash: String(m.label_hash),
+      });
+    }
+    for (const b of bookings) {
+      const i = capturedIntents.get(String(b.id));
+      if (i.provider !== "canada-post") continue;
+      const hasArtifact = [
+        b.reference,
+        b.tracking,
+        b.label_bytes,
+        b.label_type,
+        b.label_hash,
+      ].some((v) => v !== null);
+      if (!hasArtifact) {
+        intact(b.state !== "booked");
+        continue;
+      }
+      intact(
+        b.state === "booked" &&
+          b.token === null &&
+          b.started_at === null &&
+          b.label_type === "application/pdf",
+      );
+      const pair = referencePair(b.reference, b.tracking);
+      pdf(b.label_bytes, b.label_hash);
+      if (b.org_id !== facts.orgId) continue;
+      bookingReferences++;
+      const own = references.filter((r) => r.bookingId === b.id);
+      if (own.length) {
+        intact(own.length === 1);
+        const member = own[0]!;
+        intact(
+          member.groupId !== null &&
+            groupById.get(member.groupId)!.state === "transmitted" &&
+            member.providerShipmentId === pair.providerShipmentId &&
+            member.tracking === pair.tracking &&
+            member.labelHash === b.label_hash,
+        );
+        promotedCopies++;
+      } else {
+        intact(!members.some((m) => m.booking_id === b.id && m.active === 1));
+        if (i.configurationHash !== undefined) hash(i.configurationHash);
+        references.push({
+          bookingId: String(b.id),
+          groupId: null,
+          configurationHash: i.configurationHash ?? null,
+          ...pair,
+          labelHash: String(b.label_hash),
+        });
+      }
+    }
+    // Matching references always conflict, even with unknown/different account
+    // preimages. Never conclude that changed configuration implies a new account.
+    for (let n = 0; n < references.length; n++) {
+      const r = references[n]!;
+      check(
+        r.providerShipmentId !== proposed.providerShipmentId &&
+          r.tracking !== proposed.tracking,
+        "CARRIER_OFFLINE_REFERENCE_CONFLICT",
+        "Proposed carrier references conflict with retained native history.",
+      );
+      intact(
+        !references
+          .slice(0, n)
+          .some(
+            (p) =>
+              p.providerShipmentId === r.providerShipmentId ||
+              p.tracking === r.tracking,
+          ),
+      );
+    }
+    check(
+      references.every((r) => r.configurationHash === configurationHash),
+      "CARRIER_OFFLINE_ACCOUNT_AMBIGUOUS",
+      "Retained carrier account equivalence requires independent qualification.",
+    );
+    // Digest complete checked inventory, including irrelevant/foreign rows and
+    // null states; bind blobs by size/hash without returning bytes or tuples.
+    const committed = (rows: Row[]) =>
+      rows.map((row) =>
+        Object.fromEntries(
+          Object.entries(row).map(([k, v]) => [
+            k,
+            v instanceof Uint8Array
+              ? { bytes: v.length, sha256: digest(v) }
+              : v,
+          ]),
+        ),
+      );
+    const scopeHash = digest(
+      canonical({
+        purpose: "carrier-offline-proposed-reference-scope-v1",
+        bookings: committed(bookings),
+        groups: committed(groups),
+        members: committed(members),
+      }),
+    );
+    const body = {
+      version: 1 as const,
+      purpose: "carrier-offline-proposed-reference-review-v1" as const,
+      orgId: facts.orgId,
+      region: facts.region,
+      currency: facts.currency,
+      hold: facts.hold,
+      warehouseId: String(targetGroup.warehouse_id),
+      proposed,
+      configurationHash,
+      memberReviewHash: facts.reviewHash,
+      scopeHash,
+      references: {
+        members: memberReferences,
+        bookings: bookingReferences,
+        promotedCopies,
+        distinct: references.length,
+      },
+      blockers: [
+        ...facts.blockers,
+        "NATIVE_REFERENCE_MATCH_ONLY_NO_RESERVATION",
+        "PROVIDER_ACCOUNT_EQUIVALENCE_AND_EXTERNAL_REFERENCES_UNQUALIFIED",
+      ].sort(),
+    };
+    intact(this.store.get("SELECT total_changes() AS n")!.n === unchanged);
+    return freeze({ ...body, reviewHash: digest(canonical(body)) });
+  }
   reviewUnknownMemberInTransaction(
     actor: Actor,
     groupId: string,
     bookingId: string,
+  ) {
+    return this.readUnknownMember(actor, groupId, bookingId).facts;
+  }
+  private readUnknownMember(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+    proposedReference = false,
   ) {
     this.database.requireTransaction();
     identifier(groupId);
@@ -200,6 +633,29 @@ export class CarrierOfflineMemberReview {
           Number.isSafeInteger(sizes.bytes) &&
           (budget += Number(sizes.bytes)) <= MAX_BUDGET,
       );
+    }
+    if (proposedReference) {
+      // Before any row/numeric materialization. Do not change the older reader's
+      // accepted profiles or digest domain; this is the new operation's guard.
+      for (const [table, predicates] of [
+        [
+          "integration_carrier_bookings",
+          "typeof(sequence)!='integer' OR sequence<1 OR sequence>9007199254740991 OR (started_at IS NOT NULL AND (typeof(started_at)!='integer' OR started_at<0 OR started_at>9007199254740991))",
+        ],
+        [
+          "integration_canada_post_groups",
+          "started_at IS NOT NULL AND (typeof(started_at)!='integer' OR started_at<0 OR started_at>9007199254740991)",
+        ],
+        [
+          "integration_canada_post_members",
+          "typeof(active)!='integer' OR active NOT IN(0,1) OR (started_at IS NOT NULL AND (typeof(started_at)!='integer' OR started_at<0 OR started_at>9007199254740991))",
+        ],
+      ])
+        bounded(
+          this.store.get(
+            `SELECT COUNT(*) AS n FROM ${table} WHERE ${predicates}`,
+          )!.n === 0,
+        );
     }
     const read = (table: Table) =>
       this.store.all(
@@ -703,9 +1159,18 @@ export class CarrierOfflineMemberReview {
       blockers: [...blockers].sort(),
     };
     intact(this.store.get("SELECT total_changes() AS n")!.n === unchanged);
-    return freeze({ ...facts, reviewHash: digest(canonical(facts)) });
+    return {
+      facts: freeze({ ...facts, reviewHash: digest(canonical(facts)) }),
+      bookings,
+      groups,
+      members,
+      capturedIntents,
+    };
   }
 }
 export type CarrierOfflineMemberFacts = ReturnType<
   CarrierOfflineMemberReview["reviewUnknownMemberInTransaction"]
+>;
+export type CarrierOfflineProposedReferenceFacts = ReturnType<
+  CarrierOfflineMemberReview["reviewProposedReferencesInTransaction"]
 >;
