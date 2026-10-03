@@ -1,3 +1,4 @@
+import { COST_CORRECTION_OUTCOME_DDL } from "./cost-correction-outcome-schema.ts";
 import { COST_CORRECTION_DDL } from "./cost-correction-schema.ts";
 import { SUPPLIER_AVAILABILITY_DDL } from "./supplier-availability-schema.ts";
 import { SHIPMENT_COVERAGE_DDL } from "./shipment-coverage-schema.ts";
@@ -196,6 +197,7 @@ export async function upgradeSchema(
         copied.exec(SHIPMENT_COVERAGE_DDL);
         copied.exec(SUPPLIER_AVAILABILITY_DDL);
         copied.exec(COST_CORRECTION_DDL);
+        copied.exec(COST_CORRECTION_OUTCOME_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -212,7 +214,8 @@ export async function upgradeSchema(
         if (before.version! <= 4) copied.exec(CLAIM_COVERAGE_DDL);
         if (before.version! <= 5) copied.exec(SHIPMENT_COVERAGE_DDL);
         if (before.version! <= 6) copied.exec(SUPPLIER_AVAILABILITY_DDL);
-        copied.exec(COST_CORRECTION_DDL);
+        if (before.version! <= 7) copied.exec(COST_CORRECTION_DDL);
+        copied.exec(COST_CORRECTION_OUTCOME_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

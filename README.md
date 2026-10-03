@@ -36,7 +36,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
 | [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md) | Reviewed local capacity release, retained history and uncertainty/restore refusals |
-| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, outcome-dependent journals and separate finance review |
+| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, independent review and retained ledger observations |
 | [Isolated restore review](docs/RESTORE-REVIEW.md) | Source-bound reconciliation dossier, independent signed approvals and retained recovery hold |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |

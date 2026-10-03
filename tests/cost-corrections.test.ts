@@ -1,86 +1,25 @@
+import { randomBytes } from "node:crypto";
+import { dirname, join } from "node:path";
+import { createBackup, restoreBackup } from "../src/server/recovery.ts";
+import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
+import {
+  setup,
+  policy,
+  input,
+  approvedCorrection,
+  outcomeInput,
+} from "./cost-correction-fixture.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixture } from "./fixtures.ts";
+import { fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import {
   accountingDate,
-  type CorrectionInput,
-  type CostPolicyInput,
+  type CorrectionOutcomeInput,
 } from "../src/server/cost-corrections.ts";
 import { digest } from "../src/server/core.ts";
 import { createHttp } from "../src/server/http.ts";
 
-type Fixture = ReturnType<typeof fixture>;
-function setup(f: Fixture) {
-  const source = f.app.integration.costs.source(f.actor);
-  const prepared = f.app.integration.costs.prepare(f.actor, "original", {
-    version: 1,
-    batchRef: "ORIGINAL",
-    afterSequence: 0,
-    throughSequence: source.throughSequence,
-    inventoryAccount: "1200",
-    mappings: [{ type: "receipt", offsetAccount: "2100" }],
-    expectedMovements: 3,
-    expectedIncrease: 18000,
-    expectedDecrease: 0,
-    expectedOpeningValue: 0,
-    expectedClosingValue: 18000,
-    acknowledgment: "Synthetic independent controls",
-  });
-  const original = f.app.integration.costs.decide(f.actor, "approve-original", {
-    packetId: prepared.id,
-    reviewHash: prepared.reviewHash,
-    decision: "approve",
-    reason: "Synthetic finance review",
-  });
-  const u = f.app.identity.createUser(f.actor, "reviewer", {
-    email: "finance@example.test",
-    name: "Synthetic reviewer",
-    password: "test-only-long-password",
-    role: "finance",
-    sites: [],
-  });
-  const reviewer = f.app.identity.currentActor({ ...f.actor, id: u.id });
-  return { original, reviewer };
-}
-function policy(previousRevision = 0): CostPolicyInput {
-  return {
-    previousRevision,
-    policyVersion: "synthetic-policy-v1",
-    mappingVersion: "synthetic-chart-v2",
-    establishedValuation:
-      "Synthetic established specific identification; no new valuation calculation",
-    period: "monthly",
-    closedThrough: "2026-09-30",
-    inventoryPostingOwner: "distributor",
-    inventoryAccount: "1201",
-    mappings: [{ type: "receipt", offsetAccount: "2101" }],
-    financeEvidence: "Synthetic finance policy approval",
-  };
-}
-function input(
-  original: ReturnType<typeof setup>["original"],
-  outcome: CorrectionInput["outcome"] = "posted",
-): CorrectionInput {
-  return {
-    originalId: original.id,
-    originalHash: original.contentHash!,
-    policyRevision: 1,
-    postingDate: "2026-10-03",
-    outcome,
-    receiverRef: "synthetic-ledger",
-    externalRef: "synthetic-journal-1",
-    originalPostingDate: outcome === "posted" ? "2026-09-29" : null,
-    outcomeEvidence: "Synthetic ledger outcome checked independently",
-    cancellationEvidence:
-      outcome === "unposted"
-        ? "Synthetic receiver cancelled original, verified no posting"
-        : null,
-    priorPeriodEvidence:
-      "Synthetic responsible accountant reviewed prior period treatment",
-    reason: "Correct two synthetic account mappings",
-  };
-}
 for (const region of ["CA", "US"] as const)
   for (const outcome of ["posted", "unposted"] as const)
     test(`${region} ${outcome} correction is immutable, balanced and does not consume inventory again`, (t) => {
@@ -430,6 +369,45 @@ test("HTTP correction commands require fresh finance authority, CSRF and strict 
     ).json().state,
     "reviewed",
   );
+  const observation = outcomeInput(f, p.id, "reversal");
+  assert.equal(
+    (
+      await post("correction.observe", observation, "observe", {
+        ...reviewer,
+        "x-csrf-token": "bad",
+      })
+    ).statusCode,
+    403,
+  );
+  assert.equal(
+    (
+      await post(
+        "correction.observe",
+        { ...observation, forged: true },
+        "forged",
+        reviewer,
+      )
+    ).statusCode,
+    400,
+  );
+  const recorded = await post(
+    "correction.observe",
+    observation,
+    "observe",
+    reviewer,
+  );
+  assert.equal(recorded.statusCode, 200, recorded.body);
+  assert.deepEqual(
+    (await post("correction.observe", observation, "observe", reviewer)).json(),
+    recorded.json(),
+  );
+  const history = await http.inject({
+    url: `/api/accounting/cost-corrections/${p.id}/outcomes`,
+    headers: reviewer,
+  });
+  assert.equal(history.statusCode, 200);
+  assert.equal(history.headers["cache-control"], "no-store");
+  assert.equal(history.json().legs[0].current.input.outcome, "unknown");
   const user = f.app.identity
     .users(f.actor)
     .find((u) => u.email === "finance@example.test")!;
@@ -455,6 +433,11 @@ test("HTTP correction commands require fresh finance authority, CSRF and strict 
         headers: reviewer,
       })
     ).statusCode,
+    401,
+  );
+  assert.equal(
+    (await post("correction.observe", observation, "observe", reviewer))
+      .statusCode,
     401,
   );
 });
@@ -531,5 +514,404 @@ test("reviewed corrections fence new original acceptance and policy corruption f
   assert.equal(
     costs.corrections.download(reviewer, p.id).hash,
     costs.corrections.detail(reviewer, p.id).contentHash,
+  );
+});
+
+for (const region of ["CA", "US"] as const) {
+  test(`${region} correction leg outcomes retain uncertainty, partial effects and exact terminal observations without stock or artifact changes`, (t) => {
+    const f = fixture(t, {}, region),
+      { original, approved, reviewer, c } = approvedCorrection(f);
+    const bytes = c.download(f.actor, approved.id).bytes,
+      originalBytes = f.app.integration.costs.download(
+        f.actor,
+        original.id,
+      ).bytes,
+      stock = f.app.inventory.stock(f.actor),
+      cursor = f.app.integration.costs.source(f.actor);
+    const replacement = outcomeInput(f, approved.id, "replacement");
+    const replacementUnknown = c.observe(
+      reviewer,
+      "replacement-unknown",
+      replacement,
+    );
+    assert.throws(
+      () =>
+        c.observe(
+          reviewer,
+          "early-post",
+          outcomeInput(f, approved.id, "replacement", {
+            outcome: "posted",
+            postingDate: "2026-10-03",
+          }),
+        ),
+      { code: "COST_REVERSAL_REQUIRED" },
+    );
+    const uncertain = outcomeInput(f, approved.id, "reversal");
+    const unknown = c.observe(reviewer, "unknown", uncertain);
+    assert.deepEqual(c.observe(reviewer, "unknown", uncertain), unknown);
+    assert.deepEqual(
+      c.observe(reviewer, "same-evidence-new-key", uncertain),
+      unknown,
+    );
+    assert.throws(
+      () =>
+        c.observe(reviewer, "changed-key", {
+          ...uncertain,
+          evidence: "different",
+        }),
+      { code: "REVISION_CONFLICT" },
+    );
+    assert.throws(
+      () =>
+        c.observe(
+          reviewer,
+          "new-identity",
+          outcomeInput(f, approved.id, "reversal", { externalRef: "another" }),
+        ),
+      { code: "COST_REFERENCE_CONFLICT" },
+    );
+    const postedInput = outcomeInput(f, approved.id, "reversal", {
+      outcome: "posted",
+      postingDate: "2026-10-03",
+      evidence:
+        "Synthetic immutable journal lookup confirms posted exact reversal",
+    });
+    const posted = c.observe(reviewer, "resolved", postedInput);
+    assert.equal(posted.revision, 2);
+    assert.equal(
+      c.outcomes(f.actor, approved.id).legs[1]!.current!.input.outcome,
+      "unknown",
+    );
+    assert.throws(
+      () =>
+        c.observe(
+          reviewer,
+          "overwrite-terminal",
+          outcomeInput(f, approved.id, "reversal", {
+            outcome: "cancelled-unposted",
+          }),
+        ),
+      { code: "COST_OUTCOME_FINAL" },
+    );
+    const complete = c.observe(
+      reviewer,
+      "replacement-posted",
+      outcomeInput(f, approved.id, "replacement", {
+        outcome: "posted",
+        postingDate: "2026-10-03",
+        evidence: "Synthetic ledger lookup confirms replacement",
+      }),
+    );
+    assert.equal(complete.revision, 2);
+    const history = c.outcomes(f.actor, approved.id);
+    assert.deepEqual(
+      history.legs[0]!.history.map((o) => o.input.outcome),
+      ["unknown", "posted"],
+    );
+    assert.equal(
+      history.legs[1]!.history[0]!.evidenceHash,
+      replacementUnknown.evidenceHash,
+    );
+    assert.equal(c.download(f.actor, approved.id).bytes, bytes);
+    assert.equal(
+      f.app.integration.costs.download(f.actor, original.id).bytes,
+      originalBytes,
+    );
+    assert.deepEqual(f.app.inventory.stock(f.actor), stock);
+    assert.deepEqual(f.app.integration.costs.source(f.actor), cursor);
+    f.app.close();
+    f.app = new Application(f.path, region);
+    assert.deepEqual(
+      f.app.integration.costs.corrections.outcomes(reviewer, approved.id),
+      history,
+    );
+    assert.deepEqual(
+      f.app.integration.costs.corrections.observe(
+        reviewer,
+        "resolved",
+        postedInput,
+      ),
+      posted,
+    );
+    f.app.platform.isolateRestore("a".repeat(64), "2026-10-03T00:00:00.000Z");
+    assert.deepEqual(
+      f.app.integration.costs.corrections.outcomes(reviewer, approved.id),
+      history,
+    );
+    assert.throws(
+      () =>
+        f.app.integration.costs.corrections.observe(
+          reviewer,
+          "resolved",
+          postedInput,
+        ),
+      { code: "RECOVERY_HOLD" },
+    );
+  });
+  test(`${region} cancelled replacement after uncertain original non-posting remains final and retains its reference`, (t) => {
+    const f = fixture(t, {}, region),
+      { approved, reviewer, c } = approvedCorrection(f, "unposted");
+    assert.deepEqual(
+      c.outcomes(f.actor, approved.id).legs.map((l) => l.leg),
+      ["replacement"],
+    );
+    assert.throws(
+      () =>
+        c.observe(reviewer, "absent-reversal", {
+          ...outcomeInput(f, approved.id, "replacement"),
+          leg: "reversal",
+        }),
+      { code: "COST_LEG" },
+    );
+    c.observe(reviewer, "unknown", outcomeInput(f, approved.id, "replacement"));
+    const cancel = outcomeInput(f, approved.id, "replacement", {
+      outcome: "cancelled-unposted",
+      evidence: "Synthetic receiver confirms cancellation and no posting",
+    });
+    const receipt = c.observe(reviewer, "cancel", cancel);
+    assert.deepEqual(c.observe(reviewer, "cancel-again", cancel), receipt);
+    assert.throws(
+      () =>
+        c.observe(
+          reviewer,
+          "post-cancelled",
+          outcomeInput(f, approved.id, "replacement", {
+            outcome: "posted",
+            postingDate: "2026-10-03",
+          }),
+        ),
+      { code: "COST_OUTCOME_FINAL" },
+    );
+    assert.throws(
+      () =>
+        c.assertReferenceAvailable(
+          f.actor,
+          cancel.receiverRef,
+          cancel.externalRef,
+        ),
+      { code: "COST_REFERENCE_CONFLICT" },
+    );
+  });
+}
+test("ledger observations bind exact region, currency, receiver, artifact, leg and intended totals and reserve original identities", (t) => {
+  const f = fixture(t),
+    { approved, reviewer, c } = approvedCorrection(f),
+    valid = outcomeInput(f, approved.id, "reversal");
+  for (const [name, overrides, code] of [
+    ["hash", { contentHash: "0".repeat(64) }, "COST_INTEGRITY"],
+    ["region", { receiverRegion: "US" }, "RESIDENCY"],
+    ["currency", { currency: "USD" }, "RESIDENCY"],
+    ["receiver", { receiverRef: "other-ledger" }, "RESIDENCY"],
+    ["debit", { debit: 1 }, "COST_CONTROL"],
+    ["credit", { credit: 1 }, "COST_CONTROL"],
+    ["unknown-date", { postingDate: "2026-10-03" }, "COST_CONTROL"],
+    ["posted-no-date", { outcome: "posted" }, "COST_CONTROL"],
+    [
+      "wrong-date",
+      { outcome: "posted", postingDate: "2026-10-04" },
+      "COST_CONTROL",
+    ],
+    ["outcome", { outcome: "assumed" }, "VALIDATION"],
+    ["evidence", { evidence: " " }, "VALIDATION"],
+    ["fraction", { debit: 0.5 }, "VALIDATION"],
+    [
+      "original-ref",
+      { externalRef: "synthetic-journal-1" },
+      "COST_REFERENCE_CONFLICT",
+    ],
+  ] as const)
+    assert.throws(
+      () =>
+        c.observe(reviewer, name, {
+          ...valid,
+          ...overrides,
+        } as CorrectionOutcomeInput),
+      { code },
+    );
+  assert.equal(c.outcomes(f.actor, approved.id).legs[0]!.current, null);
+  c.observe(reviewer, "reserve-reversal", valid);
+  assert.throws(
+    () =>
+      c.observe(reviewer, "same-ref-replacement", {
+        ...outcomeInput(f, approved.id, "replacement"),
+        externalRef: valid.externalRef,
+      }),
+    { code: "COST_REFERENCE_CONFLICT" },
+  );
+  const other = fixture(t);
+  assert.throws(() => c.outcomes(other.actor, approved.id), {
+    code: "FORBIDDEN",
+  });
+  assert.throws(() => c.observe(other.actor, "foreign", valid), {
+    code: "FORBIDDEN",
+  });
+  const store = f.app.database.owned("integration");
+  store.run(
+    "UPDATE integration_cost_correction_outcomes SET input=replace(input,'Synthetic','Tampered') WHERE correction_id=?",
+    approved.id,
+  );
+  assert.throws(() => c.outcomes(reviewer, approved.id), {
+    code: "COST_INTEGRITY",
+  });
+  assert.throws(() => c.observe(reviewer, "reserve-reversal", valid), {
+    code: "COST_INTEGRITY",
+  });
+});
+test("stale finance authority refuses cached ledger observation receipts", (t) => {
+  const f = fixture(t),
+    { approved, reviewer, c } = approvedCorrection(f),
+    observation = outcomeInput(f, approved.id, "reversal");
+  c.observe(reviewer, "observed", observation);
+  const user = f.app.identity.users(f.actor).find((u) => u.id === reviewer.id)!;
+  f.app.identity.updateUser(f.actor, "revoke", {
+    userId: user.id,
+    revision: user.revision,
+    email: user.email,
+    name: user.name,
+    role: "warehouse",
+    active: true,
+    sites: [f.w1],
+    currentPassword: "long-test-only-password",
+    reason: "Synthetic authority changed",
+  });
+  assert.throws(() => c.observe(reviewer, "observed", observation), {
+    code: "FORBIDDEN",
+  });
+  assert.throws(() => c.outcomes(reviewer, approved.id), { code: "FORBIDDEN" });
+});
+
+for (const region of ["CA", "US"] as const)
+  for (const eventReports of [false, true])
+    test(`${region}/${eventReports} current clones and encrypted restores preserve nonempty correction observations and permanent references`, async (t) => {
+      const f = fixture(t, { eventReports }, region),
+        { approved, reviewer, c } = approvedCorrection(f);
+      const unknown = outcomeInput(f, approved.id, "reversal");
+      c.observe(reviewer, "unknown", unknown);
+      c.observe(
+        reviewer,
+        "posted",
+        outcomeInput(f, approved.id, "reversal", {
+          outcome: "posted",
+          postingDate: "2026-10-03",
+          evidence: "Synthetic posted lookup",
+        }),
+      );
+      c.observe(
+        reviewer,
+        "replacement-unknown",
+        outcomeInput(f, approved.id, "replacement"),
+      );
+      const history = c.outcomes(reviewer, approved.id),
+        file = c.download(reviewer, approved.id),
+        refs = f.app.database
+          .owned("integration")
+          .all(
+            "SELECT * FROM integration_cost_correction_references ORDER BY leg",
+          ),
+        key = randomBytes(32),
+        dir = dirname(f.path),
+        archive = join(dir, "outcomes.backup"),
+        restored = join(dir, "restored.db"),
+        clone = join(dir, "clone.db");
+      f.app.platform.isolateRestore("b".repeat(64), "2026-10-03T00:00:00.000Z");
+      const receipt = inspectSchema(f.path);
+      await createBackup(f.path, archive, region, key);
+      await upgradeSchema(f.path, clone, receipt.schemaHash, region);
+      await restoreBackup(archive, restored, region, key);
+      for (const path of [clone, restored]) {
+        const app = new Application(path, region, { eventReports });
+        try {
+          const copy = app.integration.costs.corrections;
+          assert.deepEqual(copy.outcomes(reviewer, approved.id), history);
+          assert.deepEqual(copy.download(reviewer, approved.id), file);
+          assert.deepEqual(
+            app.database
+              .owned("integration")
+              .all(
+                "SELECT * FROM integration_cost_correction_references ORDER BY leg",
+              ),
+            refs,
+          );
+          assert.throws(() => copy.observe(reviewer, "unknown", unknown), {
+            code: "RECOVERY_HOLD",
+          });
+        } finally {
+          app.close();
+        }
+      }
+      assert.deepEqual(c.outcomes(reviewer, approved.id), history);
+    });
+test("correction reservations fence fresh original acceptance and other correction origins", (t) => {
+  const f = fixture(t),
+    { approved, reviewer, c } = approvedCorrection(f);
+  const observed = outcomeInput(f, approved.id, "reversal");
+  c.observe(reviewer, "reserve", observed);
+  ship(f, accept(f).id);
+  const costs = f.app.integration.costs,
+    source = costs.source(f.actor);
+  const packet = costs.prepare(f.actor, "second-packet", {
+    version: 1,
+    batchRef: "SYNTHETIC-SECOND",
+    afterSequence: 3,
+    throughSequence: source.throughSequence,
+    inventoryAccount: "1200",
+    mappings: [{ type: "shipment", offsetAccount: "5000" }],
+    expectedMovements: 1,
+    expectedIncrease: 0,
+    expectedDecrease: 6000,
+    expectedOpeningValue: 18000,
+    expectedClosingValue: 12000,
+    acknowledgment: "Synthetic independent controls",
+  });
+  const ready = costs.decide(f.actor, "second-approve", {
+    packetId: packet.id,
+    reviewHash: packet.reviewHash,
+    decision: "approve",
+    reason: "Synthetic reviewed",
+  });
+  assert.throws(
+    () =>
+      costs.accept(f.actor, "duplicate-leg", {
+        packetId: ready.id,
+        contentHash: ready.contentHash!,
+        receiverRef: observed.receiverRef,
+        receiverRegion: "CA",
+        externalRef: observed.externalRef,
+        debit: 6000,
+        credit: 6000,
+        reason: "Synthetic duplicate reference",
+      }),
+    { code: "COST_REFERENCE_CONFLICT" },
+  );
+  c.configure(f.actor, "policy-2", {
+    ...policy(1),
+    mappings: [{ type: "shipment", offsetAccount: "5001" }],
+  });
+  assert.throws(
+    () =>
+      c.prepare(f.actor, "duplicate-origin", {
+        ...input(ready),
+        policyRevision: 2,
+        externalRef: observed.externalRef,
+      }),
+    { code: "COST_REFERENCE_CONFLICT" },
+  );
+  costs.accept(f.actor, "other-original", {
+    packetId: ready.id,
+    contentHash: ready.contentHash!,
+    receiverRef: observed.receiverRef,
+    receiverRegion: "CA",
+    externalRef: "synthetic-other-original",
+    debit: 6000,
+    credit: 6000,
+    reason: "Synthetic other receipt",
+  });
+  assert.throws(
+    () =>
+      c.observe(reviewer, "duplicate-other-original", {
+        ...outcomeInput(f, approved.id, "replacement"),
+        externalRef: "synthetic-other-original",
+      }),
+    { code: "COST_REFERENCE_CONFLICT" },
   );
 });

@@ -1,3 +1,4 @@
+import { COST_CORRECTION_OUTCOME_INITIALIZE_DDL } from "./cost-correction-outcome-schema.ts";
 import {
   canonical,
   check,
@@ -31,6 +32,28 @@ export type CostPolicyInput = {
   inventoryAccount: string;
   mappings: { type: string; offsetAccount: string }[];
   financeEvidence: string;
+};
+export type CorrectionOutcomeInput = {
+  correctionId: string;
+  contentHash: string;
+  leg: "reversal" | "replacement";
+  previousRevision: number;
+  outcome: "posted" | "cancelled-unposted" | "unknown";
+  receiverRef: string;
+  receiverRegion: "CA" | "US";
+  currency: "CAD" | "USD";
+  externalRef: string;
+  debit: number;
+  credit: number;
+  postingDate: string | null;
+  evidence: string;
+};
+export type CorrectionOutcomeObservation = {
+  revision: number;
+  input: CorrectionOutcomeInput;
+  evidenceHash: string;
+  recordedBy: string;
+  recordedAt: string;
 };
 export type CorrectionInput = {
   originalId: string;
@@ -114,6 +137,7 @@ export class CostCorrections {
   ) {
     this.store = database.owned("integration");
     this.store.migrate(COST_CORRECTION_INITIALIZE_DDL);
+    this.store.migrate(COST_CORRECTION_OUTCOME_INITIALIZE_DDL);
   }
   private principal(actor: Actor) {
     actor = this.identity.currentActor(actor);
@@ -289,6 +313,23 @@ export class CostCorrections {
         input.postingDate > policy.input.closedThrough,
       "COST_PERIOD",
       "Correction posting date belongs to a closed period.",
+    );
+    this.assertReferenceAvailable(
+      actor,
+      input.receiverRef,
+      input.externalRef,
+      packet.id,
+    );
+    check(
+      !this.store.get(
+        "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=? AND packet_id<>?",
+        actor.orgId,
+        input.receiverRef,
+        input.externalRef,
+        packet.id,
+      ),
+      "COST_REFERENCE_CONFLICT",
+      "Original outcome reference identifies another cost handoff.",
     );
     const receipt = packet.receipt;
     check(
@@ -623,23 +664,334 @@ export class CostCorrections {
       },
     );
   }
+
+  /** Integration-owned ledger identities. Reservations survive cancellation and uncertainty. */
+  assertReferenceAvailable(
+    actor: Actor,
+    receiver: string,
+    external: string,
+    originalId?: string,
+  ) {
+    check(
+      !this.store.get(
+        "SELECT correction_id FROM integration_cost_correction_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+        actor.orgId,
+        receiver,
+        external,
+      ) &&
+        !this.store.get(
+          "SELECT id FROM integration_cost_corrections WHERE org_id=? AND state='reviewed' AND json_extract(input,'$.receiverRef')=? AND json_extract(input,'$.externalRef')=? AND original_id<>?",
+          actor.orgId,
+          receiver,
+          external,
+          originalId ?? "",
+        ),
+      "COST_REFERENCE_CONFLICT",
+      "Ledger reference is already reserved by a correction or its original outcome.",
+    );
+  }
+  private observations(
+    actor: Actor,
+    correctionId: string,
+  ): CorrectionOutcomeObservation[] {
+    return (["reversal", "replacement"] as const)
+      .flatMap((leg) =>
+        this.store
+          .all(
+            "SELECT * FROM integration_cost_correction_outcomes WHERE org_id=? AND correction_id=? AND leg=? ORDER BY revision DESC LIMIT 100",
+            actor.orgId,
+            correctionId,
+            leg,
+          )
+          .reverse(),
+      )
+      .map((row) => {
+        const input = JSON.parse(String(row.input)) as CorrectionOutcomeInput;
+        const observation = {
+          revision: Number(row.revision),
+          input,
+          recordedBy: String(row.recorded_by),
+          recordedAt: String(row.recorded_at),
+        };
+        check(
+          digest(canonical(observation)) === row.evidence_hash &&
+            input.correctionId === correctionId &&
+            input.leg === row.leg &&
+            input.previousRevision === observation.revision - 1,
+          "COST_INTEGRITY",
+          "Ledger observation failed its integrity check.",
+        );
+        return { ...observation, evidenceHash: String(row.evidence_hash) };
+      });
+  }
+  outcomes(actor: Actor, correctionId: string) {
+    return this.database.transaction(() =>
+      this.outcomeSnapshot(this.principal(actor), correctionId),
+    );
+  }
+  private outcomeSnapshot(actor: Actor, correctionId: string) {
+    const file = this.approvedFile(actor, correctionId);
+    const artifact = JSON.parse(file.bytes) as {
+      orgId: string;
+      correctionId: string;
+      region: "CA" | "US";
+      currency: "CAD" | "USD";
+      input: CorrectionInput;
+      reversal: JournalLine[];
+      replacement: JournalLine[];
+    };
+    check(
+      artifact.orgId === actor.orgId && artifact.correctionId === correctionId,
+      "COST_INTEGRITY",
+      "Correction artifact identity does not match this organization and correction.",
+    );
+    const observations = this.observations(actor, correctionId);
+    return {
+      correctionId,
+      contentHash: file.hash,
+      receiverRef: artifact.input.receiverRef,
+      receiverRegion: artifact.region,
+      currency: artifact.currency,
+      legs: (["reversal", "replacement"] as const)
+        .filter((leg) => artifact[leg].length > 0)
+        .map((leg) => {
+          const history = observations.filter((o) => o.input.leg === leg);
+          const total = artifact[leg].reduce(
+            (sum, l) =>
+              sum +
+              BigInt(
+                integer(l.debit, "Journal debit", 0, Number.MAX_SAFE_INTEGER),
+              ),
+            0n,
+          );
+          const credit = artifact[leg].reduce(
+            (sum, l) =>
+              sum +
+              BigInt(
+                integer(l.credit, "Journal credit", 0, Number.MAX_SAFE_INTEGER),
+              ),
+            0n,
+          );
+          check(
+            total === credit && total <= BigInt(Number.MAX_SAFE_INTEGER),
+            "COST_CONTROL",
+            "Journal total exceeds safe accounting limits.",
+          );
+          const reference = this.store.get(
+            "SELECT receiver_ref,external_ref FROM integration_cost_correction_references WHERE org_id=? AND correction_id=? AND leg=?",
+            actor.orgId,
+            correctionId,
+            leg,
+          );
+          check(
+            history.length
+              ? reference?.receiver_ref === artifact.input.receiverRef &&
+                  reference.external_ref === history.at(-1)!.input.externalRef
+              : !reference,
+            "COST_INTEGRITY",
+            "Ledger observation does not match its retained request reservation.",
+          );
+          return {
+            leg,
+            debit: Number(total),
+            credit: Number(total),
+            postingDate: artifact[leg][0]!.date,
+            current: history.at(-1) ?? null,
+            history,
+          };
+        }),
+    };
+  }
+  observe(actor: Actor, key: string, input: CorrectionOutcomeInput) {
+    actor = this.principal(actor);
+    return this.platform.command(
+      actor,
+      "accounting.cost.correction.observe",
+      key,
+      input,
+      () => {
+        actor = this.principal(actor);
+        this.platform.assertProviderAccess();
+        this.outcomeSnapshot(actor, input.correctionId);
+      },
+      () => {
+        const state = this.outcomeSnapshot(actor, input.correctionId);
+        const normalized: CorrectionOutcomeInput = {
+          ...input,
+          correctionId: text(input.correctionId, "Correction ID"),
+          contentHash: hash(input.contentHash),
+          previousRevision: integer(
+            input.previousRevision,
+            "Previous observation revision",
+            0,
+            Number.MAX_SAFE_INTEGER - 1,
+          ),
+          receiverRef: text(input.receiverRef, "Ledger receiver", 100),
+          externalRef: text(
+            input.externalRef,
+            "Ledger journal or request reference",
+            160,
+          ),
+          debit: integer(
+            input.debit,
+            "Intended debit total",
+            0,
+            Number.MAX_SAFE_INTEGER,
+          ),
+          credit: integer(
+            input.credit,
+            "Intended credit total",
+            0,
+            Number.MAX_SAFE_INTEGER,
+          ),
+          postingDate:
+            input.postingDate === null
+              ? null
+              : accountingDate(input.postingDate),
+          evidence: text(input.evidence, "Ledger observation evidence", 2000),
+        };
+        check(
+          ["posted", "cancelled-unposted", "unknown"].includes(
+            normalized.outcome,
+          ),
+          "VALIDATION",
+          "Invalid ledger observation outcome.",
+          400,
+        );
+        check(
+          state.contentHash === normalized.contentHash,
+          "COST_INTEGRITY",
+          "Observe the exact approved correction artifact.",
+        );
+        check(
+          state.receiverRef === normalized.receiverRef &&
+            state.receiverRegion === normalized.receiverRegion &&
+            state.currency === normalized.currency,
+          "RESIDENCY",
+          "Ledger observation must match the approved receiver, region and currency.",
+        );
+        const leg = state.legs.find((l) => l.leg === normalized.leg);
+        check(leg, "COST_LEG", "This approved correction has no such journal.");
+        check(
+          leg.debit === normalized.debit &&
+            leg.credit === normalized.credit &&
+            (normalized.outcome === "posted"
+              ? normalized.postingDate === leg.postingDate
+              : normalized.postingDate === null),
+          "COST_CONTROL",
+          "Intended journal totals and observed posting date must match the approved leg; unknown or cancelled outcomes have no posting date.",
+        );
+        if (
+          leg.current &&
+          canonical(leg.current.input) === canonical(normalized)
+        )
+          return leg.current;
+        check(
+          normalized.previousRevision === (leg.current?.revision ?? 0),
+          "REVISION_CONFLICT",
+          "Reload the retained journal observations before adding evidence.",
+        );
+        check(
+          !leg.current || leg.current.input.outcome === "unknown",
+          "COST_OUTCOME_FINAL",
+          "A terminal journal observation is immutable; further corrections require a separate reviewed process.",
+        );
+        if (leg.current)
+          check(
+            leg.current.input.externalRef === normalized.externalRef,
+            "COST_REFERENCE_CONFLICT",
+            "Resolve the same uncertain request reference; changing it risks a duplicate posting.",
+          );
+        else {
+          this.assertReferenceAvailable(
+            actor,
+            normalized.receiverRef,
+            normalized.externalRef,
+          );
+          check(
+            !this.store.get(
+              "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+              actor.orgId,
+              normalized.receiverRef,
+              normalized.externalRef,
+            ),
+            "COST_REFERENCE_CONFLICT",
+            "Ledger reference already identifies an original cost handoff.",
+          );
+        }
+        if (
+          normalized.leg === "replacement" &&
+          normalized.outcome === "posted"
+        ) {
+          const reversal = state.legs.find((l) => l.leg === "reversal");
+          check(
+            !reversal || reversal.current?.input.outcome === "posted",
+            "COST_REVERSAL_REQUIRED",
+            "Retain verified reversal posting evidence before replacement posting evidence.",
+          );
+        }
+        if (!leg.current)
+          this.store.run(
+            "INSERT INTO integration_cost_correction_references VALUES(?,?,?,?,?)",
+            actor.orgId,
+            normalized.receiverRef,
+            normalized.externalRef,
+            state.correctionId,
+            normalized.leg,
+          );
+        const observation = {
+          revision: normalized.previousRevision + 1,
+          input: normalized,
+          recordedBy: actor.id,
+          recordedAt: now(),
+        };
+        const evidenceHash = digest(canonical(observation));
+        this.store.run(
+          "INSERT INTO integration_cost_correction_outcomes VALUES(?,?,?,?,?,?,?,?)",
+          state.correctionId,
+          normalized.leg,
+          observation.revision,
+          actor.orgId,
+          canonical(normalized),
+          evidenceHash,
+          actor.id,
+          observation.recordedAt,
+        );
+        this.platform.audit(
+          actor,
+          "accounting.cost.correction.observed",
+          state.correctionId,
+          {
+            leg: normalized.leg,
+            outcome: normalized.outcome,
+            revision: observation.revision,
+            evidenceHash,
+          },
+        );
+        return { ...observation, evidenceHash };
+      },
+    );
+  }
+
   download(actor: Actor, correctionId: string) {
-    return this.database.transaction(() => {
-      actor = this.principal(actor);
-      const row = this.row(actor, correctionId);
-      check(
-        row.state === "reviewed" &&
-          row.artifact &&
-          row.content_hash &&
-          digest(row.artifact) === row.content_hash,
-        "COST_REVIEW_REQUIRED",
-        "Only the intact approved correction can be downloaded.",
-      );
-      return {
-        bytes: row.artifact,
-        hash: row.content_hash,
-        filename: `distributor-cost-correction-${row.id}.json`,
-      };
-    });
+    return this.database.transaction(() =>
+      this.approvedFile(this.principal(actor), correctionId),
+    );
+  }
+  private approvedFile(actor: Actor, correctionId: string) {
+    const row = this.row(actor, correctionId);
+    check(
+      row.state === "reviewed" &&
+        row.artifact &&
+        row.content_hash &&
+        digest(row.artifact) === row.content_hash,
+      "COST_REVIEW_REQUIRED",
+      "Only the intact approved correction can be downloaded.",
+    );
+    return {
+      bytes: row.artifact,
+      hash: row.content_hash,
+      filename: `distributor-cost-correction-${row.id}.json`,
+    };
   }
 }

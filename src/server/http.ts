@@ -298,6 +298,24 @@ export function commands(
       }),
       run: (a, k, p) => app.integration.costs.corrections.prepare(a, k, p),
     },
+    "accounting.cost.correction.observe": {
+      schema: obj({
+        correctionId: str,
+        contentHash: str,
+        leg: choice("reversal", "replacement"),
+        previousRevision: costNumber,
+        outcome: choice("posted", "cancelled-unposted", "unknown"),
+        receiverRef: str,
+        receiverRegion: choice("CA", "US"),
+        currency: choice("CAD", "USD"),
+        externalRef: str,
+        debit: costNumber,
+        credit: costNumber,
+        postingDate: { anyOf: [str, { type: "null" }] },
+        evidence: str,
+      }),
+      run: (a, k, p) => app.integration.costs.corrections.observe(a, k, p),
+    },
     "accounting.cost.correction.decide": {
       schema: obj({
         correctionId: str,
@@ -3214,6 +3232,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor(request),
         request.params.correctionId,
       ),
+  );
+  http.get<{ Params: { correctionId: string } }>(
+    "/api/accounting/cost-corrections/:correctionId/outcomes",
+    { schema: { params: obj({ correctionId: str }) } },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.corrections.outcomes(
+        actor(request),
+        request.params.correctionId,
+      );
+    },
   );
   http.get<{ Params: { correctionId: string } }>(
     "/api/accounting/cost-corrections/:correctionId/file",

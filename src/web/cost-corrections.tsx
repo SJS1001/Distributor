@@ -1,3 +1,4 @@
+import { CostCorrectionOutcomes } from "./cost-correction-outcomes.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import type { CostPacketView } from "../server/integration-costs.ts";
 import type {
@@ -410,6 +411,12 @@ export function CostCorrectionsPanel({
               >
                 Download approved cost correction
               </button>
+              <CostCorrectionOutcomes
+                key={detail.id}
+                correctionId={detail.id}
+                contentHash={detail.contentHash}
+                recoveryHold={recoveryHold}
+              />
             </>
           )}
           <button disabled={busy} onClick={() => setDetail(null)}>

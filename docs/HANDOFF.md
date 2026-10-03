@@ -1,6 +1,11 @@
 # Distributor setup handoff
 
-## Current continuation — accepted recommendations, 2026-10-03
+## Current continuation — correction ledger observations, 2026-10-03
+
+- Resumed clean published parent `c099996864863f35bd60fca5641571ee705e283a`. Owner accepted recommended direction and authorized continuing source/test/documentation publication. Direct workstation checks only; no CI runner, workflow, delegated session, provider IO, PR, merge or deployment.
+- Captured an independent published version-eight schema fixture from actual fresh enabled/disabled stores before changing source. Implemented append-only operator ledger observations per approved reversal/replacement, explicit uncertainty and immutable reference reservations. These are operator evidence records, not provider transport or independent provider verification. Fresh full native checks pass 2,029/2,029, focused checks 115/115, focused Chromium 2/2 and complete production Chromium 238/238 (4.0 minutes). TypeScript/build/format pass; CA/US isolated production runtime checks pass; final evidence review and publication remain pending. Preserve failed fixture/transaction checks and unclean React diagnostics in the new local receipt. All 44 tasks/ten gates remain NOT VERIFIED; full system remains incomplete.
+
+## Prior continuation — accepted recommendations, 2026-10-03
 
 - Resumed clean published parent `378a1d6402257f29a4399eeacaddfb5714d783c4` on `codex/local-distributor-checkpoint`. Owner accepted the recommendations and authorized current source/test/documentation publication. No CI runner, workflow, delegated/cloud session, provider IO, PR, merge or deployment.
 - Implemented immutable original-linked account-mapping corrections, explicit monthly/closed-through policy, exact posted reversal/unposted replacement, unknown-outcome refusal, independent finance approval, historical files and a fresh-original-acceptance fence. Added Billing review/history/download controls with exact active retries and abandoned-response fencing. No valuation recalculation or correction ledger transport.

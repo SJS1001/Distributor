@@ -1,0 +1,27 @@
+{
+  "sourceCommit": "c099996864863f35bd60fca5641571ee705e283a",
+  "hashes": {
+    "disabled": "d1c9863f8d1b790cdd0fd8c55206b312e5d7e4b99512320ccb017c47c1123ffc",
+    "enabled": "fb67effdabb767d2148d1b70669d409f53211eb8c2124858ca7c52deaf7db1c0"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "integration_cost_policies",
+      "tbl_name": "integration_cost_policies",
+      "sql": "CREATE TABLE integration_cost_policies(org_id TEXT NOT NULL,revision INTEGER NOT NULL,input TEXT NOT NULL,policy_hash TEXT NOT NULL,created_by TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(org_id,revision)) STRICT"
+    },
+    {
+      "type": "table",
+      "name": "integration_cost_corrections",
+      "tbl_name": "integration_cost_corrections",
+      "sql": "CREATE TABLE integration_cost_corrections(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,original_id TEXT NOT NULL REFERENCES integration_cost_packets(id),original_hash TEXT NOT NULL,input TEXT NOT NULL,plan TEXT NOT NULL,review_hash TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('ready','blocked','rejected','reviewed')),created_by TEXT NOT NULL,created_at TEXT NOT NULL,decision_by TEXT,decision_at TEXT,decision_reason TEXT,artifact TEXT,content_hash TEXT) STRICT"
+    },
+    {
+      "type": "index",
+      "name": "integration_cost_correction_once",
+      "tbl_name": "integration_cost_corrections",
+      "sql": "CREATE UNIQUE INDEX integration_cost_correction_once ON integration_cost_corrections(org_id,original_id) WHERE state='reviewed'"
+    }
+  ]
+}

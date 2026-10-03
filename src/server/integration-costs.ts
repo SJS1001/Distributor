@@ -760,6 +760,12 @@ export class IntegrationCosts {
           "COST_ACCEPTANCE_CONFLICT",
           "Receiver reference already identifies another cost handoff.",
         );
+        this.corrections.assertReferenceAvailable(
+          actor,
+          normalized.receiverRef,
+          normalized.externalRef,
+          packet.id,
+        );
         const receipt = {
           ...evidence,
           recordedBy: actor.id,

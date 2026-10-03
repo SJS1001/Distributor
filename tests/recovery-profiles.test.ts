@@ -1,3 +1,4 @@
+import versionEight from "./schema-version-eight.json" with { type: "json" };
 import versionSeven from "./schema-version-seven.json" with { type: "json" };
 import versionSix from "./schema-version-six.json" with { type: "json" };
 import { test } from "node:test";
@@ -228,7 +229,7 @@ for (const region of ["CA", "US"] as const) {
         "backup must leave every source row and exact schema unchanged",
       );
       assert.equal(receipt.version, 1);
-      assert.equal(receipt.schemaVersion, 8);
+      assert.equal(receipt.schemaVersion, 9);
       assert.equal(receipt.eventReports, eventReports);
       assert.equal(receipt.schemaHash, before.schemaHash);
       assert.equal(
@@ -252,7 +253,7 @@ for (const region of ["CA", "US"] as const) {
       ship(f, accept(f, 1, "later-order").id);
       const after = inspect(f.path);
       const restored = await restoreBackup(archive, target, region, key);
-      assert.equal(restored.schemaVersion, 8);
+      assert.equal(restored.schemaVersion, 9);
       assert.equal(restored.eventReports, eventReports);
       assert.equal(restored.schemaHash, before.schemaHash);
       assert.equal(restored.snapshotHash, receipt.snapshotHash);
@@ -514,7 +515,7 @@ test("authenticated altered version/profile receipts and legacy/foreign layouts 
   }
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8])
   test(`authenticated version-${sourceVersion} archives require a separate upgrade procedure and never restore implicitly`, async (t) => {
     const f = fixture(t, { eventReports: false }),
       key = randomBytes(32),
@@ -540,11 +541,17 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7])
                 ? versionFive.hashes.disabled
                 : sourceVersion === 6
                   ? versionSix.hashes.disabled
-                  : versionSeven.hashes.disabled;
+                  : sourceVersion === 7
+                    ? versionSeven.hashes.disabled
+                    : versionEight.hashes.disabled;
     try {
       db.exec(
-        "DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies",
+        "DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references",
       );
+      if (sourceVersion < 8)
+        db.exec(
+          "DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies",
+        );
       if (sourceVersion < 7) db.exec("DROP TABLE procurement_supplier_changes");
       if (sourceVersion < 6) db.exec("DROP TABLE fulfillment_coverage");
       if (sourceVersion < 5) db.exec("DROP TABLE warranty_claim_coverage");
@@ -602,7 +609,7 @@ test("operator CLI backs up/restores disabled US profile through protected stdin
   assert.equal(restored.code, 0, restored.err);
   for (const result of [backed, restored]) {
     const receipt = JSON.parse(result.out);
-    assert.equal(receipt.schemaVersion, 8);
+    assert.equal(receipt.schemaVersion, 9);
     assert.equal(receipt.eventReports, false);
     assert.equal(receipt.schemaHash, before.schemaHash);
     assert.equal(receipt.region, region);
