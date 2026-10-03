@@ -216,6 +216,23 @@ export function readOfflinePrivateEvidence(
   return readPrivateEvidence(envelopeInput, manifestInput, captureInput);
 }
 
+/** Fixed native refund profile. The legacy import profile remains unchanged;
+ * signed envelopes must never be renamed to select a different operation. */
+export class RestoreOfflineFailedRefundPrivateEvidence {
+  read(
+    envelopeInput: unknown,
+    manifestInput: unknown,
+  ): OfflinePrivateEvidenceHandle {
+    return readPrivateEvidence(
+      envelopeInput,
+      manifestInput,
+      undefined,
+      undefined,
+      true,
+    );
+  }
+}
+
 /** Trusted internal composition: provide the actual same native owners.
  * No Application route is installed; captures provide consistency, not authority. */
 export class RestoreOfflineOriginalPrivateEvidence {
@@ -255,6 +272,7 @@ function readPrivateEvidence(
   manifestInput: unknown,
   captureInput?: unknown,
   original?: StockJournalOfflineOriginalEvidence,
+  nativeRefund = false,
 ): OfflinePrivateEvidenceHandle {
   let pending: ReturnType<typeof readRestorePrivateEvidence> | undefined;
   let captured: ReadonlyMap<string, Buffer> | undefined;
@@ -271,6 +289,12 @@ function readPrivateEvidence(
     preflight(manifestInput);
     if (captureInput !== undefined) preflight(captureInput, 16);
     const envelope = parseOfflineTaskEnvelope(envelopeInput);
+    if (nativeRefund)
+      requireValue(
+        envelope.task.owner === "integration" &&
+          envelope.task.name === "integration.offline-failed-refund" &&
+          envelope.task.version === 1,
+      );
     const items = envelope.evidence.items;
     requireValue(items.length > 0);
     const expected = new Map(
@@ -328,6 +352,14 @@ function readPrivateEvidence(
     );
     requireValue(expectedSetHash === envelope.evidence.setHash);
     let capture: RestoreEvidenceCapture | undefined;
+    if (nativeRefund) {
+      requireValue(
+        items.length === 1 &&
+          items[0]!.bytes > 0 &&
+          items[0]!.bytes <= 64 * 1024,
+      );
+      capture = { references: [items[0]!.reference], maxBytes: 64 * 1024 };
+    }
     if (captureInput !== undefined) {
       const c = record(captureInput, ["references", "maxBytes"]);
       requireValue(
@@ -414,7 +446,9 @@ function readPrivateEvidence(
               requireValue(
                 envelope.task.owner === "integration" &&
                   envelope.task.name ===
-                    "integration.stripe-refund-failed.import" &&
+                    (nativeRefund
+                      ? "integration.offline-failed-refund"
+                      : "integration.stripe-refund-failed.import") &&
                   envelope.task.version === 1,
               );
               requireValue(
