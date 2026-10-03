@@ -1,4 +1,12 @@
-import { canonical, check, DomainError, id, integer, text } from "./core.ts";
+import {
+  canonical,
+  check,
+  DomainError,
+  id,
+  integer,
+  permit,
+  text,
+} from "./core.ts";
 import type { Database, Store } from "./database.ts";
 import type { Platform } from "./platform.ts";
 import type { Identity } from "./iam.ts";
@@ -51,18 +59,36 @@ export class OrganizationLedgerRevocation {
   ) {
     store.migrate(ORGANIZATION_REVOCATION_INITIALIZE_DDL);
   }
-  private authority(binding: RevocationBinding, stamp?: LedgerAuthority) {
+  private authority(
+    binding: RevocationBinding,
+    stamp?: LedgerAuthority,
+    sessionToken?: string,
+  ) {
     this.credentials.status(binding);
-    const actor = this.identity.workerActor(
-      binding.orgId,
-      binding.workerUserId,
-    );
+    let actor = this.identity.workerActor(binding.orgId, binding.workerUserId);
     check(
       !actor.accountId,
       "FORBIDDEN",
       "Organization revocation requires an unbound finance worker.",
       403,
     );
+    if (sessionToken !== undefined) {
+      const session = this.identity.session(sessionToken);
+      permit(session.actor, ["finance"]);
+      check(
+        session.actor.orgId === binding.orgId && !session.actor.accountId,
+        "FORBIDDEN",
+        "Organization revocation requires this workspace's unbound finance authority.",
+        403,
+      );
+      check(
+        !session.passwordChangeRequired && !session.mfaEnrollmentRequired,
+        "REVOCATION_SECURITY",
+        "Complete current login security requirements before organization revocation.",
+        403,
+      );
+      actor = session.actor;
+    }
     if (stamp) {
       this.platform.assertProviderAccess();
       this.credentials.currentKey();
@@ -142,9 +168,9 @@ export class OrganizationLedgerRevocation {
           : null,
     };
   }
-  status(binding: RevocationBinding, receiptId: string) {
+  status(binding: RevocationBinding, receiptId: string, sessionToken?: string) {
     return this.database.transaction(() => {
-      this.authority(binding);
+      this.authority(binding, undefined, sessionToken);
       return this.metadata(this.row(binding, receiptId));
     });
   }
@@ -159,6 +185,7 @@ export class OrganizationLedgerRevocation {
     revision: number,
     authority: LedgerAuthority,
     clientSecret: string,
+    sessionToken?: string,
   ) {
     binding = Object.freeze({ ...binding });
     authority = Object.freeze({ ...authority });
@@ -175,7 +202,7 @@ export class OrganizationLedgerRevocation {
       | { cached: ReturnType<OrganizationLedgerRevocation["metadata"]> }
       | { token: string; claim: string }
     >(() => {
-      this.authority(binding);
+      this.authority(binding, undefined, sessionToken);
       const previous = this.store.get<Receipt>(
         "SELECT * FROM integration_ledger_revocations WHERE org_id=? AND binding_id=? AND id=?",
         binding.orgId,
@@ -192,7 +219,7 @@ export class OrganizationLedgerRevocation {
         );
         return { cached: this.metadata(row) } as const;
       }
-      const { actor } = this.authority(binding, authority);
+      const { actor } = this.authority(binding, authority, sessionToken);
       this.assertClear(binding);
       check(
         !this.store.get(
@@ -247,7 +274,13 @@ export class OrganizationLedgerRevocation {
     if ("cached" in prepared) return prepared.cached;
     try {
       this.database.transaction(() =>
-        this.assertClaim(binding, receiptId, prepared.claim, authority),
+        this.assertClaim(
+          binding,
+          receiptId,
+          prepared.claim,
+          authority,
+          sessionToken,
+        ),
       );
       const response = await fetch(
         "https://developer.api.intuit.com/v2/oauth2/tokens/revoke",
@@ -299,8 +332,9 @@ export class OrganizationLedgerRevocation {
           receiptId,
           prepared.claim,
           authority,
+          sessionToken,
         );
-        const { actor } = this.authority(binding, authority);
+        const { actor } = this.authority(binding, authority, sessionToken);
         this.store.run(
           "UPDATE integration_ledger_revocations SET state='confirmed',claim=NULL,finished_at=? WHERE id=?",
           Date.now(),
@@ -345,9 +379,10 @@ export class OrganizationLedgerRevocation {
     receiptId: string,
     claim: string,
     authority: LedgerAuthority,
+    sessionToken?: string,
   ) {
     // The caller owns the transaction; nesting BEGIN would discard a valid reply.
-    this.authority(binding, authority);
+    this.authority(binding, authority, sessionToken);
     const row = this.row(binding, receiptId);
     const current = this.credentials.status(binding);
     check(
@@ -369,6 +404,7 @@ export class OrganizationLedgerRevocation {
     revision: number,
     resolution: "provider-confirmed" | "provider-unconfirmed",
     evidence: string,
+    sessionToken?: string,
   ) {
     integer(revision, "credential revision", 1, Number.MAX_SAFE_INTEGER - 1);
     check(
@@ -378,7 +414,7 @@ export class OrganizationLedgerRevocation {
     );
     evidence = text(evidence, "provider review evidence", 2000);
     return this.database.transaction(() => {
-      const { actor } = this.authority(binding),
+      const { actor } = this.authority(binding, undefined, sessionToken),
         row = this.row(binding, receiptId);
       const current = this.credentials.status(binding),
         state = resolution === "provider-confirmed" ? "confirmed" : "released";

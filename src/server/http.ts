@@ -3981,6 +3981,80 @@ export async function createHttp(app: Application, options: HttpOptions) {
     );
     return options.organizationQuickbooksBrowser;
   };
+  http.post<{
+    Body: { receiptId: string; revision: number; authority: LedgerAuthority };
+  }>(
+    "/api/quickbooks/organization/revocation",
+    {
+      bodyLimit: 32768,
+      schema: {
+        body: obj({
+          receiptId: { type: "string", minLength: 1, maxLength: 128 },
+          revision: {
+            type: "integer",
+            minimum: 1,
+            maximum: Number.MAX_SAFE_INTEGER - 1,
+          },
+          authority: ledgerAuthority(),
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().revoke(
+        request.cookies.distributor_session!,
+        request.body.receiptId,
+        request.body.revision,
+        request.body.authority,
+      ),
+  );
+  http.get<{ Querystring: { receiptId: string } }>(
+    "/api/quickbooks/organization/revocation",
+    {
+      schema: {
+        querystring: obj({
+          receiptId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().revocationStatus(
+        request.cookies.distributor_session!,
+        request.query.receiptId,
+      ),
+  );
+  http.post<{
+    Body: {
+      receiptId: string;
+      revision: number;
+      resolution: "provider-confirmed" | "provider-unconfirmed";
+      evidence: string;
+    };
+  }>(
+    "/api/quickbooks/organization/revocation/review",
+    {
+      bodyLimit: 32768,
+      schema: {
+        body: obj({
+          receiptId: { type: "string", minLength: 1, maxLength: 128 },
+          revision: {
+            type: "integer",
+            minimum: 1,
+            maximum: Number.MAX_SAFE_INTEGER - 1,
+          },
+          resolution: choice("provider-confirmed", "provider-unconfirmed"),
+          evidence: { type: "string", minLength: 1, maxLength: 2000 },
+        }),
+      },
+    },
+    async (request) =>
+      organizationAuthorization().reviewRevocation(
+        request.cookies.distributor_session!,
+        request.body.receiptId,
+        request.body.revision,
+        request.body.resolution,
+        request.body.evidence,
+      ),
+  );
   http.get("/api/quickbooks/organization/authorization", async (request) => {
     const principal = app.identity.currentActor(actor(request));
     permit(principal, ["finance"]);

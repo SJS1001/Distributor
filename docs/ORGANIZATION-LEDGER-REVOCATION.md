@@ -1,6 +1,6 @@
 # Native organization QuickBooks revocation
 
-Partial D-034/D-036/D-039 engineering. All 44 tasks and ten product gates remain NOT VERIFIED. This is a native sandbox operation for the separate organization stock-cost journal credential scope. Dedicated protected operator commands invoke it explicitly. No HTTP route, browser control, startup invocation or polling worker invokes it yet. The buyer-account revocation command cannot substitute. The preview keeps all provider connections disabled.
+Partial D-034/D-036/D-039 engineering. All 44 tasks and ten product gates remain NOT VERIFIED. This is a native sandbox operation for the separate organization stock-cost journal credential scope. Dedicated protected operator commands invoke it explicitly. Authenticated task-shaped HTTP controls now expose explicit revocation, receipt reads and offline evidence review. Dedicated browser controls remain pending; no startup invocation or polling worker invokes it. The buyer-account revocation command cannot substitute. The preview keeps all provider connections disabled.
 
 ## Exact scope and request
 
@@ -33,7 +33,7 @@ Schema 14 adds dedicated integration-owned organization revocation storage and a
 
 [Encrypted isolated restore](RECOVERY.md) changes copied organization `sending` receipts to `unknown`, clears claims, disables/discards copied credentials and advances their revisions. Current offline review uses the restored disabled revision and retains the provider hold. Historical terminal receipts remain history. Current recovery refuses old versions 1–13 archives rather than silently migrating them.
 
-The [local receipt](evidence/LOCAL-ORGANIZATION-REVOCATION-2026-10-03.md) binds source/test hashes and direct workstation verification. All provider responses are intercepted synthetic requests. Dedicated HTTP/browser exposure, actual vendor sandbox outcomes and grant-wide revocation semantics, external evidence truth, process/clock/storage faults at production scale, key custody, residency, security and human operator/release qualification remain open. No CI runner, workflow, deployment, PR or merge was used.
+The [local receipt](evidence/LOCAL-ORGANIZATION-REVOCATION-2026-10-03.md) binds source/test hashes and direct workstation verification. All provider responses are intercepted synthetic requests. Dedicated browser exposure, actual vendor sandbox outcomes and grant-wide revocation semantics, external evidence truth, process/clock/storage faults at production scale, key custody, residency, security and human operator/release qualification remain open. No CI runner, workflow, deployment, PR or merge was used.
 
 ## Protected operator commands
 
@@ -50,3 +50,19 @@ For `revoke`, additionally configure the current `PROVIDER_ENCRYPTION_KEY`, `QUI
 `status` and `review` ignore ambient encryption keys and need neither secrets nor enabled providers; current original worker and binding authority remain mandatory after withdrawal or during a restore hold. Review accepts only `provider-confirmed` or `provider-unconfirmed` and a nonempty evidence reference of at most 2,000 characters. It leaves credentials disabled and the hold intact. Unknown, missing, surplus, malformed or oversized fields/UTF-8 are refused before application construction. Credential and permission revisions must be inspected, not copied from examples. Errors omit input/provider bodies. Never include tokens, keys, secrets or customer data in evidence, command arguments, shell history or published files.
 
 The protected command checks use independent child processes and intercepted HTTP in CA/US; production installation separately checks default refusals. These are workstation protocol checks, not actual provider qualification or verified residency.
+
+## Authenticated organization HTTP controls
+
+Dedicated organization configuration (`QUICKBOOKS_LEDGER_BROWSER_AUTH_ENABLED=true` and the separate `LEDGER_*` binding) exposes the following routes. The default remains disabled; configuration and provider activation still require separate qualification. Requests cannot select another company, worker, client, buyer account, secret or token. JSON writes are bounded to 32 KiB, reject surplus fields and require current same-origin/CSRF authorization.
+
+| Operation | Exact request | Behavior |
+| --- | --- | --- |
+| `POST /api/quickbooks/organization/revocation` | `receiptId`, original ready credential `revision`, exact organization `authority` | Disable before one explicit sandbox request; retain the same receipt for exact replay |
+| `GET /api/quickbooks/organization/revocation?receiptId=…` | One receipt identifier, no other query fields | Read scoped retained metadata offline |
+| `POST /api/quickbooks/organization/revocation/review` | `receiptId`, current disabled `revision`, explicit `resolution`, nonempty bounded `evidence` | Record external outcome evidence offline without reactivating credentials |
+
+Every operation checks the configured original worker and the current unbound finance/admin login in the same organization. Password-change and required-MFA enrollment restrictions apply to both HTTP and native browser calls. Revocation rechecks that initiating live login before sending and after the awaited response. Logout, session invalidation, role change or newly unmet security requirements retain uncertainty instead of accepting a late confirmation. Browser audit records identify the actual finance user; operator calls retain worker auditing.
+
+Receipts are organization finance history, unlike login-private OAuth authorization attempts. A fresh authorized finance login can recover an original receipt or review its externally established outcome; it cannot resend an unresolved operation or replace its original binding/revision/permission stamp. Offline reads/review need no vault key or current provider permission and remain available after withdrawal or during a restore hold. The dedicated configured browser object must remain available for these reads; disabling that configuration refuses all three HTTP operations. The hold and disabled credentials remain intact.
+
+The [local HTTP receipt](evidence/LOCAL-ORGANIZATION-REVOCATION-HTTP-2026-10-03.md) records direct workstation synthetic checks. This supplies backend controls; dedicated browser presentation and actual Intuit/operator/security/residency qualification remain pending. No live provider request or product gate acceptance is claimed.

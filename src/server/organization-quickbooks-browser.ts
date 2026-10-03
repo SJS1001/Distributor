@@ -79,6 +79,44 @@ export class OrganizationQuickBooksBrowser {
       revision,
     );
   }
+  revoke(
+    token: string,
+    receiptId: string,
+    revision: number,
+    authority: LedgerAuthority,
+  ) {
+    return this.app.providerCredentials.ledger.revocation.revoke(
+      this.binding,
+      receiptId,
+      revision,
+      authority,
+      this.clientSecret,
+      token,
+    );
+  }
+  revocationStatus(token: string, receiptId: string) {
+    return this.app.providerCredentials.ledger.revocation.status(
+      this.binding,
+      receiptId,
+      token,
+    );
+  }
+  reviewRevocation(
+    token: string,
+    receiptId: string,
+    revision: number,
+    resolution: "provider-confirmed" | "provider-unconfirmed",
+    evidence: string,
+  ) {
+    return this.app.providerCredentials.ledger.revocation.review(
+      this.binding,
+      receiptId,
+      revision,
+      resolution,
+      evidence,
+      token,
+    );
+  }
   complete(token: string, attemptId: string, callbackUrl: string) {
     return this.app.providerCredentials.ledger.authorization.complete(
       this.binding,
