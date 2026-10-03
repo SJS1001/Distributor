@@ -1060,6 +1060,54 @@ export function commands(
       }),
       run: (a, k, p) => app.procurement.followups.review(a, k, p),
     },
+    "inventory.valuation.policy": {
+      schema: obj(
+        {
+          productId: str,
+          previousRevision: costNumber,
+          policyVersion: str,
+          establishedBasis: str,
+          establishedMethod: choice(
+            "specific-identification",
+            "fifo-receipt-layers",
+          ),
+          effectiveFrom: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+          closedThrough: {
+            anyOf: [
+              { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+              { type: "null" },
+            ],
+          },
+          financeEvidence: str,
+          nonInterchangeableEvidence: { anyOf: [str, { type: "null" }] },
+        },
+        ["nonInterchangeableEvidence"],
+      ),
+      run: (a, k, p) => app.inventory.valuations.configure(a, k, p),
+    },
+    "inventory.valuation.prepare": {
+      schema: obj({
+        unitId: str,
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reference: str,
+        kind: choice("write-down", "reversal"),
+        targetValue: costNumber,
+        postingDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        reason: str,
+        evidence: str,
+        accountantEvidence: str,
+      }),
+      run: (a, k, p) => app.inventory.valuations.prepare(a, k, p),
+    },
+    "inventory.valuation.decide": {
+      schema: obj({
+        valuationId: str,
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.valuations.decide(a, k, p),
+    },
     "stock.relocate": {
       schema: obj(
         {
@@ -2182,6 +2230,42 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     },
     async (request) => app.inventory.countPage(actor(request), request.query),
+  );
+  http.get<{ Params: { unitId: string } }>(
+    "/api/stock/:unitId/valuation-policy",
+    { schema: { params: obj({ unitId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.inventory.valuations.currentPolicy(
+        actor(request),
+        request.params.unitId,
+      ),
+  );
+  http.get<{ Params: { unitId: string } }>(
+    "/api/stock/:unitId/valuation-review",
+    { schema: { params: obj({ unitId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.inventory.valuations.review(actor(request), request.params.unitId),
+  );
+  http.get<{ Params: { unitId: string }; Querystring: { after?: string } }>(
+    "/api/stock/:unitId/valuations",
+    {
+      schema: {
+        params: obj({ unitId: str }),
+        querystring: obj({ after: str }, ["after"]),
+      },
+    },
+    async (request) =>
+      app.inventory.valuations.history(
+        actor(request),
+        request.params.unitId,
+        request.query.after,
+      ),
+  );
+  http.get<{ Params: { valuationId: string } }>(
+    "/api/stock/valuations/:valuationId",
+    { schema: { params: obj({ valuationId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.inventory.valuations.get(actor(request), request.params.valuationId),
   );
   http.get("/api/counts", async (request) =>
     app.inventory.counts(actor(request)),

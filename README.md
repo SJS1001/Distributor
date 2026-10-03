@@ -4,6 +4,8 @@ Independent distributor application and planning workspace for multiple warehous
 
 **Status: implementation in progress, 3 October 2026.** The owner authorized the full system after completing the planning package. See [implementation status](docs/IMPLEMENTATION.md) for actual code, commands and remaining qualification. The owner-authorized snapshot is published on `codex/local-distributor-checkpoint`; the full system remains incomplete.
 
+Inventory includes [evidenced carrying-value adjustments and independent finance review](docs/INVENTORY-VALUATIONS.md), with original acquisition cost and physical quantity preserved. Browser recovery retains the exact reviewed attempt when a reply is uncertain.
+
 Billing includes [subsequent account mapping correction review and exact preparation recovery](docs/ACCOUNTING-CORRECTIONS.md#recover-a-subsequent-preparation). These synthetic engineering checks do not qualify actual ledger posting or complete the product gates.
 
 The intended product covers billing, online ordering, inventory, equipment scanning, fulfillment/logistics and warranty/returns. Modules should be added through defined interfaces without rewriting the product core. Project UB is a candidate optional integration, not a prerequisite for routine distributor operations.

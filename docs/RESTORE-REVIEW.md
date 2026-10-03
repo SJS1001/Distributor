@@ -4,7 +4,7 @@ Engineering continuation, 2026-10-03. The owner accepted source-bound reconcilia
 
 ## Capture the candidate
 
-Keep the restored store isolated, stop every rehearsal writer, preserve its recorded reporting profile and use its exact current version-10 schema. Capture a fresh descriptor on the workstation:
+Keep the restored store isolated, stop every rehearsal writer, preserve its recorded reporting profile and use its exact current schema-16 profile. Capture a fresh descriptor on the workstation:
 
 ```sh
 npm run recovery:review -- capture /absolute/private/recovered.db > /absolute/private/candidate.json

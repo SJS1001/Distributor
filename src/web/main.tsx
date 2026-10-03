@@ -22,6 +22,10 @@ import {
 } from "./supplier-return-queue.tsx";
 import { useStockQueue, StockQueueControls } from "./stock-queue.tsx";
 import { StockHistory } from "./stock-history.tsx";
+import {
+  InventoryValuation,
+  type ValuationSelection,
+} from "./inventory-valuation.tsx";
 import { BinRelocation, type BinSelection } from "./bin-relocation.tsx";
 import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
@@ -158,6 +162,8 @@ function App() {
     serial?: string;
   } | null>(null);
   const stockHistoryOpener = useRef<HTMLElement | null>(null);
+  const [valuationSelection, setValuationSelection] =
+    useState<ValuationSelection | null>(null);
   const [binSelection, setBinSelection] = useState<BinSelection | null>(null);
   const [countSelection, setCountSelection] = useState<{
     kind: CountKind;
@@ -255,6 +261,7 @@ function App() {
     stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
+    setValuationSelection(null);
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
@@ -516,6 +523,7 @@ function App() {
     setSupplierHistoryId(null);
     setStockHistory(null);
     setBinSelection(null);
+    setValuationSelection(null);
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
@@ -548,6 +556,7 @@ function App() {
     stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
+    setValuationSelection(null);
     setArrivalSelection(null);
     setLossSelection(null);
     setDispatchSelection(null);
@@ -1499,6 +1508,7 @@ function App() {
                 setPage(p);
                 setStockHistory(null);
                 setBinSelection(null);
+                setValuationSelection(null);
                 setArrivalSelection(null);
                 setLossSelection(null);
                 setDispatchSelection(null);
@@ -2459,6 +2469,15 @@ function App() {
                 }}
               />
             )}
+            {can("finance") && (
+              <InventoryValuation
+                key={`${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                selection={valuationSelection}
+                close={() => setValuationSelection(null)}
+              />
+            )}
             {can("warehouse") && (
               <BinRelocation
                 key={`${actor.orgId}:${actor.id}`}
@@ -2551,6 +2570,14 @@ function App() {
                       document.activeElement as HTMLElement;
                     setStockHistory({ unitId: u.id });
                   })}
+                  {can("finance") &&
+                    button("Stock valuation", () =>
+                      setValuationSelection({
+                        unitId: u.id,
+                        product: productName(u.product_id),
+                        warehouse: warehouseName(u.warehouse_id),
+                      }),
+                    )}
                   {can("warehouse") &&
                     u.state === "stock" &&
                     !u.serial &&

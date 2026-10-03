@@ -232,6 +232,13 @@ h2 {
 .stock-history {
   overflow-wrap: anywhere;
 }
+.stock-valuation {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.stock-valuation fieldset {
+  min-width: 0;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;

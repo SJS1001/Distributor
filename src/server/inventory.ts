@@ -1,3 +1,4 @@
+import { InventoryValuations } from "./inventory-valuations.ts";
 import {
   countQueueStates,
   type CountQueueInput,
@@ -154,6 +155,7 @@ type SerialReview = {
 export class Inventory {
   private store: Store;
   readonly costs: InventoryCosts;
+  readonly valuations: InventoryValuations;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -161,7 +163,6 @@ export class Inventory {
     private identity: Identity,
   ) {
     this.store = database.owned("inventory");
-    this.costs = new InventoryCosts(this.store);
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS inventory_warehouses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT;
@@ -209,6 +210,18 @@ export class Inventory {
         );
       }
     });
+    this.valuations = new InventoryValuations(
+      database,
+      this.store,
+      platform,
+      identity,
+      (actor, unit, type, quantity, reference, reason) =>
+        this.movement(actor, unit, type, quantity, reference, reason),
+      (actor) => {
+        this.costs.window(actor, 0);
+      },
+    );
+    this.costs = new InventoryCosts(this.store, this.valuations);
   }
   warehouses(actor: Actor) {
     actor = this.custodyActor(actor, [
@@ -859,11 +872,13 @@ export class Inventory {
       actor.orgId,
       movementId,
     );
+    this.valuations.record(actor.orgId, movementId);
     this.platform.event(actor, `inventory.${type}`, reference, {
       unitId: unit.id,
       warehouseId: unit.warehouse_id,
       quantity,
     });
+    return movementId;
   }
   assertNewSerials(actor: Actor, serials: string[]) {
     actor = this.custodyActor(actor, ["warehouse"]);
@@ -1173,6 +1188,7 @@ export class Inventory {
             u.condition,
             "stock",
           );
+          this.valuations.split(actor.orgId, u.id, movedId, quantity);
           moved = this.unit(actor, movedId);
           const evidence = `${JSON.stringify(sourceBin)} → ${JSON.stringify(bin)}: ${reason}`;
           this.movement(
@@ -2253,6 +2269,8 @@ export class Inventory {
         u.cost,
       );
     }
+    if (heldId !== u.id)
+      this.valuations.split(actor.orgId, u.id, heldId, quantity);
     this.store.run(
       "INSERT INTO inventory_short_picks VALUES(?,?,?,?,?,?,?,?,?)",
       reference,
@@ -2454,6 +2472,7 @@ export class Inventory {
             u.condition,
             "transit",
           );
+          this.valuations.split(actor.orgId, u.id, unitId, qty);
           transit = this.unit(actor, unitId);
         }
         this.store.run(
@@ -2839,6 +2858,8 @@ export class Inventory {
             "stock",
           );
         }
+        if (unitId !== u.id)
+          this.valuations.split(actor.orgId, u.id, unitId, payload.quantity);
         const remainingQuantity = remaining - payload.quantity;
         this.settleTransfer(
           actor,
@@ -3242,6 +3263,7 @@ export class Inventory {
           hash,
           JSON.stringify(result),
         );
+        this.valuations.recover(actor.orgId, unitId, loss.id, payload.quantity);
         this.movement(
           actor,
           this.unit(actor, unitId),

@@ -1,3 +1,4 @@
+import "./inventory-valuation-browser.ts";
 import "./cost-correction-successor-browser.ts";
 import "./organization-revocation-browser-journey.ts";
 import "./organization-quickbooks-browser-journey.ts";

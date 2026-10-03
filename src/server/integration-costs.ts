@@ -407,7 +407,7 @@ export class IntegrationCosts {
         base = {
           movementId: m.id,
           sequence: m.sequence,
-          date: m.createdAt.slice(0, 10),
+          date: m.accountingDate ?? m.createdAt.slice(0, 10),
         };
       journal.push(
         {

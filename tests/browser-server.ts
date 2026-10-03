@@ -1,3 +1,4 @@
+import { inventoryValuationBrowser } from "./inventory-valuation-browser-fixture.ts";
 import { costCorrectionSuccessorBrowser } from "./cost-correction-successor-browser-fixture.ts";
 import { organizationQuickBooksBrowser } from "./organization-quickbooks-browser-fixture.ts";
 import { stockJournalBrowser } from "./stock-journal-browser-fixture.ts";
@@ -997,6 +998,14 @@ const costCorrectionHttp = await costCorrectionBrowser((fn) =>
 const organizationAuthorizationHttp = await organizationQuickBooksBrowser(
   (fn) => cleanup.push(fn),
 );
+const inventoryValuationHttp = await inventoryValuationBrowser((fn) =>
+  cleanup.push(fn),
+);
+const inventoryValuationUsdHttp = await inventoryValuationBrowser(
+  (fn) => cleanup.push(fn),
+  3292,
+  "USD",
+);
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -1014,6 +1023,8 @@ const http = await createHttp(f.app, {
 });
 await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
+  await inventoryValuationHttp.close();
+  await inventoryValuationUsdHttp.close();
   await http.close();
   for (const server of organizationAuthorizationHttp) await server.close();
   await stockJournalHttp.close();

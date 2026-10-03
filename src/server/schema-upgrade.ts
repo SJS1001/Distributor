@@ -1,3 +1,4 @@
+import { INVENTORY_VALUATION_DDL } from "./inventory-valuation-schema.ts";
 import { COST_CORRECTION_CHAIN_UPGRADE_DDL } from "./cost-correction-chain-schema.ts";
 import { ORGANIZATION_REVOCATION_DDL } from "./organization-revocation-schema.ts";
 import { ORGANIZATION_AUTHORIZATION_DDL } from "./organization-authorization-schema.ts";
@@ -210,6 +211,7 @@ export async function upgradeSchema(
         copied.exec(ORGANIZATION_AUTHORIZATION_DDL);
         copied.exec(ORGANIZATION_REVOCATION_DDL);
         copied.exec(COST_CORRECTION_CHAIN_UPGRADE_DDL);
+        copied.exec(INVENTORY_VALUATION_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -233,7 +235,9 @@ export async function upgradeSchema(
         if (before.version! <= 11) copied.exec(STOCK_JOURNAL_DDL);
         if (before.version! <= 12) copied.exec(ORGANIZATION_AUTHORIZATION_DDL);
         if (before.version! <= 13) copied.exec(ORGANIZATION_REVOCATION_DDL);
-        copied.exec(COST_CORRECTION_CHAIN_UPGRADE_DDL);
+        if (before.version! <= 14)
+          copied.exec(COST_CORRECTION_CHAIN_UPGRADE_DDL);
+        copied.exec(INVENTORY_VALUATION_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

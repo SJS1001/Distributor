@@ -1,0 +1,32 @@
+# Local inventory valuation receipt — 2026-10-03
+
+Tested parent `e3630109e829e787805495227813e0874615693c`, branch `codex/local-distributor-checkpoint`, Node 24.16.0 on macOS arm64. The [machine receipt](LOCAL-INVENTORY-VALUATIONS-2026-10-03.json) binds 585 public source/test/configuration inputs, one additional ignored local metadata input, 295 production runtime inputs and retained private evidence hashes. Frozen source/test/configuration bytes remained unchanged during final verification. Direct workstation checks use disposable synthetic CA/US stores; real providers remain disabled.
+
+| Check | Actual outcome |
+| --- | --- |
+| Complete native regression | 2,477/2,477; zero failures/skips/cancellations; 103,639.088292 ms |
+| First complete production Chromium regression | 325/326; existing organization revocation fresh-profile journey failed to open its review; 6.7 minutes |
+| Unchanged isolated revocation recheck | 1/1; 18.2 seconds; cause of initial failure remains undetermined |
+| Final complete production Chromium recheck | 326/326; zero failures; 5.8 minutes |
+| TypeScript, formatting and production build | Pass; existing large-bundle warning remains |
+| Isolated production runtime | Pass CA/US; 295 matching copied inputs, 69 development-only packages absent, 41 asserted command outcomes |
+| React Doctor | Full scan exits 1: 53 errors/300 warnings; 51/100; new component has 18 warnings and no errors |
+| Planning structure and links | Pass: 44 tasks, ten gates, 266 Markdown files, 1522 local links; structure only |
+
+Inventory now owns immutable organization/product valuation policy revisions, write-down/reversal preparations, independent current-finance decisions, carrying positions, movement effects and split lineage. Original acquisition cost and physical quantity are preserved. Approval atomically records a zero-quantity compensating movement, exact carrying effect and receipt. Policy maintenance cannot change the established basis/method/effective date or reopen a closed period. Explicit posting dates must be open and survive into the accounting handoff. These customer declarations and accountant evidence do not independently establish actual accounting compliance.
+
+Native coverage includes current role/site/password authority, distinct reviewer, custody/policy drift, closed dates, restoration holds before cached writes, exact immutable receipt recovery, historical policy integrity, late-failure rollback, independent API/CSRF/schema boundaries, serial shipment/return/reversal, fractional bulk split/transfer/loss/found recovery and immutable previously approved journal bytes. Schema 16 adds five inventory-owned tables. Frozen published-version-fifteen fixtures cover CA/US and both reporting profiles; exact versions 1–15 fresh-file upgrades remain supported. Current encrypted isolated restore preserves nonempty valuation histories/positions while retaining the durable provider hold. Older archives are refused without a separately reviewed migration procedure.
+
+Seven production Chromium valuation journeys cover independent approval, Canada-resident USD without currency conversion, closed-period repair, fixed phone review and back navigation, damaged storage refusal, malformed committed approval recovery without resending and lost preparation reply with the original body/key. Confirmation persists one organization/principal attempt before transport. Web Locks and storage read-back protect its identity. Lost/malformed replies retain evidence; decision recovery first reads the original terminal record. Damaged or inaccessible storage blocks replacement writes without a discard bypass.
+
+The missing-control red and initial native/schema/fixture/browser/typecheck failures remain retained privately. Three actual browser failures led to fixes for region/currency coupling, closed-period explanation and phone layout. The damaged-storage test initially used an ambiguous alert selector; its corrected scoped assertion also requires disabled writes and unchanged storage. The first final native run passed 2,476/2,477 because load-recovery input capture correctly refused a test file edited during rehearsal; the complete rerun above occurred after the source freeze. The first complete browser failure and isolated rerun are retained separately; no clean first-run or resolved-flake claim is made.
+
+The synthetic journal CLI fixture now keeps a bounded referenced timer until cancellation; this repairs its premature child-process exit without changing real transport. Dependency and license files are unchanged. No private code, customer data, credentials, runtime stores or browser traces are published. React Doctor's broader findings and component complexity warnings remain unresolved; no suppression or clean static-analysis claim is made.
+
+Full carrying reconciliation streams raw movement rows but retains maps growing with valued positions/effects/splits. Export still performs complete reconciliation before selecting a bounded movement window. Production memory/load remains unqualified. The runtime separately installs locked production dependencies without development tools, starts each region twice, emits PDF/ZPL and exercises encrypted backup/restore. It does not qualify printers, external processors or production infrastructure.
+
+Frontend/backend preview health returns HTTP 200/CA at loopback 5173/3000 against a separate private synthetic schema-16 store. The first fresh-file preview upgrade used the wrong reporting fingerprint and safely refused; the exact inspected-profile retry succeeded while preserving its source. Providers/carriers/browser authorization remain disabled and sign-in credentials remain private.
+
+The existing cloud “Set up Distributor” coding session separately reports restore-security commit `24eedb51e87784a400cd84f3d4f771961675a941`, with 31/31 focused native tests, TypeScript and formatting on Node 24.19.0. Its two-file patch is not integrated into this valuation receipt. Requested Astra/High effective settings remain unverifiable. Cloud coding is distinct from CI; no CI job/workflow, PR/merge, deployment or live provider IO was started.
+
+Quantity-error correction, durable restored-store activation/writer fencing/routing/post-cutoff reconciliation/rollback and actual finance/provider/device/residency/security/load/recovery/operator/release qualification remain open. All 44 tasks/ten gates remain NOT VERIFIED, and full-system work remains incomplete.

@@ -1,3 +1,4 @@
+import type { InventoryValuations } from "./inventory-valuations.ts";
 import { check, integer, permit, type Actor } from "./core.ts";
 import type { Store } from "./database.ts";
 
@@ -15,11 +16,15 @@ export type CostMovement = {
   reference: string;
   reason: string;
   createdAt: string;
+  valuationId?: string;
+  valuationHash?: string;
+  accountingDate?: string;
 };
 export const movementSigns: Record<
   string,
   "positive" | "negative" | "zero" | "either" | "transfer"
 > = {
+  "valuation.adjustment": "zero",
   receipt: "positive",
   opening: "positive",
   shipment: "negative",
@@ -68,7 +73,10 @@ const exact = (n: bigint) => {
 // Inventory owns the interpretation of its custody movements. Transfers move
 // value between sites and transit; they do not change organization-wide value.
 export class InventoryCosts {
-  constructor(private store: Store) {}
+  constructor(
+    private store: Store,
+    private valuations: InventoryValuations,
+  ) {}
   window(
     actor: Actor,
     afterSequence: number,
@@ -121,6 +129,8 @@ export class InventoryCosts {
       throughSequence ??
       selected.slice(0, 500).at(-1)?.sequence ??
       afterSequence;
+    const valuation = this.valuations.evidence(actor.orgId);
+    let originalHistory = 0n;
     let more = false;
     let history = 0n,
       opening = 0n,
@@ -173,8 +183,16 @@ export class InventoryCosts {
           "COST_EVIDENCE",
           "Stock movement direction or timestamp is invalid.",
         );
-        const delta =
+        const originalDelta =
           sign === "transfer" ? 0n : BigInt(r.quantity) * BigInt(r.unitCost);
+        originalHistory += originalDelta;
+        const effect = valuation.effects.get(r.id);
+        check(
+          r.type !== "valuation.adjustment" || effect,
+          "VALUATION_INTEGRITY",
+          "Valuation adjustment has no approved carrying evidence.",
+        );
+        const delta = effect ? BigInt(effect.valueDelta) : originalDelta;
         history += delta;
         if (r.sequence <= afterSequence) opening += delta;
         if (r.sequence <= end) closing += delta;
@@ -187,7 +205,23 @@ export class InventoryCosts {
             increase: 0,
             decrease: 0,
           };
-        movements.push({ ...r, valueDelta });
+        movements.push({
+          ...r,
+          valueDelta,
+          ...(effect
+            ? {
+                valuationId: effect.valuationId,
+                valuationHash: this.store.get<{ hash: string }>(
+                  "SELECT hash FROM inventory_value_effects WHERE org_id=? AND movement_id=?",
+                  actor.orgId,
+                  r.id,
+                )!.hash,
+                ...(effect.accountingDate
+                  ? { accountingDate: effect.accountingDate }
+                  : {}),
+              }
+            : {}),
+        });
         summary.count++;
         if (delta > 0) {
           increase += delta;
@@ -200,13 +234,15 @@ export class InventoryCosts {
         byType.set(r.type, summary);
       },
     );
-    let physical = 0n;
+    let physical = 0n,
+      carrying = 0n;
     this.store.visit<{
+      id: string;
       quantity: number;
       cost: number;
       state: string;
     }>(
-      "SELECT quantity,cost,state FROM inventory_units WHERE org_id=?",
+      "SELECT id,quantity,cost,state FROM inventory_units WHERE org_id=?",
       [actor.orgId],
       (u) => {
         check(
@@ -223,10 +259,20 @@ export class InventoryCosts {
           "Nonphysical custody still carries stock value.",
         );
         physical += BigInt(u.quantity) * BigInt(u.cost);
+        const p = valuation.positions.get(u.id);
+        check(
+          !p || p.quantity === u.quantity,
+          "VALUATION_INTEGRITY",
+          "Carrying quantity differs from physical custody.",
+        );
+        carrying += p ? BigInt(p.value) : BigInt(u.quantity) * BigInt(u.cost);
       },
     );
     check(
-      history === physical && opening >= 0n && closing >= 0n,
+      originalHistory === physical &&
+        history === carrying &&
+        opening >= 0n &&
+        closing >= 0n,
       "COST_RECONCILIATION",
       "Stock movements do not reconcile with held and in-transit original cost. Investigate before preparing a handoff.",
     );

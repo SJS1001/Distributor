@@ -37,11 +37,19 @@ globalThis.fetch = async (url, options = {}) => {
     if (process.env.SYNTHETIC_INTERRUPT === "true") {
       setImmediate(() => process.kill(process.pid, "SIGTERM"));
       await new Promise<never>((_resolve, reject) => {
-        options.signal!.addEventListener(
-          "abort",
-          () => reject(new Error("sensitive-provider-body")),
-          { once: true },
-        );
+        // A real pending HTTP socket keeps Node alive while SIGTERM arrives.
+        // Keep this synthetic request live as well, and bound a missed signal.
+        const signal = options.signal!;
+        const aborted = () => {
+          clearTimeout(timeout);
+          reject(new Error("sensitive-provider-body"));
+        };
+        const timeout = setTimeout(() => {
+          signal.removeEventListener("abort", aborted);
+          reject(new Error("Synthetic interrupt did not arrive."));
+        }, 5000);
+        signal.addEventListener("abort", aborted, { once: true });
+        if (signal.aborted) aborted();
       });
     }
     if (path.pathname.endsWith("/companyinfo/12345"))

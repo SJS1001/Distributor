@@ -1,0 +1,17 @@
+{
+  "capturedFrom": "e3630109e829e787805495227813e0874615693c",
+  "version": 15,
+  "hashes": {
+    "disabled": "1f7a16ec90d5ea113e9df69381223e5cc8050dd43543172bbd4d9e4675aa6f2a",
+    "enabled": "cb2ad8ef3f2f353127be61997175d442c725746bbfe5d4c381d4e84e789e6f49"
+  },
+  "drop": "integration_cost_correction_once",
+  "additions": [
+    {
+      "type": "index",
+      "name": "integration_cost_correction_successor",
+      "tbl_name": "integration_cost_corrections",
+      "sql": "CREATE UNIQUE INDEX integration_cost_correction_successor ON integration_cost_corrections(org_id,original_id,coalesce(json_extract(input,'$.predecessor.correctionId'),'')) WHERE state='reviewed'"
+    }
+  ]
+}
