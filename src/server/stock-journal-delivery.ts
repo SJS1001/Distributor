@@ -293,18 +293,20 @@ export class StockJournalDelivery {
           "JOURNAL_ATTEMPT",
           "Retry approval is required.",
         );
-        // A manual cancellation must also resolve any native previous attempt.
-        const previous = retry.input.previousAttemptId ?? "";
+        // Manual retries can skip native delivery entirely. Resolving only the
+        // immediate predecessor would let a later retry overtake an older
+        // dispatched/uncertain journal. Every other native attempt for this leg
+        // must retain final cancellation (or rejection) before another write.
         check(
           !this.store.get(
-            "SELECT id FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg=? AND attempt_id=? AND state NOT IN('cancelled','rejected')",
+            "SELECT id FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg=? AND attempt_id<>? AND state NOT IN('cancelled','rejected')",
             actor.orgId,
             input.sourceId,
             input.leg,
-            previous,
+            input.attemptId,
           ),
           "JOURNAL_PREDECESSOR",
-          "Resolve the previous native delivery before a fresh retry.",
+          "Resolve every earlier native delivery before a fresh retry.",
         );
       }
       const policy = this.costs.corrections.deliveryPolicyInTransaction(actor);
