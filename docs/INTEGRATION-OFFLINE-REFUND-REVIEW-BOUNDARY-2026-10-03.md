@@ -1,5 +1,11 @@
 # Integration offline refund review: independent boundary tests
 
+Current continuation: the full-row resource preflight repair against exact
+`27a81cc0ed8dc7266895c4e313f8a049af459db4` is recorded at the end of this report.
+Eight new resource-boundary reds were reproduced and repaired unchanged;
+76 focused and 191 affected checks pass. Earlier semantic red/repair receipts
+below remain historical evidence.
+
 ## Repair continuation — 2026-10-03
 
 Exact excluded incremental baseline: `0c916ca8c9f4bcd2b1dabb7da2ed51f54ddeffe3`. Only `src/server/integration-offline-refund-review.ts`, this report and its existing boundary test are changed. The original adversarial receipt below and its red logs remain retained. **All six original failing assertions now pass unchanged.** The original boundary test bodies were compared byte-for-byte with the excluded commit; only fixture helper currency configuration changed, and five new test cases were appended. Requested `gpt-6-astra/high`; effective settings remain unexposed/unverified. No nested session or delegation.
@@ -121,3 +127,148 @@ Original logs remain outside the repository in `/workspace/scratch/ffbb94708048/
 Delivery log `integration-refund-boundary-delivery-red.log` preserves the final replay, SHA-256 `ccc14c7c94cde27a6d164297dd9151aedb0b5386112a08d6a9ddfaca028961ae` (43 pass/6 fail). The earlier final-named log is retained unchanged.
 
 Final assertions add explicit original-value/arithmetic checks to the red fixtures; they do not relax the expected refusal. Root should repair within its production ownership and replay these unchanged assertions, then broaden verification as appropriate. No product or recovery gate is verified. This delivery ends the bounded assignment; no background process, runner, provider IO, publication, reminder or recheck routine is created.
+
+## Full-row resource preflight continuation — 2026-10-03
+
+Exact excluded base: `27a81cc0ed8dc7266895c4e313f8a049af459db4`. Only the owned
+Integration review module, this existing boundary test and this report change.
+All 725 original boundary test lines are preserved byte-for-byte as the expanded
+file's prefix. The published semantic repair remains intact. Previous Billing
+work at `0192f2b295b1434851a83c396554c67fa0ed1228` remains in its original clean
+worktree and is excluded from this delta.
+
+Direct shell GitHub fetch was blocked by network policy. Read-only GitHub Git
+object retrieval for SJS1001/Distributor supplied the missing public blobs and
+trees. Every blob/tree identity and the exact commit object SHA were verified
+before creating the separate `codex/integration-full-row-byte` worktree. No remote
+write, unrelated repository fetch or newer owner delta was included.
+
+### Reproduced original failure
+
+The existing `rows()` preflight covered selected payload/result/error/reason
+columns. Other columns were subject to the same 64-KiB bound only after
+`SELECT *` returned them. Likewise, the complete cumulative byte check happened
+after materialization. The eight appended red tests use native unknown-refund
+and native callback fixtures, followed by explicit owner-scoped corruption under
+rollback. Call-through Database/JSON probes retain actual SQL results/errors and
+record only synthetic byte counts; no production response is mocked.
+
+Original run: **62 tests, 54 pass, 8 fail**, exit 1, zero skipped/cancelled/todo,
+4,786.265769 ms. All existing 54 focused cases passed. Every new refusal still
+returned the native `OFFLINE_REFUND_REVIEW_LIMIT`, but retained text had already
+left SQLite:
+
+| Omitted field or complete set                                   | Marked UTF-8 bytes fetched before refusal |
+| --------------------------------------------------------------- | ----------------------------------------: |
+| Target effect reference                                         |                                    66,019 |
+| Target effect account ID                                        |                                    66,020 |
+| Target effect external reference                                |                                    66,022 |
+| Target effect kind                                              |                                    66,014 |
+| Target creation timestamp, including embedded NUL               |                                    66,021 |
+| Poll claim token                                                |                                    66,014 |
+| Native callback binding, including embedded NUL                 |                                    66,019 |
+| 36 native callbacks with individually sub-64-KiB binding fields |                                 2,160,684 |
+
+All original probes saw **zero parsed/serialized marked bytes**: the old post-fetch
+limit prevented that later work. The demonstrated defect is the earlier
+SQLite-to-JavaScript materialization boundary, not successful acceptance of an
+invalid review, provider truth or a released reservation. Tests do not attempt
+process exhaustion or claim to measure SQLite's internal query workspace.
+
+Original red log `/tmp/integration-byte-boundary-red.log` is retained unchanged,
+SHA256 `744a3077a8ca463d7fbbf8ec035d91f3b064269753e42a7e1353f111f486e474`.
+
+### Owning repair
+
+The fixed table descriptors now enumerate every retained column of all fourteen
+Integration-owned sets: effects, refund polls, refund callbacks, checkout
+callbacks, inbox, operation leases, payment allocations, accounting refunds,
+credit applications, credit cancellations, checkout renewals, checkout
+observations, balance reads and balance observations. They are literal owning
+code, not runtime reflection/PRAGMA or caller-selected SQL.
+
+The existing **64 rows per set / 512 total rows** check runs first. Numeric SQL
+metadata then checks each field's UTF-8 bytes, largest full row and complete set
+sum before fetching any row in that set. `length(CAST(column AS BLOB))` counts
+multibyte text and bytes after embedded NUL. Null contributes zero; numeric
+retained values also contribute their textual byte length to the full-row sum.
+The field ceiling remains **65,536 bytes**, including variable JSON fields.
+Complete row/set sums must fit the remaining **2,097,152-byte cumulative budget**.
+Repeated target/alias reads retain their existing cumulative accounting rather
+than obtaining a new budget. No truncated collection is returned.
+
+Metadata returns only numbers; it does not construct/parse JSON to measure
+values. Actual ordered complete reads follow only after the preflight passes,
+inside the existing native writer transaction. The subsequent scalar type/string
+checks, JSON depth/node/64-KiB guards and final exact canonical-body limit remain.
+The final canonical check also covers escaping, keys and projection overhead;
+these limits are not an exact whole-process memory cap.
+
+The target effect already goes through `rows()` and now receives the same full
+preflight before its reference/account are used. Other direct Integration scalar
+reads in this method are numeric `total_changes()` metadata. Existing task-shaped
+IAM/Billing interfaces are unchanged, with no foreign SQL, new authority port,
+foreign writes, schema/API/Application edits or provider transport. The account
+scope and copied-lineage predicates, semantic validations, current authority,
+read-only guard, detachment and all completeness blockers are unchanged.
+
+### Added coverage and final receipt
+
+The eight original red assertions are retained unchanged. Additional native
+checkout, ledger payment/credit/refund, cancellation and unsent-renewal fixtures
+exercise omitted fields in every remaining returned Integration history table.
+Each tested table must contain actual native history before corruption. Rollback
+restores the original full review. Exact 64-row and 64-KiB field boundaries still
+return complete facts with all permanent completeness blockers. Repeated
+callback-alias queries share the 2-MiB cumulative fetch budget and refuse before
+fetching the set that would cross it. No historical authentication, provider
+qualification or first-slice eligibility is inferred from these facts.
+
+Environment: Linux/x64, Node `v24.19.0`, UID 0, existing isolated dependencies
+through a temporary symlink removed before commit. Repository instructions were
+read; the external canonical model-rule path was unavailable. Requested
+Astra/High; effective runtime model/reasoning remains unexposed and unverified.
+
+Final foreground commands:
+
+```sh
+node --import tsx --test tests/integration-offline-refund-review-boundary.test.ts tests/integration-offline-refund-review.test.ts
+node --import tsx --test tests/integration.test.ts tests/integration-authority.test.ts tests/integration-operations.test.ts tests/refunds.test.ts tests/refund-callbacks.test.ts tests/accounting-refunds.test.ts tests/accounting-credit-applications.test.ts tests/accounting-balances.test.ts tests/checkout-renewal.test.ts tests/checkout-observations.test.ts tests/integration-offline-refund-evidence.test.ts
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/prettier --check src/server/integration-offline-refund-review.ts tests/integration-offline-refund-review-boundary.test.ts docs/INTEGRATION-OFFLINE-REFUND-REVIEW-BOUNDARY-2026-10-03.md
+git diff --check
+```
+
+- Focused tests: **76/76 pass**, exit 0, 8,234.071518 ms; zero
+  failed/skipped/cancelled/todo. All eight red probes now report zero marked bytes
+  fetched/parsed/serialized. Log `/tmp/integration-byte-boundary-final.log`, SHA256
+  `a7dd0ee591a63dbba5744bcdf9e4ceeb81ba22a170a43a23717ecb5b67d6af50`.
+- Affected regressions: **191/191 pass**, exit 0, 14,214.404873 ms, same zero
+  failure/skip/cancellation/todo counts. Log `/tmp/integration-byte-regressions.log`,
+  SHA256 `490f0173ec989c2ccba0c451d306069813ff2c8de536ffa2f990284fd2119996`.
+- Complete TypeScript, assigned formatting and whitespace checks: **pass**.
+- First green run: **62/62 pass**, log `/tmp/integration-byte-boundary-green.log`,
+  SHA256 `c7de672114bda2d9fda238add5dd6cd50cad055e66d24c64001815852dea134b`.
+- Expanded fixture run retained: **75 pass / 1 fail / 76 total**,
+  `/tmp/integration-byte-boundary-expanded.log`, SHA256
+  `81331bdbb0a616135b5905ec73dd3a48493cab8f0f11a04ae176076d54721589`.
+  The new renewal fixture mistakenly read `view.balance`; native validation and
+  TypeScript TS2339 both refused it. Corrected only that new fixture to the actual
+  `view.currentBalance`. No assertion, timeout, native guard or production
+  semantic check was weakened.
+
+Source bytes: baseline production SHA256
+`d3f3f66b1abcabaae8dceaa3f15649088301027b752d236983d903287944f5a7`;
+final production SHA256
+`3d119665674da36732e09183e2d797533858bc1d988df29335585a4618826111`.
+Baseline boundary-test SHA256
+`139f32d1f1a941955b4b6bd316f7b550f6dedf69c5714472b307706b8ab6d525`;
+final expanded boundary-test SHA256
+`c6ac7e9e033a6bd81bed8aed4b020553581ef420850e7e90a35a50820d383fee`.
+
+These synthetic same-writer native checks qualify neither actual provider/source
+truth nor restored-candidate WAL capture, infrastructure, customers, operators
+or product gates. No dependency/lock changes, CI/runners/workflows, PR/push,
+remote merge, deployment, provider IO, nested session, reminder or background
+routine. Fixture applications close through existing test cleanup. This bounded
+assignment ends with its local commit and exact incremental patch transfer.

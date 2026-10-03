@@ -10,21 +10,34 @@ type Frozen<T> = T extends object
 const MAX_ROWS = 64;
 const MAX_TOTAL_ROWS = 512;
 const MAX_BYTES = 2 * 1024 * 1024;
+// All retained columns of these fixed Integration-owned tables. No runtime
+// schema reflection or caller SQL/column port. Keep identity and timing fields
+// in the same pre-materialization profile as payload/result/error strings.
 const tables = {
-  integration_effects: ["payload", "result", "error"],
-  integration_refund_polls: [],
-  integration_refund_callbacks: ["error"],
-  integration_callbacks: ["error"],
-  integration_inbox: [],
-  integration_operation_leases: [],
-  integration_payment_allocations: [],
-  integration_accounting_refunds: [],
-  integration_credit_applications: [],
-  integration_credit_cancellations: ["reason"],
-  integration_checkout_renewals: ["reason"],
-  integration_checkout_observations: ["snapshot"],
-  integration_balance_reads: ["result", "error"],
-  integration_balance_observations: ["result"],
+  integration_effects:
+    "id org_id account_id provider kind reference payload state external_ref result created_at residency_version started_at error",
+  integration_refund_polls: "effect_id org_id token started_at retry_at",
+  integration_refund_callbacks:
+    "id org_id binding_id event_id effect_id provider_reference event_type hash state attempts started_at retry_at error created_at",
+  integration_callbacks:
+    "id org_id binding_id event_id session_id effect_id hash state attempts started_at retry_at error created_at",
+  integration_inbox: "provider event_id hash created_at",
+  integration_operation_leases: "effect_id org_id token started_at",
+  integration_payment_allocations:
+    "effect_id org_id invoice_id payment_id applied_amount",
+  integration_accounting_refunds:
+    "effect_id org_id invoice_id refund_id credit_id amount",
+  integration_credit_applications:
+    "effect_id org_id invoice_id credit_id amount",
+  integration_credit_cancellations:
+    "effect_id org_id actor_id reason review_version amount created_at",
+  integration_checkout_renewals:
+    "successor_id org_id invoice_id predecessor_id reason review_version created_at",
+  integration_checkout_observations:
+    "sequence id org_id account_id invoice_id effect_id claim_token actor_id snapshot hash",
+  integration_balance_reads:
+    "id org_id effect_id command_key hash token started_at requested_at result error",
+  integration_balance_observations: "sequence read_id org_id effect_id result",
 } as const;
 type Table = keyof typeof tables;
 function consistent(value: unknown): asserts value {
@@ -119,13 +132,31 @@ export class IntegrationOfflineRefundReview {
         MAX_ROWS + 1,
       )!.n;
       bounded(Number(n) <= MAX_ROWS && (count += Number(n)) <= MAX_TOTAL_ROWS);
-      for (const column of tables[table])
-        bounded(
-          !this.store.get(
-            `SELECT 1 FROM ${table} WHERE (${where}) AND length(CAST(${column} AS BLOB))>65536 LIMIT 1`,
-            ...args,
-          ),
-        );
+      // Only numeric metadata crosses into JavaScript before the complete set
+      // passes. BLOB length counts UTF-8 and text after embedded NUL; no JSON
+      // construction/parsing is used to measure the retained values.
+      const sizes = tables[table]
+        .split(" ")
+        .map((column) => `COALESCE(length(CAST(${column} AS BLOB)),0)`);
+      const rowBytes = sizes.join("+");
+      const budget = this.store.get<{
+        field: number;
+        row: number;
+        total: number;
+      }>(
+        `SELECT COALESCE(MAX(MAX(${sizes.join(",")})),0) AS field,
+          COALESCE(MAX(${rowBytes}),0) AS row,
+          COALESCE(SUM(${rowBytes}),0) AS total
+         FROM ${table} WHERE ${where}`,
+        ...args,
+      )!;
+      bounded(
+        [budget.field, budget.row, budget.total].every(nonnegativeInteger) &&
+          budget.field <= 65536 &&
+          budget.row <= MAX_BYTES &&
+          budget.total <= MAX_BYTES - bytes,
+      );
+      bytes += budget.total;
       const result = this.store.all(
         `SELECT * FROM ${table} WHERE ${where} ORDER BY ${order}`,
         ...args,
@@ -139,7 +170,7 @@ export class IntegrationOfflineRefundReview {
           );
           if (typeof value === "string") {
             const size = Buffer.byteLength(value);
-            bounded(size <= 65536 && (bytes += size) <= MAX_BYTES);
+            bounded(size <= 65536);
           }
         }
       return result;

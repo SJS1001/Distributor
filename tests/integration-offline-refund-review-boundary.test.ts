@@ -723,3 +723,384 @@ test("repair: matching balance copies cannot conceal negative components, wrong 
     assert.deepEqual(review(f), before);
   }
 });
+
+// Resource-boundary continuation at exact 27a81cc. Native queries and responses
+// are never replaced: the probes call through and record only synthetic bytes.
+function expectIntegrationPreflight(
+  t: import("node:test").TestContext,
+  f: Fixture,
+  marker: string,
+) {
+  const execute = f.app.database.execute.bind(f.app.database);
+  let materialized = 0,
+    parsed = 0,
+    serialized = 0;
+  const inspect = (value: unknown): void => {
+    if (typeof value === "string" && value.includes(marker))
+      materialized += Buffer.byteLength(value);
+    else if (value && typeof value === "object")
+      Object.values(value).forEach(inspect);
+  };
+  const native = t.mock.method(
+    f.app.database,
+    "execute",
+    (
+      owner: Parameters<typeof execute>[0],
+      fn: Parameters<typeof execute>[1],
+    ) => {
+      const value = execute(owner, fn);
+      if (owner === "integration") inspect(value);
+      return value;
+    },
+  );
+  const parse = JSON.parse,
+    stringify = JSON.stringify;
+  const parseProbe = t.mock.method(JSON, "parse", ((
+    value: string,
+    ...args: unknown[]
+  ) => {
+    if (value.includes(marker)) parsed += Buffer.byteLength(value);
+    return Reflect.apply(parse, JSON, [value, ...args]);
+  }) as typeof JSON.parse);
+  const stringifyProbe = t.mock.method(JSON, "stringify", ((
+    value: unknown,
+    ...args: unknown[]
+  ) => {
+    if (typeof value === "string" && value.includes(marker))
+      serialized += Buffer.byteLength(value);
+    return Reflect.apply(stringify, JSON, [value, ...args]);
+  }) as typeof JSON.stringify);
+  try {
+    assert.throws(() => inside(f), { code: "OFFLINE_REFUND_REVIEW_LIMIT" });
+  } finally {
+    native.mock.restore();
+    parseProbe.mock.restore();
+    stringifyProbe.mock.restore();
+  }
+  t.diagnostic(
+    `marked bytes returned by SQLite=${materialized}; parsed=${parsed}; serialized=${serialized}`,
+  );
+  assert.equal(
+    materialized,
+    0,
+    "refuse before retained oversized text leaves SQLite",
+  );
+  assert.equal(parsed, 0);
+  assert.equal(serialized, 0);
+}
+function rollbackResource(f: Fixture, action: () => void) {
+  const stop = Error("rollback resource fixture");
+  try {
+    f.app.database.transaction(() => {
+      action();
+      throw stop;
+    });
+  } catch (error) {
+    if (error !== stop) throw error;
+  }
+}
+function receiveResourceCallback(f: Fixture, n: number) {
+  const intent = f.app.billing.refunds.intent(f.actor, f.refundId);
+  return f.app.integration.refundCallbacks.receive(f.actor, {
+    bindingId: "synthetic-resource-binding",
+    eventId: `evt_resource_${n}`,
+    effectId: f.effectId,
+    reference: "re_resource",
+    eventType: "refund.failed",
+    hash: digest(`synthetic-resource-${n}`),
+    refundId: intent.refundId,
+    paymentId: intent.paymentId,
+    amount: intent.amount,
+    currency: intent.currency,
+  });
+}
+for (const column of [
+  "reference",
+  "account_id",
+  "external_ref",
+  "kind",
+  "created_at",
+] as const)
+  test(`resource RED: omitted effect ${column} is UTF-8 bounded before materialization`, async (t) => {
+    const f = await setup(t, "CA", "USD"),
+      before = review(f);
+    const marker = `RESOURCE-${column}-`,
+      value =
+        marker + (column === "created_at" ? "\0" : "") + "é".repeat(33000);
+    assert(value.length < 65536);
+    assert(Buffer.byteLength(value) > 65536);
+    rollbackResource(f, () => {
+      f.app.database
+        .owned("integration")
+        .run(
+          `UPDATE integration_effects SET ${column}=? WHERE id=?`,
+          value,
+          f.effectId,
+        );
+      expectIntegrationPreflight(t, f, marker);
+    });
+    assert.deepEqual(review(f), before);
+  });
+
+test("resource RED: omitted poll claim is bounded before materialization", async (t) => {
+  const f = await setup(t),
+    before = review(f),
+    marker = "RESOURCE-POLL-";
+  rollbackResource(f, () => {
+    f.app.database
+      .owned("integration")
+      .run(
+        "UPDATE integration_refund_polls SET token=?,started_at=1 WHERE effect_id=?",
+        marker + "界".repeat(22000),
+        f.effectId,
+      );
+    expectIntegrationPreflight(t, f, marker);
+  });
+  assert.deepEqual(review(f), before);
+});
+
+test("resource RED: native callback binding with embedded NUL is bounded before materialization", async (t) => {
+  const f = await setup(t),
+    callback = receiveResourceCallback(f, 0),
+    before = review(f),
+    marker = "RESOURCE-CALLBACK-";
+  rollbackResource(f, () => {
+    f.app.database
+      .owned("integration")
+      .run(
+        "UPDATE integration_refund_callbacks SET binding_id=? WHERE id=?",
+        marker + "\0" + "界".repeat(22000),
+        callback.id,
+      );
+    expectIntegrationPreflight(t, f, marker);
+  });
+  assert.deepEqual(review(f), before);
+});
+
+test("resource RED: complete callback aggregate refuses before fetching individually bounded fields", async (t) => {
+  const f = await setup(t),
+    marker = "RESOURCE-AGGREGATE-",
+    value = marker + "界".repeat(20000);
+  for (let i = 0; i < 36; i++) receiveResourceCallback(f, i);
+  const before = review(f);
+  assert.equal(before.refundCallbacks.length, 36);
+  assert(Buffer.byteLength(value) < 65536);
+  assert(Buffer.byteLength(value) * 36 > 2 * 1024 * 1024);
+  rollbackResource(f, () => {
+    f.app.database
+      .owned("integration")
+      .run(
+        "UPDATE integration_refund_callbacks SET binding_id=? WHERE effect_id=?",
+        value,
+        f.effectId,
+      );
+    expectIntegrationPreflight(t, f, marker);
+  });
+  assert.deepEqual(review(f), before);
+});
+
+test("resource repair: all remaining native history collections preflight omitted columns", async (t) => {
+  const f = await setup(t, "CA", "USD");
+  await checkout(f);
+  await ledger(f);
+  const delivered = (reference: string) => ({
+    execute: async () => ({ reference, result: {} }),
+    lookup: async () => null,
+  });
+  const credit = f.app.integration.accountingCredit(
+    f.actor,
+    "resource-credit",
+    { creditId: f.creditId },
+  );
+  await f.app.integration.execute(
+    f.actor,
+    credit.id,
+    delivered("credit:resource-credit"),
+  );
+  await f.app.integration.refunds.run(
+    f.actor,
+    f.effectId,
+    {
+      execute: async () => {
+        throw Error("no provider send");
+      },
+      lookup: async (e) => ({
+        reference: "re_resource",
+        result: {
+          ...JSON.parse(e.payload),
+          effectId: e.id,
+          status: "succeeded",
+        },
+      }),
+    },
+    false,
+  );
+  const expense = f.app.integration.accountingRefund(
+    f.actor,
+    "resource-expense",
+    {
+      refundId: f.refundId,
+      creditId: f.creditId,
+      bankAccountRef: "bank",
+      receivableAccountRef: "ar",
+      nonTaxCodeRef: "NON",
+      expenseDate: "2026-10-03",
+    },
+  );
+  await f.app.integration.execute(
+    f.actor,
+    expense.id,
+    delivered("expense:resource-expense"),
+  );
+  const application = f.app.integration.accountingCreditApplication(
+    f.actor,
+    "resource-application",
+    { creditId: f.creditId, amount: 1000 },
+  );
+  const view = f.app.integration
+    .list(f.actor)
+    .find((e) => e.id === application.id)!.accountingApplication!;
+  f.app.integration.cancelCreditApplication(f.actor, "resource-cancel", {
+    effectId: application.id,
+    reviewVersion: view.reviewVersion,
+    amount: view.amount,
+    reason: "Synthetic resource boundary cancellation",
+  });
+  const before = review(f),
+    marker = "RESOURCE-COLLECTION-",
+    value = marker + "界".repeat(22000);
+  const attacks = [
+    ["integration_callbacks", "binding_id"],
+    ["integration_inbox", "created_at"],
+    ["integration_operation_leases", "token"],
+    ["integration_payment_allocations", "payment_id"],
+    ["integration_accounting_refunds", "credit_id"],
+    ["integration_credit_applications", "credit_id"],
+    ["integration_credit_cancellations", "actor_id"],
+    ["integration_checkout_observations", "actor_id"],
+    ["integration_balance_reads", "command_key"],
+    ["integration_balance_observations", "read_id"],
+  ] as const;
+  for (const [table, column] of attacks)
+    await t.test(`${table}.${column}`, (sub) => {
+      rollbackResource(f, () => {
+        const changed = f.app.database
+          .owned("integration")
+          .run(`UPDATE ${table} SET ${column}=?`, value);
+        assert(
+          Number(changed.changes) > 0,
+          "fixture must contain the native history under test",
+        );
+        expectIntegrationPreflight(sub, f, marker);
+      });
+      assert.deepEqual(review(f), before);
+    });
+});
+
+test("resource repair: native unsent renewal identities are preflighted", async (t) => {
+  const f = await setup(t);
+  const invoiceId = ship(f, accept(f, 1, "resource-renewal").id).invoiceId;
+  const predecessor = f.app.integration.checkout(f.actor, "resource-checkout", {
+    invoiceId,
+  });
+  const view = f.app.integration
+    .list(f.actor)
+    .find((e) => e.id === predecessor.id)!.checkout!;
+  f.app.integration.renewCheckout(f.actor, "resource-renew", {
+    effectId: predecessor.id,
+    reviewVersion: view.reviewVersion,
+    amount: view.currentBalance,
+    reason: "Synthetic unsent replacement",
+  });
+  const before = review(f),
+    marker = "RESOURCE-RENEWAL-";
+  assert.equal(before.renewals.length, 1);
+  rollbackResource(f, () => {
+    f.app.database
+      .owned("integration")
+      .run(
+        "UPDATE integration_checkout_renewals SET review_version=?",
+        marker + "é".repeat(33000),
+      );
+    expectIntegrationPreflight(t, f, marker);
+  });
+  assert.deepEqual(review(f), before);
+});
+
+test("resource repair: exact 64-row and 64-KiB field edges remain readable", async (t) => {
+  const f = await setup(t),
+    value = "é".repeat(32768);
+  for (let i = 0; i < 64; i++) receiveResourceCallback(f, i);
+  const before = review(f);
+  assert.equal(before.refundCallbacks.length, 64);
+  rollbackResource(f, () => {
+    f.app.database
+      .owned("integration")
+      .run(
+        "UPDATE integration_effects SET error=? WHERE id=?",
+        value,
+        f.effectId,
+      );
+    const r = inside(f);
+    assert.equal(Buffer.byteLength(r.effect.error!), 65536);
+    assert.equal(r.effect.error, value);
+    assert.equal(r.refundCallbacks.length, 64);
+    assert(r.blockers.includes("BILLING_COMPLETE_HISTORY_REQUIRED"));
+    assert(r.blockers.includes("PLATFORM_RECEIPT_HISTORY_REQUIRED"));
+    assert(r.blockers.includes("INBOX_UNATTRIBUTED_HISTORY_UNAVAILABLE"));
+  });
+  assert.deepEqual(review(f), before);
+});
+
+test("resource repair: repeated alias sets share the complete two-MiB fetch budget", async (t) => {
+  const f = await setup(t),
+    s = f.app.database.owned("integration");
+  for (let i = 0; i < 32; i++) receiveResourceCallback(f, i);
+  const before = review(f);
+  rollbackResource(f, () => {
+    s.run(
+      "UPDATE integration_refund_callbacks SET binding_id=?",
+      "RESOURCE-REPEATED-" + "x".repeat(40000),
+    );
+    const execute = f.app.database.execute.bind(f.app.database);
+    let fetched = 0;
+    const inspect = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(inspect);
+      else if (v && typeof v === "object") {
+        const values = Object.values(v);
+        // Numeric-only SQL metadata is excluded; all native rows here contain
+        // strings. Count full retained values, not just the synthetic marker.
+        if (values.some((x) => typeof x === "string"))
+          for (const x of values)
+            if (typeof x === "string" || typeof x === "number")
+              fetched += Buffer.byteLength(String(x));
+      }
+    };
+    const spy = t.mock.method(
+      f.app.database,
+      "execute",
+      (
+        owner: Parameters<typeof execute>[0],
+        fn: Parameters<typeof execute>[1],
+      ) => {
+        const r = execute(owner, fn);
+        if (owner === "integration") inspect(r);
+        return r;
+      },
+    );
+    try {
+      assert.throws(() => inside(f), { code: "OFFLINE_REFUND_REVIEW_LIMIT" });
+    } finally {
+      spy.mock.restore();
+    }
+    assert(
+      fetched > 1024 * 1024,
+      "initial bounded callback collection was actually read",
+    );
+    assert(
+      fetched <= 2 * 1024 * 1024,
+      `cumulative retained bytes crossed budget: ${fetched}`,
+    );
+  });
+  assert.deepEqual(review(f), before);
+});

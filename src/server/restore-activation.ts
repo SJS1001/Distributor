@@ -1,4 +1,10 @@
-import { createPublicKey, randomUUID, verify } from "node:crypto";
+import {
+  captureNativeMaintenanceConfiguration,
+  captureNativeMaintenanceAssociation,
+  captureNativeMaintenanceTrust,
+  verifyNativeMaintenanceSignature,
+} from "./restore-native-maintenance-verifier.ts";
+import { randomUUID } from "node:crypto";
 import { lstatSync } from "node:fs";
 import {
   canonical,
@@ -214,13 +220,12 @@ export class RestoreActivation {
   configureNativeDispositions(
     configuration?: RestoreNativeDispositionConfiguration,
   ) {
-    this.nativeConfiguration = configuration
-      ? {
-          mappings: structuredClone(configuration.mappings),
-          loadTrust: configuration.loadTrust.bind(configuration),
-          observe: configuration.observe.bind(configuration),
-        }
-      : undefined;
+    // A rejected replacement also withdraws prior authority. Reentrant/caught
+    // malformed configuration must not preserve the in-flight old grant.
+    this.nativeConfiguration = undefined;
+    if (configuration)
+      this.nativeConfiguration =
+        captureNativeMaintenanceConfiguration(configuration);
   }
   private nativeAuthority(target: RestoreNativeDispositionTarget): Actor {
     this.database.requireTransaction();
@@ -264,11 +269,9 @@ export class RestoreActivation {
         sourceCompletedAt: String(generation.source_completed_at),
       },
     };
-    const observed = configuration.observe(structuredClone(request));
-    check(
-      observed && canonical(observed.request) === canonical(request),
-      "RESTORE_MAINTENANCE_AUTHORITY",
-      "Fresh exact maintenance association is unavailable.",
+    const observed = captureNativeMaintenanceAssociation(
+      configuration.observe(structuredClone(request)),
+      request,
     );
     const { signature, ...body } = observed;
     const at = this.clock();
@@ -288,25 +291,18 @@ export class RestoreActivation {
       "Maintenance association is malformed or expired.",
     );
     // Load current independent trust AFTER observation, so revocation wins.
-    const authorities = configuration
-      .loadTrust()
-      .filter((a) => a.id === mapping.externalAuthorityId);
+    const authorities = captureNativeMaintenanceTrust(
+      configuration.loadTrust(),
+    ).filter((a) => a.id === mapping.externalAuthorityId);
     check(
       authorities.length === 1,
       "RESTORE_MAINTENANCE_AUTHORITY",
       "Maintenance authority is unavailable or ambiguous.",
     );
-    const key = createPublicKey(authorities[0]!.publicKey);
+    verifyNativeMaintenanceSignature(body, signature, authorities[0]!.key);
     const currentAt = this.clock();
     check(
-      key.asymmetricKeyType === "ed25519" &&
-        verify(
-          null,
-          Buffer.from(restoreNativeMaintenanceMessage(body)),
-          key,
-          Buffer.from(signature, "base64"),
-        ) &&
-        Number.isSafeInteger(currentAt) &&
+      Number.isSafeInteger(currentAt) &&
         currentAt >= at &&
         currentAt < body.validUntil,
       "RESTORE_MAINTENANCE_AUTHORITY",
