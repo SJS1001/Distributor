@@ -1,3 +1,4 @@
+import "./count-queue-browser-journey.ts";
 import "./transfer-loss-browser-journey.ts";
 import "./transfer-dispatch-browser-journey.ts";
 import "./transfer-arrival-browser-journey.ts";

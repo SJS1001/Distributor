@@ -1,4 +1,8 @@
 import {
+  countQueueStates,
+  type CountQueueInput,
+} from "../shared/count-queue.ts";
+import {
   transferQueueStates,
   type TransferQueueInput,
 } from "../shared/transfer-queue.ts";
@@ -1796,6 +1800,21 @@ export async function createHttp(app: Application, options: HttpOptions) {
     { schema: { querystring: obj({ after: str }, ["after"]) } },
     async (request) =>
       app.inventory.serialReviews(actor(request), request.query.after),
+  );
+  http.get<{ Querystring: CountQueueInput }>(
+    "/api/counts/page",
+    {
+      schema: {
+        querystring: obj(
+          {
+            state: { type: "string", enum: [...countQueueStates] },
+            after: { type: "string", minLength: 1, maxLength: 4096 },
+          },
+          ["state", "after"],
+        ),
+      },
+    },
+    async (request) => app.inventory.countPage(actor(request), request.query),
   );
   http.get("/api/counts", async (request) =>
     app.inventory.counts(actor(request)),

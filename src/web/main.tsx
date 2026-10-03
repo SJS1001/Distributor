@@ -4,6 +4,7 @@ import {
 } from "./transfer-dispatch.tsx";
 import { TransferArrival, type ArrivalSelection } from "./transfer-arrival.tsx";
 import { TransferLoss, type LossSelection } from "./transfer-loss.tsx";
+import { CountQueue } from "./count-queue.tsx";
 import { TransferQueue } from "./transfer-queue.tsx";
 import {
   useSupplierReturnQueue,
@@ -288,7 +289,8 @@ function App() {
       e.transfers = await request("/api/transfers/page");
       e.transferRefresh = crypto.randomUUID();
       e.transferDestinations = await request("/api/transfer-destinations");
-      e.counts = await request("/api/counts");
+      e.counts = await request("/api/counts/page");
+      e.countRefresh = crypto.randomUUID();
       e.countReviewPolicy = await request("/api/count-review-policy");
       if (["admin", "warehouse"].includes(actor?.role ?? ""))
         e.labels = await request("/api/stock/labels");
@@ -2624,112 +2626,122 @@ function App() {
                   )}
               </section>
             )}
-            {extra.counts?.length > 0 && (
-              <>
-                <h2>Cycle counts</h2>
-                <p>
-                  A saved snapshot does not freeze stock. Approval checks the
-                  stock revision and current reservations; a changed snapshot
-                  needs a new count. Serialized discrepancies need custody
-                  review.
-                </p>
-                {table(
-                  [
-                    "Reference / stock",
-                    "Snapshot / observation",
-                    "Status / evidence",
-                    "Actions",
-                  ],
-                  extra.counts,
-                  (c: Item) => [
-                    <>
-                      <strong>{c.count_ref}</strong>
-                      <small>
-                        {productName(c.product_id)} ·{" "}
-                        {warehouseName(c.warehouse_id)} / {c.bin} ·{" "}
-                        {c.condition}
-                      </small>
-                    </>,
-                    <>
-                      {c.expected_quantity} expected ·{" "}
-                      {c.observed_quantity ?? "not yet"} observed
-                      <small>
-                        {c.delta === null
-                          ? "Awaiting observation"
-                          : `${c.delta > 0 ? "+" : ""}${c.delta} units · ${money(c.valueDelta, currency)} value adjustment`}{" "}
-                        · cutoff {new Date(c.created_at).toLocaleString()}
-                      </small>
-                    </>,
-                    <>
-                      {c.state}
-                      <small>{c.observation_reason ?? ""}</small>
-                      <small>{c.decision_reason ?? ""}</small>
-                      {c.result?.reviewPolicy && (
-                        <small>
-                          Reviewed under {c.result.reviewPolicy.mode} policy
-                          version {c.result.reviewPolicy.revision}
-                        </small>
-                      )}
-                    </>,
-                    <div className="actions">
-                      {c.state === "draft" &&
-                        can("warehouse") &&
-                        button("Record observation", () =>
-                          simple(
-                            "Record count observation",
-                            [
-                              {
-                                name: "quantity",
-                                label: "Physical units observed",
-                                type: "number",
-                                value: c.expected_quantity,
-                                max: 100000,
-                              },
-                              reason,
-                            ],
-                            "count.submit",
-                            (v) => ({ ...v, countId: c.id }),
-                          ),
-                        )}
-                      {c.state === "submitted" &&
-                        c.canApprove &&
-                        button("Approve count", () =>
-                          open(
-                            "Approve stock correction",
-                            [reason],
-                            (v) =>
-                              command("count.decide", {
-                                ...v,
-                                countId: c.id,
-                                decision: "approve",
-                                policyRevision: c.reviewPolicy.revision,
-                              }),
-                            `${c.count_ref}: ${c.expected_quantity} expected, ${c.observed_quantity} observed. Adjustment ${c.delta} units / ${money(c.valueDelta, currency)} at original unit cost. Approval does not post an accounting entry.`,
-                          ),
-                        )}
-                      {c.state === "submitted" && admin && !c.canApprove && (
-                        <small>
-                          A different administrator must review this count.
-                        </small>
-                      )}
-                      {["draft", "submitted"].includes(c.state) &&
-                        admin &&
-                        button("Reject count", () =>
-                          simple(
-                            "Reject stock count",
-                            [reason],
-                            "count.decide",
-                            (v) => ({
-                              ...v,
-                              countId: c.id,
-                              decision: "reject",
-                            }),
-                          ),
-                        )}
-                    </div>,
-                  ],
+            {extra.counts && (
+              <CountQueue
+                key={extra.countRefresh}
+                initial={extra.counts}
+                active={!busy}
+              >
+                {(items) => (
+                  <>
+                    <p>
+                      A saved snapshot does not freeze stock. Approval checks
+                      the stock revision and current reservations; a changed
+                      snapshot needs a new count. Serialized discrepancies need
+                      custody review.
+                    </p>
+                    {table(
+                      [
+                        "Reference / stock",
+                        "Snapshot / observation",
+                        "Status / evidence",
+                        "Actions",
+                      ],
+                      items,
+                      (c: Item) => [
+                        <>
+                          <strong>{c.count_ref}</strong>
+                          <small>
+                            {productName(c.product_id)} ·{" "}
+                            {warehouseName(c.warehouse_id)} / {c.bin} ·{" "}
+                            {c.condition}
+                          </small>
+                        </>,
+                        <>
+                          {c.expected_quantity} expected ·{" "}
+                          {c.observed_quantity ?? "not yet"} observed
+                          <small>
+                            {c.delta === null
+                              ? "Awaiting observation"
+                              : `${c.delta > 0 ? "+" : ""}${c.delta} units · ${money(c.valueDelta, currency)} value adjustment`}{" "}
+                            · cutoff {new Date(c.created_at).toLocaleString()}
+                          </small>
+                        </>,
+                        <>
+                          {c.state}
+                          <small>{c.observation_reason ?? ""}</small>
+                          <small>{c.decision_reason ?? ""}</small>
+                          {c.result?.reviewPolicy && (
+                            <small>
+                              Reviewed under {c.result.reviewPolicy.mode} policy
+                              version {c.result.reviewPolicy.revision}
+                            </small>
+                          )}
+                        </>,
+                        <div className="actions">
+                          {c.state === "draft" &&
+                            can("warehouse") &&
+                            button("Record observation", () =>
+                              simple(
+                                "Record count observation",
+                                [
+                                  {
+                                    name: "quantity",
+                                    label: "Physical units observed",
+                                    type: "number",
+                                    value: c.expected_quantity,
+                                    max: 100000,
+                                  },
+                                  reason,
+                                ],
+                                "count.submit",
+                                (v) => ({ ...v, countId: c.id }),
+                              ),
+                            )}
+                          {c.state === "submitted" &&
+                            c.canApprove &&
+                            button("Approve count", () =>
+                              open(
+                                "Approve stock correction",
+                                [reason],
+                                (v) =>
+                                  command("count.decide", {
+                                    ...v,
+                                    countId: c.id,
+                                    decision: "approve",
+                                    policyRevision: c.reviewPolicy.revision,
+                                  }),
+                                `${c.count_ref}: ${c.expected_quantity} expected, ${c.observed_quantity} observed. Adjustment ${c.delta} units / ${money(c.valueDelta, currency)} at original unit cost. Approval does not post an accounting entry.`,
+                              ),
+                            )}
+                          {c.state === "submitted" &&
+                            admin &&
+                            !c.canApprove && (
+                              <small>
+                                A different administrator must review this
+                                count.
+                              </small>
+                            )}
+                          {["draft", "submitted"].includes(c.state) &&
+                            admin &&
+                            button("Reject count", () =>
+                              simple(
+                                "Reject stock count",
+                                [reason],
+                                "count.decide",
+                                (v) => ({
+                                  ...v,
+                                  countId: c.id,
+                                  decision: "reject",
+                                }),
+                              ),
+                            )}
+                        </div>,
+                      ],
+                    )}
+                  </>
                 )}
-              </>
+              </CountQueue>
             )}
             {extra.transfers && (
               <TransferQueue

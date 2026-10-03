@@ -23,11 +23,22 @@ A lost policy or count-decision response can be retried with the same key and un
 
 Policy selection and stock decision transactions serialize across local processes. An approval racing a policy change either commits under the policy valid at its own transaction, or refuses stale review. A late audit failure rolls back the entire command. Existing count revision and reservation checks keep the original-cost movement and physical correction atomic.
 
+## Browse the count queue
+
+Inventory shows at most twenty counts on each page, newest recorded first. **Older counts** and **Newer counts** replace rows and keep navigation tokens. **Count state** selects all states, awaiting observation, awaiting review, approved or rejected. Filtering and **Refresh counts** restart at the selected state's first page. Application Refresh and successful commands restart with all states. References identify counts across pages. Empty scoped results remain explicit; support has no observation or decision controls.
+
+Pending or failed reads clear the old rows and actions. **Retry count queue** repeats the original filter, continuation and page position. Successful navigation focuses the queue heading; failed reads focus retry. Changed filters, navigation, application refresh and sign-out abandon late responses. The queue does not retain count rows from previous pages.
+
+Native reads resolve current persisted identity, role, password restrictions, original warehouse grants and organization policy before returning results. SQL applies organization, site and state selection before the twenty-one-row lookahead. Continuations bind purpose/version, organization, current site scope and state; inaccessible or missing anchors refuse. Tied timestamps use insertion order. An anchor can change state without preventing continued traversal; grants changing invalidate an old continuation. Current approval eligibility and historical decision policy remain separate.
+
+These are live pages, not a frozen export. New counts and changed states can alter results between reads; refresh to inspect current facts. Read transactions, query/index costs and production-scale history remain unqualified. The compatible full-list API still returns the complete permitted history. Generic observation/decision dialogs retain exact retry within the open dialog; durable recovery across reload or other devices remains open. See the [local queue receipt](evidence/LOCAL-COUNT-QUEUE-2026-10-02.md).
+
 ## HTTP contracts
 
 - `GET /api/count-review-policy`: current policy for authorized administrators, warehouse staff and support. Buyers cannot read it.
 - `POST /api/commands/count.policy`: administrator input `{mode, revision, reason}`, with mode `administrator` or `independent`. `revision` is the currently reviewed policy version. The response is the selected policy.
 - `GET /api/counts`: current policy and `canApprove` alongside scoped count history; committed results may contain their historical `reviewPolicy`.
+- `GET /api/counts/page?state=submitted&after=<continuation>`: at most twenty scoped count headers and `next` or null. Both parameters are optional; state is `draft`, `submitted`, `approved` or `rejected`. Unknown fields and invalid continuations refuse. Browser reads use this endpoint.
 - `POST /api/commands/count.decide`: `{countId, decision, reason, policyRevision}`. New approvals require the current `policyRevision`. Omission is accepted only while the organization still uses the unsaved legacy version-1 default. Rejections need no policy version because they do not alter stock.
 
 Writes use the existing authenticated origin/CSRF/idempotency boundary and exact JSON schemas. Malformed saved policy fails closed. Never bypass validation by editing organization JSON or manually setting count results.

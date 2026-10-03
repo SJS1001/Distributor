@@ -194,6 +194,12 @@ async function evidence(page: Page, kind: Kind) {
   }, kind);
 }
 async function review(page: Page, kind: Kind) {
+  // Initial Inventory reads replace the recovery component with fresh context.
+  // Open the retained review once that context is loaded, rather than during
+  // the brief recovery-only render before the queue arrives.
+  await expect(
+    page.getByRole("region", { name: "Transfer queue", exact: true }),
+  ).toBeVisible();
   await recovery(page, kind)
     .getByRole("button", {
       name: `Review retained ${operation(kind)}`,

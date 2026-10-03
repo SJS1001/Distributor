@@ -1,4 +1,8 @@
 import {
+  countQueueStates,
+  type CountQueueInput,
+} from "../shared/count-queue.ts";
+import {
   transferQueueStates,
   type TransferQueueInput,
 } from "../shared/transfer-queue.ts";
@@ -1353,34 +1357,129 @@ export class Inventory {
     return row;
   }
   counts(actor: Actor) {
-    actor = this.custodyActor(actor, ["warehouse", "support"]);
-    const reviewPolicy = this.identity.countReviewPolicy(actor);
-    return this.store
-      .all<Count>(
-        "SELECT * FROM inventory_counts WHERE org_id=? ORDER BY created_at DESC,id",
-        actor.orgId,
-      )
-      .filter(
-        (c) => actor.role === "admin" || actor.sites.includes(c.warehouse_id),
-      )
-      .map(({ start_hash, decision_result, ...c }) => ({
-        ...c,
-        reviewPolicy,
-        canApprove:
-          actor.role === "admin" &&
-          c.state === "submitted" &&
-          (reviewPolicy.mode !== "independent" ||
-            (actor.id !== c.created_by && actor.id !== c.observed_by)),
-        delta:
-          c.observed_quantity === null
-            ? null
-            : c.observed_quantity - c.expected_quantity,
-        valueDelta:
-          c.observed_quantity === null
-            ? null
-            : (c.observed_quantity - c.expected_quantity) * c.unit_cost,
-        result: decision_result ? JSON.parse(decision_result) : null,
-      }));
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, ["warehouse", "support"]);
+      const reviewPolicy = this.identity.countReviewPolicy(actor);
+      const { where, parameters } = this.countScope(actor);
+      return this.store
+        .all<Count>(
+          `SELECT * FROM inventory_counts WHERE ${where} ORDER BY created_at DESC,id`,
+          ...parameters,
+        )
+        .map((c) => this.countDetails(actor, c, reviewPolicy));
+    });
+  }
+  private countScope(actor: Actor) {
+    const scope =
+      actor.role === "admin" ? null : [...new Set(actor.sites)].sort();
+    const parameters: SQLInputValue[] = [actor.orgId];
+    let where = "org_id=?";
+    if (scope) {
+      where += scope.length
+        ? ` AND warehouse_id IN (${scope.map(() => "?").join(",")})`
+        : " AND 0=1";
+      parameters.push(...scope);
+    }
+    return { scope, where, parameters };
+  }
+  countPage(actor: Actor, input: CountQueueInput = {}) {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, ["warehouse", "support"]);
+      const reviewPolicy = this.identity.countReviewPolicy(actor);
+      const state = input.state ?? null;
+      check(
+        state === null || countQueueStates.includes(state),
+        "VALIDATION",
+        "Choose a supported count state.",
+        400,
+      );
+      const { scope, where, parameters } = this.countScope(actor);
+      const binding = ["count-queue", 1, actor.orgId, scope, state];
+      let anchor: (Count & { position: number }) | undefined;
+      if (input.after !== undefined) {
+        const encoded = text(input.after, "Count cursor", 4096);
+        let cursor: unknown;
+        try {
+          const bytes = Buffer.from(encoded, "base64url");
+          cursor = JSON.parse(bytes.toString("utf8"));
+          check(
+            encoded === input.after &&
+              bytes.toString("base64url") === encoded &&
+              JSON.stringify(cursor) === bytes.toString("utf8"),
+            "VALIDATION",
+            "Invalid count cursor.",
+            400,
+          );
+        } catch {
+          check(false, "VALIDATION", "Invalid count cursor.", 400);
+        }
+        check(
+          Array.isArray(cursor) &&
+            cursor.length === 6 &&
+            JSON.stringify(cursor.slice(0, 5)) === JSON.stringify(binding) &&
+            typeof cursor[5] === "string" &&
+            cursor[5].length > 0 &&
+            cursor[5].length <= 128,
+          "VALIDATION",
+          "Count cursor does not match this organization, sites and state.",
+          400,
+        );
+        // Resolve within current custody scope, independently of mutable state.
+        anchor = this.store.get<Count & { position: number }>(
+          `SELECT *,rowid AS position FROM inventory_counts WHERE ${where} AND id=?`,
+          ...parameters,
+          cursor[5],
+        );
+        check(anchor, "CURSOR", "Count cursor is no longer available.", 400);
+      }
+      const rows = this.store.all<Count & { position: number }>(
+        `SELECT *,rowid AS position FROM inventory_counts WHERE ${where}
+        ${state ? "AND state=?" : ""}
+        ${anchor ? "AND (created_at<? OR (created_at=? AND rowid<?))" : ""}
+        ORDER BY created_at DESC,rowid DESC LIMIT 21`,
+        ...parameters,
+        ...(state ? [state] : []),
+        ...(anchor
+          ? [anchor.created_at, anchor.created_at, anchor.position]
+          : []),
+      );
+      const headers = rows.slice(0, 20);
+      return {
+        items: headers.map(({ position: _, ...c }) =>
+          this.countDetails(actor, c, reviewPolicy),
+        ),
+        next:
+          rows.length > 20
+            ? Buffer.from(
+                JSON.stringify([...binding, headers[19]!.id]),
+              ).toString("base64url")
+            : null,
+      };
+    });
+  }
+  private countDetails(
+    actor: Actor,
+    { start_hash, decision_result, ...c }: Count,
+    reviewPolicy: CountReviewPolicy,
+  ) {
+    return {
+      ...c,
+      reviewPolicy,
+      canApprove:
+        actor.role === "admin" &&
+        c.state === "submitted" &&
+        (reviewPolicy.mode !== "independent" ||
+          (actor.id !== c.created_by && actor.id !== c.observed_by)),
+      delta:
+        c.observed_quantity === null
+          ? null
+          : c.observed_quantity - c.expected_quantity,
+      valueDelta:
+        c.observed_quantity === null
+          ? null
+          : (c.observed_quantity - c.expected_quantity) * c.unit_cost,
+      result: decision_result ? JSON.parse(decision_result) : null,
+    };
   }
   // Internal projections feed owning modules, which resolve customer entitlement
   // and business/site context before exposing them. Destination-only transfer
