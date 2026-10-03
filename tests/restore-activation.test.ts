@@ -427,6 +427,13 @@ test("internal writer in another process during routing invalidates release", (t
     assert.equal(child.status, 0, child.stderr);
   };
   assert.throws(() => r.activate(s.input));
+  assert.equal(
+    s.f.app.database
+      .owned("iam")
+      .get("SELECT name FROM iam_organizations WHERE id=?", s.f.actor.orgId)!
+      .name,
+    "synthetic concurrent effect",
+  );
   assert.equal(r.current()!.state, "held");
   assert.throws(() => s.f.app.platform.assertProviderAccess(), {
     code: "RECOVERY_HOLD",

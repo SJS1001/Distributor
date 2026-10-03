@@ -1,3 +1,6 @@
+import { RestoreOfflineStorage } from "./restore-offline-storage.ts";
+// Fixed module implementation, never a supplied guard/read callback.
+const readOfflineStorage = RestoreOfflineStorage.prototype.readInTransaction;
 import {
   captureNativeMaintenanceConfiguration,
   captureNativeMaintenanceAssociation,
@@ -180,8 +183,14 @@ export class RestoreActivation {
   private adapter?: RestoreActivationAdapter;
   private loadTrust?: () => RestoreApprover[];
   private clock: () => number = Date.now;
+  #offline: RestoreOfflineStorage;
+  /** The sole Platform storage instance is constructed with this exact writer. */
+  get offlineStorage() {
+    return this.#offline;
+  }
   constructor(private database: Database) {
     this.store = database.owned("platform");
+    this.#offline = new RestoreOfflineStorage(database);
     this.store.migrate(
       RESTORE_ACTIVATION_DDL.replaceAll(
         "CREATE TABLE ",
@@ -326,6 +335,100 @@ export class RestoreActivation {
       "Current scoped native maintenance principal is unavailable.",
     );
     return actor;
+  }
+  private nativeWriter<T>(run: () => T): T {
+    try {
+      this.database.requireTransaction();
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== "TRANSACTION")
+        throw error;
+      // Owner-scoped callers still fail Database.transaction's owner fence.
+      return this.database.transaction(run);
+    }
+    return run();
+  }
+  /** Exclusion only. A null/closed result supplies no release/provider permit. */
+  assertOfflineAccess() {
+    return this.nativeWriter(() => this.offlineAccessInTransaction());
+  }
+  private offlineAccessInTransaction(expected?: string | null): string | null {
+    this.database.requireTransaction();
+    const retained = readOfflineStorage.call(this.#offline);
+    const anchor = retained ? canonical(retained.anchor) : null;
+    if (expected !== undefined)
+      check(
+        anchor === expected,
+        "RESTORE_OFFLINE_EXCLUSION",
+        "Offline maintenance revision changed during the operation.",
+        503,
+      );
+    if (!retained) return null; // Only a validated completely empty journal.
+    // Raw generation cannot disappear or be oversized/malformed and then count
+    // as uninitialized. These are fixed Platform-owned fields on this writer.
+    const sizes = this.store.get<{
+      n: number;
+      bad: number;
+    }>(`SELECT COUNT(*) AS n,
+      COALESCE(MAX(CASE WHEN id!=1 OR length(CAST(snapshot_hash AS BLOB))!=64 OR
+      length(CAST(restored_at AS BLOB))!=24 OR length(CAST(source_completed_at AS BLOB))!=24
+      THEN 1 ELSE 0 END),0) AS bad FROM platform_recovery`)!;
+    check(
+      sizes.n === 1 && sizes.bad === 0,
+      "RESTORE_OFFLINE_EXCLUSION",
+      "Retained offline generation requires its exact current native recovery hold.",
+      503,
+    );
+    const candidate = this.database.captureRestoreCandidateInTransaction();
+    const metadata = this.store.get(
+      "SELECT version FROM platform_schema_version WHERE singleton=1",
+    );
+    const {
+      version: _format,
+      instanceId: _instance,
+      ...binding
+    } = retained.state.generation;
+    check(
+      canonical(binding) ===
+        canonical({
+          snapshotHash: candidate.snapshotHash,
+          restoredAt: candidate.restoredAt,
+          sourceCompletedAt: candidate.sourceCompletedAt,
+          schemaVersion: metadata?.version,
+          schemaHash: candidate.schemaHash,
+          region: candidate.region,
+          organizations: candidate.organizations,
+        }),
+      "RESTORE_OFFLINE_EXCLUSION",
+      "Retained offline generation differs from the current native hold/schema/organizations.",
+      503,
+    );
+    const current = this.offlineReleaseHistoryInTransaction().releases;
+    // Closed maintenance can be followed by new normal release controls. Its
+    // previously retained releases must remain exact monotone native prefixes.
+    for (const prior of retained.state.releases) {
+      const next = current.find((r) => r.id === prior.id);
+      check(
+        next &&
+          next.binding === prior.binding &&
+          next.revision >= prior.revision &&
+          canonical(next.history.slice(0, prior.history.length)) ===
+            canonical(prior.history) &&
+          (prior.forwardRecoveryRequired !== true ||
+            next.forwardRecoveryRequired === true) &&
+          (next.revision !== prior.revision ||
+            canonical(next) === canonical(prior)),
+        "RESTORE_OFFLINE_EXCLUSION",
+        "Native release history removed, replaced or regressed retained offline evidence.",
+        503,
+      );
+    }
+    check(
+      retained.state.sessions.at(-1)?.phase === "closed",
+      "RESTORE_OFFLINE_EXCLUSION",
+      "Offline maintenance is not validly closed for ordinary commands or release controls.",
+      503,
+    );
+    return anchor;
   }
   private configured() {
     check(
@@ -479,6 +582,8 @@ export class RestoreActivation {
   }
   private write(r: RestoreRelease, state: State, phase = r.phase) {
     this.database.requireTransaction();
+    const offline =
+      state === "stopping" ? undefined : this.offlineAccessInTransaction();
     const current = this.get(r.id);
     check(
       current.revision === r.revision,
@@ -499,6 +604,7 @@ export class RestoreActivation {
       at,
       history: [...r.history, { state, phase, at }],
     };
+    if (state !== "stopping") this.offlineAccessInTransaction(offline);
     const raw = canonical(next);
     this.store.run(
       "UPDATE platform_restore_releases SET state=?,revision=?,record=?,hash=? WHERE id=?",
@@ -522,15 +628,24 @@ export class RestoreActivation {
     });
   }
   private observe(r: RestoreRelease, releaseWindow = true) {
-    const a = this.configured();
-    this.sameFile(r);
-    check(
-      a.identity === r.adapter,
-      "RESTORE_AUTHORITY",
-      "Restore adapter changed.",
-    );
-    const o = a.observe(this.control(r)),
+    const prepared = this.nativeWriter(() => {
+      const offline = this.offlineAccessInTransaction();
+      const adapter = this.configured();
+      this.sameFile(r);
+      check(
+        adapter.identity === r.adapter,
+        "RESTORE_AUTHORITY",
+        "Restore adapter changed.",
+      );
+      const observe = adapter.observe;
+      this.offlineAccessInTransaction(offline);
+      return { adapter, observe, offline, input: this.control(r) };
+    });
+    // A standalone gate observation must allow another connection's safety
+    // rollback to finish. Command/rollback callers retain their existing writer.
+    const o = prepared.observe.call(prepared.adapter, prepared.input),
       at = this.clock();
+    this.nativeWriter(() => this.offlineAccessInTransaction(prepared.offline));
     check(
       o &&
         Number.isFinite(at) &&
@@ -593,6 +708,7 @@ export class RestoreActivation {
   approveRelease(id: string, approvals: RestoreApproval[]) {
     approvals = structuredClone(approvals);
     return this.database.transaction(() => {
+      const offline = this.offlineAccessInTransaction();
       const r = this.get(id);
       check(
         r.state === "prepared",
@@ -607,6 +723,7 @@ export class RestoreActivation {
         "RESTORE_CONFLICT",
         "Release signatures are already retained.",
       );
+      this.offlineAccessInTransaction(offline);
       return this.write({ ...r, releaseApprovals: approvals }, "prepared");
     });
   }
@@ -624,6 +741,7 @@ export class RestoreActivation {
     );
   }
   private review(r: RestoreRelease, input: RestoreReleaseInput) {
+    const offline = this.offlineAccessInTransaction();
     check(
       digest(canonical(input)) === r.inputHash,
       "RESTORE_CONFLICT",
@@ -645,6 +763,7 @@ export class RestoreActivation {
       "RESTORE_EVIDENCE",
       "Evidence changed.",
     );
+    this.offlineAccessInTransaction(offline);
   }
   prepare(input: RestoreReleaseInput) {
     input = structuredClone(input);
@@ -655,6 +774,7 @@ export class RestoreActivation {
       "Use an exact release ID.",
     );
     return this.database.transaction(() => {
+      const offline = this.offlineAccessInTransaction();
       const old = this.store.get(
         "SELECT id FROM platform_restore_releases WHERE id=?",
         input.id,
@@ -662,6 +782,7 @@ export class RestoreActivation {
       if (old) {
         const r = this.get(input.id);
         this.review(r, input);
+        this.offlineAccessInTransaction(offline);
         return r;
       }
       check(
@@ -707,6 +828,7 @@ export class RestoreActivation {
       };
       this.approvals(r);
       this.sameFile(r);
+      this.offlineAccessInTransaction(offline);
       const raw = canonical(r);
       this.store.run(
         "INSERT INTO platform_restore_releases VALUES(?,?,?,?,?)",
@@ -723,26 +845,58 @@ export class RestoreActivation {
     method: "fence" | "routeCandidate" | "stopCandidate" | "routeSource",
     r: RestoreRelease,
   ) {
-    check(
-      this.get(r.id).revision === r.revision,
-      "RESTORE_CONFLICT",
-      "Control intent was superseded.",
-    );
-    this.sameFile(r);
-    if (method !== "stopCandidate") this.releaseAuthority(r);
-    const adapter = this.configured();
-    check(
-      adapter.identity === r.adapter,
-      "RESTORE_AUTHORITY",
-      "Restore adapter changed.",
-    );
-    const result = adapter[method](this.control(r)) as unknown;
+    const prepared = this.nativeWriter(() => {
+      const offline =
+        method === "stopCandidate"
+          ? undefined
+          : this.offlineAccessInTransaction();
+      check(
+        this.get(r.id).revision === r.revision,
+        "RESTORE_CONFLICT",
+        "Control intent was superseded.",
+      );
+      this.sameFile(r);
+      if (method !== "stopCandidate") this.releaseAuthority(r);
+      const adapter = this.configured();
+      check(
+        adapter.identity === r.adapter,
+        "RESTORE_AUTHORITY",
+        "Restore adapter changed.",
+      );
+      const control = adapter[method];
+      if (method !== "stopCandidate") this.offlineAccessInTransaction(offline);
+      check(
+        this.get(r.id).revision === r.revision,
+        "RESTORE_CONFLICT",
+        "Control intent changed during authority callbacks.",
+      );
+      return { adapter, control, offline, input: this.control(r) };
+    });
+    // Normal activation controls run between native writer transactions. Holding
+    // SQLite's writer across external fencing/routing would prevent a competing
+    // operator from retaining its conflict/hold and conceal intervening effects.
+    // The rollback caller may already own a writer; keep its existing safety lock.
+    const result = prepared.control.call(
+      prepared.adapter,
+      prepared.input,
+    ) as unknown;
     check(
       !result || typeof (result as { then?: unknown }).then !== "function",
       "RESTORE_ADAPTER",
       "Operations adapters must complete synchronously; inspect uncertain outcome before retry.",
     );
+    this.nativeWriter(() => {
+      if (method !== "stopCandidate")
+        this.offlineAccessInTransaction(prepared.offline);
+      check(
+        this.get(r.id).revision === r.revision,
+        "RESTORE_CONFLICT",
+        "Control intent changed during operations control.",
+      );
+      this.sameFile(r);
+    });
   }
+
   private hold(
     r: RestoreRelease,
     state: "held" | "forward-held" = "held",
@@ -780,6 +934,8 @@ export class RestoreActivation {
     });
   }
   activate(input: RestoreReleaseInput) {
+    // Initial refusal is outside uncertain-control recovery: no intent was tried.
+    this.assertOfflineAccess();
     input = structuredClone(input);
     let r = this.get(input.id);
     check(
@@ -861,37 +1017,50 @@ export class RestoreActivation {
    * always closes the gate. Business effects are expected after release. */
   permits() {
     try {
-      const r = this.current();
-      if (!r || r.state !== "released") return false;
-      this.approvals(r);
+      const prepared = this.nativeWriter(() => {
+        const offline = this.offlineAccessInTransaction();
+        const r = this.current();
+        if (!r || r.state !== "released") return null;
+        this.approvals(r);
+        this.offlineAccessInTransaction(offline);
+        return { r, offline };
+      });
+      if (!prepared) return false;
+      const { r, offline } = prepared;
       const o = this.observe(r);
-      this.releaseAuthority(r);
-      // Observation/trust callbacks can advance another connection or replace
-      // the path. Never grant from the snapshot taken before those callbacks.
-      this.sameFile(r);
-      const current = this.current();
-      return (
-        current?.id === r.id &&
-        current.revision === r.revision &&
-        current.state === "released" &&
-        this.configured().identity === r.adapter &&
-        this.clock() < o.validUntil &&
-        o.sourceFenced === true &&
-        o.route === "candidate" &&
-        o.externalEffects !== "unknown"
-      );
+      return this.nativeWriter(() => {
+        this.releaseAuthority(r);
+        this.sameFile(r);
+        const current = this.current();
+        const valid =
+          current?.id === r.id &&
+          current.revision === r.revision &&
+          current.state === "released" &&
+          this.configured().identity === r.adapter &&
+          this.clock() < o.validUntil &&
+          o.sourceFenced === true &&
+          o.route === "candidate" &&
+          o.externalEffects !== "unknown";
+        this.offlineAccessInTransaction(offline);
+        return valid;
+      });
     } catch {
       return false;
     }
   }
   assertCommandAccess() {
-    const r = this.current();
-    check(
-      !r || (r.state === "released" && this.permits()),
-      "RECOVERY_HOLD",
-      "Restore release is unresolved or its current authority is unavailable.",
-      503,
-    );
+    return this.nativeWriter(() => {
+      const offline = this.offlineAccessInTransaction();
+      const r = this.current();
+      check(
+        !r || (r.state === "released" && this.permits()),
+        "RECOVERY_HOLD",
+        "Restore release is unresolved or its current authority is unavailable.",
+        503,
+      );
+      this.offlineAccessInTransaction(offline);
+      return offline;
+    });
   }
   /** Safety stop requires no surviving approval; routing back does. Never rewind
    * business data. Unknown/observed effects require a newly reconciled candidate. */

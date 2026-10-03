@@ -1,3 +1,4 @@
+import { types } from "node:util";
 import {
   account,
   canonical,
@@ -26,6 +27,29 @@ export type RefundIntent = {
   amount: number;
   currency: string;
 };
+/** Detached native comparison input, never provider evidence or authority. */
+export type OfflineFailedRefundTuple = Readonly<
+  RefundIntent & {
+    externalReference: string;
+    currency: "cad" | "usd";
+    status: "failed";
+  }
+>;
+export type OfflineFailedRefundApplicationReceipt = Readonly<{
+  version: 1;
+  refundId: string;
+  observationId: number;
+  applied: true;
+  state: "rejected";
+  status: "failed";
+  /** Public notice identity is the native refund ID; sequence is separate. */
+  noticeId: string;
+  noticeSequence: number;
+  noticeRevision: 1;
+  noticeStatus: "failed";
+  noticeState: "open";
+}>;
+
 export type AccountingRefundFact = {
   id: string;
   invoiceId: string;
@@ -223,6 +247,80 @@ function frozen<T>(value: T): Frozen<T> {
   };
   freeze(copy);
   return copy as Frozen<T>;
+}
+
+function captureOfflineFailedRefundTuple(
+  value: unknown,
+): OfflineFailedRefundTuple {
+  function valid(condition: unknown): asserts condition {
+    check(
+      condition,
+      "OFFLINE_REFUND_INPUT",
+      "Supply an exact bounded native failed-refund tuple.",
+      400,
+    );
+  }
+  // isProxy also handles revoked proxies without running any trap. Do not
+  // reflect, enumerate, clone, stringify or access properties before this check.
+  valid(value !== null && typeof value === "object" && !types.isProxy(value));
+  const prototype = Object.getPrototypeOf(value);
+  valid(prototype === Object.prototype || prototype === null);
+  const fields = [
+    "refundId",
+    "invoiceId",
+    "paymentId",
+    "paymentAmount",
+    "amount",
+    "currency",
+    "externalReference",
+    "status",
+  ] as const;
+  const keys = Reflect.ownKeys(value);
+  valid(
+    keys.length === fields.length &&
+      keys.every(
+        (key) =>
+          typeof key === "string" &&
+          fields.includes(key as (typeof fields)[number]),
+      ),
+  );
+  const data: Record<string, unknown> = Object.create(null);
+  for (const key of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    valid(descriptor && descriptor.enumerable && "value" in descriptor);
+    data[key] = descriptor.value;
+  }
+  const boundedText = (v: unknown, max: number): v is string =>
+    typeof v === "string" &&
+    v.length > 0 &&
+    v.length <= max &&
+    v.trim() === v &&
+    !v.includes("\0") &&
+    Buffer.byteLength(v) <= max;
+  valid(
+    boundedText(data.refundId, 128) &&
+      boundedText(data.invoiceId, 128) &&
+      boundedText(data.paymentId, 128) &&
+      /^pi_[A-Za-z0-9_]+$/.test(data.paymentId) &&
+      boundedText(data.externalReference, 160) &&
+      /^re_[A-Za-z0-9_]+$/.test(data.externalReference) &&
+      safe(data.paymentAmount, 1) &&
+      data.paymentAmount <= 1e12 &&
+      safe(data.amount, 1) &&
+      data.amount <= data.paymentAmount &&
+      (data.currency === "cad" || data.currency === "usd") &&
+      data.status === "failed",
+  );
+  return Object.freeze({
+    refundId: data.refundId,
+    invoiceId: data.invoiceId,
+    paymentId: data.paymentId,
+    paymentAmount: data.paymentAmount,
+    amount: data.amount,
+    currency: data.currency,
+    externalReference: data.externalReference,
+    status: data.status,
+  }) as OfflineFailedRefundTuple;
 }
 
 export class BillingRefunds {
@@ -804,6 +902,184 @@ export class BillingRefunds {
       "Complete native refund facts exceed the byte bound.",
     );
     return frozen({ ...body, factsHash: digest(raw) });
+  }
+
+  /** Trusted internal prerequisite only. Root must independently qualify evidence,
+   * approvals, source/candidate fences and commit-spanning authority. A hash is
+   * consistency, never authority. No public route or replay contract is supplied. */
+  applyOfflineFailedRefundInTransaction(
+    actor: Actor,
+    refundId: string,
+    expectedFactsHash: string,
+    failed: OfflineFailedRefundTuple,
+  ): OfflineFailedRefundApplicationReceipt {
+    this.database.requireTransaction();
+    const captured = captureOfflineFailedRefundTuple(failed);
+    check(
+      typeof refundId === "string" &&
+        refundId.length > 0 &&
+        refundId.length <= 128 &&
+        refundId.trim() === refundId &&
+        !refundId.includes("\0") &&
+        Buffer.byteLength(refundId) <= 128 &&
+        typeof expectedFactsHash === "string" &&
+        /^[a-f0-9]{64}$/.test(expectedFactsHash),
+      "OFFLINE_REFUND_INPUT",
+      "Supply the exact refund ID and native review hash.",
+      400,
+    );
+    actor = this.history.reader(actor);
+    permit(actor, ["finance"]);
+    check(
+      !actor.accountId,
+      "FORBIDDEN",
+      "Current finance staff authority is required.",
+      403,
+    );
+    const reviewed = this.reviewOfflineFailedRefundInTransaction(
+      actor,
+      refundId,
+    );
+    check(
+      reviewed.factsHash === expectedFactsHash,
+      "OFFLINE_REFUND_STALE",
+      "Native refund review changed.",
+    );
+    check(
+      captured.refundId === refundId &&
+        captured.invoiceId === reviewed.intent.invoiceId &&
+        captured.paymentId === reviewed.intent.paymentId &&
+        captured.paymentAmount === reviewed.intent.paymentAmount &&
+        captured.amount === reviewed.intent.amount &&
+        captured.currency === reviewed.intent.currency,
+      "REFUND_MISMATCH",
+      "Failed refund tuple differs from current native intent.",
+    );
+    check(
+      reviewed.refund.state === "unknown" &&
+        [
+          reviewed.providerMappings,
+          reviewed.observations,
+          reviewed.manualProofs,
+          reviewed.notices,
+          reviewed.noticeUpdates,
+          reviewed.noticeReads,
+        ].every((rows) => !rows.some((row) => row.refund_id === refundId)),
+      "OFFLINE_REFUND_HISTORY",
+      "Only the first unobserved unknown refund is supported.",
+    );
+    // Count/existence only, including orphan observations/proofs outside the
+    // selected invoice. Native provider-reference uniqueness is organization scoped.
+    check(
+      !this.store.get(
+        `SELECT 1 AS conflict WHERE
+       EXISTS(SELECT 1 FROM billing_refund_provider WHERE org_id=? AND external_ref=?) OR
+       EXISTS(SELECT 1 FROM billing_refund_observations WHERE org_id=? AND external_ref=?) OR
+       EXISTS(SELECT 1 FROM billing_refund_proofs WHERE org_id=? AND external_ref=?)`,
+        actor.orgId,
+        captured.externalReference,
+        actor.orgId,
+        captured.externalReference,
+        actor.orgId,
+        captured.externalReference,
+      ),
+      "REFUND_MISMATCH",
+      "Provider refund identity already has retained native history.",
+    );
+    // The caller owns this actual writer transaction and must propagate every
+    // failure to Database.transaction. Owner-issued savepoints are forbidden;
+    // swallowing an error and committing partial owner work is unsupported.
+    const status = this.observe(
+      actor,
+      reviewed.intent,
+      captured.externalReference,
+      captured,
+    );
+    const counts = this.store.get<{
+      observations: number;
+      providers: number;
+      proofs: number;
+      notices: number;
+      updates: number;
+      reads: number;
+    }>(
+      `SELECT
+        (SELECT count(*) FROM billing_refund_observations WHERE refund_id=?) AS observations,
+        (SELECT count(*) FROM billing_refund_provider WHERE refund_id=?) AS providers,
+        (SELECT count(*) FROM billing_refund_proofs WHERE refund_id=?) AS proofs,
+        (SELECT count(*) FROM billing_refund_alerts WHERE refund_id=?) AS notices,
+        (SELECT count(*) FROM billing_refund_alert_updates WHERE refund_id=?) AS updates,
+        (SELECT count(*) FROM billing_refund_alert_reads WHERE refund_id=?) AS reads`,
+      refundId,
+      refundId,
+      refundId,
+      refundId,
+      refundId,
+      refundId,
+    )!;
+    check(
+      status === "failed" &&
+        counts.observations === 1 &&
+        counts.providers === 1 &&
+        counts.proofs === 0 &&
+        counts.notices === 1 &&
+        counts.updates === 1 &&
+        counts.reads === 0,
+      "OFFLINE_REFUND_APPLICATION",
+      "Native failed refund result is absent or ambiguous.",
+    );
+    // Exact sole row identities after proven zero -> one transition. Never a
+    // MAX(id), newest observation, guessed revision or caller timestamp.
+    const observation = this.store.get<{ id: number }>(
+      "SELECT id FROM billing_refund_observations WHERE refund_id=? AND org_id=? AND external_ref=? AND status='failed' AND applied=1",
+      refundId,
+      actor.orgId,
+      captured.externalReference,
+    );
+    const notice = this.store.get<{ seq: number; revision: number }>(
+      "SELECT seq,revision FROM billing_refund_alerts WHERE refund_id=? AND org_id=? AND invoice_id=? AND status='failed' AND state='open' AND revision=1",
+      refundId,
+      actor.orgId,
+      reviewed.intent.invoiceId,
+    );
+    check(
+      observation &&
+        safe(observation.id, 1) &&
+        notice &&
+        safe(notice.seq, 1) &&
+        this.store.get(
+          "SELECT 1 FROM billing_refund_alert_updates WHERE refund_id=? AND org_id=? AND revision=1 AND status='failed' AND state='open' AND source='observation'",
+          refundId,
+          actor.orgId,
+        ) &&
+        this.store.get(
+          "SELECT 1 FROM billing_refund_provider WHERE refund_id=? AND org_id=? AND external_ref=? AND status='failed'",
+          refundId,
+          actor.orgId,
+          captured.externalReference,
+        ) &&
+        this.store.get(
+          "SELECT 1 FROM billing_refunds WHERE id=? AND org_id=? AND state='rejected'",
+          refundId,
+          actor.orgId,
+        ),
+      "OFFLINE_REFUND_APPLICATION",
+      "Native failed refund identities do not match the transition.",
+    );
+    const receipt: OfflineFailedRefundApplicationReceipt = Object.freeze({
+      version: 1,
+      refundId,
+      observationId: observation.id,
+      applied: true,
+      state: "rejected",
+      status: "failed",
+      noticeId: refundId,
+      noticeSequence: notice.seq,
+      noticeRevision: 1,
+      noticeStatus: "failed",
+      noticeState: "open",
+    });
+    return receipt;
   }
 
   get(actor: Actor, refundId: string) {

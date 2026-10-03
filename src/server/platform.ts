@@ -1,4 +1,4 @@
-import { RestoreOfflineStorage } from "./restore-offline-storage.ts";
+import type { RestoreOfflineStorage } from "./restore-offline-storage.ts";
 import { RestoreActivation } from "./restore-activation.ts";
 import {
   canonical,
@@ -43,7 +43,7 @@ export class Platform {
       CREATE TABLE IF NOT EXISTS platform_recovery (id INTEGER PRIMARY KEY CHECK(id=1), snapshot_hash TEXT NOT NULL, restored_at TEXT NOT NULL, source_completed_at TEXT NOT NULL) STRICT;
     `);
     this.restore = new RestoreActivation(database);
-    this.offline = new RestoreOfflineStorage(database);
+    this.offline = this.restore.offlineStorage;
     // Preserve existing IDs/bytes. A durable sequence avoids timestamp ties,
     // clock rollback and rowid changes during later SQLite maintenance.
     this.database.transaction(() =>
@@ -108,6 +108,16 @@ export class Platform {
     return hold && !this.restore.permits() ? hold : null;
   }
   assertProviderAccess() {
+    try {
+      this.restore.assertOfflineAccess();
+    } catch {
+      check(
+        false,
+        "RECOVERY_HOLD",
+        "Offline maintenance prevents provider activation.",
+        503,
+      );
+    }
     check(
       !this.recoveryHold(),
       "RECOVERY_HOLD",
@@ -135,7 +145,14 @@ export class Platform {
   ): T {
     text(key, "Idempotency key", 128);
     return this.database.transaction(() => {
-      this.restore.assertCommandAccess();
+      const offline = this.restore.assertCommandAccess();
+      const recheck = () =>
+        check(
+          this.restore.assertCommandAccess() === offline,
+          "RESTORE_OFFLINE_EXCLUSION",
+          "Offline maintenance revision changed during this command.",
+          503,
+        );
       const old = this.store.get(
         "SELECT hash,result FROM platform_commands WHERE org_id=? AND actor_id=? AND name=? AND key=?",
         actor.orgId,
@@ -148,6 +165,7 @@ export class Platform {
         : undefined;
       authorize(cachedResult);
       const hash = digest(canonical(payload));
+      recheck();
       if (old) {
         check(
           old.hash === hash,
@@ -157,6 +175,8 @@ export class Platform {
         return cachedResult!;
       }
       const result = perform();
+      const serialized = JSON.stringify(result);
+      recheck();
       this.store.run(
         "INSERT INTO platform_commands VALUES(?,?,?,?,?,?,?)",
         actor.orgId,
@@ -164,7 +184,7 @@ export class Platform {
         name,
         key,
         hash,
-        JSON.stringify(result),
+        serialized,
         now(),
       );
       this.audit(actor, name, key, { requestHash: hash });

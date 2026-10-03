@@ -2,6 +2,10 @@ import { isAbsolute } from "node:path";
 import { types } from "node:util";
 import { canonical, check, digest, DomainError } from "./core.ts";
 import {
+  compareOfflineFailedRefundEvidence,
+  type OfflineFailedRefundComparison,
+} from "./integration-offline-refund-evidence.ts";
+import {
   offlineTaskBinding,
   parseOfflineTaskEnvelope,
 } from "./restore-offline-envelope.ts";
@@ -99,6 +103,57 @@ function record(input: unknown, keys: string[]): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
+// Only JSON.parse output from the bounded private buffer reaches this walk.
+// Iterative preflight must finish BEFORE recursive canonicalization/comparison.
+function refundJsonShape(input: unknown) {
+  const stack = [{ value: input, depth: 0 }];
+  let nodes = 0;
+  while (stack.length) {
+    const { value, depth } = stack.pop()!;
+    requireValue(++nodes <= 4096 && depth <= 16);
+    if (value === null || typeof value === "boolean") continue;
+    if (typeof value === "number") {
+      requireValue(Number.isSafeInteger(value) && !Object.is(value, -0));
+      continue;
+    }
+    if (typeof value === "string") {
+      requireValue(value.length <= 8192 && !/[\ud800-\udfff]/u.test(value));
+      continue;
+    }
+    requireValue(typeof value === "object");
+    if (Array.isArray(value)) {
+      requireValue(value.length <= 128);
+      for (const child of value) stack.push({ value: child, depth: depth + 1 });
+    } else {
+      const keys = Object.keys(value);
+      requireValue(keys.length <= 64);
+      for (const key of keys) {
+        requireValue(
+          key.length <= 128 &&
+            !/[\ud800-\udfff]/u.test(key) &&
+            !["__proto__", "constructor", "prototype"].includes(key),
+        );
+        stack.push({
+          value: (value as Record<string, unknown>)[key],
+          depth: depth + 1,
+        });
+      }
+    }
+  }
+}
+
+// Fixed comparator JSON domain: code-unit key order, preserving array order.
+// This does NOT replace the legacy evidence-set canonical/hash convention.
+function refundCanonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(refundCanonical).join(",")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, child]) => `${JSON.stringify(key)}:${refundCanonical(child)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+
 export type OfflinePrivateEvidenceSummary = Readonly<{
   status: "historical-byte-binding";
   envelopeBinding: string;
@@ -108,12 +163,13 @@ export type OfflinePrivateEvidenceSummary = Readonly<{
   qualification: "unverified";
 }>;
 
-/** Opaque, process-local lifetime. No byte/map getter, serialization or callback
- * port. Fixed owner parsers must be implemented at this private boundary before
- * any captured content can be consumed; this prerequisite exposes none yet.
+/** Opaque, process-local lifetime. No byte/map getter or parser callback port.
+ * The one fixed refund comparator consumes a completed capture once and erases
+ * every capture on success or refusal. Its result is historical consistency only.
  * Always dispose in finally (or use `using`), including on authority failure. */
 export type OfflinePrivateEvidenceHandle = Readonly<{
   complete(): OfflinePrivateEvidenceSummary;
+  compareFailedRefund(reference: unknown): OfflineFailedRefundComparison;
   dispose(): void;
   [Symbol.dispose](): void;
 }>;
@@ -224,7 +280,7 @@ export function readOfflinePrivateEvidence(
     }
     const envelopeBinding = offlineTaskBinding(envelope);
     pending = readRestorePrivateEvidence(expected, manifest, capture);
-    return Object.freeze({
+    const handle = {
       dispose,
       [Symbol.dispose]: dispose,
       complete() {
@@ -263,7 +319,54 @@ export function readOfflinePrivateEvidence(
           fail();
         }
       },
-    });
+    };
+    // Non-enumerable addition preserves the original public method enumeration
+    // and serialization. This property is fixed and non-replaceable, not a port.
+    return Object.freeze(
+      Object.defineProperty(handle, "compareFailedRefund", {
+        value(reference: unknown): OfflineFailedRefundComparison {
+          try {
+            requireValue(state === "completed" && captured);
+            requireValue(
+              envelope.task.owner === "integration" &&
+                envelope.task.name ===
+                  "integration.stripe-refund-failed.import" &&
+                envelope.task.version === 1,
+            );
+            requireValue(
+              typeof reference === "string" &&
+                reference.length > 0 &&
+                reference.length <= 2000 &&
+                items.some((item) => item.reference === reference),
+            );
+            const bytes = captured.get(reference);
+            requireValue(
+              bytes && bytes.length > 0 && bytes.length <= 64 * 1024,
+            );
+            // Pass the OWNED captured allocation directly; no copy, getter or
+            // second read. Retain BOM so JSON parsing refuses it rather than
+            // silently stripping it. Fatal UTF-8 rejects replacement decoding.
+            const text = new TextDecoder("utf-8", {
+              fatal: true,
+              ignoreBOM: true,
+            }).decode(bytes);
+            const input: unknown = JSON.parse(text);
+            refundJsonShape(input);
+            // Duplicate keys and every alternative serialization differ from
+            // this exact canonical form even if JSON.parse normalized them.
+            requireValue(refundCanonical(input) === text);
+            return compareOfflineFailedRefundEvidence(input);
+          } catch {
+            fail();
+          } finally {
+            dispose();
+          }
+        },
+        enumerable: false,
+        writable: false,
+        configurable: false,
+      }),
+    ) as OfflinePrivateEvidenceHandle;
   } catch {
     dispose();
     fail();
