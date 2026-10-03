@@ -1,0 +1,22 @@
+{
+  "capturedFrom": "403f778564412a378d48cbe266bb60190ca4beee",
+  "version": 14,
+  "hashes": {
+    "disabled": "abe0d8b6803c38290c3debcf449b1307368442fcbf6c3fe3e11fdff1151e8aee",
+    "enabled": "23deaa05649d78f8c30a05490aa7e54a0aafb7c5f4cc7c53505802af0a01b192"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "integration_ledger_revocations",
+      "tbl_name": "integration_ledger_revocations",
+      "sql": "CREATE TABLE integration_ledger_revocations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,worker_id TEXT NOT NULL,realm TEXT NOT NULL,client_id TEXT NOT NULL,credential_revision INTEGER NOT NULL,disabled_revision INTEGER NOT NULL,authority TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('sending','unknown','confirmed','released')),claim TEXT,started_at INTEGER NOT NULL,finished_at INTEGER,evidence TEXT,review_revision INTEGER,UNIQUE(org_id,binding_id,credential_revision)) STRICT"
+    },
+    {
+      "type": "index",
+      "name": "integration_ledger_revocation_binding",
+      "tbl_name": "integration_ledger_revocations",
+      "sql": "CREATE INDEX integration_ledger_revocation_binding ON integration_ledger_revocations(org_id,binding_id,state)"
+    }
+  ]
+}

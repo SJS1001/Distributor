@@ -36,7 +36,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
 | [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md) | Reviewed local capacity release, retained history and uncertainty/restore refusals |
-| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, independent review, retained ledger observations and separately approved cancelled-attempt retries |
+| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, independent review, retained ledger observations, separately approved cancelled-attempt retries and native/API settled correction chains |
 | [Isolated restore review](docs/RESTORE-REVIEW.md) | Source-bound reconciliation dossier, private evidence byte verification, independent signed approvals and retained recovery hold |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks and remaining transport qualification |

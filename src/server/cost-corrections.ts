@@ -20,7 +20,7 @@ import type {
   CostPacketView,
   JournalLine,
 } from "./integration-costs.ts";
-import { COST_CORRECTION_INITIALIZE_DDL } from "./cost-correction-schema.ts";
+import { COST_CORRECTION_CHAIN_INITIALIZE_DDL } from "./cost-correction-chain-schema.ts";
 
 export type CostPolicyInput = {
   previousRevision: number;
@@ -85,6 +85,7 @@ export type CorrectionOutcomeObservation = {
   recordedAt: string;
 };
 export type CorrectionInput = {
+  predecessor?: { correctionId: string; contentHash: string };
   originalId: string;
   originalHash: string;
   policyRevision: number;
@@ -165,7 +166,7 @@ export class CostCorrections {
     ) => { packet: CostPacketView; report: CostReport; artifact: string },
   ) {
     this.store = database.owned("integration");
-    this.store.migrate(COST_CORRECTION_INITIALIZE_DDL);
+    this.store.migrate(COST_CORRECTION_CHAIN_INITIALIZE_DDL);
     this.store.migrate(COST_CORRECTION_OUTCOME_INITIALIZE_DDL);
     this.store.migrate(COST_CORRECTION_RETRY_INITIALIZE_DDL);
   }
@@ -223,7 +224,11 @@ export class CostCorrections {
       "COST_INTEGRITY",
       "Correction delivery source differs from its retained review.",
     );
-    return { file, state: this.outcomeSnapshot(actor, correctionId) };
+    return {
+      file,
+      state: this.outcomeSnapshot(actor, correctionId),
+      superseded: this.superseded(actor, correctionId),
+    };
   }
   deliveryCancellationInTransaction(
     actor: Actor,
@@ -378,6 +383,124 @@ export class CostCorrections {
       contentHash: row.content_hash,
     };
   }
+  private superseded(actor: Actor, correctionId: string) {
+    return Boolean(
+      this.store.get(
+        "SELECT id FROM integration_cost_corrections WHERE org_id=? AND json_extract(input,'$.predecessor.correctionId')=? AND state='reviewed'",
+        actor.orgId,
+        correctionId,
+      ),
+    );
+  }
+  private assertCurrent(actor: Actor, correctionId: string) {
+    check(
+      !this.superseded(actor, correctionId),
+      "COST_CORRECTION_CONFLICT",
+      "An approved successor freezes this correction's settled outcomes and attempts.",
+    );
+  }
+  private assertSuccessorAvailable(actor: Actor, input: CorrectionInput) {
+    check(
+      !this.store.get(
+        "SELECT id FROM integration_cost_corrections WHERE org_id=? AND original_id=? AND coalesce(json_extract(input,'$.predecessor.correctionId'),'')=? AND state='reviewed'",
+        actor.orgId,
+        input.originalId,
+        input.predecessor?.correctionId ?? "",
+      ),
+      "COST_CORRECTION_CONFLICT",
+      "This original or predecessor already has an approved correction.",
+    );
+  }
+  private predecessor(actor: Actor, input: CorrectionInput) {
+    const binding = input.predecessor!;
+    const file = this.approvedFile(actor, binding.correctionId);
+    const row = this.row(actor, binding.correctionId);
+    check(
+      file.hash === binding.contentHash &&
+        row.original_id === input.originalId &&
+        row.original_hash === input.originalHash,
+      "COST_INTEGRITY",
+      "The predecessor must be the exact approved correction of this original.",
+    );
+    this.assertCurrent(actor, row.id);
+    const document = JSON.parse(file.bytes) as { replacement: JournalLine[] };
+    const state = this.outcomeSnapshot(actor, row.id);
+    const replacement = state.legs.find((l) => l.leg === "replacement");
+    check(
+      state.legs.every(
+        (l) =>
+          l.current &&
+          (l.leg === "reversal"
+            ? l.current.input.outcome === "posted"
+            : ["posted", "cancelled-unposted"].includes(
+                l.current.input.outcome,
+              )),
+      ) && replacement?.current,
+      "COST_CHAIN_OUTCOME",
+      "Resolve every predecessor leg; reversal must be posted and replacement posted or finally cancelled before another mapping correction.",
+    );
+    const outcome = replacement.current.input;
+    check(
+      state.receiverRef === input.receiverRef &&
+        outcome.externalRef === input.externalRef &&
+        input.outcome ===
+          (outcome.outcome === "posted" ? "posted" : "unposted") &&
+        input.originalPostingDate === outcome.postingDate,
+      "COST_CHAIN_OUTCOME",
+      "Successor evidence must match the current settled replacement receiver, reference, outcome and date.",
+    );
+    // Native delivery and manual evidence must agree. Earlier cancelled attempts
+    // remain in the audit; no pending or uncertain native attempt may be bypassed.
+    const native = this.store.all(
+      "SELECT leg,attempt_id,state,realm,external_id,posting_date FROM integration_stock_journals WHERE org_id=? AND source_id=? AND state<>'rejected' ORDER BY id",
+      actor.orgId,
+      row.id,
+    );
+    for (const journal of native) {
+      const leg = state.legs.find((l) => l.leg === journal.leg);
+      check(
+        leg && (journal.state === "cancelled" || journal.state === "posted"),
+        "COST_CHAIN_OUTCOME",
+        "Resolve all native predecessor attempts before a successor.",
+      );
+      if (journal.attempt_id === (leg.attemptId ?? ""))
+        check(
+          state.receiverRef === `quickbooks-sandbox:${journal.realm}` &&
+            (journal.state === "posted" ? "posted" : "cancelled-unposted") ===
+              leg.current!.input.outcome &&
+            (journal.state !== "posted" ||
+              (journal.external_id === leg.current!.input.externalRef &&
+                journal.posting_date === leg.current!.input.postingDate)),
+          "COST_CHAIN_OUTCOME",
+          "Native predecessor and current finance observation disagree.",
+        );
+      else
+        check(
+          journal.state === "cancelled",
+          "COST_CHAIN_OUTCOME",
+          "Only cancelled previous native attempts can precede the current settled attempt.",
+        );
+    }
+    return {
+      document,
+      state: {
+        correctionId: state.correctionId,
+        contentHash: state.contentHash,
+        receiverRef: state.receiverRef,
+        receiverRegion: state.receiverRegion,
+        currency: state.currency,
+        legs: state.legs.map((l) => ({
+          leg: l.leg,
+          attemptId: l.attemptId,
+          current: l.current,
+          debit: l.debit,
+          credit: l.credit,
+          postingDate: l.postingDate,
+        })),
+        native,
+      },
+    };
+  }
   private plan(actor: Actor, input: CorrectionInput) {
     const policy = this.current(actor);
     check(
@@ -399,12 +522,17 @@ export class CostCorrections {
       "COST_PERIOD",
       "Correction posting date belongs to a closed period.",
     );
-    this.assertReferenceAvailable(
-      actor,
-      input.receiverRef,
-      input.externalRef,
-      packet.id,
-    );
+    this.assertSuccessorAvailable(actor, input);
+    const predecessor = input.predecessor
+      ? this.predecessor(actor, input)
+      : null;
+    if (!predecessor)
+      this.assertReferenceAvailable(
+        actor,
+        input.receiverRef,
+        input.externalRef,
+        packet.id,
+      );
     check(
       !this.store.get(
         "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=? AND packet_id<>?",
@@ -421,7 +549,7 @@ export class CostCorrections {
       actor.orgId,
       packet.id,
     );
-    if (native.length)
+    if (!predecessor && native.length)
       check(
         native.length === 1 &&
           native[0]!.state === "posted" &&
@@ -434,7 +562,8 @@ export class CostCorrections {
       );
     const receipt = packet.receipt;
     check(
-      !receipt ||
+      predecessor ||
+        !receipt ||
         (receipt.receiverRef === input.receiverRef &&
           receipt.externalRef === input.externalRef),
       "COST_OUTCOME",
@@ -485,7 +614,7 @@ export class CostCorrections {
     });
     const reversal: JournalLine[] =
       input.outcome === "posted"
-        ? report.journal.map((line) => ({
+        ? (predecessor?.document.replacement ?? report.journal).map((line) => ({
             ...line,
             date: input.postingDate,
             debit: line.credit,
@@ -494,7 +623,11 @@ export class CostCorrections {
         : [];
     check(
       canonical(replacement.map((l) => l.account)) !==
-        canonical(report.journal.map((l) => l.account)),
+        canonical(
+          (predecessor?.document.replacement ?? report.journal).map(
+            (l) => l.account,
+          ),
+        ),
       "COST_NO_CHANGE",
       "This workflow corrects account mappings; source quantity, value or valuation errors require their own inventory/finance review.",
     );
@@ -534,6 +667,7 @@ export class CostCorrections {
       replacement,
       debit: report.debit,
       credit: report.credit,
+      ...(predecessor ? { predecessor: predecessor.state } : {}),
     };
   }
   prepare(actor: Actor, key: string, input: CorrectionInput) {
@@ -549,6 +683,17 @@ export class CostCorrections {
       },
       () => {
         const normalized: CorrectionInput = {
+          ...(input.predecessor === undefined
+            ? {}
+            : {
+                predecessor: {
+                  correctionId: text(
+                    input.predecessor?.correctionId,
+                    "Predecessor correction ID",
+                  ),
+                  contentHash: hash(input.predecessor?.contentHash),
+                },
+              }),
           originalId: text(input.originalId, "Original packet ID"),
           originalHash: hash(input.originalHash),
           policyRevision: integer(
@@ -593,15 +738,6 @@ export class CostCorrections {
           "VALIDATION",
           "Invalid posting outcome.",
           400,
-        );
-        check(
-          !this.store.get(
-            "SELECT id FROM integration_cost_corrections WHERE org_id=? AND original_id=? AND state='reviewed'",
-            actor.orgId,
-            normalized.originalId,
-          ),
-          "COST_CORRECTION_CONFLICT",
-          "The original already has an approved correction; repeated reversals are forbidden.",
         );
         const plan = this.plan(actor, normalized),
           correctionId = id();
@@ -716,15 +852,6 @@ export class CostCorrections {
             digest(canonical(plan)) === row.review_hash,
             "COST_REVIEW_CHANGED",
             "Original acceptance or current policy changed after preparation.",
-          );
-          check(
-            !this.store.get(
-              "SELECT id FROM integration_cost_corrections WHERE org_id=? AND original_id=? AND state='reviewed'",
-              actor.orgId,
-              row.original_id,
-            ),
-            "COST_CORRECTION_CONFLICT",
-            "Another correction already claims this original.",
           );
           artifact =
             canonical({
@@ -882,6 +1009,7 @@ export class CostCorrections {
       });
   }
   private retryPlan(actor: Actor, input: CorrectionRetryInput) {
+    this.assertCurrent(actor, input.correctionId);
     const state = this.outcomeSnapshot(actor, input.correctionId);
     check(
       state.contentHash === input.contentHash,
@@ -1274,6 +1402,7 @@ export class CostCorrections {
         this.outcomeSnapshot(actor, input.correctionId);
       },
       () => {
+        this.assertCurrent(actor, input.correctionId);
         const state = this.outcomeSnapshot(actor, input.correctionId);
         const normalized: CorrectionOutcomeInput = {
           ...input,
@@ -1471,6 +1600,58 @@ export class CostCorrections {
       "COST_REVIEW_REQUIRED",
       "Only the intact approved correction can be downloaded.",
     );
+    const seen = new Set<string>();
+    let current = row;
+    for (;;) {
+      check(
+        !seen.has(current.id),
+        "COST_INTEGRITY",
+        "Correction lineage contains a cycle.",
+      );
+      seen.add(current.id);
+      check(
+        current.state === "reviewed" &&
+          current.artifact &&
+          current.content_hash &&
+          digest(current.artifact) === current.content_hash &&
+          digest(current.plan) === current.review_hash,
+        "COST_INTEGRITY",
+        "Approved correction lineage failed its retained hash checks.",
+      );
+      const document = JSON.parse(current.artifact),
+        plan = JSON.parse(current.plan),
+        input = JSON.parse(current.input) as CorrectionInput;
+      check(
+        document.version === 1 &&
+          document.kind === "stock-cost-account-mapping-correction" &&
+          document.orgId === actor.orgId &&
+          document.correctionId === current.id &&
+          document.originalId === row.original_id &&
+          document.originalHash === row.original_hash &&
+          current.original_id === row.original_id &&
+          current.original_hash === row.original_hash &&
+          document.reviewHash === current.review_hash &&
+          document.preparedBy === current.created_by &&
+          document.preparedAt === current.created_at &&
+          document.reviewedBy === current.decision_by &&
+          document.reviewedAt === current.decision_at &&
+          document.reason === current.decision_reason &&
+          canonical(plan.input) === current.input &&
+          Object.entries(plan).every(
+            ([key, value]) => canonical(document[key]) === canonical(value),
+          ),
+        "COST_INTEGRITY",
+        "Correction artifact differs from its approved review or original lineage.",
+      );
+      if (!input.predecessor) break;
+      const parent = this.row(actor, input.predecessor.correctionId);
+      check(
+        parent.content_hash === input.predecessor.contentHash,
+        "COST_INTEGRITY",
+        "Correction predecessor fingerprint changed.",
+      );
+      current = parent;
+    }
     return {
       bytes: row.artifact,
       hash: row.content_hash,

@@ -249,6 +249,11 @@ export class StockJournalDelivery {
       "Correction approval must identify this sandbox company receiver.",
     );
     if (write) {
+      check(
+        !source.superseded,
+        "JOURNAL_SUPERSEDED",
+        "A reviewed successor freezes this correction's delivery.",
+      );
       const leg = source.state.legs.find((l) => l.leg === input.leg);
       check(
         leg && leg.attemptId === input.attemptId,
@@ -409,6 +414,11 @@ export class StockJournalDelivery {
             input.sourceId,
           ),
           leg = source.state.legs.find((l) => l.leg === input.leg);
+        check(
+          !source.superseded,
+          "JOURNAL_SUPERSEDED",
+          "A reviewed successor freezes this correction's delivery.",
+        );
         check(
           leg && leg.attemptId === input.attemptId && !leg.current,
           "JOURNAL_ATTEMPT",

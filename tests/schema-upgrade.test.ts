@@ -1,3 +1,4 @@
+import versionFourteen from "./schema-version-fourteen.json" with { type: "json" };
 import versionThirteen from "./schema-version-thirteen.json" with { type: "json" };
 import versionTwelve from "./schema-version-twelve.json" with { type: "json" };
 import versionEleven from "./schema-version-eleven.json" with { type: "json" };
@@ -456,6 +457,42 @@ function frozenVersionThirteen(
     db.exec("COMMIT");
   });
 }
+function frozenVersionFourteen(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionThirteen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of [
+      ...versionFourteen.additions.filter((o) => o.type === "table"),
+      ...versionFourteen.additions.filter((o) => o.type !== "table"),
+    ])
+      db.exec(object.sql);
+    for (const object of versionFourteen.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=14,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionFourteen.hashes.enabled
+        : versionFourteen.hashes.disabled,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -540,6 +577,8 @@ function conservedUpgrade(
     "integration_cost_policies",
     "integration_cost_corrections",
   ]) {
+    if (sourceVersion >= 14 && name === "integration_ledger_revocations")
+      continue;
     if (sourceVersion >= 13 && name === "integration_ledger_authorizations")
       continue;
     if (sourceVersion >= 12 && name.startsWith("integration_stock_journal"))
@@ -640,7 +679,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
       test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
@@ -823,7 +862,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
                               ? frozenVersionEleven
                               : sourceVersion === 12
                                 ? frozenVersionTwelve
-                                : frozenVersionThirteen)(
+                                : sourceVersion === 13
+                                  ? frozenVersionThirteen
+                                  : frozenVersionFourteen)(
           f.path,
           source,
           eventReports,
@@ -861,7 +902,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
                                     ? versionEleven.hashes
                                     : sourceVersion === 12
                                       ? versionTwelve.hashes
-                                      : versionThirteen.hashes
+                                      : sourceVersion === 13
+                                        ? versionThirteen.hashes
+                                        : versionFourteen.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -887,7 +930,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
                                     ? versionEleven.hashes
                                     : sourceVersion === 12
                                       ? versionTwelve.hashes
-                                      : versionThirteen.hashes
+                                      : sourceVersion === 13
+                                        ? versionThirteen.hashes
+                                        : versionFourteen.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -916,10 +961,10 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 14);
+        assert.equal(upgraded.version, 15);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 14);
+        assert.equal(inspection.version, 15);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);
