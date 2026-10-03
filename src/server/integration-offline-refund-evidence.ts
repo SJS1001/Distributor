@@ -125,6 +125,18 @@ export type OfflineFailedRefundEvidenceInput = {
 type Frozen<T> = T extends object
   ? { readonly [K in keyof T]: Frozen<T[K]> }
   : T;
+// Process-local identity only: this proves the fixed comparator captured and
+// froze this value. It never authenticates the assertions or grants authority.
+const capturedComparisons = new WeakSet<object>();
+export function isCapturedOfflineFailedRefundComparison(
+  value: unknown,
+): value is OfflineFailedRefundComparison {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    capturedComparisons.has(value)
+  );
+}
 export type OfflineFailedRefundComparison = Frozen<{
   version: 1;
   native: OfflineRefundNative;
@@ -541,7 +553,7 @@ export function compareOfflineFailedRefundEvidence(
     amount: intent.amount,
     metadata: { effect_id: effect.id, refund_id: refund.id },
   });
-  return freeze({
+  const comparison = freeze({
     version: 1 as const,
     native: n,
     refundRequest: request,
@@ -570,4 +582,6 @@ export function compareOfflineFailedRefundEvidence(
       }),
     ),
   });
+  capturedComparisons.add(comparison);
+  return comparison;
 }
