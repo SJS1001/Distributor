@@ -921,5 +921,18 @@
     "No organization credential binding, durable ledger delivery ownership, journal worker or browser consent form",
     "No live provider IO, CI jobs, workflows, sessions, PR, merge or deployment",
     "All 44 tasks and ten product gates remain NOT VERIFIED"
-  ]
+  ],
+  "publication": {
+    "sourceCommit": "4f590798a684351b1b963c94982f6d902f02756f",
+    "normalPush": true,
+    "remoteHeadEqualsSourceCommit": true,
+    "workingTreeCleanAfterSourcePush": true,
+    "testedCommittedInputsVerified": 502,
+    "privateEvidenceHashesVerified": 42,
+    "identity": "SJS1001",
+    "pushPermissionConfirmed": true,
+    "workflowsBeforePush": 0,
+    "actionsRunsBeforePush": 0,
+    "note": "Publication record follows in a companion documentation commit; no product gate status changed"
+  }
 }
