@@ -3,6 +3,10 @@ import { canonical, check, digest, type Actor, type Row } from "./core.ts";
 import type { Database, Store } from "./database.ts";
 import type { Identity } from "./iam.ts";
 import type { Billing } from "./billing.ts";
+import {
+  BillingOfflineCheckoutReview,
+  type OfflineCheckoutBillingReview,
+} from "./billing-offline-checkout-review.ts";
 import type { IntegrationCheckouts } from "./integration-checkouts.ts";
 import type { Effect } from "./integration.ts";
 
@@ -127,6 +131,113 @@ function freeze<T>(v: T): Frozen<T> {
   return v as Frozen<T>;
 }
 
+/** Existing timestamps do not order independent commands within one millisecond.
+ * Refuse ties instead of inventing a historical balance or a payment attribution. */
+function settlementChronology(
+  billing: OfflineCheckoutBillingReview,
+  effects: readonly Effect[],
+) {
+  const events: {
+    kind: "credit" | "payment" | "refund";
+    id: string;
+    at: string;
+    delta: number;
+  }[] = [];
+  for (const c of billing.credits)
+    events.push({
+      kind: "credit",
+      id: c.id,
+      at: c.created_at,
+      delta: -c.total,
+    });
+  for (const p of billing.payments)
+    events.push({
+      kind: "payment",
+      id: p.id,
+      at: p.created_at,
+      delta: -p.amount,
+    });
+  for (const r of billing.refunds) {
+    const payment = billing.payments.find((p) => p.id === r.payment_id)!;
+    if (payment.provider === "manual") {
+      if (r.state === "completed") {
+        const proof = billing.manualProofs.find((p) => p.refund_id === r.id)!;
+        events.push({
+          kind: "refund",
+          id: r.id,
+          at: proof.created_at,
+          delta: r.amount,
+        });
+      }
+    } else {
+      let completed = false;
+      for (const o of billing.observations.filter(
+        (o) => o.refund_id === r.id,
+      )) {
+        if (!o.applied) continue;
+        const next = o.status === "succeeded";
+        if (completed !== next)
+          events.push({
+            kind: "refund",
+            id: String(o.id),
+            at: o.created_at,
+            delta: next ? r.amount : -r.amount,
+          });
+        completed = next;
+      }
+    }
+  }
+  events.sort((a, b) =>
+    a.at < b.at
+      ? -1
+      : a.at > b.at
+        ? 1
+        : a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id),
+  );
+  const money = (n: bigint) => {
+    intact(
+      n <= BigInt(Number.MAX_SAFE_INTEGER) &&
+        n >= BigInt(Number.MIN_SAFE_INTEGER),
+    );
+    return Number(n);
+  };
+  const delta = (selected: typeof events) =>
+    selected.reduce((total, e) => total + BigInt(e.delta), 0n);
+  intact(
+    money(BigInt(billing.invoice.total) + delta(events)) ===
+      billing.capacity.balance,
+  );
+  const balances = effects.map((e) => {
+    intact(e.created_at >= billing.invoice.created_at);
+    check(
+      !events.some((event) => event.delta !== 0 && event.at === e.created_at),
+      "OFFLINE_CHECKOUT_SETTLEMENT_ORDER_REQUIRED",
+      "Native settlement ordering at checkout creation is ambiguous.",
+    );
+    const before = money(
+      BigInt(billing.invoice.total) +
+        delta(events.filter((event) => event.at < e.created_at)),
+    );
+    const amount = json(e.payload).amount;
+    intact(amount === before);
+    const subsequentDelta = money(
+      delta(events.filter((event) => event.at > e.created_at)),
+    );
+    intact(
+      money(BigInt(amount) + BigInt(subsequentDelta)) ===
+        billing.capacity.balance,
+    );
+    return {
+      effectId: e.id,
+      at: e.created_at,
+      originalAmount: amount as number,
+      subsequentDelta,
+      currentBalance: billing.capacity.balance,
+    };
+  });
+  return { events, balances };
+}
+
 /** Native facts only. Caller owns the existing writer transaction. No hold,
  * receipt, source completeness, provider truth or import authority is inferred. */
 export class IntegrationOfflineCheckoutReview {
@@ -141,6 +252,42 @@ export class IntegrationOfflineCheckoutReview {
   }
 
   getInTransaction(supplied: Actor, effectId: unknown) {
+    return this.captureInTransaction(supplied, effectId, false).native;
+  }
+
+  /** Independent native settlement only; no checkout-to-provider payment
+   * attribution or transport permission is inferred from a Billing record. */
+  getSettledInTransaction(supplied: Actor, effectId: unknown) {
+    const captured = this.captureInTransaction(supplied, effectId, true);
+    intact(captured.billingHistory);
+    const {
+      factsHash: _hash,
+      purpose: _purpose,
+      billingScope: _scope,
+      allocationPayments: _emptyLegacyAllocation,
+      ...chain
+    } = captured.native;
+    const native = {
+      ...chain,
+      purpose:
+        "integration-offline-independently-settled-checkout-native-review/v1" as const,
+      billingScope: "complete-native-invoice-settlement-history" as const,
+      billingHistory: captured.billingHistory,
+      settlement: settlementChronology(captured.billingHistory, chain.effects),
+      // This is the actual complete retained Integration set. Nonempty QB
+      // allocations require a separate owning accounting lineage profile.
+      accountingAllocations: chain.collections.integration_payment_allocations!,
+    };
+    const encoded = canonical(native);
+    bounded(Buffer.byteLength(encoded) <= 2 * LIMIT);
+    return freeze({ ...native, factsHash: digest(encoded) });
+  }
+
+  private captureInTransaction(
+    supplied: Actor,
+    effectId: unknown,
+    settled: boolean,
+  ) {
     this.database.requireTransaction();
     identifier(effectId);
     // Read only two data descriptors; no actor getter, proxy trap or coercion.
@@ -200,11 +347,30 @@ export class IntegrationOfflineCheckoutReview {
       "OFFLINE_CHECKOUT_INBOX_HISTORY_REQUIRED",
       "Owning attribution of retained Stripe settlement inbox history is required.",
     );
-    const rows = (table: Table): Row[] =>
-      this.store.all(
-        `SELECT ${columns[table].split(" ").join(",")} FROM ${table}${table === "integration_inbox" ? "" : " WHERE org_id=?"} ORDER BY ${table === "integration_checkout_observations" || table === "integration_balance_observations" ? "sequence" : "rowid"}`,
+    const rows = (table: Table): Row[] => {
+      const fields = columns[table].split(" ");
+      // New profile only: the original zero-settlement reader and digest keep
+      // their exact behavior. Witnesses are internal bounded same-read bytes.
+      const select = settled
+        ? fields.concat(
+            fields.map((c) => `hex(CAST(${c} AS BLOB)) AS bytes_${c}`),
+          )
+        : fields;
+      const captured = this.store.all(
+        `SELECT ${select.join(",")} FROM ${table}${table === "integration_inbox" ? "" : " WHERE org_id=?"} ORDER BY ${table === "integration_checkout_observations" || table === "integration_balance_observations" ? "sequence" : "rowid"}`,
         ...(table === "integration_inbox" ? [] : [actor.orgId]),
       );
+      if (!settled) return captured;
+      return captured.map((row) => {
+        for (const c of fields)
+          if (typeof row[c] === "string")
+            intact(
+              Buffer.from(row[c], "utf8").toString("hex").toUpperCase() ===
+                row[`bytes_${c}`],
+            );
+        return Object.fromEntries(fields.map((c) => [c, row[c]!])) as Row;
+      });
+    };
     const effects = rows("integration_effects") as unknown as Effect[];
     const target = effects.find((e) => e.id === effectId);
     intact(
@@ -217,6 +383,15 @@ export class IntegrationOfflineCheckoutReview {
     identifier(input.invoiceId);
     const invoiceId = input.invoiceId;
     identifier(target.account_id);
+    if (settled)
+      check(
+        !effects.some(
+          (e) =>
+            e.account_id === target.account_id && e.provider === "quickbooks",
+        ),
+        "OFFLINE_CHECKOUT_ACCOUNTING_PROFILE_REQUIRED",
+        "Owning accounting lineage requires a separate complete review profile.",
+      );
     // Related non-checkout effects cannot be silently omitted. This initial
     // profile conservatively refuses any such work for the same account.
     profile(
@@ -280,16 +455,33 @@ export class IntegrationOfflineCheckoutReview {
     );
     const organization = this.identity.organization(actor);
     const account = this.identity.customer(actor, target.account_id);
-    const invoice = this.billing.invoice(actor, invoiceId);
+    const billingHistory = settled
+      ? new BillingOfflineCheckoutReview(
+          this.database,
+          this.identity,
+          this.billing,
+        ).getInTransaction(actor, invoiceId)
+      : null;
+    const invoice = billingHistory
+      ? { ...billingHistory.invoice, origin: "native" as const }
+      : this.billing.invoice(actor, invoiceId);
     profile(invoice.origin === "native");
-    const totals = this.billing.totals(actor, invoiceId);
+    const totals = billingHistory
+      ? {
+          credited: billingHistory.capacity.credited,
+          paid: billingHistory.capacity.paid,
+          refunded: billingHistory.capacity.refunded,
+          balance: billingHistory.capacity.balance,
+        }
+      : this.billing.totals(actor, invoiceId);
     // Billing's complete payment list/page start a new transaction. Its totals
     // and recordedPayment reads cannot prove a complete payment-bearing history.
-    check(
-      totals.paid === 0 && totals.refunded === 0 && totals.credited === 0,
-      "OFFLINE_CHECKOUT_BILLING_HISTORY_REQUIRED",
-      "Complete same-writer Billing invoice settlement history is required.",
-    );
+    if (!settled)
+      check(
+        totals.paid === 0 && totals.refunded === 0 && totals.credited === 0,
+        "OFFLINE_CHECKOUT_BILLING_HISTORY_REQUIRED",
+        "Complete same-writer Billing invoice settlement history is required.",
+      );
     intact(
       invoice.org_id === actor.orgId &&
         invoice.account_id === target.account_id &&
@@ -297,7 +489,8 @@ export class IntegrationOfflineCheckoutReview {
         account.currency === organization.currency,
     );
     integer(invoice.total, 1);
-    intact(totals.balance === invoice.total);
+    if (!settled) intact(totals.balance === invoice.total);
+    else profile(totals.paid > 0 || totals.credited > 0 || totals.refunded > 0);
     identifier(invoice.number);
     const results = new Map<string, Record<string, any> | null>();
     for (const e of selected) {
@@ -315,7 +508,11 @@ export class IntegrationOfflineCheckoutReview {
       exact(p, "invoiceId amount currency number");
       intact(
         p.invoiceId === invoice.id &&
-          p.amount === invoice.total &&
+          (settled
+            ? Number.isSafeInteger(p.amount) &&
+              p.amount > 0 &&
+              p.amount <= invoice.total
+            : p.amount === invoice.total) &&
           p.currency === invoice.currency.toLowerCase() &&
           p.number === invoice.number,
       );
@@ -374,6 +571,7 @@ export class IntegrationOfflineCheckoutReview {
           successor.reference === `renewal:${predecessor.id}`,
       );
       stamp(r.created_at);
+      if (settled) intact(successor.created_at >= predecessor.created_at);
       intact(
         r.created_at >= predecessor.created_at &&
           r.created_at >= successor.created_at,
@@ -459,7 +657,7 @@ export class IntegrationOfflineCheckoutReview {
           s.id === r.id &&
           s.effectId === e.id &&
           s.invoiceId === invoiceId &&
-          s.amount === invoice.total &&
+          s.amount === (settled ? payloads.get(e.id)!.amount : invoice.total) &&
           s.currency === invoice.currency,
       );
       stamp(s.observedAt);
@@ -544,17 +742,29 @@ export class IntegrationOfflineCheckoutReview {
       const invoiceScope = columns[table].split(" ").includes("invoice_id")
         ? " OR invoice_id=?"
         : "";
-      noForeign(table, `effect_id IN (${marks})${extra}${invoiceScope}`, [
-        ...ids,
-        ...(extra ? sessions : []),
-        ...(invoiceScope ? [invoiceId] : []),
-      ]);
+      const paymentIds = billingHistory?.payments.map((p) => p.id) ?? [];
+      const paymentScope =
+        table === "integration_payment_allocations" && paymentIds.length
+          ? ` OR payment_id IN (${paymentIds.map(() => "?").join(",")})`
+          : "";
+      noForeign(
+        table,
+        `effect_id IN (${marks})${extra}${invoiceScope}${paymentScope}`,
+        [
+          ...ids,
+          ...(extra ? sessions : []),
+          ...(invoiceScope ? [invoiceId] : []),
+          ...(paymentScope ? paymentIds : []),
+        ],
+      );
       const all = rows(table);
       for (const r of all) intact(byId.has(String(r.effect_id)));
       const relatedRows = all.filter(
         (r) =>
           ids.includes(String(r.effect_id)) ||
           r.invoice_id === invoiceId ||
+          (table === "integration_payment_allocations" &&
+            paymentIds.includes(String(r.payment_id))) ||
           (table === "integration_callbacks" &&
             sessions.includes(String(r.session_id))),
       );
@@ -600,7 +810,15 @@ export class IntegrationOfflineCheckoutReview {
           intact(!e.external_ref || e.external_ref === r.session_id);
           profile(r.state !== "completed");
         }
-      } else profile(relatedRows.length === 0);
+      } else {
+        if (settled && table === "integration_payment_allocations")
+          check(
+            relatedRows.length === 0,
+            "OFFLINE_CHECKOUT_ACCOUNTING_PROFILE_REQUIRED",
+            "Owning accounting payment allocation lineage review is required.",
+          );
+        profile(relatedRows.length === 0);
+      }
       collections[table] = relatedRows;
     }
     const native = {
@@ -646,6 +864,9 @@ export class IntegrationOfflineCheckoutReview {
     const encoded = canonical(native);
     bounded(Buffer.byteLength(encoded) <= LIMIT);
     // Every object is freshly read/constructed; no caller or owning object escapes.
-    return freeze({ ...native, factsHash: digest(encoded) });
+    return {
+      native: freeze({ ...native, factsHash: digest(encoded) }),
+      billingHistory,
+    };
   }
 }
