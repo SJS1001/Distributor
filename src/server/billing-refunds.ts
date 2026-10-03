@@ -263,6 +263,99 @@ export class BillingRefunds {
       "Use the exact native refund ID.",
       400,
     );
+    // Fixed Billing-owned column sets: no caller SQL/columns or foreign store.
+    // Every current retained column returned by this projection is counted,
+    // including identity/timestamp fields that will later fail shape validation.
+    const columns = {
+      invoice:
+        "id org_id account_id order_id shipment_id number currency net tax total created_at",
+      invoiceLines:
+        "id org_id invoice_id product_id description quantity unit_price unit_tax",
+      credits:
+        "id org_id invoice_id reference number reason net tax total created_at",
+      creditLines: "id org_id credit_id invoice_line_id quantity",
+      payments: "id org_id invoice_id provider external_ref amount created_at",
+      refunds:
+        "id org_id invoice_id payment_id amount reference state created_at",
+      providerMappings: "refund_id org_id external_ref status",
+      observations:
+        "id org_id refund_id external_ref status applied created_at",
+      manualProofs: "org_id external_ref refund_id created_at",
+      notices:
+        "seq org_id refund_id invoice_id status state revision created_at updated_at",
+      noticeUpdates: "org_id refund_id revision status state source created_at",
+      noticeReads: "org_id refund_id actor_id revision acknowledged_at",
+    } as const;
+    const preflight = (
+      set: keyof typeof columns,
+      sql: string,
+      params: string[],
+      used: number,
+    ) => {
+      // Numeric metadata only, before any retained row reaches JavaScript.
+      // Ordering is irrelevant to these complete-set checks; do not sort text
+      // merely to count a bounded sentinel. All SQL here is fixed owning code.
+      const source = sql.replace(/ ORDER BY [a-z_,]+$/, "");
+      // Overflow refuses the entire set, never an apparently complete page.
+      const count = this.store.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM (SELECT 1 FROM (${source}) LIMIT ?)`,
+        ...params,
+        offlineRefundReviewLimits.rowsPerSet + 1,
+      )!;
+      check(
+        safe(count.n) && count.n <= offlineRefundReviewLimits.rowsPerSet,
+        "OFFLINE_REFUND_REVIEW_LIMIT",
+        "Complete native refund history exceeds the review bound.",
+      );
+      // CAST AS BLOB counts UTF-8 bytes (including embedded NUL), not Unicode
+      // characters. SQLite returns only numeric metadata, never retained text.
+      // No JSON function or JavaScript serializer runs to measure these bytes.
+      const rowBytes = columns[set]
+        .split(" ")
+        .map((column) => `COALESCE(length(CAST(${column} AS BLOB)),0)`)
+        .join("+");
+      const sizes = this.store.get<{ total: number; largest: number }>(
+        `SELECT COALESCE(SUM(${rowBytes}),0) AS total, COALESCE(MAX(${rowBytes}),0) AS largest FROM (${source})`,
+        ...params,
+      )!;
+      check(
+        safe(sizes.total) &&
+          safe(sizes.largest) &&
+          sizes.largest <= offlineRefundReviewLimits.bytes &&
+          sizes.total <= offlineRefundReviewLimits.bytes - used,
+        "OFFLINE_REFUND_REVIEW_LIMIT",
+        "Complete native refund facts exceed the byte bound.",
+      );
+      return sizes.total;
+    };
+    // get()/intent() use native invoice and original-payment readers. Preflight
+    // their full rows first using only the exact scoped caller ID as a parameter.
+    // The scalar checks are a separate budget because collections below repeat
+    // these rows; the final canonical body check still includes every duplicate.
+    const target = "SELECT * FROM billing_refunds WHERE org_id=? AND id=?";
+    const targetParams = [actor.orgId, refundId];
+    let scalarBytes = preflight("refunds", target, targetParams, 0);
+    const invoiceScope = `SELECT invoice_id FROM (${target})`;
+    scalarBytes += preflight(
+      "invoice",
+      `SELECT * FROM billing_invoices WHERE org_id=? AND id IN (${invoiceScope})`,
+      [actor.orgId, ...targetParams],
+      scalarBytes,
+    );
+    preflight(
+      "payments",
+      `SELECT * FROM billing_payments WHERE org_id=? AND id IN (SELECT payment_id FROM (${target})) AND invoice_id IN (${invoiceScope})`,
+      [actor.orgId, ...targetParams, ...targetParams],
+      scalarBytes,
+    );
+    // Imported snapshots are unsupported; do not materialize their source text
+    // through billing.invoice() merely to reject them afterward.
+    reviewAssert(
+      !this.store.get(
+        `SELECT 1 FROM billing_opening_documents WHERE invoice_id IN (${invoiceScope})`,
+        ...targetParams,
+      ),
+    );
     const { row, invoice: scopedInvoice } = this.get(actor, refundId);
     const intent = this.intent(actor, refundId);
     const org = this.identity.organization(actor);
@@ -273,26 +366,17 @@ export class BillingRefunds {
         customer.currency === org.currency &&
         scopedInvoice.currency === org.currency,
     );
-    // First bounded implementation supports native shipment invoices. Imported
-    // opening balances require their own complete source facts; never omit them.
-    reviewAssert(
-      !this.store.get(
-        "SELECT 1 FROM billing_opening_documents WHERE invoice_id=?",
-        scopedInvoice.id,
-      ),
-    );
-    let bytes = 0;
-    const bounded = <T extends Row>(sql: string, ...params: string[]): T[] => {
-      const rows = this.store.all<T>(
-        sql + " LIMIT ?",
-        ...params,
-        offlineRefundReviewLimits.rowsPerSet + 1,
-      );
-      check(
-        rows.length <= offlineRefundReviewLimits.rowsPerSet,
-        "OFFLINE_REFUND_REVIEW_LIMIT",
-        "Complete native refund history exceeds the review bound.",
-      );
+    let bytes = 0,
+      retainedBytes = 0;
+    const bounded = <T extends Row>(
+      set: keyof typeof columns,
+      sql: string,
+      ...params: string[]
+    ): T[] => {
+      retainedBytes += preflight(set, sql, params, retainedBytes);
+      const rows = this.store.all<T>(sql, ...params);
+      // Exact canonical checks additionally cover key/punctuation overhead and
+      // escaping. Retained text has already passed the numeric SQL preflight.
       bytes += Buffer.byteLength(canonical(rows));
       check(
         bytes <= offlineRefundReviewLimits.bytes,
@@ -302,28 +386,34 @@ export class BillingRefunds {
       return rows;
     };
     const invoice = bounded<NativeInvoice>(
+      "invoice",
       "SELECT * FROM billing_invoices WHERE id=?",
       scopedInvoice.id,
     )[0]!;
     const invoiceLines = bounded<NativeLine>(
+      "invoiceLines",
       "SELECT * FROM billing_lines WHERE invoice_id=? ORDER BY id",
       invoice.id,
     );
     const credits = bounded<NativeCredit>(
+      "credits",
       "SELECT * FROM billing_credits WHERE invoice_id=? ORDER BY id",
       invoice.id,
     );
     const creditLines = bounded<NativeCreditLine>(
+      "creditLines",
       "SELECT * FROM billing_credit_lines WHERE credit_id IN (SELECT id FROM billing_credits WHERE invoice_id=?) OR invoice_line_id IN (SELECT id FROM billing_lines WHERE invoice_id=?) ORDER BY id",
       invoice.id,
       invoice.id,
     );
     const payments = bounded<RecordedPayment>(
+      "payments",
       "SELECT * FROM billing_payments WHERE invoice_id=? OR id=? ORDER BY id",
       invoice.id,
       String(row.payment_id),
     );
     const refunds = bounded<NativeRefund>(
+      "refunds",
       "SELECT * FROM billing_refunds WHERE invoice_id=? OR payment_id IN (SELECT id FROM billing_payments WHERE invoice_id=?) ORDER BY id",
       invoice.id,
       invoice.id,
@@ -453,26 +543,32 @@ export class BillingRefunds {
     const marks = refunds.map(() => "?").join(","),
       ids = refunds.map((r) => r.id);
     const providerMappings = bounded<RefundProvider>(
+      "providerMappings",
       `SELECT * FROM billing_refund_provider WHERE refund_id IN (${marks}) ORDER BY refund_id`,
       ...ids,
     );
     const observations = bounded<RefundObservation>(
+      "observations",
       `SELECT * FROM billing_refund_observations WHERE refund_id IN (${marks}) ORDER BY id`,
       ...ids,
     );
     const manualProofs = bounded<RefundProof>(
+      "manualProofs",
       `SELECT * FROM billing_refund_proofs WHERE refund_id IN (${marks}) ORDER BY refund_id`,
       ...ids,
     );
     const notices = bounded<RefundNotice>(
+      "notices",
       `SELECT * FROM billing_refund_alerts WHERE refund_id IN (${marks}) ORDER BY seq`,
       ...ids,
     );
     const noticeUpdates = bounded<RefundNoticeUpdate>(
+      "noticeUpdates",
       `SELECT * FROM billing_refund_alert_updates WHERE refund_id IN (${marks}) ORDER BY refund_id,revision`,
       ...ids,
     );
     const noticeReads = bounded<RefundNoticeRead>(
+      "noticeReads",
       `SELECT * FROM billing_refund_alert_reads WHERE refund_id IN (${marks}) ORDER BY refund_id,actor_id`,
       ...ids,
     );
