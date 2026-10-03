@@ -38,9 +38,17 @@ Initial supplemental dashboard completion advanced a panel epoch after an explic
 | Integration historical disposition projection | 12/12 native tests pass, zero failures/skips/cancellations, 1,615.270583 ms. Same-transaction owner validation covers canceled credit applications and superseded unsent checkouts; successors remain independently unresolved. Trusted Platform adapter and restore consumer are still pending. |
 | Native quantity browser after the dashboard repair | 11/11 actual SQLite/HTTP Chromium journeys pass in 15.9 seconds across CA/CAD, US/USD and CA/USD. |
 | Current production runtime | PASS, 18:07:17.826–18:07:43.103 UTC: 303 inputs match, 69 development-only packages absent, 41 asserted command outcomes including expected refusals, CA/US startup and local backup/restore. |
+| Complete combined production browser | PASS, 337/337 journeys, 6.0 minutes, command `npm run test:e2e`, terminal exit 0 on 2026-10-03 at 18:21:46 UTC. This is the first complete combined result after the dashboard repair and native quantity fixture integration. All 586 captured source/test/configuration hashes match afterward. Synthetic workstation Chromium only. |
+| Complete combined native regression | PASS, 2,675/2,675 tests, zero failures/cancellations/skips, 98,216.012125 ms, `npm test`, terminal exit 0 on 2026-10-03. All 586 captured source/test/configuration hashes match afterward. This is a separate current result; historical cancellation remains retained. |
 | Current static checks | TypeScript, whole configured formatting, production build and document structure pass. React Doctor still exits 1 with score 52, 53 errors and 326 warnings; no static-clean claim. |
 
-The current native/browser manifest SHA-256 is `4b73d0bb3fa5e2a5d0ad00cdd934662c8b86c6702c74372e378a793a2f9d72e2`. A fresh complete native or combined 337-journey browser result is not claimed. Historical cancellation and browser failure receipts stay retained.
+The current native/browser manifest SHA-256 is `4b73d0bb3fa5e2a5d0ad00cdd934662c8b86c6702c74372e378a793a2f9d72e2`. The complete combined 337-journey browser run now passes on source checkpoint `5a2510236f2e95ad89154b74990fc57848a0f321` (docs-only HEAD `fd763528b7903b632fe4b946680fc8ee67e33286` when launched). The complete native regression also passes 2,675/2,675 with no failures, cancellations or skips. Historical cancellation and browser failure receipts stay retained.
+
+## Subsequent Platform receipt adapter increment
+
+After the complete checkpoint above, the exact three-file cloud Platform adapter delta (`d2d140a98da5c329fa05dddf800abbf6459e985587186707ed8ff0553ad2a476`, 36,104 bytes) is reviewed and applied locally. It provides complete scoped command receipts under the existing writer transaction and fresh native finance authority. The original historical actors and duplicate evidence remain intact. It does not wire the restore consumer or grant external authority.
+
+Root workstation command `./node_modules/.bin/tsx --test tests/platform-restore-disposition-receipts.test.ts tests/integration-restore-dispositions.test.ts tests/stock-journal-preparation.test.ts tests/stock-journal-reconciliation.test.ts` passes 76/76, zero failures/cancellations/skips, 4,101.593458 ms. Fresh TypeScript, assigned formatting, patch whitespace and documentation structure pass. The earlier complete 2,675-test/337-journey runs cover their captured checkpoint; this subsequent increment has focused native regression.
 
 ## Retained evidence hashes
 
@@ -61,9 +69,12 @@ Raw logs, runtime receipts, patch transfers, databases, credentials and browser 
 | Eight repaired revocation journeys | `e653ff76b290c34ac18712f3b69e889508cb54cd8b3f57428553f3b1c012c979` |
 | Carrier projection local replay | `fa15fed5c1fb59718eb8e3ef087176e1c7783f09712e59ea1865d0711f5a4eef` |
 | Integration projection local replay | `202e658d277fc582dc4b7ae667f427ec51bd59b9f74f00249a9e65c8ec962216` |
+| Complete combined 337-journey browser run | `ed8c6951dd606f3bc59bfab8fa25989918c8810c51a9fe36035b00b05570dcd8` |
+| Complete combined 2,675-test native run | `58fdd0db71b91b4553fd8772df1b47ff64dd4dcd416bdaa8685017b74cb180fa` |
+| Subsequent Platform adapter local 76-test replay | `20d9d1e60340f0c90d42df924a420b6a9ea87475eb3b225e208bb29a69becb4b` |
 | Current eleven quantity journeys | `d739d11a878b36e92c161e29832484a571190eb2d8ef106795a40a2ba492bec5` |
 | Current production runtime log | `0551cd31006be205ab2d98e0776fd3fc7556094d51348c95750d6a7c77163969` |
 | Current production runtime receipt | `bab5794974874c82e6a45b4d77eb05d6187f92e9ed70a0499a0bde4e03476c62` |
 | Current React Doctor diagnostics | `8ad06d00707813cbf8dd5985d21125072c185d559dbed8582f129937fec04aad` |
 
-Outstanding coding includes the trusted Platform receipt adapter and restore consumer integration, the common qualified recovery phase/evidence contract and offline owning-module observation imports. External finance, provider, infrastructure, residency, devices, load, security and operator acceptance remain separate qualification requirements. No deployment, PR, merge, workflow or runner job is authorized by this receipt.
+Outstanding coding includes restore consumer integration, the common qualified recovery phase/evidence contract and offline owning-module observation imports. External finance, provider, infrastructure, residency, devices, load, security and operator acceptance remain separate qualification requirements. No deployment, PR, merge, workflow or runner job is authorized by this receipt.

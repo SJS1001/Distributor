@@ -11,6 +11,10 @@ import {
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import type {
+  DispositionCommandReceipt,
+  IntegrationDispositionReceipts,
+} from "./integration-restore-dispositions.ts";
+import type {
   Reconciliation,
   ReconciliationHistory,
 } from "../shared/reconciliation.ts";
@@ -147,6 +151,88 @@ export class Platform {
       requestHash: String(row.hash),
       result: JSON.parse(String(row.result)) as unknown,
     };
+  }
+  /** Trusted native maintenance port, not external evidence or release authority.
+   * The reader is current IAM finance staff; historical authors stay unchanged. */
+  integrationDispositionReceipts(actor: Actor): IntegrationDispositionReceipts {
+    const principal = structuredClone(actor);
+    return Object.freeze<IntegrationDispositionReceipts>({
+      forResultInTransaction: (orgId, command, resultId) => {
+        this.database.requireTransaction();
+        const current = this.reconciliationAuthority(principal);
+        check(
+          !current.accountId &&
+            current.id === principal.id &&
+            current.orgId === principal.orgId &&
+            orgId === current.orgId,
+          "FORBIDDEN",
+          "Current organization finance staff authority is required.",
+          403,
+        );
+        const exactText = (v: unknown, max = 160): v is string =>
+          typeof v === "string" &&
+          v.length > 0 &&
+          v.length <= max &&
+          v === v.trim();
+        check(
+          exactText(orgId) &&
+            exactText(resultId) &&
+            [
+              "quickbooks.credit.apply",
+              "quickbooks.credit.cancel",
+              "stripe.checkout.renew",
+            ].includes(command),
+          "VALIDATION",
+          "Use an exact supported disposition command and result identity.",
+          400,
+        );
+        const receipts: DispositionCommandReceipt[] = [];
+        // Scan the complete scoped command history before selecting the result.
+        // SQL JSON filtering could hide damaged/ambiguous records as no match.
+        // No historical actor filter, page, cache or second connection is safe.
+        for (const row of this.store.all(
+          "SELECT org_id,actor_id,name,key,hash,result,created_at FROM platform_commands WHERE org_id=? AND name=? ORDER BY actor_id,key",
+          orgId,
+          command,
+        )) {
+          let result: unknown;
+          try {
+            result = JSON.parse(String(row.result));
+          } catch {
+            // The integrity check below rejects this row, including malformed JSON.
+          }
+          check(
+            row.org_id === orgId &&
+              row.name === command &&
+              exactText(row.actor_id) &&
+              exactText(row.key, 128) &&
+              typeof row.hash === "string" &&
+              /^[a-f0-9]{64}$/.test(row.hash) &&
+              typeof row.created_at === "string" &&
+              Number.isFinite(Date.parse(row.created_at)) &&
+              new Date(row.created_at).toISOString() === row.created_at &&
+              result !== null &&
+              typeof result === "object" &&
+              !Array.isArray(result) &&
+              exactText((result as { id?: unknown }).id) &&
+              JSON.stringify(result) === row.result,
+            "RESTORE_RECEIPT_INTEGRITY",
+            "Retained disposition command history is malformed. Reconcile the original receipts.",
+          );
+          if ((result as { id: string }).id === resultId)
+            receipts.push({
+              orgId,
+              actorId: row.actor_id as string,
+              command,
+              key: row.key as string,
+              requestHash: row.hash as string,
+              result,
+              createdAt: row.created_at as string,
+            });
+        }
+        return receipts;
+      },
+    });
   }
   audit(actor: Actor, action: string, reference: string, detail: unknown) {
     this.store.run(
