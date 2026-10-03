@@ -239,7 +239,8 @@ export class RestoreOfflineFailedRefundCoordinator {
         envelope.task.orgId === locator.orgId,
     );
     let comparisonHash: string | undefined,
-      providerReference: string | undefined;
+      providerReference: string | undefined,
+      previousNow: number | undefined;
     const qualified = (request: OfflineCommitRequest) => {
       this.database.requireTransaction();
       const store = this.database.owned("integration"),
@@ -282,8 +283,10 @@ export class RestoreOfflineFailedRefundCoordinator {
         Number.isFinite(now) &&
           new Date(now).toISOString() === q.now &&
           now >= Date.parse(envelope.preparedAt) &&
-          now < Date.parse(envelope.expiresAt),
+          now < Date.parse(envelope.expiresAt) &&
+          (previousNow === undefined || now >= previousNow),
       );
+      previousNow = now;
       insist(
         canonical(q.trust) === canonical(envelope.trust) &&
           offlineApprovalRosterFingerprint(q.roster) ===

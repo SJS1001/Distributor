@@ -337,6 +337,24 @@ test("final trust revocation after owner writes rolls back all native receipts",
   assert.throws(() => execute(f));
   assert.equal(snapshot(f), before);
 });
+for (const boundary of [2, 5])
+  test(
+    "clock rollback inside valid approval window refuses at boundary " +
+      boundary,
+    async (t) => {
+      const f = await ready(t),
+        before = snapshot(f);
+      f.state.onRead = (calls) => {
+        if (calls === boundary)
+          f.state.qualification = {
+            ...f.state.qualification,
+            now: "2026-10-03T23:04:59.999Z",
+          };
+      };
+      assert.throws(() => execute(f));
+      assert.equal(snapshot(f), before);
+    },
+  );
 test("file substitution after captured completion cannot inject newly qualified refund", async (t) => {
   const f = await ready(t);
   f.state.onRead = (calls) => {
