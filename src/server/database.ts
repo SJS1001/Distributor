@@ -50,8 +50,11 @@ export class Database {
         const stat = lstatSync(path, { bigint: true });
         this.#openedFileIdentity = { dev: stat.dev, ino: stat.ino };
       }
+      // REPLACE must execute immutable-row DELETE guards, including implicit
+      // conflict deletions. Set this on every connection before the authorizer
+      // prevents native owners from changing PRAGMAs; no stored DDL is changed.
       this.#db.exec(
-        "PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;",
+        "PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF; PRAGMA recursive_triggers=ON;",
       );
     } catch (error) {
       this.#db.close();
