@@ -1,0 +1,13 @@
+# Exact native offline task receipt recovery
+
+This internal reader supplies the missing native lookup for an uncertain offline commit reply. `Application.restoreOfflineCommitRecovery.getInTransaction(actor, envelope)` runs on the actual Application writer and returns either `retained-task-receipt-consistency-only` with the exact retained Platform receipt, or `no-retained-task-receipt`. Neither result grants execution, retry or release authority.
+
+The reader refreshes native organization finance access and the password-change requirement, checks the exact original envelope and database file identity, and validates the complete bounded offline journal, generation provenance, receipt rows and durable head through the owning Platform storage API. It binds a found receipt to the original owner, organization, task, request, envelope binding, payload and before-candidate hash. The receipt must be the immediate next transition after the original session revision and lineage. A collision in either request identity or binding refuses recovery.
+
+An offline write changes the candidate logical hash and advances the session. Recovery therefore checks the retained original pre-commit lineage and the current native generation/file, instead of repeating the pre-commit open-phase check. Later tasks, orderly phase closure and a later session within the same generation preserve the original historical receipt. A changed native restore hold or candidate file refuses this lookup. Recovery after generation replacement or release requires a separately qualified historical procedure; this reader cannot infer safe execution from an absent receipt.
+
+The result is frozen and the reader performs no owner writes, provider requests, phase transitions, task reapplication or receipt creation. It uses the same Database/Platform/Identity that Application constructs and exposes no transport route or configurable authority flag. It does not enable the default-unconfigured offline commit guard.
+
+A complete root coordinator must still independently qualify current trust/revocation and source/provider evidence, join the receipt to matching Billing/Integration owner results and provenance, and obtain separate current authority for any further action. A Platform task receipt alone does not prove the intended owning-module operation happened. The generic synthetic guard fixtures demonstrate native receipt recovery only.
+
+Verification is recorded separately in the [local recovery receipt](evidence/LOCAL-OFFLINE-COMMIT-RECOVERY-2026-10-03.md). The original failed fixture replay is retained privately. All product tasks and gates remain NOT VERIFIED; the full system and qualified offline coordinator remain incomplete.
