@@ -1,4 +1,5 @@
 import "./stock-journal-original-retry-browser.ts";
+import "./stock-journal-retry-follow-up-browser.ts";
 import "./stock-journal-original-cancellation-browser.ts";
 import "./stock-journal-reconciliation-browser.ts";
 import "./stock-journal-permissions-browser.ts";

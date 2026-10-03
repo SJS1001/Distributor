@@ -68,6 +68,7 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
   }
   const servers: Awaited<ReturnType<typeof createHttp>>[] = [];
   const originalRetries = [];
+  const retryFollowUps = [];
   for (let n = 0; n < 7; n++) {
     const x = journalFixture({ after }, n === 1 ? "US" : "CA"),
       journal = x.approve(),
@@ -99,6 +100,68 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
       reason: "Synthetic separate cancellation review",
     });
     originalRetries.push([x.f.app, 3202 + n] as const);
+  }
+  for (let n = 0; n < 5; n++) {
+    const x = journalFixture({ after }, n === 1 || n === 4 ? "US" : "CA"),
+      original = x.approve(),
+      originalLease = x.j.claim(x.f.actor, original.id, "write")!;
+    x.j.beforeWrite(originalLease);
+    x.j.unresolved(originalLease, "transport-uncertain");
+    const proof = x.j.recordOriginalCancellationEvidence(
+      x.f.actor,
+      "root-proof",
+      {
+        journalId: original.id,
+        requestRef: original.requestRef,
+        reviewHash: x.j.originalCancellationEvidenceReview(
+          x.f.actor,
+          original.id,
+        ).reviewHash,
+        externalRef: "synthetic:root-final-case",
+        evidence: "Synthetic final root cancellation and verified non-posting",
+        cancellationFinal: true,
+        nonPostingVerified: true,
+        noLaterPosting: true,
+      },
+    );
+    x.j.cancelOriginalAttempt(x.reviewer, "root-cancel", {
+      journalId: original.id,
+      requestRef: original.requestRef,
+      evidenceHash: proof.evidence.evidenceHash,
+      reason: "Synthetic independent root cancellation",
+    });
+    const ready = x.j.prepareOriginalRetry(x.f.actor, "retry-follow-up", {
+      journalId: original.id,
+      reviewHash: x.j.originalRetryReview(x.f.actor, original.id).reviewHash,
+      reason: "Synthetic separately reviewed follow-up attempt",
+    });
+    const child = x.j.decide(x.reviewer, "retry-follow-up-approve", {
+        journalId: ready.id,
+        reviewHash: ready.reviewHash,
+        decision: "approve",
+        reason: "Synthetic independent retry approval",
+      }),
+      lease = x.j.claim(x.f.actor, child.id, "write")!;
+    x.j.beforeWrite(lease);
+    x.j.unresolved(lease, "transport-uncertain");
+    if (n >= 3) {
+      const r = x.f.app.identity.organizationResidency,
+        current = r.current(x.f.actor);
+      r.choose(x.f.actor, "retry-renewed-choice", {
+        region: x.f.app.identity.region,
+        revision: current.choice.revision,
+        mode: "provider-exception",
+        realm: "12345",
+        acknowledgment: "Synthetic renewed retry ledger choice",
+        acceptance: {
+          disclosureId: current.terms!.id,
+          disclosureHash: current.terms!.hash,
+          representative: "Synthetic finance",
+          evidenceRef: "synthetic:retry-choice",
+        },
+      });
+    }
+    retryFollowUps.push([x.f.app, 3209 + n] as const);
   }
   const cancellationCA = cancellationFixture({ after });
   const cancellationUS = cancellationFixture({ after }, "US");
@@ -180,6 +243,7 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     ...reconciliations,
     ...originalCancellations,
     ...originalRetries,
+    ...retryFollowUps,
   ] as const) {
     const http = await createHttp(app, { origin: `http://127.0.0.1:${port}` });
     await http.listen({ host: "127.0.0.1", port });

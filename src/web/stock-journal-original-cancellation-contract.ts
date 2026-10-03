@@ -4,6 +4,10 @@ import type {
   OriginalCancellationInput,
 } from "../server/stock-journal-original-cancellation.ts";
 import { canonical, sha } from "./stock-journal-reconciliation-contract.ts";
+import {
+  selection,
+  type Journal,
+} from "./stock-journal-permission-contract.ts";
 export type EvidenceReview = ReturnType<
   StockJournalDelivery["originalCancellationEvidenceReview"]
 >;
@@ -155,12 +159,11 @@ export async function checkedAttempt(
     throw Error(storageError);
   return a;
 }
-function sameJournal(raw: unknown, s: Snapshot, state: string) {
+async function sameJournal(raw: unknown, s: Snapshot, state: string) {
   if (!object(raw)) return false;
-  return (
+  if (!(
     raw.id === s.journalId &&
     raw.leg === "original" &&
-    raw.attemptId === null &&
     raw.sourceId === s.sourceId &&
     raw.sourceHash === s.sourceHash &&
     raw.postingDate === s.postingDate &&
@@ -172,7 +175,16 @@ function sameJournal(raw: unknown, s: Snapshot, state: string) {
     raw.externalId === null &&
     raw.leaseStarted === null &&
     raw.leaseMode === null
-  );
+  ))
+    return false;
+  try {
+    // Includes strict original-retry predecessor shape, identity and plan hash.
+    // The native owner independently verifies every retained ancestor/history.
+    await selection(raw as Journal, s.orgId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 export async function checkedEvidenceReview(
   raw: unknown,
@@ -184,7 +196,7 @@ export async function checkedEvidenceReview(
     !keys(r, "journal,reviewHash,snapshot") ||
     !validSnapshot(r.snapshot, orgId) ||
     r.snapshot.journalId !== journalId ||
-    !sameJournal(r.journal, r.snapshot, "unknown") ||
+    !(await sameJournal(r.journal, r.snapshot, "unknown")) ||
     (await sha(r.snapshot)) !== r.reviewHash
   )
     throw Error(
@@ -203,7 +215,7 @@ export async function checkedCancellationReview(
     !keys(r, "canConfirm,evidence,journal") ||
     !validSnapshot(r.evidence?.snapshot, orgId) ||
     r.evidence.snapshot.journalId !== journalId ||
-    !sameJournal(r.journal, r.evidence.snapshot, "unknown") ||
+    !(await sameJournal(r.journal, r.evidence.snapshot, "unknown")) ||
     !(await checkedProof(r.evidence, r.evidence.snapshot)) ||
     r.canConfirm !== (r.evidence.recordedBy !== actorId)
   )
@@ -220,7 +232,7 @@ export async function validReceipt(raw: unknown, a: Attempt, actorId: string) {
     >;
     return (
       keys(r, "evidence,journal") &&
-      sameJournal(r.journal, a.snapshot, "unknown") &&
+      (await sameJournal(r.journal, a.snapshot, "unknown")) &&
       validProof(r.evidence, a.snapshot) &&
       r.evidence.recordedBy === actorId &&
       canonical(r.evidence.input) === canonical(a.payload) &&
@@ -230,7 +242,7 @@ export async function validReceipt(raw: unknown, a: Attempt, actorId: string) {
   const r = raw as ReturnType<StockJournalDelivery["cancelOriginalAttempt"]>,
     c = r.cancellation;
   return (
-    sameJournal(r, a.snapshot, "cancelled") &&
+    (await sameJournal(r, a.snapshot, "cancelled")) &&
     keys(c, "body,hash,recordedAt,recordedBy,revision") &&
     c.recordedBy === actorId &&
     time(c.recordedAt) &&
