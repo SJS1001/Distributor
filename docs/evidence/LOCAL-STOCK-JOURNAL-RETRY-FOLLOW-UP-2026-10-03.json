@@ -1193,9 +1193,18 @@
     "private_signin_mode": "600"
   },
   "publication": {
-    "status": "Verified snapshot; normal push authorized, remote equality check follows",
+    "source_commit": "97b4c830e1e614ebcad263e3b98f67ca592b358b",
     "remote": "https://github.com/SJS1001/Distributor.git",
+    "branch": "codex/local-distributor-checkpoint",
+    "normal_push": true,
+    "exact_remote_head_verified": true,
+    "checkout_clean_after_source_push": true,
+    "committed_tested_inputs": 544,
+    "committed_runtime_source_inputs": 275,
+    "current_generated_assets": 3,
+    "private_evidence_hashes": 60,
     "workflows": 0,
-    "actions_runs": 0
+    "actions_runs": 0,
+    "note": "Publication metadata follows in a companion documentation commit; tested bytes remain unchanged"
   }
 }
