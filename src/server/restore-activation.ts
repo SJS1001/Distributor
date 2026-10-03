@@ -1,6 +1,13 @@
 import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { lstatSync } from "node:fs";
-import { canonical, check, digest, text, type Actor } from "./core.ts";
+import {
+  canonical,
+  check,
+  digest,
+  text,
+  DomainError,
+  type Actor,
+} from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { RESTORE_ACTIVATION_DDL } from "./restore-activation-schema.ts";
 import {
@@ -19,6 +26,10 @@ import {
 import type { Integration } from "./integration.ts";
 import type { CarrierBookings } from "./carrier-bookings.ts";
 import type { Identity } from "./iam.ts";
+import {
+  classifyOfflineReleaseHistory,
+  type OfflineReleaseHistory,
+} from "./restore-offline-phase.ts";
 import type {
   IntegrationDispositionReceipts,
   RestoreNativeDispositionTarget,
@@ -362,6 +373,87 @@ export class RestoreActivation {
       "SELECT * FROM platform_restore_releases WHERE state NOT IN('rolled-back','superseded')",
     );
     return row ? this.decode(row) : null;
+  }
+  /** Native same-writer projection, including terminal releases. Classification
+   * is retained history only; it establishes neither authority nor isolation. */
+  offlineReleaseHistoryInTransaction() {
+    this.database.requireTransaction();
+    check(
+      this.recovery(),
+      "RECOVERY_HOLD",
+      "Offline history requires a retained raw recovery generation.",
+    );
+    // Refuse oversized retained bodies inside SQLite before materializing the
+    // complete record set into JavaScript. The existing writer pins both reads.
+    const size = this.store.get(
+      `SELECT COUNT(*) AS count,
+        COALESCE(SUM(length(CAST(record AS BLOB))),0) AS bytes,
+        COALESCE(MAX(length(CAST(record AS BLOB))),0) AS largest
+       FROM (SELECT record FROM platform_restore_releases ORDER BY id LIMIT 1001)`,
+    );
+    check(
+      size &&
+        typeof size.count === "number" &&
+        size.count <= 1000 &&
+        typeof size.bytes === "number" &&
+        size.bytes <= 64 * 1024 * 1024 &&
+        typeof size.largest === "number" &&
+        size.largest <= 8 * 1024 * 1024,
+      "RESTORE_STATE",
+      "Offline review requires complete bounded release history.",
+    );
+    const rows = this.store.all(
+      "SELECT * FROM platform_restore_releases ORDER BY id LIMIT 1001",
+    );
+    check(
+      rows.length <= 1000,
+      "RESTORE_STATE",
+      "Offline review requires complete bounded release history.",
+    );
+    let bytes = 0;
+    const releases: OfflineReleaseHistory[] = rows.map((row) => {
+      check(
+        typeof row.record === "string" &&
+          Buffer.byteLength(row.record, "utf8") <= 8 * 1024 * 1024,
+        "RESTORE_STATE",
+        "Retained release record exceeds offline review bounds.",
+      );
+      bytes += Buffer.byteLength(row.record, "utf8");
+      check(
+        bytes <= 64 * 1024 * 1024,
+        "RESTORE_STATE",
+        "Complete release history exceeds offline review bounds.",
+      );
+      let r: RestoreRelease;
+      try {
+        r = this.decode(row);
+      } catch {
+        throw new DomainError(
+          "RESTORE_STATE",
+          "Retained release journal cannot be decoded consistently.",
+        );
+      }
+      return {
+        id: r.id,
+        binding: r.binding,
+        revision: r.revision,
+        state: r.state,
+        phase: r.phase,
+        at: r.at,
+        history: r.history,
+        ...(Object.hasOwn(r, "forwardRecoveryRequired")
+          ? { forwardRecoveryRequired: r.forwardRecoveryRequired }
+          : {}),
+      };
+    });
+    const classification = classifyOfflineReleaseHistory(releases);
+    // Every object comes from bounded native JSON, never an operator callback.
+    for (const release of releases) {
+      release.history.forEach(Object.freeze);
+      Object.freeze(release.history);
+      Object.freeze(release);
+    }
+    return Object.freeze({ releases: Object.freeze(releases), classification });
   }
   private decode(row: { [key: string]: unknown }): RestoreRelease {
     const record = String(row.record);
