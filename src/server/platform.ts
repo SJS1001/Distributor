@@ -62,6 +62,46 @@ export class Platform {
     `),
     );
   }
+  /** Historical raw tuple only: no activation permission or source qualification. */
+  rawRecoveryHoldInTransaction() {
+    this.database.requireTransaction();
+    // Aggregate fixed numeric facts before fetching any variable-width field.
+    const sizes = this.store.get<{ n: number; bad: number; bytes: number }>(
+      `SELECT COUNT(*) AS n, COALESCE(MAX(CASE WHEN id!=1 OR
+        typeof(snapshot_hash)!='text' OR typeof(restored_at)!='text' OR typeof(source_completed_at)!='text' OR
+        length(CAST(snapshot_hash AS BLOB))!=64 OR length(CAST(restored_at AS BLOB))!=24 OR
+        length(CAST(source_completed_at AS BLOB))!=24 THEN 1 ELSE 0 END),0) AS bad,
+        COALESCE(SUM(length(CAST(snapshot_hash AS BLOB))+length(CAST(restored_at AS BLOB))+
+        length(CAST(source_completed_at AS BLOB))),0) AS bytes FROM platform_recovery`,
+    )!;
+    check(
+      sizes.n <= 1 && sizes.bad === 0 && sizes.bytes <= 112,
+      "RAW_RECOVERY_HOLD",
+      "Raw recovery hold exceeds its exact bounded tuple.",
+    );
+    if (sizes.n === 0) return null;
+    const row = this.store.get<{
+      id: number;
+      snapshot_hash: string;
+      restored_at: string;
+      source_completed_at: string;
+    }>(
+      "SELECT id,snapshot_hash,restored_at,source_completed_at FROM platform_recovery",
+    )!;
+    const iso = (value: string) =>
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
+      Number.isFinite(Date.parse(value)) &&
+      new Date(value).toISOString() === value;
+    check(
+      row.id === 1 &&
+        /^[a-f0-9]{64}$/.test(row.snapshot_hash) &&
+        iso(row.restored_at) &&
+        iso(row.source_completed_at),
+      "RAW_RECOVERY_HOLD",
+      "Raw recovery hold identity or timestamps are malformed.",
+    );
+    return Object.freeze({ ...row });
+  }
   recoveryHold() {
     const hold =
       this.store.get("SELECT * FROM platform_recovery WHERE id=1") ?? null;

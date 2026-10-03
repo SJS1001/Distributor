@@ -844,6 +844,19 @@ const malformedPoints = [
   "0700000000000000000000000000000000000000000000000000000000000000",
   "0800000000000000000000000000000000000000000000000000000000000000",
 ];
+// Independently generated with Python affine Edwards addition as B + [i]T,
+// i=1..7, where B is the standard base point and T is the order-eight point
+// above. For every vector [8]P is nonidentity but [L]P is nonidentity, too.
+// These valid curve encodings expose a subgroup gap, not a malformed point.
+const mixedTorsionPoints = [
+  "98519eadf35b995233b51b5cd23e9cc5a28b639b5a4af0ec903cb960d81b7819",
+  "9bad33f580df7ecc49df5342bac8145d5bedc40f573d1b067f3c4ce449689a15",
+  "da99e28ba529cdde35a25fba9059e78ecaee239f99755b9b1aa4f65df00803e2",
+  "9599999999999999999999999999999999999999999999999999999999999999",
+  "55ae61520ca466adcc4ae4a32dc1633a5d749c64a5b50f136fc3469f27e487e6",
+  "5252cc0a7f208133b620acbd4537eba2a4123bf0a8c2e4f980c3b31bb69765ea",
+  "13661d745ad63221ca5da0456fa618713511dc60668aa464e55b09a20ff7fc1d",
+];
 function pointPem(hex: string): string {
   return (
     "-----BEGIN PUBLIC KEY-----\n" +
@@ -862,6 +875,41 @@ test("roster decoding rejects every torsion point and malformed compressed point
       hex,
     );
   }
+});
+
+test("mixed-torsion roster points fail the local prime-subgroup policy", () => {
+  for (const hex of mixedTorsionPoints) {
+    const v = sample();
+    v.roster[0]!.publicKey = pointPem(hex);
+    assert.throws(
+      () => offlineApprovalRosterFingerprint(v.roster),
+      DomainError,
+      hex,
+    );
+  }
+});
+
+test("mixed-torsion signature R never reaches a permissive native verifier", (t) => {
+  let calls = 0;
+  const native = t.mock.method(crypto, "verify", () => {
+    calls++;
+    return true;
+  });
+  syncBuiltinESMExports();
+  try {
+    for (const hex of mixedTorsionPoints) {
+      const v = sample();
+      const bytes = Buffer.from(v.approvals[0]!.signature, "base64");
+      Buffer.from(hex, "hex").copy(bytes, 0);
+      v.approvals[0]!.signature = bytes.toString("base64");
+      rejected(v);
+      assert.equal(calls, 0, hex);
+    }
+  } finally {
+    native.mock.restore();
+    syncBuiltinESMExports();
+  }
+  run(sample());
 });
 
 test("invalid R/scalars never reach even a permissive native verifier", (t) => {

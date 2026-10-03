@@ -139,6 +139,19 @@ function littleEndian32(bytes: Uint8Array): bigint {
   for (let i = 31; i >= 0; i--) value = (value << 8n) + BigInt(bytes[i]!);
   return value;
 }
+type ExtendedPoint = readonly [bigint, bigint, bigint, bigint];
+function addPoints(p: ExtendedPoint, q: ExtendedPoint): ExtendedPoint {
+  // Complete extended-coordinate addition, RFC 8032 section 5.1.4.
+  const a = mod((p[1] - p[0]) * (q[1] - q[0])),
+    b = mod((p[1] + p[0]) * (q[1] + q[0])),
+    c = mod(2n * curveD * p[3] * q[3]),
+    d = mod(2n * p[2] * q[2]);
+  const e = mod(b - a),
+    f = mod(d - c),
+    g = mod(d + c),
+    h = mod(b + a);
+  return [mod(e * f), mod(g * h), mod(f * g), mod(e * h)];
+}
 function strictPoint(bytes: Uint8Array): void {
   // RFC 8032 sections 5.1.1/5.1.3: decode a canonical point on edwards25519.
   // This is public-data validation, not signing or a replacement verifier.
@@ -155,25 +168,23 @@ function strictPoint(bytes: Uint8Array): void {
   requireValue(mod(x * x) === xSquared && !(x === 0n && signBit === 1n));
   if ((x & 1n) !== signBit) x = fieldPrime - x;
 
-  // Explicit local strict policy: exclude all eight small-order points in A/R.
-  // Three projective doublings (RFC 8032 section 5.1.4) compute [8]P;
-  // reject the neutral point (0:Z:Z). No full signature equation is evaluated.
-  let X = x,
-    Y = y,
-    Z = 1n;
-  for (let i = 0; i < 3; i++) {
-    const a = mod(X * X),
-      b = mod(Y * Y),
-      c = mod(2n * Z * Z);
-    const h = mod(a + b),
-      e = mod(h - (X + Y) * (X + Y));
-    const g = mod(a - b),
-      f = mod(c + g);
-    X = mod(e * f);
-    Y = mod(g * h);
-    Z = mod(f * g);
+  // Local recovery policy requires nonidentity prime-subgroup A/R, stricter
+  // than just excluding small-order points. [8]P != identity still admits
+  // a prime-subgroup point plus nonzero torsion. Require [L]P == identity.
+  // This validates public data only; native crypto still verifies signatures.
+  requireValue(!(x === 0n && y === 1n));
+  let point: ExtendedPoint = [x, y, 1n, mod(x * y)];
+  let product: ExtendedPoint = [0n, 1n, 1n, 0n];
+  for (let bit = 0; bit < 253; bit++) {
+    if ((scalarOrder >> BigInt(bit)) & 1n) product = addPoints(product, point);
+    point = addPoints(point, point);
   }
-  requireValue(Z !== 0n && !(X === 0n && Y === Z));
+  requireValue(
+    product[2] !== 0n &&
+      product[0] === 0n &&
+      product[1] === product[2] &&
+      product[3] === 0n,
+  );
 }
 function signature(value: unknown): Buffer {
   requireValue(

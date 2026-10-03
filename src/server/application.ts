@@ -1,4 +1,5 @@
 import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
+import { CarrierOfflineMemberReview } from "./carrier-offline-member-review.ts";
 import type { RestoreNativeDispositionConfiguration } from "./restore-activation.ts";
 import { salesControls } from "./sales-controls.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
@@ -31,6 +32,7 @@ export class Application {
   database: Database;
   platform!: Platform;
   platformOfflineRefundReview!: PlatformOfflineRefundReviewReader;
+  carrierOfflineMemberReview!: CarrierOfflineMemberReview;
   identity!: Identity;
   catalog!: Catalog;
   inventory!: Inventory;
@@ -141,6 +143,11 @@ export class Application {
           );
           this.platformOfflineRefundReview =
             new PlatformOfflineRefundReviewReader(this.database, this.identity);
+          this.carrierOfflineMemberReview = new CarrierOfflineMemberReview(
+            this.database,
+            this.identity,
+            this.platform,
+          );
           this.platform.configureReadAuthority((actor) => {
             const current = this.identity.currentActor(actor);
             check(
