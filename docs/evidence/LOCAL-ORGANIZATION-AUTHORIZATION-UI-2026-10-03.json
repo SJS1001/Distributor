@@ -2151,8 +2151,19 @@
     "credentials_published": false
   },
   "publication": {
-    "status": "authorized normal source/test/documentation snapshot; pending exact remote verification",
+    "status": "source/test/documentation snapshot published; exact remote HEAD equality and clean checkout verified",
+    "source_commit": "3c0b9c18524505cce7af58bf18ac167ec232f56c",
+    "branch": "codex/local-distributor-checkpoint",
     "workflows": 0,
-    "actions_runs": 0
+    "actions_runs": 0,
+    "planning_markdown_files": 256,
+    "planning_local_links": 1454,
+    "planning_scope": "structure only",
+    "staged_audit": {
+      "tested_inputs": 557,
+      "runtime_inputs": 283,
+      "private_evidence_hashes": 79
+    },
+    "record": "companion documentation commit; tested bytes unchanged"
   }
 }
