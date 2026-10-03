@@ -1193,5 +1193,19 @@
     "frontend_http_status": 200,
     "backend_http_status": 200,
     "proxy_health_http_status": 200
+  },
+  "publication": {
+    "source_commit": "674992abeb3fa6014af8825211bef16fd45b8de0",
+    "remote": "https://github.com/SJS1001/Distributor.git",
+    "branch": "codex/local-distributor-checkpoint",
+    "exact_remote_head_verified": true,
+    "checkout_clean_at_source_verification": true,
+    "tested_inputs_verified": 540,
+    "runtime_source_inputs_verified": 273,
+    "generated_assets_verified": 3,
+    "private_evidence_verified": 51,
+    "workflows": 0,
+    "actions_runs": 0,
+    "note": "Publication metadata follows in a companion documentation commit; tested inputs unchanged."
   }
 }
