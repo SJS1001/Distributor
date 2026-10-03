@@ -128,6 +128,9 @@ type Frozen<T> = T extends object
 export type OfflineFailedRefundComparison = Frozen<{
   version: 1;
   native: OfflineRefundNative;
+  /** Exact captured assertions for a later native join, never qualified truth. */
+  refundRequest: OfflineFailedRefundEvidenceInput["refundRequest"];
+  candidateHistory: OfflineRefundEmptyHistory;
   binding: OfflineFailedRefundEvidenceInput["binding"];
   request: { body: string; bodyHash: string; idempotencyKey: string };
   outcome: {
@@ -541,6 +544,8 @@ export function compareOfflineFailedRefundEvidence(
   return freeze({
     version: 1 as const,
     native: n,
+    refundRequest: request,
+    candidateHistory: h,
     binding,
     request: {
       body,
