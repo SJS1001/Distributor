@@ -43,6 +43,57 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     ...policy(1),
     closedThrough: "2026-10-01",
   });
+  const permissions = [];
+  for (let n = 0; n < 10; n++) {
+    const p = journalFixture({ after }, n === 1 ? "US" : "CA"),
+      approved = p.approve();
+    if (n === 1)
+      p.j.unresolved(
+        p.j.claim(p.f.actor, approved.id, "write")!,
+        "transport-uncertain",
+      );
+    const r = p.f.app.identity.organizationResidency,
+      current = r.current(p.f.actor);
+    r.choose(p.f.actor, "browser-renewed-choice", {
+      region: p.f.app.identity.region,
+      revision: current.choice.revision,
+      mode: "provider-exception",
+      realm: "12345",
+      acknowledgment: "Synthetic renewed ledger choice",
+      acceptance: {
+        disclosureId: current.terms!.id,
+        disclosureHash: current.terms!.hash,
+        representative: "Synthetic finance",
+        evidenceRef: "synthetic:browser-choice",
+      },
+    });
+    if (n === 1 || n === 9) {
+      const v = p.j.permissionReview(p.f.actor, approved.id);
+      for (let i = 0; i < (n === 9 ? 22 : 1); i++) {
+        const review = p.j.preparePermission(
+          p.f.actor,
+          `browser-permission-review-${i}`,
+          {
+            journalId: approved.id,
+            reviewHash: approved.reviewHash,
+            previousPermissionHash: v.previousPermissionHash,
+            authority: v.authority,
+            mode: v.mode,
+            reason: `Synthetic retained permission review ${i}`,
+          },
+        );
+        if (n === 9 && i < 21)
+          p.j.decidePermission(p.reviewer, `browser-permission-reject-${i}`, {
+            journalId: approved.id,
+            permissionReviewId: review.id,
+            permissionReviewHash: review.reviewHash,
+            decision: "reject",
+            reason: "Synthetic historical separate rejection",
+          });
+      }
+    }
+    permissions.push([p.f.app, 3177 + n] as const);
+  }
   for (const [app, port] of [
     [queue.f.app, 3168],
     [history.f.app, 3169],
@@ -53,6 +104,7 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     [preparationDates.f.app, 3174],
     [preparationCorrection.f.app, 3175],
     [preparationWithdrawal.f.app, 3176],
+    ...permissions,
   ] as const) {
     const http = await createHttp(app, { origin: `http://127.0.0.1:${port}` });
     await http.listen({ host: "127.0.0.1", port });

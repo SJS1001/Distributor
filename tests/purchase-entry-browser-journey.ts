@@ -311,6 +311,9 @@ test("browser: another tab adopts retained purchase details without submitting i
   await login(page);
   const before = await purchases(page);
   await open(page);
+  await page
+    .getByLabel("Supplier", { exact: true })
+    .selectOption({ label: "Z Supplier 00" });
   await search(page, "BUY-30");
   await edit(page, "BUY-30", "1", "1");
   await page
@@ -319,6 +322,11 @@ test("browser: another tab adopts retained purchase details without submitting i
   const other = await context.newPage();
   await login(other, true);
   await open(other);
+  // The dialog can open before the workspace's supplementary supplier read.
+  // Select the intended fixture explicitly instead of relying on its default.
+  await other
+    .getByLabel("Supplier", { exact: true })
+    .selectOption({ label: "Z Supplier 00" });
   await search(other, "BUY-31");
   await edit(other, "BUY-31", "1", "2");
   await other
