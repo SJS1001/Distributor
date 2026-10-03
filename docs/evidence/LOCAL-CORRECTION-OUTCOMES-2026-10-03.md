@@ -32,4 +32,4 @@ The [coding inventory](../CODING-REMAINDER.md) retains dependent transport, furt
 
 ## Publication
 
-Publication review and normal authorized branch push remain pending. A companion documentation record will identify the published source commit and fresh remote/workflow checks.
+Source/test/documentation commit `2265fdbec50161fe3bef459b66a1fa723c8b9a15` was normally pushed to the authorized current branch. Read-only verification confirmed exact remote equality and a clean checkout, with zero GitHub Actions workflows and zero Actions runs. Staged-byte checks matched all 490 tested source/configuration inputs and 19 retained private evidence hashes. No credential-pattern match, runtime artifact, dependency/license change or workflow file was included. This publication record is a companion documentation change; it does not revise tested source or verify product gates.
