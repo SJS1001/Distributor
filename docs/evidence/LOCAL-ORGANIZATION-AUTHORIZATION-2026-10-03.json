@@ -1171,5 +1171,13 @@
     "schema_version": 13,
     "providers_enabled": false,
     "credentials_published": false
+  },
+  "publication": {
+    "source_commit": "6e9af0197f572ee13230183be7990cfc1e222a8c",
+    "remote_source_head_matches": true,
+    "worktree_clean_at_source_verification": true,
+    "workflows": 0,
+    "actions_runs": 0,
+    "record": "Companion documentation commit; tested input bytes unchanged"
   }
 }
