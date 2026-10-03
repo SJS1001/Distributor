@@ -624,5 +624,17 @@
     "Actual provider/device/residency/security/load/recovery/operator acceptance incomplete; static diagnostics and bundle warning remain",
     "All 44 tasks/ten gates remain NOT VERIFIED; full system incomplete"
   ],
-  "ci_started": false
+  "ci_started": false,
+  "publication": {
+    "source_commit": "9255fe09f25570fde344c153b7aa7f60365c44e9",
+    "remote_branch": "codex/local-distributor-checkpoint",
+    "remote_equals_source_commit": true,
+    "checkout_clean_after_source_push": true,
+    "workflows": 0,
+    "actions_runs": 0,
+    "matched_tested_inputs": 494,
+    "matched_private_evidence": 30,
+    "matched_assets": 3,
+    "companion_documentation_record": true
+  }
 }
