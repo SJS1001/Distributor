@@ -49,3 +49,7 @@ Strict session/origin/CSRF commands with durable exact-attempt keys: `accounting
 Actual company accounting basis, periods, material-error treatment, approval authority, mappings, external cancellation/posting identity, duplicate-posting review and independent human ledger reconciliation remain qualification evidence. See the [correction checks](evidence/LOCAL-CORRECTIONS-RESTORE-REVIEW-2026-10-03.md) and [ledger observation checks](evidence/LOCAL-CORRECTION-OUTCOMES-2026-10-03.md).
 
 The [separate retry receipt](evidence/LOCAL-CORRECTION-RETRIES-2026-10-03.md) records current synthetic checks and remaining limits.
+
+## Sandbox protocol groundwork
+
+The disabled [QuickBooks stock journal candidate](QUICKBOOKS-STOCK-JOURNAL.md) preserves the exact approved reversal/replacement file and date in synthetic protocol checks. It has no native delivery or outcome-history binding. Organization-owned consent, current authority, durable leases/references and reversal-before-replacement controls remain required; the candidate cannot establish native ledger posting.

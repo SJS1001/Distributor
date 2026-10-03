@@ -39,6 +39,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, independent review, retained ledger observations and separately approved cancelled-attempt retries |
 | [Isolated restore review](docs/RESTORE-REVIEW.md) | Source-bound reconciliation dossier, private evidence byte verification, independent signed approvals and retained recovery hold |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
+| [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks; organization-owned native delivery remains pending |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |
 | [Bulk count queue and review duties](docs/COUNT-REVIEWS.md) | Scoped twenty-count pages, state filters, exact read retries, organization policy and immutable decision history |
