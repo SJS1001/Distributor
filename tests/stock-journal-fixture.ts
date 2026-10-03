@@ -17,8 +17,9 @@ export function journalFixture(
   region: "CA" | "US" = "CA",
   correction = false,
   movementDates?: readonly string[],
+  currency?: "CAD" | "USD",
 ) {
-  const f = fixture(t, { eventReports: false }, region);
+  const f = fixture(t, { eventReports: false }, region, currency);
   if (movementDates) {
     const db = new DatabaseSync(f.path);
     try {

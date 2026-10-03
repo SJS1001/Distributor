@@ -90,6 +90,7 @@ export function fixture(
     eventReports?: boolean;
   } = {},
   region: Region = "CA",
+  currency: "CAD" | "USD" = region === "CA" ? "CAD" : "USD",
 ) {
   const directory = mkdtempSync(join(tmpdir(), "distributor-"));
   const path = join(directory, "app.db");
@@ -103,7 +104,7 @@ export function fixture(
     "Synthetic Distributor",
     "admin@example.test",
     "long-test-only-password",
-    region === "CA" ? "CAD" : "USD",
+    currency,
   );
   seedDisclosures(app, actor);
   const w1 = app.inventory.createWarehouse(actor, "w1", { name: "Toronto" }).id,

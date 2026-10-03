@@ -1,5 +1,5 @@
 // Synthetic frozen journals only. No receiver transport or actual finance evidence.
-import { journalFixture } from "./stock-journal-fixture.ts";
+import { journalFixture, postedResult } from "./stock-journal-fixture.ts";
 import { createHttp } from "../src/server/http.ts";
 import { policy } from "./cost-correction-fixture.ts";
 import { cancellationFixture } from "./stock-journal-cancellation-fixture.ts";
@@ -27,6 +27,36 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
       history.j.claim(history.f.actor, approved.id, i ? "lookup" : "write")!,
       "transport-uncertain",
     );
+  const reconciliations = [];
+  for (let n = 0; n < 9; n++) {
+    const reconciliation = journalFixture(
+      { after },
+      n === 1 ? "US" : "CA",
+      false,
+      ["2026-10-01", "2026-10-02", "2026-10-03"],
+      n === 3 ? "USD" : undefined,
+    );
+    for (const [i, date] of [
+      "2026-10-01",
+      "2026-10-02",
+      "2026-10-03",
+    ].entries()) {
+      if (n === 3) continue;
+      const journal = reconciliation.approve(
+        { ...reconciliation.make(), postingDate: date },
+        `browser-date-${i}`,
+      );
+      if (n === 2 && i === 2) continue;
+      const lease = reconciliation.j.claim(
+        reconciliation.f.actor,
+        journal.id,
+        "write",
+      )!;
+      reconciliation.j.beforeWrite(lease);
+      reconciliation.j.posted(lease, postedResult(lease, String(500 + i)));
+    }
+    reconciliations.push([reconciliation.f.app, 3187 + n] as const);
+  }
   const servers: Awaited<ReturnType<typeof createHttp>>[] = [];
   const cancellationCA = cancellationFixture({ after });
   const cancellationUS = cancellationFixture({ after }, "US");
@@ -105,6 +135,7 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     [preparationCorrection.f.app, 3175],
     [preparationWithdrawal.f.app, 3176],
     ...permissions,
+    ...reconciliations,
   ] as const) {
     const http = await createHttp(app, { origin: `http://127.0.0.1:${port}` });
     await http.listen({ host: "127.0.0.1", port });

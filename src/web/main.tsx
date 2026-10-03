@@ -56,6 +56,7 @@ import { CanadaPostWarehouse } from "./canada-post.tsx";
 import { CarrierBooking } from "./carrier-booking.tsx";
 import { CheckoutAction } from "./checkout-action.tsx";
 import { AccountingCosts } from "./accounting-costs.tsx";
+import { StockJournalReconciliation } from "./stock-journal-reconciliation.tsx";
 import { StockJournals } from "./stock-journals.tsx";
 import { AccountingBalanceReview } from "./accounting-balance.tsx";
 import { BillingInbox } from "./billing-inbox.tsx";
@@ -3460,6 +3461,13 @@ function App() {
           <>
             {can("finance") && <QuickBooksConnection key={eventViewEpoch} />}
             {can("finance") && <AccountingCosts />}
+            {can("finance") && (
+              <StockJournalReconciliation
+                key={`reconciliation:${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+              />
+            )}
             {can("finance") && (
               <StockJournals
                 key={`${actor.orgId}:${actor.id}`}

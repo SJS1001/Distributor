@@ -1,3 +1,4 @@
+import "./stock-journal-reconciliation-browser.ts";
 import "./stock-journal-permissions-browser.ts";
 import "./stock-journal-preparation-browser.ts";
 import "./stock-journal-cancellation-browser.ts";
