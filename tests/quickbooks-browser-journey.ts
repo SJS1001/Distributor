@@ -44,7 +44,7 @@ test("browser: QuickBooks authorization keeps Strict login cookies, cancels atte
   const billing = async () => {
     await page.getByRole("button", { name: "Billing", exact: true }).click();
     await expect(
-      page.getByRole("region", { name: "QuickBooks connection" }),
+      page.getByRole("region", { name: "QuickBooks connection", exact: true }),
     ).toContainText("Sandbox company 1234");
   };
   await billing();
@@ -60,7 +60,7 @@ test("browser: QuickBooks authorization keeps Strict login cookies, cancels atte
     .getByRole("button", { name: "Cancel connection attempt", exact: true })
     .click();
   await expect(
-    page.getByRole("region", { name: "QuickBooks connection" }),
+    page.getByRole("region", { name: "QuickBooks connection", exact: true }),
   ).toContainText("Connection attempt: canceled");
   await page
     .getByRole("button", { name: "Connect QuickBooks sandbox", exact: true })
@@ -144,7 +144,7 @@ test("browser: QuickBooks authorization keeps Strict login cookies, cancels atte
   await page.getByRole("link", { name: "Return to Distributor" }).click();
   await billing();
   await expect(
-    page.getByRole("region", { name: "QuickBooks connection" }),
+    page.getByRole("region", { name: "QuickBooks connection", exact: true }),
   ).toContainText("Revision 1");
   const connection = page.getByRole("region", {
     name: "QuickBooks connection",

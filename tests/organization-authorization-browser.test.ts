@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -527,7 +527,7 @@ test("organization browser configuration is independent, default disabled and re
   );
 });
 
-test("organization callback refuses safely even with a browser build until its dedicated callback UI is implemented", async (t) => {
+test("disabled organization callback refuses safely even with a browser build", async (t) => {
   const f = setup(t);
   const root = mkdtempSync(join(tmpdir(), "distributor-org-callback-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -551,6 +551,42 @@ test("organization callback refuses safely even with a browser build until its d
   assert.equal(landing.headers["cache-control"], "no-store");
   assert.equal(landing.json().code, "UNAVAILABLE");
   assert.ok(!landing.body.includes("Unrelated existing workspace"));
+  assert.ok(!landing.body.includes("synthetic-private"));
+  assert.equal(calls, 0);
+});
+
+test("enabled organization callback serves its browser shell without provider exchange or callback disclosure", async (t) => {
+  const f = setup(t);
+  const root = mkdtempSync(join(tmpdir(), "distributor-org-callback-enabled-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(
+    join(root, "index.html"),
+    "<html>Organization callback shell</html>",
+  );
+  const http = await createHttp(f.app, {
+    origin,
+    staticRoot: root,
+    organizationQuickbooksBrowser: new OrganizationQuickBooksBrowser(
+      f.app,
+      f.binding,
+      "synthetic-secret",
+      origin,
+    ),
+  });
+  t.after(() => http.close());
+  let calls = 0;
+  mock(t, async () => {
+    calls++;
+    throw Error("No provider IO allowed");
+  });
+  const start = f.flow.begin(f.binding, 0, f.authority, f.session.token);
+  const summary = f.flow.browserStatus(f.binding, f.session.token);
+  assert.deepEqual((summary.attempt as any).authority, f.authority);
+  const landing = await http.inject({ url: callback(start) });
+  assert.equal(landing.statusCode, 200);
+  assert.equal(landing.headers["cache-control"], "no-store");
+  assert.equal(landing.headers["referrer-policy"], "no-referrer");
+  assert.match(landing.body, /Organization callback shell/);
   assert.ok(!landing.body.includes("synthetic-private"));
   assert.equal(calls, 0);
 });
@@ -1039,7 +1075,9 @@ test(
       `${publicOrigin}/quickbooks/organization/callback`,
       { signal: AbortSignal.timeout(1000) },
     );
-    assert.equal(landing.status, 503);
+    assert.equal(landing.status, existsSync("dist/index.html") ? 200 : 503);
+    assert.equal(landing.headers.get("cache-control"), "no-store");
+    assert.equal(landing.headers.get("referrer-policy"), "no-referrer");
     const exit = once(child, "exit");
     child.kill("SIGTERM");
     const [code, signal] = await exit;

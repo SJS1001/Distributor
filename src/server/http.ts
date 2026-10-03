@@ -4058,14 +4058,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.body.revision,
       ),
   );
-  // This cross-site GET never exchanges a code; completion requires the original
-  // live login, exact same-origin POST and CSRF. The browser UI is a separate step.
+  // Cross-site landing only serves the dedicated UI; completion remains an
+  // explicit same-origin CSRF POST bound to the original live login.
   http.get("/quickbooks/organization/callback", async (_request, reply) => {
     reply.header("Referrer-Policy", "no-referrer");
-    return reply.code(503).send({
-      code: "UNAVAILABLE",
-      message: "Organization browser callback controls are not available yet.",
-    });
+    if (!options.organizationQuickbooksBrowser || !existsSync(root))
+      return reply.code(503).send({
+        code: "UNAVAILABLE",
+        message: "Organization browser connection is unavailable.",
+      });
+    reply.header("Cache-Control", "no-store");
+    return reply.sendFile("index.html", { cacheControl: false });
   });
   // The cross-site GET performs no exchange. The page removes the query before
   // an explicit authenticated same-origin POST; Strict cookies remain Strict.
@@ -4076,7 +4079,8 @@ export async function createHttp(app: Application, options: HttpOptions) {
         code: "UNAVAILABLE",
         message: "Build the browser application before connecting QuickBooks.",
       });
-    return reply.sendFile("index.html");
+    reply.header("Cache-Control", "no-store");
+    return reply.sendFile("index.html", { cacheControl: false });
   });
   if (existsSync(root)) {
     await http.register(staticFiles, { root, index: "index.html" });

@@ -1,3 +1,4 @@
+import { organizationQuickBooksBrowser } from "./organization-quickbooks-browser-fixture.ts";
 import { stockJournalBrowser } from "./stock-journal-browser-fixture.ts";
 import { costCorrectionBrowser } from "./cost-correction-browser-fixture.ts";
 import { pdfBoundaryBrowser } from "./pdf-browser-fixture.ts";
@@ -970,6 +971,9 @@ const stockJournalHttp = await stockJournalBrowser((fn) => cleanup.push(fn));
 const costCorrectionHttp = await costCorrectionBrowser((fn) =>
   cleanup.push(fn),
 );
+const organizationAuthorizationHttp = await organizationQuickBooksBrowser(
+  (fn) => cleanup.push(fn),
+);
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -988,6 +992,7 @@ const http = await createHttp(f.app, {
 await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
   await http.close();
+  for (const server of organizationAuthorizationHttp) await server.close();
   await stockJournalHttp.close();
   await costCorrectionHttp.close();
   await paymentHttp.close();

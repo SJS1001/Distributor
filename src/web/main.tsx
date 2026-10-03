@@ -1,4 +1,8 @@
 import {
+  OrganizationQuickBooksConnection,
+  OrganizationQuickBooksCallback,
+} from "./organization-quickbooks-authorization.tsx";
+import {
   CountReview,
   type CountSelection,
   type CountKind,
@@ -3460,6 +3464,12 @@ function App() {
         {page === "Billing" && (
           <>
             {can("finance") && <QuickBooksConnection key={eventViewEpoch} />}
+            {can("finance") && (
+              <OrganizationQuickBooksConnection
+                key={`org-oauth:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
+                orgId={actor.orgId}
+              />
+            )}
             {can("finance") && <AccountingCosts />}
             {can("finance") && (
               <StockJournalReconciliation
@@ -6425,6 +6435,8 @@ createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     {location.pathname === "/quickbooks/callback" ? (
       <QuickBooksCallback />
+    ) : location.pathname === "/quickbooks/organization/callback" ? (
+      <OrganizationQuickBooksCallback />
     ) : (
       <App />
     )}

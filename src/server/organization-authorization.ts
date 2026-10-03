@@ -283,7 +283,12 @@ export class OrganizationLedgerAuthorization {
         realm: binding.realm,
         scope: "organization" as const,
         credentials: current.credentials,
-        attempt: row ? this.metadata(this.row(binding, row.id)) : null,
+        attempt: row
+          ? {
+              ...this.metadata(this.row(binding, row.id)),
+              authority: JSON.parse(row.authority) as LedgerAuthority,
+            }
+          : null,
       };
     });
   }
