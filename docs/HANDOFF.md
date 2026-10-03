@@ -2,6 +2,8 @@
 
 ## Parallel cloud coding expansion — 2026-10-03
 
+- Published reviewed common contract and current cloud ownership in `640b8741188e8dc4996c2050d334af85e8d50e90` on `origin/codex/local-distributor-checkpoint`; exact remote SHA matches local and the checkout was clean. This is a document proposal, not new recovery implementation or a verified gate. Existing coordination monitoring remains in place; continue collecting the three active owned results.
+
 - Root notified the existing Platform executor of the new T1 consumer ownership and requested its concrete typed API/configuration in delivery; no scope change or duplicate executor. Common contract document passes assigned formatting and complete local links/structure. Preserve prior handoff formatting outside this update.
 
 - NEW T1 consumer cloud executor confirmed active: turn `01a102f9-5f8f-7621-a865-3ea95dbcfb4b`, cursor `5b523ca6-cc05-4205-9eb0-3803e6d9de83:6`. Three coding/design cloud assignments are active. Root reviewed the complete delivered common contract, which distinguishes read-only historical projections from proposed qualified offline mutation and retains current authority, phase, evidence and independent blocker requirements. Local document structure passes 282 Markdown files/1,580 local links; no implementation or gate qualification is inferred.
