@@ -1,3 +1,4 @@
+import { INTEGRATION_OFFLINE_REFUND_INITIALIZE_DDL } from "./integration-offline-refund-schema.ts";
 import { IntegrationOfflineRefundReview } from "./integration-offline-refund-review.ts";
 import type { CarrierBookings } from "./carrier-bookings.ts";
 import {
@@ -165,6 +166,7 @@ export class Integration {
     CREATE INDEX IF NOT EXISTS integration_credit_application_credit ON integration_credit_applications(org_id,credit_id);
   `);
     this.store.migrate(ACCOUNTING_CANCELLATION_INITIALIZE_DDL);
+    this.store.migrate(INTEGRATION_OFFLINE_REFUND_INITIALIZE_DDL);
     this.checkouts = new IntegrationCheckouts(
       database,
       identity,

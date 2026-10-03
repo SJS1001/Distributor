@@ -1,4 +1,5 @@
 import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
+import { PlatformOfflineCarrierReviewReader } from "./platform-offline-carrier-review.ts";
 import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
 import { CarrierOfflineMemberReview } from "./carrier-offline-member-review.ts";
 import type { RestoreNativeDispositionConfiguration } from "./restore-activation.ts";
@@ -33,6 +34,7 @@ export class Application {
   database: Database;
   platform!: Platform;
   platformOfflineRefundReview!: PlatformOfflineRefundReviewReader;
+  platformOfflineCarrierReview!: PlatformOfflineCarrierReviewReader;
   restoreOfflineNativePhase!: RestoreOfflineNativePhase;
   carrierOfflineMemberReview!: CarrierOfflineMemberReview;
   identity!: Identity;
@@ -149,6 +151,11 @@ export class Application {
           );
           this.platformOfflineRefundReview =
             new PlatformOfflineRefundReviewReader(this.database, this.identity);
+          this.platformOfflineCarrierReview =
+            new PlatformOfflineCarrierReviewReader(
+              this.database,
+              this.identity,
+            );
           this.carrierOfflineMemberReview = new CarrierOfflineMemberReview(
             this.database,
             this.identity,

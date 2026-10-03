@@ -1,3 +1,4 @@
+import { INTEGRATION_OFFLINE_REFUND_DDL } from "./integration-offline-refund-schema.ts";
 import { RESTORE_OFFLINE_DDL } from "./restore-offline-schema.ts";
 import { RESTORE_ACTIVATION_DDL } from "./restore-activation-schema.ts";
 import { INVENTORY_QUANTITY_DDL } from "./inventory-quantity-schema.ts";
@@ -218,6 +219,7 @@ export async function upgradeSchema(
         copied.exec(INVENTORY_QUANTITY_DDL);
         copied.exec(RESTORE_ACTIVATION_DDL);
         copied.exec(RESTORE_OFFLINE_DDL);
+        copied.exec(INTEGRATION_OFFLINE_REFUND_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -247,6 +249,7 @@ export async function upgradeSchema(
         if (before.version! <= 16) copied.exec(INVENTORY_QUANTITY_DDL);
         if (before.version! <= 16) copied.exec(RESTORE_ACTIVATION_DDL);
         if (before.version! <= 17) copied.exec(RESTORE_OFFLINE_DDL);
+        if (before.version! <= 18) copied.exec(INTEGRATION_OFFLINE_REFUND_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

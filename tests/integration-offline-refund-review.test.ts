@@ -75,6 +75,59 @@ async function setup(
   });
 }
 type Fixture = Awaited<ReturnType<typeof setup>>;
+test("immutable offline import provenance participates in complete facts and prevents first-import eligibility", async (t) => {
+  const f = await setup(t),
+    before = review(f),
+    store = f.app.database.owned("integration");
+  const record = canonical({
+    version: 1,
+    originalPoll: before.polls[0],
+    observationId: 1,
+  });
+  store.run(
+    "INSERT INTO integration_offline_failed_refunds VALUES(?,?,?,?,?,?)",
+    f.effectId,
+    f.actor.orgId,
+    "synthetic-offline-request",
+    digest("synthetic-binding"),
+    record,
+    digest(record),
+  );
+  const after = review(f);
+  assert.notEqual(after.hash, before.hash);
+  assert.equal(after.offlineImports.length, 1);
+  assert(after.blockers.includes("RETAINED_OFFLINE_REFUND_IMPORT"));
+  assert.equal(after.effect.state, "unknown");
+  assert.equal(after.billing.row.state, "unknown");
+  frozen(after);
+});
+for (const [name, org, record, hash] of [
+  ["foreign organization", "other-org", "{}", digest("{}")],
+  ["mismatched retained digest", null, "{}", digest("different")],
+  [
+    "noncanonical retained record",
+    null,
+    '{ "version": 1 }',
+    digest('{ "version": 1 }'),
+  ],
+  ["malformed retained JSON", null, "{", digest("{")],
+] as const)
+  test(`offline provenance review refuses ${name} without owner mutation`, async (t) => {
+    const f = await setup(t),
+      store = f.app.database.owned("integration");
+    store.run(
+      "INSERT INTO integration_offline_failed_refunds VALUES(?,?,?,?,?,?)",
+      f.effectId,
+      org ?? f.actor.orgId,
+      "request-a",
+      digest("binding-a"),
+      record,
+      hash,
+    );
+    const before = store.get("SELECT total_changes() AS n")!.n;
+    assert.throws(() => review(f), { code: "OFFLINE_REFUND_REVIEW" });
+    assert.equal(store.get("SELECT total_changes() AS n")!.n, before);
+  });
 function review(f: Fixture, actor: Actor = f.actor) {
   return f.app.database.transaction(() =>
     f.app.integration.reviewOfflineFailedRefundInTransaction(actor, f.effectId),

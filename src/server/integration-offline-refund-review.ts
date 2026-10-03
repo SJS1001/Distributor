@@ -17,6 +17,8 @@ const tables = {
   integration_effects:
     "id org_id account_id provider kind reference payload state external_ref result created_at residency_version started_at error",
   integration_refund_polls: "effect_id org_id token started_at retry_at",
+  integration_offline_failed_refunds:
+    "effect_id org_id request_id binding record record_hash",
   integration_refund_callbacks:
     "id org_id binding_id event_id effect_id provider_reference event_type hash state attempts started_at retry_at error created_at",
   integration_callbacks:
@@ -255,6 +257,30 @@ export class IntegrationOfflineRefundReview {
     const polls = scoped(
       rows("integration_refund_polls", linked, ids, "effect_id"),
     );
+    const offlineImports = scoped(
+      rows(
+        "integration_offline_failed_refunds",
+        `${linked} OR (org_id=? AND NOT EXISTS(SELECT 1 FROM integration_effects e WHERE e.id=integration_offline_failed_refunds.effect_id))`,
+        [...ids, actor.orgId],
+        "effect_id",
+      ),
+    );
+    for (const receipt of offlineImports) {
+      const recorded = parse(receipt.record);
+      const importedEffect = byId.get(String(receipt.effect_id))!;
+      consistent(
+        importedEffect.provider === "stripe" &&
+          importedEffect.kind === "refund" &&
+          typeof receipt.request_id === "string" &&
+          receipt.request_id.length > 0 &&
+          receipt.request_id.length <= 128 &&
+          typeof receipt.binding === "string" &&
+          /^[a-f0-9]{64}$/.test(receipt.binding) &&
+          typeof receipt.record_hash === "string" &&
+          digest(String(receipt.record)) === receipt.record_hash &&
+          canonical(recorded) === receipt.record,
+      );
+    }
     for (const e of effects)
       if (e.provider === "stripe" && e.kind === "refund")
         consistent(polls.filter((r) => r.effect_id === e.id).length === 1);
@@ -715,6 +741,7 @@ export class IntegrationOfflineRefundReview {
     if (polls.some((p) => p.token !== null))
       blockers.add("RETAINED_REFUND_CLAIM");
     if (leases.length) blockers.add("RETAINED_GENERIC_LEASES");
+    if (offlineImports.length) blockers.add("RETAINED_OFFLINE_REFUND_IMPORT");
     if (callbacks.length || inbox.length)
       blockers.add("RETAINED_CALLBACK_LINEAGE");
     if (
@@ -742,6 +769,7 @@ export class IntegrationOfflineRefundReview {
       scope: "bounded-account-effects-and-direct-subject-links" as const,
       effects,
       polls,
+      offlineImports,
       leases,
       refundCallbacks,
       checkoutCallbacks,

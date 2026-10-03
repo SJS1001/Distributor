@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from "../src/server/schema.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, randomBytes } from "node:crypto";
@@ -537,7 +538,7 @@ for (const reports of [false, true])
     const old = new DatabaseSync(source);
     try {
       old.exec(
-        "DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
+        "DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
       );
       old.exec("DROP TABLE platform_restore_releases");
       old.exec("DROP TABLE inventory_quantity_corrections");
@@ -561,7 +562,7 @@ for (const reports of [false, true])
       inspected.schemaHash,
       "CA",
     );
-    assert.equal(upgraded.version, 18);
+    assert.equal(upgraded.version, SCHEMA_VERSION);
     assert.deepEqual(readFileSync(source), bytes);
     const app = new Application(dest, "CA", { eventReports: reports });
     try {

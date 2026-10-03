@@ -1,3 +1,4 @@
+import { SCHEMA_VERSION } from "../src/server/schema.ts";
 import versionSixteen from "./schema-version-sixteen.json" with { type: "json" };
 import versionFifteen from "./schema-version-fifteen.json" with { type: "json" };
 import versionFourteen from "./schema-version-fourteen.json" with { type: "json" };
@@ -663,7 +664,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -674,6 +675,7 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "integration_offline_failed_refunds",
     "platform_offline_head",
     "platform_offline_receipts",
     "platform_offline_journal",
@@ -1125,10 +1127,10 @@ for (const sourceVersion of [
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 18);
+        assert.equal(upgraded.version, SCHEMA_VERSION);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 18);
+        assert.equal(inspection.version, SCHEMA_VERSION);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);

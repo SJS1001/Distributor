@@ -30,7 +30,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { Application } from "../src/server/application.ts";
 import { createBackup, restoreBackup } from "../src/server/recovery.ts";
-import { supportedSchemaHash } from "../src/server/schema.ts";
+import { SCHEMA_VERSION, supportedSchemaHash } from "../src/server/schema.ts";
 import type { Adapter } from "../src/server/integration.ts";
 import type { Region } from "../src/server/iam.ts";
 import { accept, chooseProviders, fixture, ship } from "./fixtures.ts";
@@ -238,7 +238,7 @@ for (const region of ["CA", "US"] as const) {
         "backup must leave every source row and exact schema unchanged",
       );
       assert.equal(receipt.version, 1);
-      assert.equal(receipt.schemaVersion, 18);
+      assert.equal(receipt.schemaVersion, SCHEMA_VERSION);
       assert.equal(receipt.eventReports, eventReports);
       assert.equal(receipt.schemaHash, before.schemaHash);
       assert.equal(
@@ -262,7 +262,7 @@ for (const region of ["CA", "US"] as const) {
       ship(f, accept(f, 1, "later-order").id);
       const after = inspect(f.path);
       const restored = await restoreBackup(archive, target, region, key);
-      assert.equal(restored.schemaVersion, 18);
+      assert.equal(restored.schemaVersion, SCHEMA_VERSION);
       assert.equal(restored.eventReports, eventReports);
       assert.equal(restored.schemaHash, before.schemaHash);
       assert.equal(restored.snapshotHash, receipt.snapshotHash);
@@ -525,7 +525,7 @@ test("authenticated altered version/profile receipts and legacy/foreign layouts 
 });
 
 for (const sourceVersion of [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
 ])
   test(`authenticated version-${sourceVersion} archives require a separate upgrade procedure and never restore implicitly`, async (t) => {
     const f = fixture(t, { eventReports: false }),
@@ -570,13 +570,23 @@ for (const sourceVersion of [
                                   ? versionFourteen.hashes.disabled
                                   : sourceVersion === 15
                                     ? versionFifteen.hashes.disabled
-                                    : versionSixteen.hashes.disabled;
+                                    : sourceVersion === 16
+                                      ? versionSixteen.hashes.disabled
+                                      : sourceVersion === 17
+                                        ? // Frozen schema17 published d6f8818.
+                                          "338cd156fd11a564935dae8c1f7afb34ee0cbb2547f1f98a97e37c91fb020d1c"
+                                        : // Frozen schema18 published bb0a2b2e before this change.
+                                          "66885390969e98b27ea19044f4e7b3cc399518fb50c9196962d2293f4569d942";
     try {
-      db.exec(
-        "DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
-      );
-      db.exec("DROP TABLE inventory_quantity_corrections");
-      db.exec("DROP TABLE platform_restore_releases");
+      db.exec("DROP TABLE integration_offline_failed_refunds");
+      if (sourceVersion < 18)
+        db.exec(
+          "DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
+        );
+      if (sourceVersion < 17) {
+        db.exec("DROP TABLE inventory_quantity_corrections");
+        db.exec("DROP TABLE platform_restore_releases");
+      }
       if (sourceVersion < 16)
         db.exec(
           "DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_policies",
@@ -670,7 +680,7 @@ test("operator CLI backs up/restores disabled US profile through protected stdin
   assert.equal(restored.code, 0, restored.err);
   for (const result of [backed, restored]) {
     const receipt = JSON.parse(result.out);
-    assert.equal(receipt.schemaVersion, 18);
+    assert.equal(receipt.schemaVersion, SCHEMA_VERSION);
     assert.equal(receipt.eventReports, false);
     assert.equal(receipt.schemaHash, before.schemaHash);
     assert.equal(receipt.region, region);
