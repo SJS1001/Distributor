@@ -899,10 +899,13 @@
     "All 44 tasks and ten gates NOT VERIFIED; full system incomplete"
   ],
   "publication": {
-    "status": "not yet committed/pushed; fresh read-only access confirmed",
+    "status": "normally pushed; exact remote equality verified",
     "identity": "SJS1001",
     "permission": "ADMIN",
     "workflows": 0,
-    "actionsRuns": 0
+    "actionsRuns": 0,
+    "sourceCommit": "8d49c2471238da80adbe301366dd7f4e88cea45a",
+    "testedCommittedInputsMatched": 509,
+    "privateEvidenceMatched": 50
   }
 }
