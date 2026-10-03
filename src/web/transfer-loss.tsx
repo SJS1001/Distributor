@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { request, RequestError } from "./api.ts";
 import { Modal, type Field } from "./modal.tsx";
 
-// Draft: not mounted by the application. Integration and browser fault tests
-// remain pending; see the latest publication checkpoint in docs/HANDOFF.md.
 type Description = {
   transferId: string;
   lineId: string;

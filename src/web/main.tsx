@@ -3,6 +3,7 @@ import {
   type DispatchSelection,
 } from "./transfer-dispatch.tsx";
 import { TransferArrival, type ArrivalSelection } from "./transfer-arrival.tsx";
+import { TransferLoss, type LossSelection } from "./transfer-loss.tsx";
 import { TransferQueue } from "./transfer-queue.tsx";
 import {
   useSupplierReturnQueue,
@@ -149,6 +150,9 @@ function App() {
     useState<DispatchSelection | null>(null);
   const [arrivalSelection, setArrivalSelection] =
     useState<ArrivalSelection | null>(null);
+  const [lossSelection, setLossSelection] = useState<LossSelection | null>(
+    null,
+  );
   const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -207,6 +211,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
+    setLossSelection(null);
     setDispatchSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
@@ -443,6 +448,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
+    setLossSelection(null);
     setDispatchSelection(null);
     stockHistoryOpener.current = null;
     setReservationOrderId(null);
@@ -471,6 +477,7 @@ function App() {
     setStockHistory(null);
     setBinSelection(null);
     setArrivalSelection(null);
+    setLossSelection(null);
     setDispatchSelection(null);
     stockHistoryOpener.current = null;
     setPurchaseEntryOpen(false);
@@ -1307,6 +1314,7 @@ function App() {
                 setStockHistory(null);
                 setBinSelection(null);
                 setArrivalSelection(null);
+                setLossSelection(null);
                 setDispatchSelection(null);
                 stockHistoryOpener.current = null;
                 setPurchaseEntryOpen(false);
@@ -2285,6 +2293,27 @@ function App() {
                 }}
               />
             )}
+            {actor.role === "admin" &&
+              (["loss", "recovery"] as const).map((kind) => {
+                const selected =
+                  lossSelection?.kind === kind ? lossSelection : null;
+                return (
+                  <TransferLoss
+                    key={`${actor.orgId}:${actor.id}:${kind}:${extra.transferRefresh}:${selected?.lineId ?? ""}:${selected?.kind === "recovery" ? selected.lossId : ""}`}
+                    orgId={actor.orgId}
+                    actorId={actor.id}
+                    kind={kind}
+                    selection={selected}
+                    close={() => setLossSelection(null)}
+                    saved={async () => {
+                      await refresh();
+                      setNotice(
+                        "Transfer loss/recovery confirmed. Review current Inventory and transfer history before further physical work.",
+                      );
+                    }}
+                  />
+                );
+              })}
             {can("warehouse") && (
               <TransferDispatch
                 key={`${actor.orgId}:${actor.id}:${extra.transferRefresh}:${dispatchSelection?.unitId ?? ""}`}
@@ -2771,54 +2800,25 @@ function App() {
                                 {actor?.role === "admin" &&
                                   loss.remainingLostQuantity > 0 &&
                                   button("Recover lost stock", () =>
-                                    simple(
-                                      "Recover lost stock",
-                                      [
-                                        {
-                                          name: "quantity",
-                                          label: "Units found",
-                                          type: "number",
-                                          value: loss.remainingLostQuantity,
-                                          max: loss.remainingLostQuantity,
-                                        },
-                                        {
-                                          name: "serial",
-                                          scan: "single",
-                                          label:
-                                            "Scan recovered serial (leave blank for bulk)",
-                                          optional: !line.serial,
-                                        },
-                                        {
-                                          name: "receiptRef",
-                                          label:
-                                            "Recovery reference (unique per portion)",
-                                        },
-                                        {
-                                          name: "bin",
-                                          label: "Destination bin",
-                                        },
-                                        {
-                                          name: "condition",
-                                          label: "Condition",
-                                          value: "quarantine",
-                                          options: [
-                                            "usable",
-                                            "quarantine",
-                                            "damaged",
-                                          ].map((v) => ({
-                                            value: v,
-                                            label: v,
-                                          })),
-                                        },
-                                        reason,
-                                      ],
-                                      "transfer.recover",
-                                      (v) => ({
-                                        ...v,
-                                        serial: v.serial || null,
-                                        lossId: loss.id,
-                                      }),
-                                    ),
+                                    setLossSelection({
+                                      kind: "recovery",
+                                      transferId: t.id,
+                                      lineId: line.line_id,
+                                      unitId: line.unit_id,
+                                      product: productName(line.product_id),
+                                      source: warehouseName(t.source_id),
+                                      destination: warehouseName(
+                                        t.destination_id,
+                                      ),
+                                      serial: line.serial,
+                                      dispatchedQuantity: line.quantity,
+                                      remainingQuantity:
+                                        loss.remainingLostQuantity,
+                                      unitCost: line.unit_cost,
+                                      lossId: loss.id,
+                                      lossRef: loss.loss_ref,
+                                      lossQuantity: loss.quantity,
+                                    }),
                                   )}
                               </div>
                             ))}
@@ -2853,39 +2853,23 @@ function App() {
                                   )}
                                   {actor?.role === "admin" &&
                                     button("Approve transit loss", () =>
-                                      simple(
-                                        "Approve transit loss",
-                                        [
-                                          {
-                                            name: "quantity",
-                                            label: "Missing units to write off",
-                                            type: "number",
-                                            value: line.remainingQuantity,
-                                            max: line.remainingQuantity,
-                                          },
-                                          {
-                                            name: "serial",
-                                            scan: "single",
-                                            label:
-                                              "Confirm missing serial (leave blank for bulk)",
-                                            optional: !line.serial,
-                                          },
-                                          {
-                                            name: "lossRef",
-                                            label:
-                                              "Loss evidence reference (unique per portion)",
-                                          },
-                                          reason,
-                                        ],
-                                        "transfer.loss",
-                                        (v) => ({
-                                          ...v,
-                                          serial: v.serial || null,
-                                          transferId: t.id,
-                                          lineId: line.line_id,
-                                          revision: line.transitRevision,
-                                        }),
-                                      ),
+                                      setLossSelection({
+                                        kind: "loss",
+                                        transferId: t.id,
+                                        lineId: line.line_id,
+                                        unitId: line.unit_id,
+                                        product: productName(line.product_id),
+                                        source: warehouseName(t.source_id),
+                                        destination: warehouseName(
+                                          t.destination_id,
+                                        ),
+                                        serial: line.serial,
+                                        dispatchedQuantity: line.quantity,
+                                        remainingQuantity:
+                                          line.remainingQuantity,
+                                        unitCost: line.unit_cost,
+                                        revision: line.transitRevision,
+                                      }),
                                     )}
                                 </React.Fragment>
                               ))}

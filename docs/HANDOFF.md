@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — transfer loss/recovery and requested GitHub commit, 2026-10-02
+
+- Resumed published parent `4ba370fd1c7d25ecc0fc1b9a0254107ceaeffde7` on `codex/local-distributor-checkpoint`. The owner requested committing to GitHub. Fresh read-only checks confirm matching remote parent, ADMIN access and zero workflows/Actions runs. Direct workstation checks only; no CI runner, delegated/cloud session, provider IO, PR, merge or deployment.
+- Integrated the previously unfinished loss/recovery draft into administrator-only Inventory controls. Separate persisted exact attempts restore fixed read-only reviews after reload/navigation/sign-in; Web Locks, storage validation and evidence comparison coordinate tabs. Current native authority governs cached receipts. Refused serials can be corrected; changed custody requires refreshed review; uncertain/reference-conflict/malformed replies and cleanup failures retain recovery. Native schema/code/dependencies/workflows unchanged.
+- Fresh complete production Chromium checks pass 181/181, including fifteen new fault journeys; TypeScript/build/format pass. React changed-source scan includes six files, zero errors and one existing App complexity warning. Existing bundle warning remains. No fresh full native suite rerun is claimed. [Receipt](evidence/LOCAL-TRANSFER-LOSS-RECOVERY-2026-10-02.md) binds final inputs and outcomes. Initial selector/expectation failures, interrupted runs and concurrent-build 404 and the superseded generic retry assertion are retained privately.
+- Self-review covers immutable exact evidence, persistence/locks, current authority, definitive versus uncertain outcomes, original receipt/current custody, serial/quantity/cost conservation, focus and abandoned replies. Browser storage loss/protection, pre-feature uncertain attempts, separate devices, physical custody and production/provider/residency/operator acceptance remain open. All 44 tasks and 10 gates NOT VERIFIED; full system incomplete.
+- Final document/link/whitespace and staged publication checks precede normal local commit and authorized branch push. Verify exact remote HEAD, clean checkout and zero Actions runs before reporting publication. Preserve all historical receipts, including the prior unmounted-draft checkpoint below.
+
 ## Requested GitHub publication checkpoint — 2026-10-02
 
 - Published parent is `8bb201f687ca1594c20d6a75c08d3a3731ac7f5d` on `codex/local-distributor-checkpoint`. The owner's request is to commit all remaining work to GitHub. Read-only checks confirm push permission, matching remote parent, zero workflows and zero Actions runs. No CI runner, PR, merge, deployment or provider request is authorized or started.

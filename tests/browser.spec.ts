@@ -1,3 +1,4 @@
+import "./transfer-loss-browser-journey.ts";
 import "./transfer-dispatch-browser-journey.ts";
 import "./transfer-arrival-browser-journey.ts";
 import "./transfer-queue-browser-journey.ts";
@@ -2269,7 +2270,12 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
     .fill("Investigation and receiving count confirm two missing cartons");
   await next(page);
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
-  await next(page);
+  await page
+    .getByRole("button", {
+      name: "Retry exact transfer loss approval",
+      exact: true,
+    })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(tr).toContainText(
     "3 dispatched · 0 received · 1 in transit · 2 unrecovered loss",
