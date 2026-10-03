@@ -27,6 +27,7 @@ import { providerNames } from "../shared/provider-choices.ts";
 import { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import type { QuickBooksBrowser } from "./quickbooks-browser.ts";
+import type { JournalQueueInput } from "./stock-journal-delivery.ts";
 import helmet from "@fastify/helmet";
 import staticFiles from "@fastify/static";
 import { existsSync } from "node:fs";
@@ -280,6 +281,70 @@ export function commands(
         financeEvidence: str,
       }),
       run: (a, k, p) => app.integration.costs.corrections.configure(a, k, p),
+    },
+    "accounting.journal.prepare": {
+      schema: obj({
+        sourceId: str,
+        sourceHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        leg: choice("original", "reversal", "replacement"),
+        postingDate: {
+          type: "string",
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        },
+        attemptId: { anyOf: [{ ...str, maxLength: 160 }, { type: "null" }] },
+        bindingId: { ...str, maxLength: 160 },
+        realm: { type: "string", pattern: "^[1-9][0-9]{0,29}$" },
+        policyRevision: {
+          type: "integer",
+          minimum: 1,
+          maximum: Number.MAX_SAFE_INTEGER,
+        },
+        authority: obj({
+          provider: { const: "quickbooks" },
+          purpose: { const: "stock-cost-journal" },
+          environment: { const: "sandbox" },
+          orgId: str,
+          region: choice("CA", "US"),
+          realm: { type: "string", pattern: "^[1-9][0-9]{0,29}$" },
+          revision: {
+            type: "integer",
+            minimum: 1,
+            maximum: Number.MAX_SAFE_INTEGER,
+          },
+          disclosureId: str,
+          disclosureHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        }),
+        accounts: {
+          type: "array",
+          minItems: 1,
+          maxItems: 30,
+          items: obj({
+            sourceAccount: str,
+            accountId: { type: "string", pattern: "^[1-9][0-9]{0,29}$" },
+          }),
+        },
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.journals.prepare(a, k, p),
+    },
+    "accounting.journal.decide": {
+      schema: obj({
+        journalId: str,
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.journals.decide(a, k, p),
+    },
+    "accounting.journal.cancel-correction": {
+      schema: obj({
+        journalId: str,
+        requestRef: str,
+        evidenceHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: str,
+      }),
+      run: (a, k, p) =>
+        app.integration.costs.journals.cancelCorrectionAttempt(a, k, p),
     },
     "accounting.cost.correction.prepare": {
       schema: obj({
@@ -3345,6 +3410,67 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/accounting/cost-policy", async (request) =>
     app.integration.costs.corrections.policy(actor(request)),
+  );
+  http.get<{ Querystring: JournalQueueInput }>(
+    "/api/accounting/journals",
+    {
+      schema: {
+        querystring: obj(
+          {
+            sourceId: { ...str, maxLength: 160 },
+            state: choice(
+              "ready",
+              "rejected",
+              "pending",
+              "running",
+              "unknown",
+              "posted",
+              "cancelled",
+            ),
+            after: { type: "string", pattern: "^[A-Za-z0-9_-]{1,512}$" },
+          },
+          ["sourceId", "state", "after"],
+        ),
+      },
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.queue(
+        actor(request),
+        request.query,
+      );
+    },
+  );
+  http.get<{ Params: { journalId: string } }>(
+    "/api/accounting/journals/:journalId",
+    { schema: { params: obj({ journalId: str }), querystring: obj({}) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.detail(
+        actor(request),
+        request.params.journalId,
+      );
+    },
+  );
+  http.get<{ Params: { journalId: string }; Querystring: { after?: string } }>(
+    "/api/accounting/journals/:journalId/observations",
+    {
+      schema: {
+        params: obj({ journalId: str }),
+        querystring: obj(
+          { after: { type: "string", pattern: "^[A-Za-z0-9_-]{1,512}$" } },
+          ["after"],
+        ),
+      },
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.observations(
+        actor(request),
+        request.params.journalId,
+        request.query,
+      );
+    },
   );
   http.get<{ Params: { packetId: string } }>(
     "/api/accounting/costs/:packetId/corrections",

@@ -1,5 +1,12 @@
 # Distributor setup handoff
 
+## Current continuation — native journal review controls, 2026-10-03
+
+- Resumed published parent `2bfd8cf6c11803476d272eff8147c1fa00defb40` on `codex/local-distributor-checkpoint`. Owner accepted recommended continuation; current source/tests/docs publication remains authorized. Direct workstation checks only; no CI runner/workflow, delegated/cloud session, live provider IO, PR, merge or deployment.
+- Added [task-shaped journal review and history APIs](STOCK-JOURNAL-CONTROLS.md): strict preparation/independent decision/correction cancellation, twenty-item scoped queues, full append-only observation paging, canonical current-authority cursors, hash validation and no-store reads. No execution/lease/dispatch/outcome route. Schema 12/dependencies/frontend unchanged. Fixed an actual intermittent correction artifact/row timestamp mismatch using one captured approval timestamp; historical inconsistent records remain refused.
+- Full native checks pass 2,222/2,222; focused 111/111 includes twenty new controls tests. TypeScript/format and isolated CA/US production installation/build/startup/PDF/ZPL/encrypted restore pass. All 512 tested inputs and 263 runtime inputs match; 69 development-only packages absent. Initial fixture and actual timing failure logs remain private. Existing bundle warning persists; no fresh browser/static claim. See [local receipt](evidence/LOCAL-STOCK-JOURNAL-CONTROLS-2026-10-03.md). Final planning/whitespace/publication review and normal authorized push follow.
+- Next dependent work: browser review and durable exact uncertain-attempt recovery; explicit reviewed permission replacement; organization OAuth/company verification and remote revocation. Original cancellation/fresh retry, multiple-date reconciliation, changed-journal/valuation corrections, durable restore activation/fencing/routing/reconciliation/rollback, current Purolator contract and actual provider/device/residency/security/load/operator acceptance remain open. All 44 tasks/ten gates remain NOT VERIFIED; full-system goal remains active and incomplete.
+
 ## Current continuation — explicit journal transport, 2026-10-03
 
 - Resumed published parent `c4916be61f3c551b858e954c9fc4702aadd9e2b9` on `codex/local-distributor-checkpoint`. Owner accepted recommended continuation; current source/tests/docs publication remains authorized. Direct workstation checks only; no CI runner/workflow, delegated/cloud session, live provider IO, PR, merge or deployment.

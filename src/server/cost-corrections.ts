@@ -699,6 +699,7 @@ export class CostCorrections {
           "A different current finance principal must review this correction.",
           403,
         );
+        const decisionAt = now();
         let artifact: string | null = null,
           contentHash: string | null = null;
         if (input.decision === "approve") {
@@ -735,7 +736,7 @@ export class CostCorrections {
               preparedBy: row.created_by,
               preparedAt: row.created_at,
               reviewedBy: actor.id,
-              reviewedAt: now(),
+              reviewedAt: decisionAt,
               reason,
             }) + "\n";
           contentHash = digest(artifact);
@@ -744,7 +745,7 @@ export class CostCorrections {
           "UPDATE integration_cost_corrections SET state=?,decision_by=?,decision_at=?,decision_reason=?,artifact=?,content_hash=? WHERE org_id=? AND id=?",
           input.decision === "approve" ? "reviewed" : "rejected",
           actor.id,
-          now(),
+          decisionAt,
           reason,
           artifact,
           contentHash,

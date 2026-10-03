@@ -8,6 +8,7 @@ import {
   permit,
   text,
   type Actor,
+  type Row,
 } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { Identity } from "./iam.ts";
@@ -70,6 +71,11 @@ type Journal = {
   dispatched: number;
   external_id: string | null;
 };
+export type JournalQueueInput = {
+  sourceId?: string;
+  state?: Journal["state"];
+  after?: string;
+};
 export type JournalLease = Readonly<{
   journalId: string;
   orgId: string;
@@ -87,8 +93,8 @@ const requestRef = (journalId: string) =>
   `DJ-${digest(journalId).slice(0, 18)}`;
 export const stockJournalReceiver = (realm: string) =>
   `quickbooks-sandbox:${realm}`;
-// Native ownership only. No HTTP routes, queue polling, adapter registration or
-// provider I/O occurs here. Only a separately wired transport can use these leases.
+// Native ownership only. HTTP may expose review and history operations, never
+// leases or provider I/O. Only a separately wired transport can use these leases.
 export class StockJournalDelivery {
   private readonly store: Store;
   private readonly leases = new WeakSet<object>();
@@ -125,6 +131,9 @@ export class StockJournalDelivery {
       journalId,
     );
     check(row, "NOT_FOUND", "Journal delivery not found.", 404);
+    return this.checkedRow(row);
+  }
+  private checkedRow(row: Journal) {
     const plan = JSON.parse(row.plan) as Plan;
     check(
       digest(row.plan) === row.review_hash &&
@@ -531,30 +540,208 @@ export class StockJournalDelivery {
       );
       return {
         ...this.view(row),
-        observations: history.slice(0, 100).map((r) => {
-          check(
-            digest(
-              canonical({
-                journalId,
-                orgId: actor.orgId,
-                revision: Number(r.revision),
-                body: JSON.parse(String(r.body)),
-                recordedBy: String(r.recorded_by),
-                recordedAt: String(r.recorded_at),
-              }),
-            ) === r.hash,
-            "JOURNAL_INTEGRITY",
-            "Journal observation failed integrity.",
-          );
-          return {
-            revision: Number(r.revision),
-            hash: String(r.hash),
-            body: JSON.parse(String(r.body)),
-            recordedBy: String(r.recorded_by),
-            recordedAt: String(r.recorded_at),
-          };
-        }),
+        observations: history
+          .slice(0, 100)
+          .map((r) => this.observation(actor, journalId, r)),
         olderObservations: history.length > 100,
+      };
+    });
+  }
+  private observation(actor: Actor, journalId: string, r: Row) {
+    const body = JSON.parse(String(r.body)),
+      revision = Number(r.revision),
+      recordedBy = String(r.recorded_by),
+      recordedAt = String(r.recorded_at);
+    check(
+      digest(
+        canonical({
+          journalId,
+          orgId: actor.orgId,
+          revision,
+          body,
+          recordedBy,
+          recordedAt,
+        }),
+      ) === r.hash,
+      "JOURNAL_INTEGRITY",
+      "Journal observation failed integrity.",
+    );
+    return { revision, hash: String(r.hash), body, recordedBy, recordedAt };
+  }
+  private position(after: string | undefined, scope: string, maximum: number) {
+    if (after === undefined) return { high: maximum, before: maximum + 1 };
+    let token: unknown;
+    if (typeof after === "string" && /^[A-Za-z0-9_-]{1,512}$/.test(after)) {
+      try {
+        token = JSON.parse(Buffer.from(after, "base64url").toString("utf8"));
+      } catch {}
+    }
+    check(
+      Array.isArray(token) &&
+        token.length === 4 &&
+        token[0] === 1 &&
+        Number.isSafeInteger(token[1]) &&
+        token[1] > 0 &&
+        token[1] <= maximum &&
+        Number.isSafeInteger(token[2]) &&
+        token[2] > 0 &&
+        token[2] <= token[1] &&
+        token[3] === scope &&
+        Buffer.from(JSON.stringify(token)).toString("base64url") === after,
+      "INVALID_CURSOR",
+      "Journal history position is invalid. Reload the first page.",
+      400,
+    );
+    return { high: token[1] as number, before: token[2] as number };
+  }
+  private next(high: number, position: number, scope: string) {
+    return Buffer.from(JSON.stringify([1, high, position, scope])).toString(
+      "base64url",
+    );
+  }
+  queue(actor: Actor, input: JournalQueueInput = {}) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      check(
+        input &&
+          typeof input === "object" &&
+          !Array.isArray(input) &&
+          Object.keys(input).every((k) =>
+            ["sourceId", "state", "after"].includes(k),
+          ),
+        "JOURNAL_INPUT",
+        "Invalid journal queue selection.",
+        400,
+      );
+      const sourceId =
+          input.sourceId === undefined
+            ? null
+            : text(input.sourceId, "Journal source", 160),
+        state = input.state ?? null;
+      check(
+        input.state === undefined ||
+          [
+            "ready",
+            "rejected",
+            "pending",
+            "running",
+            "unknown",
+            "posted",
+            "cancelled",
+          ].includes(input.state),
+        "JOURNAL_INPUT",
+        "Invalid journal state selection.",
+        400,
+      );
+      const scope = digest(
+          canonical([
+            "journal-queue",
+            actor.orgId,
+            actor.id,
+            actor.role,
+            sourceId,
+            state,
+          ]),
+        ),
+        maximum = Number(
+          this.store.get(
+            "SELECT COALESCE(MAX(rowid),0) AS n FROM integration_stock_journals WHERE org_id=?",
+            actor.orgId,
+          )!.n,
+        ),
+        { high, before } = this.position(input.after, scope, maximum);
+      if (input.after !== undefined)
+        check(
+          this.store.get(
+            "SELECT id FROM integration_stock_journals WHERE org_id=? AND rowid=?",
+            actor.orgId,
+            before,
+          ),
+          "INVALID_CURSOR",
+          "Journal queue position is unavailable. Reload the first page.",
+          400,
+        );
+      const rows = this.store.all<Journal & { position: number }>(
+        "SELECT rowid AS position,* FROM integration_stock_journals WHERE org_id=? AND (? IS NULL OR source_id=?) AND (? IS NULL OR state=?) AND rowid<=? AND rowid<? ORDER BY rowid DESC LIMIT 21",
+        actor.orgId,
+        sourceId,
+        sourceId,
+        state,
+        state,
+        high,
+        before,
+      );
+      return {
+        items: rows.slice(0, 20).map((r) => {
+          const { plan: _plan, ...header } = this.view(this.checkedRow(r));
+          return header;
+        }),
+        next:
+          rows.length > 20 ? this.next(high, rows[19]!.position, scope) : null,
+      };
+    });
+  }
+  observations(
+    actor: Actor,
+    journalId: string,
+    input: { after?: string } = {},
+  ) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      this.row(actor, journalId);
+      check(
+        input &&
+          typeof input === "object" &&
+          !Array.isArray(input) &&
+          Object.keys(input).every((k) => k === "after"),
+        "JOURNAL_INPUT",
+        "Invalid journal history selection.",
+        400,
+      );
+      const scope = digest(
+          canonical([
+            "journal-observations",
+            actor.orgId,
+            actor.id,
+            actor.role,
+            journalId,
+          ]),
+        ),
+        maximum = Number(
+          this.store.get(
+            "SELECT COALESCE(MAX(revision),0) AS n FROM integration_stock_journal_observations WHERE org_id=? AND journal_id=?",
+            actor.orgId,
+            journalId,
+          )!.n,
+        ),
+        { high, before } = this.position(input.after, scope, maximum);
+      if (input.after !== undefined)
+        check(
+          this.store.get(
+            "SELECT revision FROM integration_stock_journal_observations WHERE org_id=? AND journal_id=? AND revision=?",
+            actor.orgId,
+            journalId,
+            before,
+          ),
+          "INVALID_CURSOR",
+          "Journal observation position is unavailable. Reload the first page.",
+          400,
+        );
+      const rows = this.store.all(
+        "SELECT * FROM integration_stock_journal_observations WHERE org_id=? AND journal_id=? AND revision<=? AND revision<? ORDER BY revision DESC LIMIT 21",
+        actor.orgId,
+        journalId,
+        high,
+        before,
+      );
+      return {
+        items: rows
+          .slice(0, 20)
+          .map((r) => this.observation(actor, journalId, r)),
+        next:
+          rows.length > 20
+            ? this.next(high, Number(rows[19]!.revision), scope)
+            : null,
       };
     });
   }
