@@ -937,6 +937,15 @@
     "No CI runner/job/workflow, delegated/cloud session, provider IO/account, PR, merge or deployment"
   ],
   "publication": {
-    "status": "Pending staged-byte review and owner-authorized normal branch commit/push"
+    "status": "Source/test/documentation commit normally pushed; this metadata record follows in a companion documentation commit",
+    "source_commit": "4e030007762061e6ab0a255b060e98a602cefff6",
+    "verified_remote_equal": true,
+    "checkout_clean_at_source_verification": true,
+    "tested_committed_inputs": 525,
+    "runtime_committed_source_inputs": 265,
+    "runtime_generated_assets": 3,
+    "private_evidence_hashes": 42,
+    "github_actions_workflows": 0,
+    "github_actions_runs": 0
   }
 }
