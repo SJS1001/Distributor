@@ -340,6 +340,7 @@ export class QuickBooksStockJournalAdapter implements Adapter {
     private token: (effect: Readonly<Effect>) => Promise<string>,
     private guard: Guard,
     private enabled = false,
+    private signal?: AbortSignal,
   ) {
     identifier(realmId);
   }
@@ -395,7 +396,9 @@ export class QuickBooksStockJournalAdapter implements Adapter {
           "Content-Type": "application/json",
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(20000),
+        signal: this.signal
+          ? AbortSignal.any([this.signal, AbortSignal.timeout(20000)])
+          : AbortSignal.timeout(20000),
         redirect: "error",
       },
     );

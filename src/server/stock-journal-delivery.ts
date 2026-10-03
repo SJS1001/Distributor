@@ -774,16 +774,28 @@ export class StockJournalDelivery {
       );
     return actor;
   }
-  guard(lease: JournalLease) {
+  private transportFence(fence?: () => void) {
+    if (!fence) return;
+    const result: unknown = fence();
+    if (result instanceof Promise) void result.catch(() => {});
+    check(
+      result === undefined,
+      "JOURNAL_AUTHORITY",
+      "Transport authority must finish synchronously within the journal transaction.",
+    );
+  }
+  guard(lease: JournalLease, transportFence?: () => void) {
     return this.database.transaction(() => {
       const row = this.leased(lease);
       this.authority(lease, row);
+      this.transportFence(transportFence);
     });
   }
-  beforeWrite(lease: JournalLease) {
+  beforeWrite(lease: JournalLease, transportFence?: () => void) {
     return this.database.transaction(() => {
       const row = this.leased(lease),
         actor = this.authority(lease, row);
+      this.transportFence(transportFence);
       check(
         lease.mode === "write" && !row.dispatched,
         "JOURNAL_WRITE_ONCE",
@@ -802,12 +814,13 @@ export class StockJournalDelivery {
   }
   // Transport observations are evidence only; they do not mutate stock, source
   // receipts or manual correction outcomes and are never inferred from a lookup miss.
-  posted(lease: JournalLease, raw: EffectResult) {
+  posted(lease: JournalLease, raw: EffectResult, transportFence?: () => void) {
     const result = structuredClone(raw);
     return this.database.transaction(() => {
       const row = this.leased(lease),
         actor = this.authority(lease, row),
         plan = JSON.parse(row.plan) as Plan;
+      this.transportFence(transportFence);
       check(
         lease.mode === "lookup" || row.dispatched === 1,
         "JOURNAL_WRITE_REQUIRED",

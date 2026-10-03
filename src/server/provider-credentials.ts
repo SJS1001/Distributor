@@ -68,6 +68,17 @@ export class ProviderCredentials {
       clientSecret: string,
       authority: LedgerAuthority,
     ) => Promise<string>;
+    accessVersioned: (
+      binding: CredentialBinding,
+      clientSecret: string,
+      authority: LedgerAuthority,
+      expectedRevision: number,
+    ) => Promise<Readonly<{ accessToken: string; revision: number }>>;
+    assertVersionInTransaction: (
+      binding: CredentialBinding,
+      authority: LedgerAuthority,
+      revision: number,
+    ) => void;
   };
   readonly authorization: QuickBooksAuthorization;
   readonly revocation: QuickBooksRevocation;
@@ -129,12 +140,44 @@ export class ProviderCredentials {
         clientSecret: string,
         authority: LedgerAuthority,
       ) =>
+        (
+          await this.accessScoped(
+            this.ledgerBinding(binding),
+            clientSecret,
+            undefined,
+            this.ledgerStamp(authority),
+          )
+        ).accessToken,
+      accessVersioned: async (
+        binding: CredentialBinding,
+        clientSecret: string,
+        authority: LedgerAuthority,
+        expectedRevision: number,
+      ) =>
         this.accessScoped(
           this.ledgerBinding(binding),
           clientSecret,
           undefined,
           this.ledgerStamp(authority),
+          integer(expectedRevision, "credential revision", 0),
         ),
+      assertVersionInTransaction: (
+        binding: CredentialBinding,
+        authority: LedgerAuthority,
+        revision: number,
+      ) => {
+        this.database.requireTransaction();
+        const internal = this.ledgerBinding(binding);
+        this.authorize(internal, undefined, this.ledgerStamp(authority));
+        this.assertCurrentKey();
+        const row = this.row(internal);
+        check(
+          row?.state === "ready" && row.revision === revision,
+          "CREDENTIAL_STALE",
+          "Organization credentials changed during this journal operation.",
+          503,
+        );
+      },
     });
     this.revocation = new QuickBooksRevocation(
       database,
@@ -728,18 +771,21 @@ export class ProviderCredentials {
     effect: Effect,
   ): Promise<string> {
     // Caller-owned configuration and effect records cannot change during refresh.
-    return this.accessScoped(
-      Object.freeze({ ...binding }),
-      clientSecret,
-      Object.freeze({ ...effect }),
-    );
+    return (
+      await this.accessScoped(
+        Object.freeze({ ...binding }),
+        clientSecret,
+        Object.freeze({ ...effect }),
+      )
+    ).accessToken;
   }
   private async accessScoped(
     binding: CredentialBinding,
     clientSecret: string,
     effect?: Effect,
     authority?: LedgerAuthority,
-  ): Promise<string> {
+    expectedRevision?: number,
+  ): Promise<Readonly<{ accessToken: string; revision: number }>> {
     const claim = this.database.transaction(() => {
       this.authorize(binding, effect, authority);
       this.revocation.assertClear(binding);
@@ -748,6 +794,12 @@ export class ProviderCredentials {
         row,
         "CREDENTIAL_MISSING",
         "Reconnect QuickBooks credentials.",
+        503,
+      );
+      check(
+        expectedRevision === undefined || row.revision === expectedRevision,
+        "CREDENTIAL_STALE",
+        "Organization credentials changed before token access.",
         503,
       );
       if (row.state === "refreshing" && Date.now() - row.started_at! > 90000) {
@@ -773,7 +825,10 @@ export class ProviderCredentials {
         503,
       );
       if (bundle.accessExpiresAt > Date.now() + 30000)
-        return { accessToken: bundle.accessToken } as const;
+        return {
+          accessToken: bundle.accessToken,
+          revision: row.revision,
+        } as const;
       check(
         typeof clientSecret === "string" &&
           /^[\x21-\x7e]{1,8192}$/.test(clientSecret),
@@ -803,7 +858,11 @@ export class ProviderCredentials {
         "An interrupted token refresh requires reconnection.",
         503,
       );
-    if ("accessToken" in claim) return claim.accessToken!;
+    if ("accessToken" in claim)
+      return Object.freeze({
+        accessToken: claim.accessToken!,
+        revision: claim.revision!,
+      });
     const { row, bundle, token } = claim;
     try {
       this.database.transaction(() =>
@@ -848,7 +907,10 @@ export class ProviderCredentials {
           provider: "quickbooks",
           ...this.auditScope(binding),
         });
-        return next.accessToken;
+        return Object.freeze({
+          accessToken: next.accessToken,
+          revision: updated.revision,
+        });
       });
     } catch (error) {
       this.database.transaction(() => {

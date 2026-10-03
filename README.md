@@ -40,6 +40,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Isolated restore review](docs/RESTORE-REVIEW.md) | Source-bound reconciliation dossier, private evidence byte verification, independent signed approvals and retained recovery hold |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks and remaining transport qualification |
+| [Explicit stock journal transport](docs/STOCK-JOURNAL-TRANSPORT.md) | Disabled one-operation coordinator, revision fences and lookup-only uncertainty |
 | [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md) | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order |
 | [Organization ledger residency](docs/ORGANIZATION-LEDGER-RESIDENCY.md) | Separate native sandbox company consent, retained terms/revisions and execution permission fences |
 | [Organization ledger credentials](docs/ORGANIZATION-LEDGER-CREDENTIALS.md) | Separate encrypted sandbox tokens, exact consent checks, exclusive refresh and protected offline operator controls |
