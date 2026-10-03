@@ -1,3 +1,4 @@
+import "./cost-correction-browser-journey.ts";
 import "./pdf-browser-journey.ts";
 import "./count-recovery-browser-journey.ts";
 import "./receipt-history-browser-journey.ts";

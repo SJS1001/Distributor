@@ -1,0 +1,34 @@
+# Local cost correction and isolated restore review verification — 2026-10-03
+
+Parent `378a1d6402257f29a4399eeacaddfb5714d783c4`, branch `codex/local-distributor-checkpoint`. Direct workstation checks on macOS arm64, Node 24.16.0 and production headless Chromium with disposable synthetic stores. The [machine receipt](LOCAL-CORRECTIONS-RESTORE-REVIEW-2026-10-03.json) binds tested source/configuration, browser assets and hashes of retained private evidence. No CI runner, workflow, delegated/cloud session, live provider request, PR, merge or deployment.
+
+## Implemented scope
+
+Accepted [recommendations](../MISSING-INPUT-RECOMMENDATIONS.md) now have immutable original-linked [account-mapping corrections](../ACCOUNTING-CORRECTIONS.md). Explicit established valuation, monthly periods, monotonic closed-through policy and one inventory posting owner control preparation. Verified posted outcomes produce exact original reversal plus corrected replacement; verified cancelled/unposted outcomes produce replacement only; unknown outcomes refuse approval. A distinct current finance reviewer binds the exact original hash, current policy and recorded receiver identity. Competing drafts cannot approve repeated reversals. Original quantities, costs, movement claims, stock, native balances and cutoff remain unchanged. Approved corrections fence fresh original acceptance while retaining historical original evidence. No valuation recalculation or ledger posting is implemented.
+
+Billing exposes policy, preparation, immutable review, separate decision, history and integrity-checked downloads. Scoped async ownership discards abandoned reads/downloads without undoing native commands. Exact active retries preserve the submitted command body and key. No durable browser reload recovery for these new forms is claimed.
+
+The [restore review](../RESTORE-REVIEW.md) captures the exact isolated current-schema candidate and every persisted application row. Full organization/provider evidence, declared writer/routing/rollback controls and two distinct finance/security Ed25519 signatures are checked against a separately supplied current trust registry. Success explicitly retains the hold and denies activation authority; it changes no database state or routing. Evidence references/hashes are signed operator attestations, not fetched content, actual fencing or measured RPO/RTO. A release transition and infrastructure adapter remain dependent work.
+
+Schema 8 adds integration-owned policy/correction tables. Independent frozen version-seven profiles were captured from the published parent before edits. Explicit fresh-file upgrades cover versions 1–7, both reporting profiles and CA/US, preserving old native records, sessions, receipts and ciphertext. Normal startup and older-archive restore retain exact version refusals.
+
+## Verification history
+
+Retained initial failures include a nested-transaction tampering fixture; version-8 historical fixture reconstruction; missing version-seven inspection return; source/destination filename collision; session-revocation HTTP status expectation; and a wrong organization-policy fixture column. Those were corrected before final native verification. The first focused browser run passed five and failed one of six because the fixture passed a Promise instead of the resolved downloaded-file path; the corrected run passed all six. Two TypeScript fixture corrections address tuple inference and the download path.
+
+The initial complete browser launch timed out after fifteen seconds waiting for test-server startup while other verification commands were running. One mistaken retry used a nonexistent npm script and ran no tests. The next correct run passed 72 tests before the turn interruption terminated its Playwright parent; no completed suite outcome is claimed. Authoritative process inspection found only its orphaned owned fixture server, which was stopped before a fresh complete run. All earlier failed/interrupted logs remain private and separately hashed; the test timeout/configuration was not relaxed.
+
+## Fresh outcomes
+
+- Full native suite: **2,013/2,013 passed**, zero failures/skips/cancellations, 83.7 seconds.
+- Final focused native/schema/recovery/correction checks: **83/83 passed**.
+- Focused production browser selection: **6/6 passed**, including two new phone correction/abandonment journeys and four retained correction journeys.
+- Complete production Chromium suite: **238/238 passed**, 4.0 minutes, after the interrupted run; no timeout/configuration relaxation.
+- Planning structure/link check passes: 44 tasks, ten gates, eleven scenarios, fourteen decision sheets, 22 requirements, 217 Markdown files and 1,203 local links. This verifies structure only.
+- TypeScript, production build and formatting pass. The existing large-bundle warning remains.
+- Isolated production runtime checks pass for synthetic CA/US stores: two startup cycles each, authenticated PDF/ZPL-8/ZPL-12 outputs and encrypted backup/isolated restore. This is packaging evidence, not physical printing or production recovery qualification.
+- React Doctor's requested `--diff` scan fell back to a full scan: **52/100, 41 errors, 206 warnings** across 472 scanned files. The new component has two reviewed high-confidence `no-impure-state-updater` false positives: `run` is an ordinary async wrapper rather than a React setter. Its loading-reset warning points to an owner-guarded `finally` reset. Actual setter callbacks are pure. Component size/complexity warnings remain maintainability findings. Independent reads were changed to `Promise.all`, eliminating its sequential-read warning. No suppression or clean static baseline is claimed.
+
+Self-review covers current authority before cached writes, org isolation, strict CSRF/schema validation, exact retry, immutable original/approved bytes, policy/receipt drift, period and outcome refusals, independent review, original cost/stock/cursor conservation, competing approvals, current-schema migrations and retained recovery hold. Restore checks cover all-row candidate drift, exact organization/provider coverage, signature purpose/key/principal separation, changed trust, expiry and private nonsymlink evidence files. Browser checks cover active failure/retry, separate approval, exact downloaded SHA-256, phone width and abandoned response fencing.
+
+The [coding inventory](../CODING-REMAINDER.md) retains actual dependent ledger transport/receipts, further corrections, durable release/activation, source cutoff reconciliation and Purolator contract implementation. Customer finance/operator authority, actual evidence, provider/device/security/residency/load/recovery qualification and release acceptance remain unresolved. All 44 tasks and ten gates remain NOT VERIFIED. Full-system completion is not claimed.

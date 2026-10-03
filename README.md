@@ -2,7 +2,7 @@
 
 Independent distributor application and planning workspace for multiple warehouses. Repository: [SJS1001/Distributor](https://github.com/SJS1001/Distributor).
 
-**Status: implementation in progress, 2 October 2026.** The owner authorized the full system after completing the planning package. See [implementation status](docs/IMPLEMENTATION.md) for actual code, commands and remaining qualification. The owner-authorized snapshot is published on `codex/local-distributor-checkpoint`; the full system remains incomplete.
+**Status: implementation in progress, 3 October 2026.** The owner authorized the full system after completing the planning package. See [implementation status](docs/IMPLEMENTATION.md) for actual code, commands and remaining qualification. The owner-authorized snapshot is published on `codex/local-distributor-checkpoint`; the full system remains incomplete.
 
 The intended product covers billing, online ordering, inventory, equipment scanning, fulfillment/logistics and warranty/returns. Modules should be added through defined interfaces without rewriting the product core. Project UB is a candidate optional integration, not a prerequisite for routine distributor operations.
 
@@ -36,6 +36,8 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
 | [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
 | [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md) | Reviewed local capacity release, retained history and uncertainty/restore refusals |
+| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, outcome-dependent journals and separate finance review |
+| [Isolated restore review](docs/RESTORE-REVIEW.md) | Source-bound reconciliation dossier, independent signed approvals and retained recovery hold |
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |

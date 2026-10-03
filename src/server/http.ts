@@ -261,6 +261,52 @@ export function commands(
       }),
       run: (a, k, p) => app.eventDelivery.retry(a, k, p),
     },
+    "accounting.cost.policy": {
+      schema: obj({
+        previousRevision: costNumber,
+        policyVersion: str,
+        mappingVersion: str,
+        establishedValuation: str,
+        period: { const: "monthly" },
+        closedThrough: { anyOf: [str, { type: "null" }] },
+        inventoryPostingOwner: { const: "distributor" },
+        inventoryAccount: str,
+        mappings: {
+          type: "array",
+          minItems: 1,
+          maxItems: 30,
+          items: obj({ type: str, offsetAccount: str }),
+        },
+        financeEvidence: str,
+      }),
+      run: (a, k, p) => app.integration.costs.corrections.configure(a, k, p),
+    },
+    "accounting.cost.correction.prepare": {
+      schema: obj({
+        originalId: str,
+        originalHash: str,
+        policyRevision: costNumber,
+        postingDate: str,
+        outcome: choice("posted", "unposted", "unknown"),
+        receiverRef: str,
+        externalRef: str,
+        originalPostingDate: { anyOf: [str, { type: "null" }] },
+        outcomeEvidence: str,
+        cancellationEvidence: { anyOf: [str, { type: "null" }] },
+        priorPeriodEvidence: { anyOf: [str, { type: "null" }] },
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.corrections.prepare(a, k, p),
+    },
+    "accounting.cost.correction.decide": {
+      schema: obj({
+        correctionId: str,
+        reviewHash: str,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.integration.costs.corrections.decide(a, k, p),
+    },
     "accounting.cost.prepare": {
       schema: obj({
         version: { const: 1, type: "integer" },
@@ -3136,6 +3182,46 @@ export async function createHttp(app: Application, options: HttpOptions) {
       const file = app.integration.costs.download(
         actor(request),
         request.params.packetId,
+      );
+      return reply
+        .type("application/json")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${file.filename}"`,
+        )
+        .header("x-document-sha256", file.hash)
+        .header("Cache-Control", "no-store")
+        .send(file.bytes);
+    },
+  );
+  http.get("/api/accounting/cost-policy", async (request) =>
+    app.integration.costs.corrections.policy(actor(request)),
+  );
+  http.get<{ Params: { packetId: string } }>(
+    "/api/accounting/costs/:packetId/corrections",
+    { schema: { params: obj({ packetId: str }) } },
+    async (request) =>
+      app.integration.costs.corrections.list(
+        actor(request),
+        request.params.packetId,
+      ),
+  );
+  http.get<{ Params: { correctionId: string } }>(
+    "/api/accounting/cost-corrections/:correctionId",
+    { schema: { params: obj({ correctionId: str }) } },
+    async (request) =>
+      app.integration.costs.corrections.detail(
+        actor(request),
+        request.params.correctionId,
+      ),
+  );
+  http.get<{ Params: { correctionId: string } }>(
+    "/api/accounting/cost-corrections/:correctionId/file",
+    { schema: { params: obj({ correctionId: str }) } },
+    async (request, reply) => {
+      const file = app.integration.costs.corrections.download(
+        actor(request),
+        request.params.correctionId,
       );
       return reply
         .type("application/json")

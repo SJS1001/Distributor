@@ -14,6 +14,7 @@ import { Identity } from "./iam.ts";
 import { Inventory } from "./inventory.ts";
 import type { CostWindow } from "./inventory-costs.ts";
 import { Platform } from "./platform.ts";
+import { CostCorrections } from "./cost-corrections.ts";
 
 export type CostInput = {
   version: 1;
@@ -107,6 +108,7 @@ const accountCode = (raw: string) => {
 // chart of accounts is involved; receiver acceptance is a separate attestation.
 export class IntegrationCosts {
   private store: Store;
+  corrections: CostCorrections;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -121,6 +123,27 @@ export class IntegrationCosts {
       CREATE TABLE IF NOT EXISTS integration_cost_cursors(org_id TEXT PRIMARY KEY,through_sequence INTEGER NOT NULL,closing_value INTEGER NOT NULL,packet_id TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS integration_cost_receipts(org_id TEXT NOT NULL,receiver_ref TEXT NOT NULL,external_ref TEXT NOT NULL,packet_id TEXT NOT NULL UNIQUE,PRIMARY KEY(org_id,receiver_ref,external_ref)) STRICT;
     `);
+    this.corrections = new CostCorrections(
+      database,
+      platform,
+      identity,
+      (actor, packetId) => {
+        const packet = this.detail(actor, packetId);
+        const artifact = this.download(actor, packetId).bytes;
+        const document = JSON.parse(artifact);
+        check(
+          document.organizationId === actor.orgId &&
+            document.packetId === packet.id &&
+            document.region === packet.region &&
+            document.currency === packet.currency &&
+            canonical(document.report) === canonical(packet.report) &&
+            canonical(document.input) === canonical(packet.input),
+          "COST_INTEGRITY",
+          "Original packet metadata differs from its immutable artifact.",
+        );
+        return { packet, report: packet.report, artifact };
+      },
+    );
   }
   private principal(actor: Actor) {
     actor = this.identity.currentActor(actor);
@@ -718,6 +741,15 @@ export class IntegrationCosts {
           );
           return this.view(actor, packet);
         }
+        check(
+          !this.store.get(
+            "SELECT id FROM integration_cost_corrections WHERE org_id=? AND original_id=? AND state='reviewed'",
+            actor.orgId,
+            packet.id,
+          ),
+          "COST_CORRECTION_CONFLICT",
+          "An approved correction supersedes this original handoff. Record its ledger outcome separately.",
+        );
         check(
           !this.store.get(
             "SELECT packet_id FROM integration_cost_receipts WHERE org_id=? AND receiver_ref=? AND external_ref=?",

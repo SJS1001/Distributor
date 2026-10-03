@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "378a1d6402257f29a4399eeacaddfb5714d783c4",
+  "hashes": {
+    "disabled": "971d3ffe92474b98cbe9c5efbf8bddc1340f8983ec68189d0cf40249ad96b360",
+    "enabled": "be8252e5cc553a3681f1c53a2a1405cefb4e9fbcc0fa90e91155fb75868f055d"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "procurement_supplier_changes",
+      "tbl_name": "procurement_supplier_changes",
+      "sql": "CREATE TABLE procurement_supplier_changes(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,supplier_id TEXT NOT NULL REFERENCES procurement_suppliers(id),revision INTEGER NOT NULL CHECK(revision>0),active INTEGER NOT NULL CHECK(active IN(0,1)),actor_id TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(org_id,supplier_id,revision)) STRICT"
+    }
+  ]
+}

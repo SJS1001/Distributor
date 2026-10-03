@@ -1,3 +1,4 @@
+import { costCorrectionBrowser } from "./cost-correction-browser-fixture.ts";
 import { pdfBoundaryBrowser } from "./pdf-browser-fixture.ts";
 import { countRecoveryBrowser } from "./count-recovery-browser-fixture.ts";
 import { countQueueBrowser } from "./count-queue-browser-fixture.ts";
@@ -964,6 +965,9 @@ const serialDossierHttp = await serialDossierBrowser((fn) => cleanup.push(fn));
 const retiredReceivingHttp = await retiredReceivingBrowser((fn) =>
   cleanup.push(fn),
 );
+const costCorrectionHttp = await costCorrectionBrowser((fn) =>
+  cleanup.push(fn),
+);
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3117",
   providers: new BrowserProviders(f.app, [
@@ -982,6 +986,7 @@ const http = await createHttp(f.app, {
 await http.listen({ host: "127.0.0.1", port: 3117 });
 const stop = async () => {
   await http.close();
+  await costCorrectionHttp.close();
   await paymentHttp.close();
   await authorizationHttp.close();
   await cpHttp.close();

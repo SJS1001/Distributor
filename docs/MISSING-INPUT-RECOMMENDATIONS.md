@@ -1,6 +1,6 @@
 # Recommendations for the three remaining coding inputs
 
-Researched 2026-10-02 against published checkpoint `c93fe047c5d03be27cc3241c79f2db1b049cccd3`. These are proposed configurable policies and implementation recommendations, not approved accounting rules, provider contracts or production clearance. They answer the owner's request to research or recommend each missing input. Existing implementations are described in [the coding inventory](CODING-REMAINDER.md), [recovery](RECOVERY.md) and [stock-cost handoffs](ACCOUNTING-COSTS.md).
+Researched 2026-10-02 against published checkpoint `c93fe047c5d03be27cc3241c79f2db1b049cccd3`. The owner accepted these configurable design recommendations on 2026-10-03. They do not supply customer accounting rules, provider contracts or production clearance. They answer the owner's request to research or recommend each missing input. Existing implementations are described in [the coding inventory](CODING-REMAINDER.md), [recovery](RECOVERY.md) and [stock-cost handoffs](ACCOUNTING-COSTS.md).
 
 | Gap | Recommended direction | Engineering work that can proceed | Evidence still needed before activation |
 | --- | --- | --- | --- |

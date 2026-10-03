@@ -25,7 +25,8 @@
     "provider:credentials": "tsx src/server/provider-credentials-cli.ts",
     "provider:authorize": "tsx src/server/quickbooks-authorization-cli.ts",
     "verify:runtime": "node scripts/verify_runtime.mjs",
-    "verify:load-recovery": "tsx scripts/rehearsal.ts"
+    "verify:load-recovery": "tsx scripts/rehearsal.ts",
+    "recovery:review": "tsx src/server/restore-review-cli.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",

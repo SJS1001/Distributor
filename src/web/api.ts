@@ -376,10 +376,11 @@ export async function downloadCostFile(
   packetId: string,
   expectedHash: string,
   signal?: AbortSignal,
+  correction = false,
 ) {
   signal?.throwIfAborted();
   const response = await fetch(
-    `/api/accounting/costs/${encodeURIComponent(packetId)}/file`,
+    `/api/accounting/${correction ? "cost-corrections" : "costs"}/${encodeURIComponent(packetId)}/file`,
     { credentials: "same-origin", signal },
   );
   if (!response.ok) {

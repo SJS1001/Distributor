@@ -2,6 +2,10 @@
 
 Date: 2026-09-30. A proposal is not an approved business rule. Owner columns identify responsibilities, not assigned people.
 
+## Accepted continuation — 2026-10-03
+
+The owner accepted the [missing-input recommendations](MISSING-INPUT-RECOMMENDATIONS.md) and instructed implementation to continue. Proceed with qualified manual Purolator shipping pending its current contract, source-bound all-organization restore reconciliation with separate finance/security approval and writer fencing, and immutable ledger-outcome-dependent accounting corrections under explicit monthly/closed-period and posting ownership policies. RPO 15 minutes/RTO four hours are accepted rehearsal design targets, not measured production commitments. Preserve each customer’s established valuation; propose specific identification/FIFO only for new finance-approved deployments. Actual customer mappings, approvers, provider outcomes, contracts, regional infrastructure and release evidence remain to be qualified. This acceptance does not verify a task or product gate.
+
 ## Confirmed direction
 
 - One distributor, potentially multiple warehouses.

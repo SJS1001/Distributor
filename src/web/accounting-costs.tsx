@@ -1,3 +1,4 @@
+import { CostCorrectionsPanel } from "./cost-corrections.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import { command, downloadCostFile, request } from "./api.ts";
 import type {
@@ -431,6 +432,11 @@ export function AccountingCosts() {
           )}
           {detail.contentHash && (
             <>
+              <CostCorrectionsPanel
+                key={detail.id}
+                original={detail}
+                recoveryHold={Boolean(source?.recoveryHold)}
+              />
               <p>
                 Reviewed file SHA-256:{" "}
                 <code style={{ overflowWrap: "anywhere" }}>
