@@ -295,6 +295,7 @@ function validReleaseEdge(
   if (b.state === "held")
     return (
       a.state !== "forward-held" &&
+      b.at === a.at &&
       b.phase === a.phase &&
       ["prepared", "fencing", "fenced", "routing"].includes(a.phase)
     );
@@ -367,6 +368,18 @@ function releases(value: unknown): OfflineReleaseHistory[] {
           typeof item.forwardRecoveryRequired === "boolean" &&
             history.some((p) => p.state === "forward-held"),
           "Invalid forward recovery marker.",
+        );
+      // The projection retains only the final marker. Earlier false holds can
+      // resume and later acquire a positive marker, so inspect the last hold.
+      // Positive and conservative legacy holds cannot resume native rollback;
+      // supersession still retains the old control intent.
+      const lastForward = history.findLastIndex(
+        (p) => p.state === "forward-held",
+      );
+      if (lastForward >= 0 && item.forwardRecoveryRequired !== false)
+        requirePhase(
+          history.slice(lastForward + 1).every((p) => p.state === "superseded"),
+          "Forward recovery hold cannot resume rollback without an explicit false marker.",
         );
       return {
         id: item.id,

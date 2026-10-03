@@ -78,10 +78,12 @@ function release(
   points: [OfflineReleaseHistory["state"], OfflineReleaseHistory["phase"]][],
   id = "release-a",
 ): OfflineReleaseHistory {
-  const history = points.map(([state, phase], i) => ({
+  let at = 999;
+  const history = points.map(([state, phase]) => ({
     state,
     phase,
-    at: 1000 + i,
+    // Native hold() retains current.at; ordinary write() samples its clock.
+    at: state === "held" ? at : ++at,
   }));
   return {
     id,
@@ -92,6 +94,31 @@ function release(
   };
 }
 const prepared = () => release([["prepared", "prepared"]]);
+
+test("an earlier recoverable hold may later acquire a permanent forward marker", () => {
+  const r = release([
+    ["prepared", "prepared"],
+    ["stopping", "stopping"],
+    ["forward-held", "stopping"],
+    ["returning", "returning"],
+    ["forward-held", "returning"],
+    ["superseded", "superseded"],
+  ]);
+  r.forwardRecoveryRequired = true;
+  assert.equal(
+    classifyOfflineReleaseHistory([r]).effects,
+    "forward-recovery-marker",
+  );
+  // The last positive hold still cannot be resumed to rollback completion.
+  const invalid = release([
+    ...r.history
+      .slice(0, -1)
+      .map((p) => [p.state, p.phase] as [typeof p.state, typeof p.phase]),
+    ["rolled-back", "rolled-back"],
+  ]);
+  invalid.forwardRecoveryRequired = true;
+  assert.throws(() => classifyOfflineReleaseHistory([invalid]), refusal);
+});
 function withRelease(
   value: OfflinePhaseState,
   records: OfflineReleaseHistory[],
