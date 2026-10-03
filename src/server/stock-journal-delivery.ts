@@ -53,10 +53,21 @@ export type JournalDeliveryInput = {
   accounts: StockJournalIntent["accounts"];
   reason: string;
 };
+export type OriginalRetryInput = {
+  journalId: string;
+  reviewHash: string;
+  reason: string;
+};
 type Plan = {
   input: JournalDeliveryInput;
   intent: StockJournalIntent;
   policyHash: string;
+  predecessor?: {
+    journalId: string;
+    reviewHash: string;
+    cancellationHash: string;
+    historyHash: string;
+  };
 };
 type Journal = {
   id: string;
@@ -149,7 +160,9 @@ export class StockJournalDelivery {
       journalId,
     );
     check(row, "NOT_FOUND", "Journal delivery not found.", 404);
-    return this.checkedRow(row);
+    const checked = this.checkedRow(row);
+    if (checked.leg === "original") this.originalLineage(actor, checked);
+    return checked;
   }
   private checkedRow(row: Journal) {
     const plan = JSON.parse(row.plan) as Plan;
@@ -199,11 +212,20 @@ export class StockJournalDelivery {
   }
   private source(actor: Actor, input: JournalDeliveryInput, write: boolean) {
     if (input.leg === "original") {
-      check(
-        input.attemptId === null,
-        "JOURNAL_ATTEMPT",
-        "Original journals cannot reuse correction retry approval.",
-      );
+      if (input.attemptId !== null) {
+        const predecessor = this.row(actor, input.attemptId);
+        check(
+          predecessor.leg === "original" &&
+            predecessor.state === "cancelled" &&
+            predecessor.source_id === input.sourceId &&
+            predecessor.posting_date === input.postingDate &&
+            predecessor.realm === input.realm &&
+            predecessor.binding_id === input.bindingId,
+          "JOURNAL_PREDECESSOR",
+          "A fresh original must retain its cancelled exact source/date/company predecessor.",
+        );
+        this.originalCancelledProof(actor, predecessor);
+      }
       const source = this.costs.deliverySourceInTransaction(
         actor,
         input.sourceId,
@@ -410,7 +432,19 @@ export class StockJournalDelivery {
       closedThrough: policy.input.closedThrough,
       accounts: input.accounts,
     });
-    return { input, intent, policyHash: policy.hash };
+    const plan: Plan = { input, intent, policyHash: policy.hash };
+    if (input.leg === "original" && input.attemptId !== null) {
+      const predecessor = this.row(actor, input.attemptId),
+        previous = JSON.parse(predecessor.plan) as Plan;
+      check(
+        canonical(intent) === canonical(previous.intent) &&
+          policy.hash === previous.policyHash,
+        "JOURNAL_REVIEW_CHANGED",
+        "Fresh original attempts preserve the approved source, date, accounts, company and policy. Changed journals require a separate correction.",
+      );
+      plan.predecessor = this.originalCancelledProof(actor, predecessor).stamp;
+    }
+    return plan;
   }
   preparationReview(
     actor: Actor,
@@ -570,6 +604,11 @@ export class StockJournalDelivery {
       () => {
         actor = this.principal(actor);
         this.platform.assertProviderAccess();
+        check(
+          input.leg !== "original" || input.attemptId === null,
+          "JOURNAL_ATTEMPT",
+          "Use separately reviewed original retry preparation.",
+        );
         this.plan(actor, input);
       },
       () => {
@@ -797,14 +836,24 @@ export class StockJournalDelivery {
       const row = this.checkedRow(raw),
         plan = JSON.parse(row.plan) as Plan,
         date = dates.find((d) => d.postingDate === row.posting_date);
+      const lineage = this.originalLineage(actor, row);
       check(
         date &&
-          !date.journal &&
-          row.attempt_id === "" &&
           plan.intent.source.hash === source.file.hash &&
           plan.intent.source.bytes === source.file.bytes,
         "JOURNAL_INTEGRITY",
         "Every native original must identify one unchanged source date.",
+      );
+      // Retained cancelled predecessors are verified but never counted as an
+      // additional posting date. The one terminal chain leaf supplies evidence.
+      if (rows.some((candidate) => candidate.attempt_id === row.id)) {
+        this.originalCancelledProof(actor, row);
+        continue;
+      }
+      check(
+        !date.journal,
+        "JOURNAL_INTEGRITY",
+        "Each original date must have one complete attempt chain.",
       );
       const history = this.store
         .all(
@@ -920,7 +969,13 @@ export class StockJournalDelivery {
         realm: row.realm,
         bindingId: row.binding_id,
         state: row.state,
-        historyHash: digest(canonical(history.map((r) => r.hash))),
+        historyHash: digest(
+          canonical(
+            lineage.length === 0
+              ? history.map((r) => r.hash)
+              : { history: history.map((r) => r.hash), predecessors: lineage },
+          ),
+        ),
         posted,
       };
     }
@@ -1091,7 +1146,9 @@ export class StockJournalDelivery {
       );
       return {
         items: rows.slice(0, 20).map((r) => {
-          const { plan: _plan, ...header } = this.view(this.checkedRow(r));
+          const row = this.checkedRow(r);
+          if (row.leg === "original") this.originalLineage(actor, row);
+          const { plan: _plan, ...header } = this.view(row);
           return header;
         }),
         next:
@@ -1789,9 +1846,252 @@ export class StockJournalDelivery {
       return this.view(this.row(lease.actor, row.id));
     });
   }
+  private originalCancelledProof(actor: Actor, row: Journal) {
+    check(
+      row.leg === "original" && row.state === "cancelled",
+      "JOURNAL_PREDECESSOR",
+      "Only a final independently cancelled original can precede a fresh attempt.",
+    );
+    const { facts, history } = this.originalCancellationFacts(actor, row),
+      cancellation = history.at(-1),
+      body = cancellation?.body;
+    check(
+      cancellation &&
+        body?.outcome === "cancelled-unposted" &&
+        canonical(Object.keys(body).sort()) ===
+          canonical(["evidenceHash", "outcome", "reason", "requestRef"]),
+      "JOURNAL_INTEGRITY",
+      "Retain the complete final original cancellation decision.",
+    );
+    originalCancellationInput({
+      journalId: row.id,
+      requestRef: body.requestRef,
+      evidenceHash: body.evidenceHash,
+      reason: body.reason,
+    });
+    const evidence = this.originalCancellationEvidence(
+      actor,
+      row,
+      body.evidenceHash,
+    );
+    check(
+      body.requestRef === requestRef(row.id) &&
+        evidence.recordedBy !== cancellation.recordedBy &&
+        evidence.revision + 1 === cancellation.revision,
+      "JOURNAL_INTEGRITY",
+      "Original cancellation must independently confirm its latest final non-posting proof.",
+    );
+    return {
+      evidence,
+      cancellation,
+      snapshot: {
+        ...facts,
+        historyHash: digest(canonical(history.map((o) => o.hash))),
+      },
+      stamp: {
+        journalId: row.id,
+        reviewHash: row.review_hash,
+        cancellationHash: cancellation.hash,
+        historyHash: digest(canonical(history.map((o) => o.hash))),
+      },
+    };
+  }
+  private originalLineage(
+    actor: Actor,
+    row: Journal,
+  ): NonNullable<Plan["predecessor"]>[] {
+    const stamps: NonNullable<Plan["predecessor"]>[] = [],
+      seen = new Set<string>();
+    let current = row;
+    while (true) {
+      check(
+        !seen.has(current.id),
+        "JOURNAL_INTEGRITY",
+        "Original retry lineage must be acyclic.",
+      );
+      seen.add(current.id);
+      const plan = JSON.parse(current.plan) as Plan;
+      check(
+        current.leg === "original" &&
+          canonical(Object.keys(plan).sort()) ===
+            canonical(
+              current.attempt_id
+                ? ["input", "intent", "policyHash", "predecessor"]
+                : ["input", "intent", "policyHash"],
+            ),
+        "JOURNAL_INTEGRITY",
+        "Original attempt differs from its supported immutable lineage contract.",
+      );
+      if (!current.attempt_id) return stamps;
+      const raw = this.store.get<Journal>(
+        "SELECT * FROM integration_stock_journals WHERE org_id=? AND id=?",
+        actor.orgId,
+        current.attempt_id,
+      );
+      check(raw, "JOURNAL_INTEGRITY", "Original retry predecessor is missing.");
+      const predecessor = this.checkedRow(raw),
+        previous = JSON.parse(predecessor.plan) as Plan,
+        proof = this.originalCancelledProof(actor, predecessor);
+      check(
+        predecessor.source_id === current.source_id &&
+          predecessor.posting_date === current.posting_date &&
+          predecessor.realm === current.realm &&
+          predecessor.binding_id === current.binding_id &&
+          canonical(previous.intent) === canonical(plan.intent) &&
+          previous.policyHash === plan.policyHash &&
+          canonical(plan.predecessor) === canonical(proof.stamp),
+        "JOURNAL_INTEGRITY",
+        "Original retry must preserve its complete cancelled predecessor and unchanged journal.",
+      );
+      stamps.push(proof.stamp);
+      current = predecessor;
+    }
+  }
+  private originalRetryDossier(actor: Actor, predecessor: Journal, plan: Plan) {
+    const proof = this.originalCancelledProof(actor, predecessor),
+      snapshot = {
+        journal: this.view(predecessor),
+        evidence: proof.evidence,
+        cancellation: proof.cancellation,
+        snapshot: proof.snapshot,
+        plan: {
+          ...plan,
+          input: {
+            ...plan.input,
+            reason: "Separately reviewed original retry",
+          },
+        },
+      };
+    return { ...snapshot, reviewHash: digest(canonical(snapshot)) };
+  }
+  originalRetryReview(actor: Actor, journalId: string) {
+    return this.database.transaction(() =>
+      this.originalRetryReviewInTransaction(actor, journalId),
+    );
+  }
+  private originalRetryReviewInTransaction(actor: Actor, journalId: string) {
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    this.platform.assertProviderAccess();
+    const predecessor = this.row(actor, journalId);
+    this.originalCancelledProof(actor, predecessor);
+    check(
+      !this.store.get(
+        "SELECT id FROM integration_stock_journals WHERE org_id=? AND leg='original' AND attempt_id=? AND state<>'rejected'",
+        actor.orgId,
+        predecessor.id,
+      ),
+      "JOURNAL_DUPLICATE",
+      "This cancelled original already has a retained successor. Review that attempt.",
+    );
+    const previous = JSON.parse(predecessor.plan) as Plan,
+      authority =
+        this.identity.organizationResidency.currentPermissionInTransaction(
+          actor,
+        ),
+      plan = this.plan(actor, {
+        ...previous.input,
+        attemptId: predecessor.id,
+        authority,
+        reason: "Separately reviewed original retry",
+      });
+    return this.originalRetryDossier(actor, predecessor, plan);
+  }
+  prepareOriginalRetry(actor: Actor, key: string, raw: OriginalRetryInput) {
+    const input = structuredClone(raw);
+    return this.platform.command(
+      actor,
+      "accounting.journal.original-retry.prepare",
+      key,
+      input,
+      (cached) => {
+        actor = this.principal(actor);
+        check(
+          input &&
+            typeof input === "object" &&
+            !Array.isArray(input) &&
+            canonical(Object.keys(input).sort()) ===
+              canonical(["journalId", "reason", "reviewHash"]) &&
+            typeof input.reviewHash === "string" &&
+            /^[a-f0-9]{64}$/.test(input.reviewHash),
+          "JOURNAL_INPUT",
+          "Use the exact original retry preparation fields.",
+          400,
+        );
+        text(input.journalId, "Cancelled original", 160);
+        text(input.reason, "Fresh original retry reason", 2000);
+        if (cached !== undefined) {
+          check(
+            cached && typeof cached.id === "string",
+            "JOURNAL_INTEGRITY",
+            "Original retry receipt is damaged.",
+          );
+          const row = this.row(actor, cached.id),
+            plan = JSON.parse(row.plan) as Plan,
+            predecessor = this.row(actor, input.journalId),
+            current = this.view(row);
+          check(
+            row.leg === "original" &&
+              row.attempt_id === predecessor.id &&
+              row.created_by === actor.id &&
+              plan.input.reason === input.reason &&
+              this.originalRetryDossier(actor, predecessor, plan).reviewHash ===
+                input.reviewHash &&
+              canonical(cached) ===
+                canonical({
+                  ...current,
+                  state: "ready",
+                  externalId: null,
+                  decisionBy: null,
+                  decisionAt: null,
+                  decisionReason: null,
+                  leaseStarted: null,
+                  leaseMode: null,
+                  dispatched: false,
+                }),
+            "JOURNAL_INTEGRITY",
+            "Original retry receipt differs from its retained preparation and predecessor.",
+          );
+        }
+      },
+      () => {
+        const review = this.originalRetryReviewInTransaction(
+          actor,
+          input.journalId,
+        );
+        check(
+          review.reviewHash === input.reviewHash,
+          "JOURNAL_REVIEW_CHANGED",
+          "Review the current complete original cancellation and fresh retry selection.",
+        );
+        const plan: Plan = {
+            ...review.plan,
+            input: { ...review.plan.input, reason: input.reason },
+          },
+          journalId = id();
+        this.store.run(
+          "INSERT INTO integration_stock_journals(id,org_id,realm,binding_id,source_id,leg,posting_date,attempt_id,plan,review_hash,state,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          journalId,
+          actor.orgId,
+          plan.input.realm,
+          plan.input.bindingId,
+          plan.input.sourceId,
+          "original",
+          plan.input.postingDate,
+          input.journalId,
+          canonical(plan),
+          digest(canonical(plan)),
+          "ready",
+          actor.id,
+          now(),
+        );
+        return this.view(this.row(actor, journalId));
+      },
+    );
+  }
   private originalCancellationFacts(actor: Actor, row: Journal) {
     check(
-      row.leg === "original" && row.attempt_id === "",
+      row.leg === "original",
       "JOURNAL_STATE",
       "Select an original native journal.",
     );

@@ -399,6 +399,15 @@ export function commands(
       run: (a, k, p) =>
         app.integration.costs.journals.cancelOriginalAttempt(a, k, p),
     },
+    "accounting.journal.original-retry.prepare": {
+      schema: obj({
+        journalId: { ...str, maxLength: 160 },
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: str,
+      }),
+      run: (a, k, p) =>
+        app.integration.costs.journals.prepareOriginalRetry(a, k, p),
+    },
     "accounting.journal.cancel-correction": {
       schema: obj({
         journalId: str,
@@ -3649,6 +3658,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
     (request, reply) => {
       reply.header("Cache-Control", "no-store");
       return app.integration.costs.journals.originalCancellationReview(
+        actor(request),
+        request.params.journalId,
+      );
+    },
+  );
+  http.get<{ Params: { journalId: string } }>(
+    "/api/accounting/journals/:journalId/original-retry-review",
+    { schema: { params: obj({ journalId: str }), querystring: obj({}) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.originalRetryReview(
         actor(request),
         request.params.journalId,
       );

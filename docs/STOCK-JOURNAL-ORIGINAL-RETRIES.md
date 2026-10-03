@@ -1,0 +1,29 @@
+# Separately approved original stock-journal retries
+
+D-034/D-036/D-039 engineering continuation. The integration owner can prepare a fresh original after its predecessor has final independently confirmed non-posting cancellation. The authenticated API returns a fixed review and creates a new ready journal. No approval is inherited, no provider request is sent, and the predecessor remains immutable. Billing preparation, permission replacement and cancellation forms for these new original attempts remain dependent browser work. All tasks and product gates remain NOT VERIFIED.
+
+## Fixed predecessor and prospective review
+
+`GET /api/accounting/journals/:journalId/original-retry-review` requires current persisted internal finance/admin authority, accepts no query fields and returns `Cache-Control: no-store`. The selected original must be finally cancelled, with complete contiguous hash-checked history, exact immutable approved source/date/company/accounts/policy, independent original approval, permanent actual `DJ-` reference, final non-posting evidence and a separate cancellation recorder. Unknown, active, posted, correction or already replaced attempts refuse. A lookup miss never establishes cancellation.
+
+The review includes the retained predecessor journal, final evidence, cancellation decision, complete-history snapshot and prospective plan. Its canonical SHA-256 `reviewHash` fixes those facts. The prospective plan binds the current organization permission and unchanged finance policy; it uses a fixed review reason, while preparation separately retains the operator's reason. Permission changes require a new review. Policy, source, date, account mapping or company changes cannot be hidden in a retry; changed journals require a separate correction contract. Recovery holds block fresh review and preparation.
+
+## Prepare, then independently approve
+
+Submit `accounting.journal.original-retry.prepare` through the authenticated command endpoint with the original idempotency key and exactly `journalId`, `reviewHash` and `reason`. The owner rechecks the complete predecessor and prospective plan in the same writer transaction. A stale review or competing non-rejected successor refuses. A rejected successor remains retained but does not prevent a later separately reviewed preparation.
+
+Preparation creates a distinct ready journal ID, review hash and derived `DJ-` request reference. The existing cancelled source/date reservation is retained; the new attempt identifies its predecessor through `attemptId` and an immutable stamp containing the predecessor ID, review hash, cancellation hash and full history hash. The source journal intent and policy hash are unchanged. No stock, cost, money, source artifact, export cursor or predecessor observation changes.
+
+The existing `accounting.journal.decide` task requires a different current finance principal to approve the fresh plan. The creator cannot approve it, and a ready attempt cannot acquire a write lease. Existing current permission, finance policy, source, recovery hold and synchronous dispatch fences remain authoritative after approval. HTTP exposes no lease or provider execution operation. The separately wired disabled sandbox transport still requires actual qualification.
+
+## Exact recovery and repeated attempts
+
+Same-key exact preparation replay checks current persisted finance authority, original creator, exact body, retained child plan and complete cancelled lineage before returning the original ready receipt. This historical receipt remains recoverable after rejection, approval, posting, a later hold or policy drift; it never resets the actual journal state or grants a write. Foreign scope, revoked role, changed bodies and damaged receipts or lineage refuse. Journal insertion, command receipt and audit commit or roll back atomically.
+
+A fresh attempt that itself becomes uncertain uses the native original final evidence and independent cancellation tasks. Another retry can then retain that cancelled attempt as its predecessor. Every ancestor remains validated iteratively with cycle, missing-parent, altered-intent, permanent-reference and full-history checks. Detail, queue, write fences and reconciliation reject damaged chains. Browser forms that currently validate only an initial original must be extended and independently tested before using those forms for a retry.
+
+## Reconciliation and limits
+
+[Original reconciliation](STOCK-JOURNAL-RECONCILIATION.md) validates all retained non-rejected attempts. It checks each cancelled predecessor but counts only the one terminal chain leaf for its posting date. A cancelled predecessor or unposted leaf leaves the date incomplete. A fully posted, independently approved leaf supplies one date's final evidence; its history hash also binds every predecessor cancellation/history stamp. The existing independent reconciliation acceptance remains required. Earlier cancelled attempts and references never disappear or become posted.
+
+The [local receipt](evidence/LOCAL-STOCK-JOURNAL-ORIGINAL-RETRIES-2026-10-03.md) records synthetic native/API coverage and affected browser regression. This increment has no new browser retry form or independent-process retry-preparation race test. Complete-history transaction and repeated ancestor scan costs remain unqualified. Actual receiver cancellation truth, finance policies/provider terms, organization OAuth/company verification/remote revocation, further changed-journal/valuation/quantity corrections, infrastructure residency, recovery, security/load and operator/release acceptance remain open. Schema 12, dependencies and licenses are unchanged. No workflow, CI runner/job, account, provider IO, delegated/cloud session, PR, merge or deployment is introduced.
