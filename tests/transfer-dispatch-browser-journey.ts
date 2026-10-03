@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { reviewDuringInventoryLoad } from "./transfer-review-loading.ts";
 
 const origin = "http://127.0.0.1:3162";
 const pattern = "**/api/commands/transfer.dispatch";
@@ -126,9 +127,7 @@ test("browser: transfer dispatch retains the original portion across reload and 
   const a = JSON.parse(original.raw);
   await d(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await nav(page, "Overview");
-  await page.reload();
-  await nav(page, "Inventory");
-  await review(page);
+  await reviewDuringInventoryLoad(page, d(page), () => review(page));
   await expect(d(page)).toContainText("Synthetic original dispatch DISPATCH-1");
   await expect(d(page)).toContainText("Ottawa");
   await d(page).getByRole("button", { name: "Cancel", exact: true }).click();

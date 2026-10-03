@@ -2282,7 +2282,7 @@ function App() {
             )}
             {can("warehouse") && (
               <TransferArrival
-                key={`${actor.orgId}:${actor.id}:${extra.transferRefresh}:${arrivalSelection?.transferId ?? ""}:${arrivalSelection?.lineId ?? ""}`}
+                key={`${actor.orgId}:${actor.id}:${arrivalSelection?.transferId ?? ""}:${arrivalSelection?.lineId ?? ""}`}
                 orgId={actor.orgId}
                 actorId={actor.id}
                 selection={arrivalSelection}
@@ -2301,7 +2301,7 @@ function App() {
                   lossSelection?.kind === kind ? lossSelection : null;
                 return (
                   <TransferLoss
-                    key={`${actor.orgId}:${actor.id}:${kind}:${extra.transferRefresh}:${selected?.lineId ?? ""}:${selected?.kind === "recovery" ? selected.lossId : ""}`}
+                    key={`${actor.orgId}:${actor.id}:${kind}:${selected?.lineId ?? ""}:${selected?.kind === "recovery" ? selected.lossId : ""}`}
                     orgId={actor.orgId}
                     actorId={actor.id}
                     kind={kind}
@@ -2318,7 +2318,7 @@ function App() {
               })}
             {can("warehouse") && (
               <TransferDispatch
-                key={`${actor.orgId}:${actor.id}:${extra.transferRefresh}:${dispatchSelection?.unitId ?? ""}`}
+                key={`${actor.orgId}:${actor.id}:${dispatchSelection?.unitId ?? ""}`}
                 orgId={actor.orgId}
                 actorId={actor.id}
                 selection={dispatchSelection}

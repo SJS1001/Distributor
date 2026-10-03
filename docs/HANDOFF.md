@@ -1,5 +1,13 @@
 # Distributor setup handoff
 
+## Latest continuation — preserve transfer reviews during initial loading, 2026-10-02
+
+- Resumed published parent `2ec8c3fd376b2e8d2827c1ecba2973a00b8f941d` on `codex/local-distributor-checkpoint` under the owner's instruction to continue all coding tasks and authorized snapshot publication. Direct workstation checks only; no CI runner, cloud/delegated session, provider IO, PR, merge or deployment.
+- Four controlled production journeys reproduced initial Inventory completion discarding retained arrival/dispatch/loss/recovery reviews. Three component-key changes preserve their fixed identity while queues still refresh. All four now preserve the same dialog and Cancel focus, then recover the exact original command without duplicate stock effects.
+- Fresh complete production Chromium suite passes 184/184 in 3.7 minutes. TypeScript/build/format pass; existing bundle warning remains. Changed-source React scan: zero introduced errors/one existing complexity warning. Full main application scan remains unclean: 30 errors/21 warnings. Native inputs unchanged; no fresh native suite result claimed. [Receipt](evidence/LOCAL-TRANSFER-REVIEW-LOADING-2026-10-02.md) binds final inputs and preserves private red failures; historical count checkpoint remains unchanged.
+- Self-review covers review identity, fixed evidence, organization/account/selection boundaries, refresh, exact recovery, stock/cost, focus and abandoned replies. Storage, physical custody, production/provider/device/residency/operator qualification remain open. All 44 tasks and 10 gates NOT VERIFIED; full system incomplete.
+- Finish planning/link/whitespace and staged publication review, then normal local commit and authorized branch push. Next confirmed-risk investigation: receipt-draft history has an unguarded late read that can open its dialog after navigation; reproduce before changing it. Generic count review durability and broader acceptance gaps remain.
+
 ## Latest continuation — scoped count queue and requested GitHub commit, 2026-10-02
 
 - Resumed published parent `c043867081991d737e4acab320b7bdc9743e9014` on `codex/local-distributor-checkpoint`. The owner requested committing to GitHub; fresh read-only checks confirm matching remote parent, ADMIN/push permission and zero workflows/Actions runs. Direct workstation checks only; no CI runner, delegated/cloud session, provider IO, PR, merge or deployment.

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { reviewDuringInventoryLoad } from "./transfer-review-loading.ts";
 
 const origin = "http://127.0.0.1:3161";
 const pattern = "**/api/commands/transfer.receive";
@@ -127,9 +128,7 @@ test("browser: transfer arrival survives reload, navigation and account changes 
   expect(a.payload.quantity).toBe(2);
   await d(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await nav(page, "Overview");
-  await page.reload();
-  await nav(page, "Inventory");
-  await review(page);
+  await reviewDuringInventoryLoad(page, d(page), () => review(page));
   await expect(d(page)).toContainText("ARRIVAL-RECOVER-1");
   await d(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
