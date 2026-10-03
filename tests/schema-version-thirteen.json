@@ -1,0 +1,22 @@
+{
+  "capturedFrom": "0d0c91014f0565f4df4b31c82609a548dc75ba42",
+  "version": 13,
+  "hashes": {
+    "disabled": "b3034b6e3e59a2cdf45df15d34eb7ef233a902590f091e6dc53a8534163b0c0e",
+    "enabled": "5ed8ff78c1b781370a179d7058567c3256d759cd431e57593c082037027f756f"
+  },
+  "additions": [
+    {
+      "type": "table",
+      "name": "integration_ledger_authorizations",
+      "tbl_name": "integration_ledger_authorizations",
+      "sql": "CREATE TABLE integration_ledger_authorizations(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,worker_id TEXT NOT NULL,realm TEXT NOT NULL,client_id TEXT NOT NULL,redirect_uri TEXT NOT NULL,state_hash TEXT NOT NULL UNIQUE,credential_revision INTEGER NOT NULL,authority TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL CHECK(state IN('pending','exchanging','completed','canceled','denied','unknown','expired')),claim TEXT,started_at INTEGER,installed_revision INTEGER) STRICT"
+    },
+    {
+      "type": "index",
+      "name": "integration_ledger_authorization_binding",
+      "tbl_name": "integration_ledger_authorizations",
+      "sql": "CREATE INDEX integration_ledger_authorization_binding ON integration_ledger_authorizations(org_id,binding_id)"
+    }
+  ]
+}

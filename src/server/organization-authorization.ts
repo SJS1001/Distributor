@@ -58,6 +58,7 @@ export class OrganizationLedgerAuthorization {
         binding: CredentialBinding,
       ) => ReturnType<ProviderCredentials["status"]>;
       currentKey: () => void;
+      assertClear: (binding: CredentialBinding) => void;
       disable: (
         binding: CredentialBinding,
         revision: number,
@@ -155,6 +156,7 @@ export class OrganizationLedgerAuthorization {
     if (outbound) {
       this.platform.assertProviderAccess();
       this.vault.currentKey();
+      this.vault.assertClear(binding);
     }
     check(
       !actor.accountId,

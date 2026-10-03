@@ -1,3 +1,4 @@
+import { OrganizationLedgerRevocation } from "./organization-revocation.ts";
 import { OrganizationLedgerAuthorization } from "./organization-authorization.ts";
 import {
   createCipheriv,
@@ -44,6 +45,10 @@ type Credential = {
 // Only this vault constructs branded bindings. Buyer APIs refuse the namespace.
 const ledgerNamespace = "organization-ledger-sandbox-v1:";
 const ledgerBindings = new WeakSet<CredentialBinding>();
+const ledgerPublicBindings = new WeakMap<
+  CredentialBinding,
+  CredentialBinding
+>();
 
 // Integration owns credentials. No HTTP route or durable command can return this material.
 export class ProviderCredentials {
@@ -52,6 +57,7 @@ export class ProviderCredentials {
   private generation = 0;
   readonly ledger: {
     authorization: OrganizationLedgerAuthorization;
+    revocation: OrganizationLedgerRevocation;
     status: (
       binding: CredentialBinding,
     ) => ReturnType<ProviderCredentials["status"]>;
@@ -114,6 +120,39 @@ export class ProviderCredentials {
       ...this.status(internal),
       bindingId: binding.id,
     });
+    const ledgerRevocation = new OrganizationLedgerRevocation(
+      database,
+      this.store,
+      platform,
+      identity,
+      {
+        status: (binding) => publicStatus(binding, this.ledgerBinding(binding)),
+        currentKey: () => this.assertCurrentKey(),
+        capture: (binding, revision, authority) => {
+          const internal = this.ledgerBinding(binding);
+          this.authorize(internal, undefined, this.ledgerStamp(authority));
+          this.assertCurrentKey();
+          const row = this.row(internal);
+          check(
+            row && row.revision === revision,
+            "REVISION",
+            "Inspect current organization credentials before revocation.",
+          );
+          check(
+            row.state === "ready",
+            "CREDENTIAL_RECONNECT",
+            "Resolve interrupted organization refresh before revocation.",
+            503,
+          );
+          return this.decrypt(row).refreshToken;
+        },
+        disable: (binding, revision) => {
+          const internal = this.ledgerBinding(binding);
+          this.writeDisable(internal, revision);
+          return publicStatus(binding, internal);
+        },
+      },
+    );
     const ledgerAuthorization = new OrganizationLedgerAuthorization(
       database,
       platform,
@@ -122,6 +161,7 @@ export class ProviderCredentials {
       {
         status: (binding) => publicStatus(binding, this.ledgerBinding(binding)),
         currentKey: () => this.assertCurrentKey(),
+        assertClear: (binding) => ledgerRevocation.assertClear(binding),
         disable: (binding, revision) => {
           const internal = this.ledgerBinding(binding);
           this.writeDisable(internal, revision);
@@ -138,6 +178,7 @@ export class ProviderCredentials {
     );
     this.ledger = Object.freeze({
       authorization: ledgerAuthorization,
+      revocation: ledgerRevocation,
       status: (binding: CredentialBinding) =>
         publicStatus(binding, this.ledgerBinding(binding)),
       install: (
@@ -195,6 +236,7 @@ export class ProviderCredentials {
         const internal = this.ledgerBinding(binding);
         this.authorize(internal, undefined, this.ledgerStamp(authority));
         this.assertCurrentKey();
+        ledgerRevocation.assertClear(binding);
         const row = this.row(internal);
         check(
           row?.state === "ready" && row.revision === revision,
@@ -342,6 +384,7 @@ export class ProviderCredentials {
         this.assertCurrentKey();
         this.platform.assertProviderAccess();
         this.revocation.assertRotationClear();
+        this.ledger.revocation.assertRotationClear();
         check(
           (this.keyRow()?.generation ?? 0) === generation,
           "REVISION",
@@ -487,7 +530,13 @@ export class ProviderCredentials {
       clientId: binding.clientId,
     });
     ledgerBindings.add(internal);
+    ledgerPublicBindings.set(internal, Object.freeze({ ...binding }));
     return internal;
+  }
+  private assertRevocationClear(binding: CredentialBinding) {
+    if (ledgerBindings.has(binding))
+      this.ledger.revocation.assertClear(ledgerPublicBindings.get(binding)!);
+    else this.revocation.assertClear(binding);
   }
   private auditScope(binding: CredentialBinding) {
     return ledgerBindings.has(binding)
@@ -716,7 +765,7 @@ export class ProviderCredentials {
     integer(revision, "credential revision", 0, Number.MAX_SAFE_INTEGER - 1);
     const actor = this.authorize(binding, undefined, authority),
       old = this.row(binding);
-    this.revocation.assertClear(binding);
+    this.assertRevocationClear(binding);
     check(
       (old?.revision ?? 0) === revision,
       "REVISION",
@@ -785,6 +834,7 @@ export class ProviderCredentials {
   // Snapshot refresh tokens may have rotated or been revoked after the cutoff.
   invalidateRestoredCredentials() {
     this.revocation.invalidateRestored();
+    this.ledger.revocation.invalidateRestored();
     this.authorization.invalidateRestoredAttempts();
     this.ledger.authorization.invalidateRestoredAttempts();
     return Number(
@@ -816,7 +866,7 @@ export class ProviderCredentials {
   ): Promise<Readonly<{ accessToken: string; revision: number }>> {
     const claim = this.database.transaction(() => {
       this.authorize(binding, effect, authority);
-      this.revocation.assertClear(binding);
+      this.assertRevocationClear(binding);
       const row = this.row(binding);
       check(
         row,
