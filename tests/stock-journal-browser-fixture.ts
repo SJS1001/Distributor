@@ -67,6 +67,39 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     originalCancellations.push([x.f.app, 3196 + n] as const);
   }
   const servers: Awaited<ReturnType<typeof createHttp>>[] = [];
+  const originalRetries = [];
+  for (let n = 0; n < 7; n++) {
+    const x = journalFixture({ after }, n === 1 ? "US" : "CA"),
+      journal = x.approve(),
+      lease = x.j.claim(x.f.actor, journal.id, "write")!;
+    x.j.beforeWrite(lease);
+    x.j.unresolved(lease, "transport-uncertain");
+    const proof = x.j.recordOriginalCancellationEvidence(
+      x.f.actor,
+      "retry-proof",
+      {
+        journalId: journal.id,
+        requestRef: journal.requestRef,
+        reviewHash: x.j.originalCancellationEvidenceReview(
+          x.f.actor,
+          journal.id,
+        ).reviewHash,
+        externalRef: "synthetic:retry-final-case",
+        evidence:
+          "Synthetic final cancellation, verified non-posting and no later posting",
+        cancellationFinal: true,
+        nonPostingVerified: true,
+        noLaterPosting: true,
+      },
+    );
+    x.j.cancelOriginalAttempt(x.reviewer, "retry-cancel", {
+      journalId: journal.id,
+      requestRef: journal.requestRef,
+      evidenceHash: proof.evidence.evidenceHash,
+      reason: "Synthetic separate cancellation review",
+    });
+    originalRetries.push([x.f.app, 3202 + n] as const);
+  }
   const cancellationCA = cancellationFixture({ after });
   const cancellationUS = cancellationFixture({ after }, "US");
   const preparationCA = journalFixture({ after }),
@@ -146,6 +179,7 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     ...permissions,
     ...reconciliations,
     ...originalCancellations,
+    ...originalRetries,
   ] as const) {
     const http = await createHttp(app, { origin: `http://127.0.0.1:${port}` });
     await http.listen({ host: "127.0.0.1", port });

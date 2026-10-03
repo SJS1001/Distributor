@@ -150,7 +150,22 @@ async function validSelection(s: Selection, orgId: string) {
       typeof s.requestRef === "string" &&
       /^DJ-[a-f0-9]{18}$/.test(s.requestRef),
   );
-  exact(s.plan, "input,intent,policyHash");
+  const retry = s.leg === "original" && s.attemptId !== null;
+  exact(
+    s.plan,
+    retry ? "input,intent,policyHash,predecessor" : "input,intent,policyHash",
+  );
+  if (retry) {
+    const p = s.plan.predecessor;
+    exact(p, "journalId,reviewHash,cancellationHash,historyHash");
+    assert(
+      p.journalId === s.attemptId &&
+        p.journalId !== s.id &&
+        hex(p.reviewHash) &&
+        hex(p.cancellationHash) &&
+        hex(p.historyHash),
+    );
+  }
   assert(hex(s.plan.policyHash) && (await hash(s.plan)) === s.reviewHash);
   const i = s.plan.input,
     intent = s.plan.intent;

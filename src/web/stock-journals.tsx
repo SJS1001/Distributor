@@ -4,6 +4,7 @@ import type { JournalLine } from "../server/integration-costs.ts";
 import { request } from "./api.ts";
 import { StockJournalDecision } from "./stock-journal-decision.tsx";
 import { StockJournalOriginalCancellation } from "./stock-journal-original-cancellation.tsx";
+import { StockJournalOriginalRetry } from "./stock-journal-original-retry.tsx";
 import { StockJournalCancellation } from "./stock-journal-cancellation.tsx";
 import { StockJournalPreparation } from "./stock-journal-preparation.tsx";
 import { StockJournalPermissions } from "./stock-journal-permissions.tsx";
@@ -461,6 +462,15 @@ export function StockJournals({
         }}
       />
       <StockJournalOriginalCancellation
+        orgId={orgId}
+        actorId={actorId}
+        journal={detail}
+        saved={(id) => {
+          setQueue(null);
+          loadDetail(id);
+        }}
+      />
+      <StockJournalOriginalRetry
         orgId={orgId}
         actorId={actorId}
         journal={detail}

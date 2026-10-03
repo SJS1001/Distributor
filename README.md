@@ -46,7 +46,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Stock-journal preparation](docs/STOCK-JOURNAL-PREPARATION.md) | Approved source/date/account mapping, fixed confirmation and original receipt recovery |
 | [Stock-journal browser review](docs/STOCK-JOURNAL-BROWSER.md) | Frozen independent review, queue/history paging and exact uncertain-decision recovery |
 | [Original stock-journal cancellation](docs/STOCK-JOURNAL-ORIGINAL-CANCELLATION.md) | Fixed final non-posting review, separate finance cancellation, exact browser recovery and permanent reservations |
-| [Original stock-journal retries](docs/STOCK-JOURNAL-ORIGINAL-RETRIES.md) | Complete cancelled predecessor review, distinct ready attempt, separate approval and one posted leaf per date |
+| [Original stock-journal retries](docs/STOCK-JOURNAL-ORIGINAL-RETRIES.md) | Fixed Billing predecessor review, exact recovery, distinct ready attempt, separate approval and one posted leaf per date |
 | [Stock-journal correction cancellation](docs/STOCK-JOURNAL-CANCELLATION.md) | Final evidence, separate finance confirmation and exact uncertain-cancellation recovery |
 | [Stock-journal review controls](docs/STOCK-JOURNAL-CONTROLS.md) | Authenticated local preparation/independent decisions, scoped queues and complete paged observations |
 | [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md) | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order |

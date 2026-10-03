@@ -36,7 +36,7 @@ const date = (v: unknown): v is string =>
   Number.isFinite(Date.parse(v)) &&
   new Date(v).toISOString().slice(0, 10) === v;
 const time = (v: unknown) => text(v, 100) && Number.isFinite(Date.parse(v));
-function validSnapshot(v: Snapshot, orgId: string) {
+export function validSnapshot(v: Snapshot, orgId: string) {
   return (
     keys(
       v,
@@ -122,7 +122,7 @@ export function retained(storageKey: string, orgId: string) {
     return { attempt: null, error: storageError };
   }
 }
-async function checkedProof(p: Proof, s: Snapshot) {
+export async function checkedProof(p: Proof, s: Snapshot) {
   return (
     validProof(p, s) &&
     (await sha(s)) === p.input.reviewHash &&
