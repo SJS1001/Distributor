@@ -1,4 +1,5 @@
 import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
+import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
 import { CarrierOfflineMemberReview } from "./carrier-offline-member-review.ts";
 import type { RestoreNativeDispositionConfiguration } from "./restore-activation.ts";
 import { salesControls } from "./sales-controls.ts";
@@ -32,6 +33,7 @@ export class Application {
   database: Database;
   platform!: Platform;
   platformOfflineRefundReview!: PlatformOfflineRefundReviewReader;
+  restoreOfflineNativePhase!: RestoreOfflineNativePhase;
   carrierOfflineMemberReview!: CarrierOfflineMemberReview;
   identity!: Identity;
   catalog!: Catalog;
@@ -130,6 +132,10 @@ export class Application {
         security.eventReports !== false,
         () => {
           this.platform = new Platform(this.database);
+          this.restoreOfflineNativePhase = new RestoreOfflineNativePhase(
+            this.database,
+            this.platform,
+          );
           this.identity = new Identity(
             this.database,
             this.platform,
