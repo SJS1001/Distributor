@@ -881,6 +881,13 @@
     "All 44 tasks and ten gates NOT VERIFIED; full system incomplete"
   ],
   "publication": {
-    "status": "pending normal authorized branch push"
+    "status": "normally pushed; exact remote equality verified",
+    "identity": "SJS1001",
+    "permission": "ADMIN",
+    "workflows": 0,
+    "actionsRuns": 0,
+    "sourceCommit": "c14b3dc93b4f70e76716f21355c38e078e7944dd",
+    "testedCommittedInputsMatched": 512,
+    "privateEvidenceMatched": 38
   }
 }
