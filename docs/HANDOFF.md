@@ -1,5 +1,9 @@
 # Distributor setup handoff
 
+## Exact native joins checkpoint — 2026-10-03T22:22:27.088085+00:00
+
+Exact tested commit 04a5558f7c3b5defb4cd058e5370bbefd73e59be: full native 4026/4026 and affected 617/617 pass, TypeScript/owned formatting/whitespace pass; all 665 frozen inputs match committed blobs. [Local receipt](evidence/LOCAL-OFFLINE-NATIVE-JOINS-2026-10-03.md) and public input manifest SHA256 90484b7d6aacc7562d20e6e9142cfd95cbbf0a337ef5988d21191e61d35d7d24 bind the exact version, native environment, complete outcomes, transfer verification and retained failures. Closing-document verification and publication pending. No provider/import/gate qualification or whole-product completion.
+
 ## Native joins verified; publication pending — 2026-10-03T22:21:34.585641+00:00
 
 The current combined native regression passed 4,026/4,026 tests, zero failures/cancellations/skips/todos, 101340.714792 ms, exit 0. Fourteen affected suites passed 617/617, 6742.022584 ms, exit 0. Complete TypeScript, all owned source/test/report formatting and whitespace checks pass. All 665 frozen runtime input hashes remain unchanged. Planning structure passes with 347 Markdown files and 1952 local links; this verifies structure only. Exact tested commit and closing publication receipt follow in the checkpoint evidence.
