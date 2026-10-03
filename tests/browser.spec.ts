@@ -1,3 +1,4 @@
+import "./pdf-browser-journey.ts";
 import "./count-recovery-browser-journey.ts";
 import "./receipt-history-browser-journey.ts";
 import "./count-queue-browser-journey.ts";
@@ -2779,7 +2780,10 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
   await nav(page, "Billing");
   const invoice = page
     .getByRole("row")
-    .filter({ hasText: "BROWSER-LEGACY-001" });
+    .filter({ hasText: "BROWSER-LEGACY-001" })
+    .filter({
+      has: page.getByRole("button", { name: "Record payment", exact: true }),
+    });
   await expect(invoice).toContainText("Historical opening document");
   await expect(invoice).toContainText("BROWSER-DOC-1");
   await expect(invoice).toContainText("$226.00");
@@ -9314,6 +9318,9 @@ test("browser: phone order amendments retain accepted money, retry lost response
     (o: any) => o.id === accepted.id,
   );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeEnabled();
   await nav(page, "Orders");
   const row = page
     .getByRole("row")
@@ -9660,6 +9667,9 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
     (o: any) => o.id === accepted.id,
   );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeEnabled();
   await nav(page, "Orders");
   const row = page
     .getByRole("row")

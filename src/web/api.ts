@@ -162,13 +162,18 @@ export async function uploadEvidence(claimId: string, payload: EvidenceUpload) {
   return result;
 }
 
-export async function downloadEvidence(file: EvidenceFile) {
+export async function downloadEvidence(
+  file: EvidenceFile,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
   const storageKey = `distributor-evidence-download:${file.claimId}:${file.id}`;
   const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
   sessionStorage.setItem(storageKey, key);
   const response = await fetch(
     `/api/warranty/claims/${encodeURIComponent(file.claimId)}/evidence/${encodeURIComponent(file.id)}/download`,
     {
+      signal,
       method: "POST",
       credentials: "same-origin",
       body: "{}",
@@ -206,6 +211,7 @@ export async function downloadEvidence(file: EvidenceFile) {
     !receipt?.trim()
   )
     throw Error("Evidence integrity check failed. Retry the download.");
+  signal?.throwIfAborted();
   const url = URL.createObjectURL(
     new Blob([bytes], { type: "application/octet-stream" }),
   );
@@ -223,12 +229,15 @@ export async function downloadEvidence(file: EvidenceFile) {
 export async function downloadDocument(
   kind: "invoice" | "credit",
   documentId: string,
+  signal?: AbortSignal,
 ) {
   const storageKey = `distributor-document:${kind}:${documentId}`;
   return downloadPdf(
     `/api/billing/documents/${kind}/${encodeURIComponent(documentId)}/pdf`,
     {},
     storageKey,
+    undefined,
+    signal,
   );
 }
 
@@ -256,11 +265,16 @@ export async function downloadStockLabel(
   );
 }
 
-export async function downloadInboxDocument(publicationId: string) {
+export async function downloadInboxDocument(
+  publicationId: string,
+  signal?: AbortSignal,
+) {
   return downloadPdf(
     `/api/billing/inbox/${encodeURIComponent(publicationId)}/pdf`,
     {},
     `distributor-inbox:${publicationId}`,
+    undefined,
+    signal,
   );
 }
 
@@ -269,10 +283,13 @@ async function downloadPdf(
   payload: unknown,
   storageKey: string,
   expected?: { mediaType: string; filename: string; maxBytes: number },
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
   sessionStorage.setItem(storageKey, key);
   const response = await fetch(path, {
+    signal,
     credentials: "same-origin",
     method: "POST",
     body: JSON.stringify(payload),
@@ -340,6 +357,7 @@ async function downloadPdf(
     response.headers
       .get("content-disposition")
       ?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1] ?? "document.pdf";
+  signal?.throwIfAborted();
   const url = URL.createObjectURL(
     new Blob([bytes], { type: expected?.mediaType ?? "application/pdf" }),
   );
@@ -354,10 +372,15 @@ async function downloadPdf(
   return receipt;
 }
 
-export async function downloadCostFile(packetId: string, expectedHash: string) {
+export async function downloadCostFile(
+  packetId: string,
+  expectedHash: string,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
   const response = await fetch(
     `/api/accounting/costs/${encodeURIComponent(packetId)}/file`,
-    { credentials: "same-origin" },
+    { credentials: "same-origin", signal },
   );
   if (!response.ok) {
     const result = await response.json();
@@ -383,6 +406,7 @@ export async function downloadCostFile(packetId: string, expectedHash: string) {
     .get("content-disposition")
     ?.match(/filename="([A-Za-z0-9_.-]+)"/)?.[1];
   if (!filename) throw Error("Cost file name is missing.");
+  signal?.throwIfAborted();
   const url = URL.createObjectURL(
     new Blob([bytes], { type: "application/json" }),
   );

@@ -45,23 +45,40 @@ export function AccountingCosts() {
     [detail, setDetail] = useState<Detail | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const review = useRef<HTMLDivElement>(null);
+  const review = useRef<HTMLDivElement>(null),
+    operation = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      operation.current?.abort();
+      operation.current = null;
+    },
+    [],
+  );
   useEffect(() => {
     if (detail) review.current?.focus();
   }, [detail?.id]);
-  const run = async (work: () => Promise<unknown>) => {
+  const run = async (work: (signal: AbortSignal) => Promise<unknown>) => {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    const current = () =>
+      operation.current === controller && !controller.signal.aborted;
     setBusy(true);
     setError("");
     try {
-      await work();
+      await work(controller.signal);
     } catch (e) {
+      if (!current()) return;
       setError(
         e instanceof Error
           ? e.message
           : "Cost handoff failed. Retry the same evidence.",
       );
     } finally {
-      setBusy(false);
+      if (current()) {
+        operation.current = null;
+        setBusy(false);
+      }
     }
   };
   const history = async (before?: number) => {
@@ -423,8 +440,8 @@ export function AccountingCosts() {
               <button
                 disabled={busy}
                 onClick={() =>
-                  void run(() =>
-                    downloadCostFile(detail.id, detail.contentHash!),
+                  void run((signal) =>
+                    downloadCostFile(detail.id, detail.contentHash!, signal),
                   )
                 }
               >

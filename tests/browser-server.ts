@@ -1,3 +1,4 @@
+import { pdfBoundaryBrowser } from "./pdf-browser-fixture.ts";
 import { countRecoveryBrowser } from "./count-recovery-browser-fixture.ts";
 import { countQueueBrowser } from "./count-queue-browser-fixture.ts";
 import { transferLossBrowser } from "./transfer-loss-browser-fixture.ts";
@@ -940,6 +941,7 @@ const supplierReturnQueueHttp = await supplierReturnQueueBrowser((fn) =>
   cleanup.push(fn),
 );
 const purchaseQueueHttp = await purchaseQueueBrowser((fn) => cleanup.push(fn));
+const pdfBoundaryHttp = await pdfBoundaryBrowser((fn) => cleanup.push(fn));
 const countRecoveryHttp = await countRecoveryBrowser((fn) => cleanup.push(fn));
 const countQueueHttp = await countQueueBrowser((fn) => cleanup.push(fn));
 const transferQueueHttp = await transferQueueBrowser((fn) => cleanup.push(fn));
@@ -992,6 +994,7 @@ const stop = async () => {
   await queueHttp.close();
   await orderQueueHttp.close();
   await purchaseQueueHttp.close();
+  await pdfBoundaryHttp.close();
   await countRecoveryHttp.close();
   await countQueueHttp.close();
   await transferQueueHttp.close();

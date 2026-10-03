@@ -607,3 +607,76 @@ test.describe("retained count recovery", () => {
     ).toBeNull();
   });
 });
+
+test.describe("count confirmation refresh boundaries", () => {
+  test.use({ baseURL: origin });
+  for (const failure of [false, true]) {
+    test(`browser: count confirmation late refresh ${failure ? "failure" : "success"} cannot affect another page`, async ({
+      page,
+    }) => {
+      const f = await fixture(page, "observation");
+      const before = await (await page.request.get("/api/dashboard")).json();
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => (release = resolve));
+      let held = false,
+        settled = false;
+      await page.route("**/api/dashboard", async (route) => {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        held = true;
+        await pending;
+        try {
+          if (failure)
+            await route.fulfill({
+              status: 503,
+              contentType: "application/json",
+              body: JSON.stringify({
+                code: "SYNTHETIC",
+                message: "Synthetic confirmation refresh failure",
+              }),
+            });
+          else await route.fulfill({ response });
+        } catch {
+          /* Abandoned dashboard read. */
+        } finally {
+          settled = true;
+        }
+      });
+      const dialog = await open(page, f, "observation");
+      await dialog
+        .getByRole("button", { name: "Continue", exact: true })
+        .click();
+      await expect.poll(() => held).toBe(true);
+      await page
+        .getByRole("navigation")
+        .getByRole("button", { name: "Orders", exact: true })
+        .click();
+      release();
+      await expect.poll(() => settled).toBe(true);
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      await expect(
+        page.getByRole("heading", { name: "Orders", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(
+        page.getByText(
+          "Count operation confirmed. Review current stock and count history before further work.",
+          { exact: true },
+        ),
+      ).toHaveCount(0);
+      await page.unroute("**/api/dashboard");
+      const after = await (await page.request.get("/api/dashboard")).json();
+      expect(after.stock).toEqual(before.stock);
+      const counts = await (await page.request.get("/api/counts")).json();
+      expect(counts.find((c: any) => c.id === f.count.id).state).toBe(
+        "submitted",
+      );
+    });
+  }
+});

@@ -100,26 +100,31 @@ export function WarrantyEvidence({
   const heading = useRef<HTMLHeadingElement>(null),
     input = useRef<HTMLInputElement>(null),
     active = useRef(true),
-    pending = useRef(false);
+    pending = useRef(false),
+    operation = useRef<AbortController | null>(null);
   useEffect(() => {
     active.current = true;
     heading.current?.focus();
     return () => {
       active.current = false;
+      operation.current?.abort();
     };
   }, []);
-  const run = async (perform: () => Promise<void>) => {
+  const run = async (perform: (signal: AbortSignal) => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
+    const controller = new AbortController();
+    operation.current = controller;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      await perform();
+      await perform(controller.signal);
     } catch (e) {
       if (active.current)
         setError(e instanceof Error ? e.message : "Evidence operation failed.");
     } finally {
+      operation.current = null;
       pending.current = false;
       if (active.current) setBusy(false);
     }
@@ -162,8 +167,8 @@ export function WarrantyEvidence({
       );
     });
   const download = (file: EvidenceFile) =>
-    void run(async () => {
-      await downloadEvidence(file);
+    void run(async (signal) => {
+      await downloadEvidence(file, signal);
       if (active.current)
         setNotice(`Verified ${file.filename} and prepared its download.`);
     });

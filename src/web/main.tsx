@@ -198,6 +198,21 @@ function App() {
   const canadaPostOpener = useRef<HTMLElement | null>(null);
   const shipmentEpoch = useRef(0);
   const dashboardEpoch = useRef(0);
+  const applicationRun = useRef<AbortController | null>(null);
+  const reviewRead = useRef<AbortController | null>(null);
+  const stopReviewRead = () => {
+    if (!reviewRead.current) return;
+    reviewRead.current.abort();
+    reviewRead.current = null;
+  };
+  const stopApplicationRun = () => {
+    stopReviewRead();
+    if (!applicationRun.current) return;
+    applicationRun.current.abort();
+    applicationRun.current = null;
+    dashboardEpoch.current++;
+    setBusy(false);
+  };
   const orderEntryRead = useRef<AbortController | null>(null);
   const receiptHistoryRead = useRef<AbortController | null>(null);
   const stopReceiptHistoryRead = () => {
@@ -228,7 +243,8 @@ function App() {
     [password, setPassword] = useState(""),
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
-  const refresh = async () => {
+  const refresh = async (signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
@@ -258,12 +274,6 @@ function App() {
     coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
-    setExtra((current) => ({
-      ...current,
-      refunds: undefined,
-      payments: undefined,
-      transfers: undefined,
-    }));
     setCarrierShipmentId(null);
     setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
@@ -278,8 +288,102 @@ function App() {
     shipmentRequest.current = null;
     setShipmentsLoading(false);
     setShipmentFilterReady(false);
-    const d = await request("/api/dashboard");
+    const d = await request("/api/dashboard", { signal });
     if (dashboardEpoch.current !== dashboardVersion) return;
+    signal?.throwIfAborted();
+    // Initial recovery screens must remain available while supplemental queues
+    // load. Later refreshes retain the previous snapshot until all reads finish.
+    if (!data) {
+      setData(d);
+      if (shipmentEpoch.current === epoch) {
+        setShipmentFilter("");
+        setShipmentFilterReady(true);
+      }
+    }
+    const e: Item = {};
+    if (
+      ["admin", "commercial", "warehouse", "finance"].includes(
+        actor?.role ?? "",
+      )
+    )
+      e.purchases = await request("/api/purchases", { signal });
+    if (actor?.role === "admin")
+      e.coveragePolicy = await request("/api/warranty/coverage-policy", {
+        signal,
+      });
+    if (["admin", "commercial", "buyer"].includes(actor?.role ?? "")) {
+      e.carts = await request("/api/carts/page", { signal });
+      e.cartRefresh = crypto.randomUUID();
+    }
+    if (["admin", "warehouse", "support"].includes(actor?.role ?? "")) {
+      e.transfers = await request("/api/transfers/page", { signal });
+      e.transferRefresh = crypto.randomUUID();
+      e.transferDestinations = await request("/api/transfer-destinations", {
+        signal,
+      });
+      e.counts = await request("/api/counts/page", { signal });
+      e.countRefresh = crypto.randomUUID();
+      e.countReviewPolicy = await request("/api/count-review-policy", {
+        signal,
+      });
+      if (["admin", "warehouse"].includes(actor?.role ?? ""))
+        e.labels = await request("/api/stock/labels", { signal });
+    }
+    if (
+      ["admin", "finance", "commercial", "buyer", "support"].includes(
+        actor?.role ?? "",
+      )
+    )
+      e.effects = await request("/api/effects", { signal });
+    if (["admin", "finance", "support"].includes(actor?.role ?? ""))
+      e.callbacks = await request("/api/provider-callbacks", { signal });
+    if (["admin", "finance", "support"].includes(actor?.role ?? "")) {
+      e.payments = await request("/api/billing/payments/page", { signal });
+      e.paymentRefresh = crypto.randomUUID();
+      e.refunds = await request("/api/billing/refunds/page", { signal });
+      e.refundRefresh = crypto.randomUUID();
+    }
+    if (["admin", "finance", "support", "buyer"].includes(actor?.role ?? "")) {
+      e.refundNotices = await request("/api/billing/refund-notices", {
+        signal,
+      });
+      e.refundNoticeRefresh = crypto.randomUUID();
+    }
+    if (
+      ["admin", "warehouse", "finance", "support"].includes(actor?.role ?? "")
+    ) {
+      e.serialReviews = await request("/api/stock/serial-reviews", { signal });
+      e.serialReviewRefresh = crypto.randomUUID();
+    }
+    if (actor?.role === "admin") {
+      e.users = await request("/api/users", { signal });
+      e.openingImports = await request("/api/imports/opening", { signal });
+      e.masterImports = await request("/api/imports/masters", { signal });
+      e.documentImports = await request("/api/imports/documents", { signal });
+    }
+    if (
+      [
+        "admin",
+        "finance",
+        "commercial",
+        "buyer",
+        "warranty",
+        "support",
+      ].includes(actor?.role ?? "")
+    ) {
+      e.credits = await request("/api/credits", { signal });
+      e.aging = await request("/api/billing/aging", { signal });
+      e.downloads = await request("/api/billing/downloads", { signal });
+      e.inbox = await request("/api/billing/inbox/page", { signal });
+      e.inboxRefresh = crypto.randomUUID();
+    }
+    if (["admin", "finance"].includes(actor?.role ?? ""))
+      e.billingProfiles = await request("/api/billing/profiles", { signal });
+    e.security = await request("/api/security", { signal });
+    signal?.throwIfAborted();
+    if (dashboardEpoch.current !== dashboardVersion) return;
+    // Publish a coherent snapshot only after all reads finish. Cancellation
+    // retains the last usable queues instead of leaving the next page empty.
     setData((current) =>
       shipmentEpoch.current === epoch
         ? d
@@ -294,79 +398,7 @@ function App() {
       setShipmentFilterReady(true);
     }
     setEventViewEpoch((value) => value + 1);
-    const e: Item = {};
-    if (
-      ["admin", "commercial", "warehouse", "finance"].includes(
-        actor?.role ?? "",
-      )
-    )
-      e.purchases = await request("/api/purchases");
-    if (actor?.role === "admin")
-      e.coveragePolicy = await request("/api/warranty/coverage-policy");
-    if (["admin", "commercial", "buyer"].includes(actor?.role ?? "")) {
-      e.carts = await request("/api/carts/page");
-      e.cartRefresh = crypto.randomUUID();
-    }
-    if (["admin", "warehouse", "support"].includes(actor?.role ?? "")) {
-      e.transfers = await request("/api/transfers/page");
-      e.transferRefresh = crypto.randomUUID();
-      e.transferDestinations = await request("/api/transfer-destinations");
-      e.counts = await request("/api/counts/page");
-      e.countRefresh = crypto.randomUUID();
-      e.countReviewPolicy = await request("/api/count-review-policy");
-      if (["admin", "warehouse"].includes(actor?.role ?? ""))
-        e.labels = await request("/api/stock/labels");
-    }
-    if (
-      ["admin", "finance", "commercial", "buyer", "support"].includes(
-        actor?.role ?? "",
-      )
-    )
-      e.effects = await request("/api/effects");
-    if (["admin", "finance", "support"].includes(actor?.role ?? ""))
-      e.callbacks = await request("/api/provider-callbacks");
-    if (["admin", "finance", "support"].includes(actor?.role ?? "")) {
-      e.payments = await request("/api/billing/payments/page");
-      e.paymentRefresh = crypto.randomUUID();
-      e.refunds = await request("/api/billing/refunds/page");
-      e.refundRefresh = crypto.randomUUID();
-    }
-    if (["admin", "finance", "support", "buyer"].includes(actor?.role ?? "")) {
-      e.refundNotices = await request("/api/billing/refund-notices");
-      e.refundNoticeRefresh = crypto.randomUUID();
-    }
-    if (
-      ["admin", "warehouse", "finance", "support"].includes(actor?.role ?? "")
-    ) {
-      e.serialReviews = await request("/api/stock/serial-reviews");
-      e.serialReviewRefresh = crypto.randomUUID();
-    }
-    if (actor?.role === "admin") {
-      e.users = await request("/api/users");
-      e.openingImports = await request("/api/imports/opening");
-      e.masterImports = await request("/api/imports/masters");
-      e.documentImports = await request("/api/imports/documents");
-    }
-    if (
-      [
-        "admin",
-        "finance",
-        "commercial",
-        "buyer",
-        "warranty",
-        "support",
-      ].includes(actor?.role ?? "")
-    ) {
-      e.credits = await request("/api/credits");
-      e.aging = await request("/api/billing/aging");
-      e.downloads = await request("/api/billing/downloads");
-      e.inbox = await request("/api/billing/inbox/page");
-      e.inboxRefresh = crypto.randomUUID();
-    }
-    if (["admin", "finance"].includes(actor?.role ?? ""))
-      e.billingProfiles = await request("/api/billing/profiles");
-    e.security = await request("/api/security");
-    if (dashboardEpoch.current === dashboardVersion) setExtra(e);
+    setExtra(e);
   };
   const loadShipments = async (
     state = shipmentFilter,
@@ -441,10 +473,15 @@ function App() {
       .catch(() => {});
   }, []);
   useEffect(() => {
-    if (actor && !passwordChangeRequired && !mfaEnrollmentRequired)
-      void refresh().catch((e) => setError(e.message));
+    if (!actor || passwordChangeRequired || mfaEnrollmentRequired) return;
+    const controller = new AbortController();
+    void refresh(controller.signal).catch((e) => {
+      if (!controller.signal.aborted) setError(e.message);
+    });
+    return () => controller.abort();
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    stopApplicationRun();
     stopReceiptHistoryRead();
     setPurchaseEntryOpen(false);
     stopOrderEntryRead();
@@ -500,6 +537,7 @@ function App() {
     sessionStorage.clear();
   };
   const signOut = () => {
+    stopApplicationRun();
     stopReceiptHistoryRead();
     setStockHistory(null);
     setBinSelection(null);
@@ -541,24 +579,76 @@ function App() {
       .catch(() => {})
       .finally(() => clearSession());
   };
-  const run = async (work: () => Promise<unknown>, refreshAfter = true) => {
-    setBusy(true);
+  const run = async (
+    work: (signal: AbortSignal) => Promise<unknown>,
+    refreshAfter = true,
+    showBusy = true,
+  ) => {
+    stopApplicationRun();
+    const controller = new AbortController();
+    applicationRun.current = controller;
+    const current = () =>
+      applicationRun.current === controller && !controller.signal.aborted;
+    const abandoned = { keepDialog: true, skipRefresh: true, abandoned: true };
+    if (showBusy) setBusy(true);
     setError("");
     try {
-      const result = await work();
+      // Only cancellable reads/downloads consume the signal. Native command
+      // effects may already have committed; abandoning UI never undoes them.
+      const result = await work(controller.signal);
+      if (!current()) return abandoned;
       if ((result as Item)?.sessionEnded) {
         clearSession("Saved. Your sessions have ended. Sign in again.");
         return result;
       }
       if ((result as Item)?.skipRefresh) return result;
-      if (refreshAfter) await refresh();
+      if (refreshAfter) await refresh(controller.signal);
+      if (!current()) return abandoned;
       setNotice("Saved.");
       return result;
     } catch (e) {
+      if (!current()) return abandoned;
       setError((e as Error).message);
       throw e;
     } finally {
-      setBusy(false);
+      if (current()) {
+        applicationRun.current = null;
+        setBusy(false);
+      }
+    }
+  };
+  const refreshNotice = async (message: string, failurePrefix = "") => {
+    const result = await run(
+      async (signal) => {
+        try {
+          await refresh(signal);
+        } catch (e) {
+          throw new Error(`${failurePrefix}${(e as Error).message}`);
+        }
+        return { skipRefresh: true };
+      },
+      false,
+      false,
+    );
+    if (!(result as Item)?.abandoned) setNotice(message);
+  };
+  const readReview = async <T = Item,>(path: string): Promise<T | null> => {
+    stopReviewRead();
+    const controller = new AbortController();
+    reviewRead.current = controller;
+    const current = () =>
+      reviewRead.current === controller && !controller.signal.aborted;
+    setError("");
+    try {
+      const result = await request<T>(path, { signal: controller.signal });
+      return current() ? result : null;
+    } catch (e) {
+      if (current()) setError((e as Error).message);
+      return null;
+    } finally {
+      if (current()) {
+        reviewRead.current = null;
+      }
     }
   };
   const open = (
@@ -743,17 +833,18 @@ function App() {
     loaded: Item[] = [],
     after?: number,
   ) => {
-    const result = await request(
-        `/api/shipments/${shipmentId}/delivery/history${after ? `?after=${after}` : ""}`,
-      ),
-      rows = [...loaded, ...result.items];
+    const result = await readReview(
+      `/api/shipments/${shipmentId}/delivery/history${after ? `?after=${after}` : ""}`,
+    );
+    if (!result) return { keepDialog: true, skipRefresh: true };
+    const rows = [...loaded, ...result.items];
     open(
       "Shipment delivery history",
       [],
       async () => {
-        if (!result.next) return;
+        if (!result.next) return { skipRefresh: true };
         await showShipmentDelivery(shipmentId, rows, result.next);
-        return { keepDialog: true };
+        return { keepDialog: true, skipRefresh: true };
       },
       rows.length
         ? rows
@@ -771,17 +862,18 @@ function App() {
     loaded: Item[] = [],
     after?: number,
   ) => {
-    const result = await request(
+    const result = await readReview(
       `/api/warranty/replacements/${replacementId}/shipping/history${after ? `?after=${after}` : ""}`,
     );
+    if (!result) return { keepDialog: true, skipRefresh: true };
     const rows = [...loaded, ...result.items];
     open(
       "Replacement shipping history",
       [],
       async () => {
-        if (!result.next) return;
+        if (!result.next) return { skipRefresh: true };
         await showReplacementShipping(replacementId, rows, result.next);
-        return { keepDialog: true };
+        return { keepDialog: true, skipRefresh: true };
       },
       rows
         .map(
@@ -797,17 +889,18 @@ function App() {
     loaded: Item[] = [],
     after?: string,
   ) => {
-    const result = await request(
-        `/api/orders/${orderId}/short-picks${after ? `?after=${encodeURIComponent(after)}` : ""}`,
-      ),
-      reports = [...loaded, ...result.items];
+    const result = await readReview(
+      `/api/orders/${orderId}/short-picks${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+    );
+    if (!result) return { keepDialog: true, skipRefresh: true };
+    const reports = [...loaded, ...result.items];
     open(
       "Short-pick reports",
       [],
       async () => {
-        if (!result.nextCursor) return;
+        if (!result.nextCursor) return { skipRefresh: true };
         await showShortPicks(orderId, reports, result.nextCursor);
-        return { keepDialog: true };
+        return { keepDialog: true, skipRefresh: true };
       },
       reports.length
         ? `${reports.length} reports loaded.\n${reports.map((r: Item) => `${r.created_at} · ${r.quantity} units · held stock ${r.held_unit_id} · ${r.reason}`).join("\n")}`
@@ -941,12 +1034,9 @@ function App() {
     number: string,
     accountId: string,
   ) => {
-    void run(() => downloadDocument(kind, documentId))
+    void run((signal) => downloadDocument(kind, documentId, signal))
       .then((downloadId) => {
-        if (typeof downloadId !== "string" || !downloadId)
-          throw new Error(
-            "Reviewed download receipt is missing. Retry the PDF.",
-          );
+        if (typeof downloadId !== "string") return;
         open(
           "Publish reviewed PDF",
           [reason],
@@ -959,10 +1049,9 @@ function App() {
       .catch(() => {});
   };
   const receiveDocument = (publication: Item) => {
-    void run(() => downloadInboxDocument(publication.id))
+    void run((signal) => downloadInboxDocument(publication.id, signal))
       .then((downloadId) => {
-        if (typeof downloadId !== "string" || !downloadId)
-          throw new Error("Download receipt is missing. Retry the PDF.");
+        if (typeof downloadId !== "string") return;
         if (
           publication.acknowledgments.some(
             (a: Item) => a.actor_id === actor?.id,
@@ -1390,6 +1479,7 @@ function App() {
               key={p}
               aria-current={page === p ? "page" : undefined}
               onClick={() => {
+                stopApplicationRun();
                 stopReceiptHistoryRead();
                 stopOrderEntryRead();
                 stopCatalogRead();
@@ -1562,9 +1652,15 @@ function App() {
                 {can("commercial", "buyer") &&
                   button("Prepare order", () => placeOrder())}
                 {can("warehouse") &&
-                  button("Review inventory", () => setPage("Inventory"))}
+                  button("Review inventory", () => {
+                    stopApplicationRun();
+                    setPage("Inventory");
+                  })}
                 {can("finance", "buyer") &&
-                  button("Review invoices", () => setPage("Billing"))}
+                  button("Review invoices", () => {
+                    stopApplicationRun();
+                    setPage("Billing");
+                  })}
               </div>
             </section>
           </>
@@ -1846,8 +1942,9 @@ function App() {
                   {o.state === "open" &&
                     can("warehouse") &&
                     button("Pick / pack", () => {
-                      void request(`/api/orders/${o.id}/picks`)
-                        .then((picks) =>
+                      void readReview<Item[]>(`/api/orders/${o.id}/picks`)
+                        .then((picks) => {
+                          if (!picks) return;
                           open(
                             "Confirm picked stock",
                             [
@@ -1880,15 +1977,16 @@ function App() {
                                 serial: v.serial || null,
                                 unpick: !!v.unpick,
                               }),
-                          ),
-                        )
+                          );
+                        })
                         .catch((e) => setError(e.message));
                     })}
                   {o.state === "open" &&
                     can("warehouse") &&
                     button("Report short pick", () => {
-                      void request(`/api/orders/${o.id}/picks`)
+                      void readReview<Item[]>(`/api/orders/${o.id}/picks`)
                         .then((picks) => {
+                          if (!picks) return;
                           const available = picks.filter(
                             (a: Item) =>
                               a.quantity - a.consumed - a.released - a.packed >
@@ -1943,8 +2041,9 @@ function App() {
                   {o.state === "open" &&
                     can("warehouse") &&
                     button("Pack shipment", () => {
-                      void request(`/api/orders/${o.id}/picks`)
+                      void readReview<Item[]>(`/api/orders/${o.id}/picks`)
                         .then((picks) => {
+                          if (!picks) return;
                           const available = picks.filter(
                             (a: Item) => a.packable > 0,
                           );
@@ -2360,12 +2459,11 @@ function App() {
                 actorId={actor.id}
                 selection={binSelection}
                 close={() => setBinSelection(null)}
-                saved={async () => {
-                  await refresh();
-                  setNotice(
+                saved={() =>
+                  refreshNotice(
                     "Bin move confirmed. Review current Inventory before further physical work.",
-                  );
-                }}
+                  )
+                }
               />
             )}
             {can("warehouse") && (
@@ -2375,12 +2473,11 @@ function App() {
                 actorId={actor.id}
                 selection={arrivalSelection}
                 close={() => setArrivalSelection(null)}
-                saved={async () => {
-                  await refresh();
-                  setNotice(
+                saved={() =>
+                  refreshNotice(
                     "Transfer arrival confirmed. Review current Inventory and transfer history before further physical work.",
-                  );
-                }}
+                  )
+                }
               />
             )}
             {actor.role === "admin" &&
@@ -2395,12 +2492,11 @@ function App() {
                     kind={kind}
                     selection={selected}
                     close={() => setLossSelection(null)}
-                    saved={async () => {
-                      await refresh();
-                      setNotice(
+                    saved={() =>
+                      refreshNotice(
                         "Transfer loss/recovery confirmed. Review current Inventory and transfer history before further physical work.",
-                      );
-                    }}
+                      )
+                    }
                   />
                 );
               })}
@@ -2411,12 +2507,11 @@ function App() {
                 actorId={actor.id}
                 selection={dispatchSelection}
                 close={() => setDispatchSelection(null)}
-                saved={async () => {
-                  await refresh();
-                  setNotice(
+                saved={() =>
+                  refreshNotice(
                     "Transfer dispatch confirmed. Review current Inventory and transfer history before further physical work.",
-                  );
-                }}
+                  )
+                }
               />
             )}
             <StockQueueControls
@@ -2727,12 +2822,11 @@ function App() {
                   kind={kind}
                   selection={selected}
                   close={() => setCountSelection(null)}
-                  saved={async () => {
-                    await refresh();
-                    setNotice(
+                  saved={() =>
+                    refreshNotice(
                       "Count operation confirmed. Review current stock and count history before further work.",
-                    );
-                  }}
+                    )
+                  }
                 />
               );
             })}
@@ -3501,12 +3595,15 @@ function App() {
                       ),
                     )}
                   {button("Download invoice PDF", () => {
-                    void run(() => downloadDocument("invoice", i.id))
-                      .then(() =>
-                        setNotice(
-                          "PDF download prepared. Receipt does not confirm delivery.",
-                        ),
-                      )
+                    void run((signal) =>
+                      downloadDocument("invoice", i.id, signal),
+                    )
+                      .then((receipt) => {
+                        if (typeof receipt === "string")
+                          setNotice(
+                            "PDF download prepared. Receipt does not confirm delivery.",
+                          );
+                      })
                       .catch(() => {});
                   })}
                   {can("finance") &&
@@ -3627,12 +3724,15 @@ function App() {
                         : []),
                       <div className="actions">
                         {button("Download credit PDF", () => {
-                          void run(() => downloadDocument("credit", c.id))
-                            .then(() =>
-                              setNotice(
-                                "PDF download prepared. Receipt does not confirm delivery.",
-                              ),
-                            )
+                          void run((signal) =>
+                            downloadDocument("credit", c.id, signal),
+                          )
+                            .then((receipt) => {
+                              if (typeof receipt === "string")
+                                setNotice(
+                                  "PDF download prepared. Receipt does not confirm delivery.",
+                                );
+                            })
                             .catch(() => {});
                         })}
                         {can("finance") &&
@@ -4912,6 +5012,7 @@ function App() {
                     }
                     onCanadaPost={(warehouseId) => {
                       if (!warehouseId) return;
+                      stopApplicationRun();
                       orderQueue.stop();
                       purchaseQueue.stop();
                       supplierReturnQueue.stop();
@@ -6192,15 +6293,10 @@ function App() {
           close={() => setPurchaseEntryOpen(false)}
           created={(id) => {
             setPurchaseEntryOpen(false);
-            void refresh()
-              .then(() =>
-                setNotice(`Purchase order ${id.slice(0, 8)} created.`),
-              )
-              .catch((e) =>
-                setError(
-                  `Purchase order ${id.slice(0, 8)} created; refresh failed: ${e.message}`,
-                ),
-              );
+            void refreshNotice(
+              `Purchase order ${id.slice(0, 8)} created.`,
+              `Purchase order ${id.slice(0, 8)} created; refresh failed: `,
+            ).catch(() => {});
           }}
         />
       )}
