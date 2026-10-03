@@ -988,9 +988,17 @@
     "All 44 tasks and ten gates NOT VERIFIED; full system incomplete"
   ],
   "publication": {
-    "status": "pending normal owner-authorized branch push; final browser and publication input review passed",
+    "status": "Source/test/documentation commit normally pushed; publication receipt follows in companion documentation commit",
+    "sourceCommit": "903b365e2202be152e374811d433616d740fa67a",
+    "branch": "codex/local-distributor-checkpoint",
     "identity": "SJS1001",
     "permission": "ADMIN",
+    "remoteEqualityVerified": true,
+    "cleanCheckoutVerifiedAtSourceCommit": true,
+    "committedTestedInputsVerified": 520,
+    "runtimeCommittedSourceInputsVerified": 263,
+    "runtimeGeneratedAssetInputsVerified": 3,
+    "privateEvidenceHashesVerified": 82,
     "workflows": 0,
     "actionsRuns": 0
   }
