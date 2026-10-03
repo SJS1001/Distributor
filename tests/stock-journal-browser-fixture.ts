@@ -57,6 +57,15 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     }
     reconciliations.push([reconciliation.f.app, 3187 + n] as const);
   }
+  const originalCancellations = [];
+  for (let n = 0; n < 6; n++) {
+    const x = journalFixture({ after }, n === 1 ? "US" : "CA"),
+      journal = x.approve();
+    const lease = x.j.claim(x.f.actor, journal.id, "write")!;
+    x.j.beforeWrite(lease);
+    x.j.unresolved(lease, "transport-uncertain");
+    originalCancellations.push([x.f.app, 3196 + n] as const);
+  }
   const servers: Awaited<ReturnType<typeof createHttp>>[] = [];
   const cancellationCA = cancellationFixture({ after });
   const cancellationUS = cancellationFixture({ after }, "US");
@@ -136,6 +145,7 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
     [preparationWithdrawal.f.app, 3176],
     ...permissions,
     ...reconciliations,
+    ...originalCancellations,
   ] as const) {
     const http = await createHttp(app, { origin: `http://127.0.0.1:${port}` });
     await http.listen({ host: "127.0.0.1", port });
