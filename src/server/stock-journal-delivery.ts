@@ -33,6 +33,12 @@ import {
   type JournalPermissionInput,
   type JournalPermissionDecision,
 } from "./stock-journal-permissions.ts";
+import {
+  originalCancellationEvidenceInput,
+  originalCancellationInput,
+  type OriginalCancellationEvidenceInput,
+  type OriginalCancellationInput,
+} from "./stock-journal-original-cancellation.ts";
 
 export type JournalDeliveryInput = {
   sourceId: string;
@@ -1782,6 +1788,325 @@ export class StockJournalDelivery {
       this.clear(row, "unknown");
       return this.view(this.row(lease.actor, row.id));
     });
+  }
+  private originalCancellationFacts(actor: Actor, row: Journal) {
+    check(
+      row.leg === "original" && row.attempt_id === "",
+      "JOURNAL_STATE",
+      "Select an original native journal.",
+    );
+    if (row.state === "unknown" || row.state === "cancelled")
+      check(
+        row.lease_id === null &&
+          row.lease_actor === null &&
+          row.lease_started === null &&
+          row.lease_mode === null &&
+          row.external_id === null,
+        "JOURNAL_INTEGRITY",
+        "Unresolved or cancelled originals must retain no active lease or posted identity.",
+      );
+    const file = this.costs.deliverySourceInTransaction(
+        actor,
+        row.source_id,
+      ).file,
+      plan = JSON.parse(row.plan) as Plan,
+      document = JSON.parse(file.bytes),
+      reference = this.store.get(
+        "SELECT journal_id FROM integration_stock_journal_references WHERE org_id=? AND realm=? AND request_ref=?",
+        actor.orgId,
+        row.realm,
+        requestRef(row.id),
+      ),
+      lines = (document.report.journal as JournalLine[]).filter(
+        (line) => line.date === row.posting_date,
+      ),
+      debit = lines.reduce((sum, line) => sum + BigInt(line.debit), 0n),
+      credit = lines.reduce((sum, line) => sum + BigInt(line.credit), 0n);
+    check(
+      file.hash === plan.input.sourceHash &&
+        file.bytes === plan.intent.source.bytes &&
+        reference?.journal_id === row.id &&
+        row.decision_by &&
+        row.decision_by !== row.created_by &&
+        row.decision_at &&
+        row.decision_reason &&
+        debit > 0n &&
+        debit === credit &&
+        debit <= BigInt(Number.MAX_SAFE_INTEGER),
+      "JOURNAL_INTEGRITY",
+      "Original cancellation must retain its approved source, balanced date, independent decision and permanent reference.",
+    );
+    const history = this.store
+      .all(
+        "SELECT * FROM integration_stock_journal_observations WHERE org_id=? AND journal_id=? ORDER BY revision",
+        actor.orgId,
+        row.id,
+      )
+      .map((r) => this.observation(actor, row.id, r));
+    check(
+      history.every((r, i) => r.revision === i + 1),
+      "JOURNAL_INTEGRITY",
+      "Original cancellation requires complete journal history.",
+    );
+    const finalOutcome = history.findLast((o) =>
+      ["unknown", "posted", "cancelled-unposted"].includes(
+        String(o.body.outcome),
+      ),
+    );
+    check(
+      finalOutcome?.body.requestRef === requestRef(row.id) &&
+        (row.state === "unknown" || row.state === "running"
+          ? finalOutcome?.body.outcome === "unknown"
+          : row.state === "posted"
+            ? finalOutcome?.body.outcome === "posted"
+            : row.state === "cancelled" &&
+              finalOutcome?.body.outcome === "cancelled-unposted"),
+      "JOURNAL_INTEGRITY",
+      "Original cancellation requires its retained native outcome history.",
+    );
+    journalPermissions(row.id, row.review_hash, plan.input.authority, history);
+    const facts = {
+      version: 1,
+      orgId: row.org_id,
+      journalId: row.id,
+      reviewHash: row.review_hash,
+      sourceId: row.source_id,
+      sourceHash: file.hash,
+      postingDate: row.posting_date,
+      realm: row.realm,
+      bindingId: row.binding_id,
+      requestRef: requestRef(row.id),
+      region: document.region as "CA" | "US",
+      currency: document.currency as "CAD" | "USD",
+      debit: Number(debit),
+      credit: Number(credit),
+    };
+    return { facts, history };
+  }
+  private originalCancellationSnapshot(actor: Actor, row: Journal) {
+    const { facts, history } = this.originalCancellationFacts(actor, row);
+    return {
+      ...facts,
+      historyHash: digest(canonical(history.map((r) => r.hash))),
+    };
+  }
+  originalCancellationEvidenceReview(actor: Actor, journalId: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const row = this.row(actor, journalId);
+      check(
+        row.state === "unknown" && row.external_id === null,
+        "JOURNAL_STATE",
+        "Only an unresolved original can retain final non-posting evidence.",
+      );
+      const snapshot = this.originalCancellationSnapshot(actor, row);
+      return {
+        journal: this.view(row),
+        snapshot,
+        reviewHash: digest(canonical(snapshot)),
+      };
+    });
+  }
+  private originalCancellationEvidence(
+    actor: Actor,
+    row: Journal,
+    hash?: string,
+  ) {
+    const { facts, history } = this.originalCancellationFacts(actor, row),
+      index =
+        hash === undefined
+          ? history.length - 1
+          : history.findIndex((o) => o.hash === hash),
+      observation = history[index],
+      body = observation?.body,
+      snapshot = {
+        ...facts,
+        historyHash: digest(
+          canonical(history.slice(0, index).map((r) => r.hash)),
+        ),
+      };
+    check(
+      observation &&
+        index >= 0 &&
+        body?.kind === "original-cancellation-evidence" &&
+        canonical(Object.keys(body).sort()) ===
+          canonical(["input", "kind", "snapshot"]) &&
+        canonical(body.snapshot) === canonical(snapshot),
+      "JOURNAL_CANCELLATION_EVIDENCE",
+      "Retain current final original cancellation evidence against the complete native history.",
+    );
+    const input = body.input as OriginalCancellationEvidenceInput;
+    originalCancellationEvidenceInput(input);
+    check(
+      input.journalId === row.id &&
+        input.requestRef === requestRef(row.id) &&
+        input.reviewHash === digest(canonical(snapshot)),
+      "JOURNAL_INTEGRITY",
+      "Original cancellation evidence differs from the exact reviewed request.",
+    );
+    return {
+      evidenceHash: observation.hash,
+      revision: observation.revision,
+      recordedBy: observation.recordedBy,
+      recordedAt: observation.recordedAt,
+      input,
+      snapshot,
+    };
+  }
+  recordOriginalCancellationEvidence(
+    actor: Actor,
+    key: string,
+    raw: OriginalCancellationEvidenceInput,
+  ) {
+    const input = structuredClone(raw);
+    return this.platform.command(
+      actor,
+      "accounting.journal.original-cancellation.evidence",
+      key,
+      input,
+      (cached) => {
+        actor = this.principal(actor);
+        originalCancellationEvidenceInput(input);
+        const row = this.row(actor, input.journalId);
+        if (cached !== undefined) {
+          check(
+            typeof cached?.evidence?.evidenceHash === "string",
+            "JOURNAL_INTEGRITY",
+            "Original evidence receipt requires its retained observation hash.",
+          );
+          const evidence = this.originalCancellationEvidence(
+            actor,
+            row,
+            cached.evidence?.evidenceHash,
+          );
+          check(
+            evidence.recordedBy === actor.id &&
+              canonical(evidence.input) === canonical(input) &&
+              canonical(cached) ===
+                canonical({
+                  journal: {
+                    ...this.view(row),
+                    state: "unknown",
+                    externalId: null,
+                    leaseStarted: null,
+                    leaseMode: null,
+                  },
+                  evidence,
+                }),
+            "JOURNAL_INTEGRITY",
+            "Original evidence receipt differs from its retained observation.",
+          );
+        }
+      },
+      () => {
+        const row = this.row(actor, input.journalId);
+        check(
+          row.state === "unknown" && row.external_id === null,
+          "JOURNAL_STATE",
+          "Only an unresolved original can retain final non-posting evidence.",
+        );
+        const snapshot = this.originalCancellationSnapshot(actor, row);
+        check(
+          input.requestRef === requestRef(row.id) &&
+            input.reviewHash === digest(canonical(snapshot)),
+          "JOURNAL_REVIEW_CHANGED",
+          "Review the exact current original and complete history before recording evidence.",
+        );
+        this.observe(actor, row, {
+          kind: "original-cancellation-evidence",
+          input,
+          snapshot,
+        });
+        return {
+          journal: this.view(row),
+          evidence: this.originalCancellationEvidence(actor, row),
+        };
+      },
+    );
+  }
+  originalCancellationReview(actor: Actor, journalId: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const row = this.row(actor, journalId);
+      check(
+        row.state === "unknown" && row.external_id === null,
+        "JOURNAL_STATE",
+        "Only an unresolved original can retain final cancellation.",
+      );
+      const evidence = this.originalCancellationEvidence(actor, row);
+      return {
+        journal: this.view(row),
+        evidence,
+        canConfirm: actor.id !== evidence.recordedBy,
+      };
+    });
+  }
+  cancelOriginalAttempt(
+    actor: Actor,
+    key: string,
+    raw: OriginalCancellationInput,
+  ) {
+    const input = structuredClone(raw);
+    return this.platform.command(
+      actor,
+      "accounting.journal.cancel-original",
+      key,
+      input,
+      (cached) => {
+        actor = this.principal(actor);
+        originalCancellationInput(input);
+        const row = this.row(actor, input.journalId);
+        if (cached !== undefined) {
+          const { history } = this.originalCancellationFacts(actor, row),
+            last = history.at(-1),
+            evidence = this.originalCancellationEvidence(
+              actor,
+              row,
+              input.evidenceHash,
+            );
+          check(
+            row.state === "cancelled" &&
+              evidence.recordedBy !== actor.id &&
+              last?.recordedBy === actor.id &&
+              canonical(last?.body) ===
+                canonical({
+                  outcome: "cancelled-unposted",
+                  evidenceHash: input.evidenceHash,
+                  reason: input.reason,
+                  requestRef: input.requestRef,
+                }) &&
+              canonical(cached) ===
+                canonical({ ...this.view(row), cancellation: last }),
+            "JOURNAL_INTEGRITY",
+            "Original cancellation receipt differs from its retained final decision.",
+          );
+        }
+      },
+      () => {
+        const row = this.row(actor, input.journalId);
+        check(
+          row.state === "unknown" && row.external_id === null,
+          "JOURNAL_STATE",
+          "Only an unresolved original can retain final cancellation.",
+        );
+        const evidence = this.originalCancellationEvidence(actor, row);
+        check(
+          actor.id !== evidence.recordedBy &&
+            input.evidenceHash === evidence.evidenceHash &&
+            input.requestRef === requestRef(row.id),
+          "JOURNAL_CANCELLATION",
+          "A separate current finance reviewer must bind current final non-posting evidence to this exact original request.",
+        );
+        const cancellation = this.observe(actor, row, {
+          outcome: "cancelled-unposted",
+          evidenceHash: input.evidenceHash,
+          reason: input.reason,
+          requestRef: input.requestRef,
+        });
+        this.clear(row, "cancelled");
+        return { ...this.view(this.row(actor, row.id)), cancellation };
+      },
+    );
   }
   cancellationReview(actor: Actor, journalId: string) {
     return this.database.transaction(() => {

@@ -45,6 +45,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Original stock-journal reconciliation](docs/STOCK-JOURNAL-RECONCILIATION.md) | Complete per-date native evidence, fixed Billing review, separate finance attestations and read-first exact recovery |
 | [Stock-journal preparation](docs/STOCK-JOURNAL-PREPARATION.md) | Approved source/date/account mapping, fixed confirmation and original receipt recovery |
 | [Stock-journal browser review](docs/STOCK-JOURNAL-BROWSER.md) | Frozen independent review, queue/history paging and exact uncertain-decision recovery |
+| [Original stock-journal cancellation](docs/STOCK-JOURNAL-ORIGINAL-CANCELLATION.md) | Final non-posting evidence, separate native/API finance cancellation and retained permanent reservations |
 | [Stock-journal correction cancellation](docs/STOCK-JOURNAL-CANCELLATION.md) | Final evidence, separate finance confirmation and exact uncertain-cancellation recovery |
 | [Stock-journal review controls](docs/STOCK-JOURNAL-CONTROLS.md) | Authenticated local preparation/independent decisions, scoped queues and complete paged observations |
 | [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md) | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order |

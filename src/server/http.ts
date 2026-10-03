@@ -371,6 +371,34 @@ export function commands(
       run: (a, k, p) =>
         app.integration.costs.journals.decidePermission(a, k, p),
     },
+    "accounting.journal.original-cancellation.evidence": {
+      schema: obj({
+        journalId: { ...str, maxLength: 160 },
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        requestRef: { type: "string", pattern: "^DJ-[a-f0-9]{18}$" },
+        externalRef: { ...str, maxLength: 160 },
+        evidence: str,
+        cancellationFinal: { const: true },
+        nonPostingVerified: { const: true },
+        noLaterPosting: { const: true },
+      }),
+      run: (a, k, p) =>
+        app.integration.costs.journals.recordOriginalCancellationEvidence(
+          a,
+          k,
+          p,
+        ),
+    },
+    "accounting.journal.cancel-original": {
+      schema: obj({
+        journalId: { ...str, maxLength: 160 },
+        requestRef: { type: "string", pattern: "^DJ-[a-f0-9]{18}$" },
+        evidenceHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reason: str,
+      }),
+      run: (a, k, p) =>
+        app.integration.costs.journals.cancelOriginalAttempt(a, k, p),
+    },
     "accounting.journal.cancel-correction": {
       schema: obj({
         journalId: str,
@@ -3601,6 +3629,28 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor(request),
         request.params.journalId,
         request.query.reviewId,
+      );
+    },
+  );
+  http.get<{ Params: { journalId: string } }>(
+    "/api/accounting/journals/:journalId/original-cancellation-evidence-review",
+    { schema: { params: obj({ journalId: str }), querystring: obj({}) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.originalCancellationEvidenceReview(
+        actor(request),
+        request.params.journalId,
+      );
+    },
+  );
+  http.get<{ Params: { journalId: string } }>(
+    "/api/accounting/journals/:journalId/original-cancellation-review",
+    { schema: { params: obj({ journalId: str }), querystring: obj({}) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.originalCancellationReview(
+        actor(request),
+        request.params.journalId,
       );
     },
   );
