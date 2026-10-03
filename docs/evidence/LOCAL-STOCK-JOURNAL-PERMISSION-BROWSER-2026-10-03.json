@@ -1050,9 +1050,18 @@
     "Providers, identities, terms, hardware and residency infrastructure unqualified; no provider execution route"
   ],
   "publication": {
-    "status": "reviewed snapshot; normal publication follows",
-    "authorized_repository": "SJS1001/Distributor",
-    "pr_merge_deployment": false,
-    "ci_jobs_started": false
+    "source_commit": "a4041a3b69eef3c0afde9d43030a364aae492a56",
+    "normal_push": true,
+    "exact_remote_source_equality": true,
+    "clean_after_source_push": true,
+    "committed_tested_inputs": 528,
+    "committed_runtime_source_inputs": 267,
+    "generated_runtime_assets": 3,
+    "runtime_assets_audit": "Current ignored build assets match retained PASS copied-input receipt; temporary runtime work directory cleaned",
+    "retained_private_evidence_hashes": 119,
+    "workflows": 0,
+    "actions_runs": 0,
+    "ci_jobs_started": false,
+    "pr_merge_deployment": false
   }
 }
