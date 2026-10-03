@@ -1,9 +1,11 @@
 import { Application } from "../src/server/application.ts";
 import { type CredentialBinding } from "../src/server/provider-credentials.ts";
+import type { LedgerAuthority } from "../src/server/organization-residency.ts";
 import { type Effect } from "../src/server/integration.ts";
 let app: Application,
   binding: CredentialBinding,
   effect: Effect,
+  authority: LedgerAuthority | undefined,
   release!: () => void,
   calls = 0;
 process.on("message", async (message: any) => {
@@ -13,6 +15,7 @@ process.on("message", async (message: any) => {
     });
     binding = message.input.binding;
     effect = message.input.effect;
+    authority = message.input.authority;
     globalThis.fetch = async () => {
       calls++;
       process.send?.({ requested: true });
@@ -31,16 +34,23 @@ process.on("message", async (message: any) => {
     return;
   }
   if (message.action === "release") {
-    release();
+    release?.();
     return;
   }
   if (message.action !== "go") return;
   try {
-    await app.providerCredentials.access(
-      binding,
-      "synthetic-child-secret",
-      effect,
-    );
+    if (authority)
+      await app.providerCredentials.ledger.access(
+        binding,
+        "synthetic-child-secret",
+        authority,
+      );
+    else
+      await app.providerCredentials.access(
+        binding,
+        "synthetic-child-secret",
+        effect,
+      );
     process.send?.({ ok: true, calls });
   } catch (error) {
     process.send?.({

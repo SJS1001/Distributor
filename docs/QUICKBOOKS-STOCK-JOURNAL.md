@@ -18,11 +18,11 @@ Lookup performs GET only. An absent record returns no confirmed result. It is no
 
 ## Native engineering still required
 
-The injected guard still requires native delivery wiring. [Organization-owned residency terms, choices and current permission stamps](ORGANIZATION-LEDGER-RESIDENCY.md) now exist independently of buyer consent. They do not supply credentials or queue/lease authority. Before wiring this adapter, complete an organization-owned integration operation with:
+The injected guard still requires native delivery wiring. [Organization-owned residency terms, choices and current permission stamps](ORGANIZATION-LEDGER-RESIDENCY.md) now exist independently of buyer consent. A separate [organization credential vault](ORGANIZATION-LEDGER-CREDENTIALS.md) now checks those exact stamps for installation and token access. Neither service supplies queue/lease authority or connects this adapter. Before wiring this adapter, complete an organization-owned integration operation with:
 
 - Current finance/operator and worker authority, named QuickBooks organization residency choice, current disclosure acceptance/withdrawal and an exact configured realm. Buyer consent must not be borrowed for organization records.
 - Current provider/recovery hold, approved source hash, posting owner and period policy, reviewed immutable receiver account mapping, permanent per-date/per-leg effect/reference reservations and exclusive durable lease ownership.
 - Reversal-before-replacement delivery, append-only provider observations bound to native correction/retry histories, unknown-outcome fencing, stale lease recovery and fresh separately approved attempts after independently established cancellation/non-posting.
-- Credential refresh scoped to the organization's operation and consent, transactional queue/history/API controls and interruption/restart/concurrency fault checks. Native effect payloads cannot be caller-authored source approval.
+- Binding the scoped credential vault to each exact native operation, transactional queue/history/API controls and interruption/restart/concurrency fault checks. Native effect payloads cannot be caller-authored source approval.
 
 The generic buyer-effect controller cannot satisfy these checks. Do not use a no-op guard or create a synthetic customer account to bypass that boundary. Actual CA/US sandboxes, current supported journal/tax/account fields and limits, vendor processing locations/terms, finance mappings/periods and independent outcomes require separate qualification. No live provider IO, account, workflow or runner job was created for this candidate. The [local receipt](evidence/LOCAL-STOCK-JOURNAL-2026-10-03.md) records synthetic tests and exact inputs. All 44 tasks and ten gates remain NOT VERIFIED.

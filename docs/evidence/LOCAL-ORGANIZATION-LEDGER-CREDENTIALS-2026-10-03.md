@@ -1,0 +1,25 @@
+# Local organization ledger credential receipt — 2026-10-03
+
+Parent: `66872d597e18086d8625413e8245d3b885f306ac`. Branch: `codex/local-distributor-checkpoint`. Environment: macOS arm64, Node 24.16.0; disposable synthetic CA/US stores and direct workstation commands.
+
+The [organization credential vault](../ORGANIZATION-LEDGER-CREDENTIALS.md) separates sandbox stock-journal tokens from buyer invoice bindings and checks exact organization consent for installation/access. Current worker authority, scope-authenticated encryption, exclusive refresh ownership, atomic audit and restore holds are enforced. Protected operator actions install/remove local material without provider IO. No journal delivery, organization browser OAuth or remote revocation is connected.
+
+## Final verification
+
+Full native checks pass 2,124/2,124, zero failures/skips/cancellations/todo, in 84,603.324959 ms. Focused credential/consent/authorization/revocation/schema checks pass 169/169 in 12,197.452375 ms. The full suite includes 24 new organization credential checks, including two independent processes competing for exactly one mocked refresh exchange and clean exits. TypeScript and formatting pass. Planning links pass: 226 Markdown files/1,258 local links, structure only. All 503 tested source/configuration/test inputs match the final candidate; the [machine receipt](LOCAL-ORGANIZATION-LEDGER-CREDENTIALS-2026-10-03.json) binds input and private evidence hashes.
+
+Checks cover CA/US restart isolation, buyer/organization binding separation, exact stamp fields and unexpected-field refusal, immutable realm/client, ciphertext substitution, role/activity/password/account changes, withdrawal/reacceptance, audit rollback, local removal without key or consent, shared rotation, held encrypted restore, one refresh across applications/processes, caller mutation, ambiguous/interrupted refresh and late response after changed consent/terms/role/hold/disable/replacement or expired claim. CLI checks cover permission capture, strict protected input, metadata output and refusal without exposing tokens.
+
+Isolated production installation/build/runtime checks pass with all 260 copied input hashes checked and 69 development-only packages absent. CA and US each pass two startup cycles, PDF/ZPL-8/ZPL-12 rendering and encrypted backup/restore. Disabled worker/credential entry points deliberately refuse; first shutdown's nonzero termination code is an expected runtime assertion. The production bundle warning persists. Schema 11, dependencies and frontend are unchanged; no fresh browser journey or static-diagnostic claim is made.
+
+## Retained failures and self-review
+
+Initial TypeScript checks failed on four test helper typing/call issues. Initial focused verification failed all 17 tests because consent inspection nested a transaction inside the vault write. Consent now uses an explicitly required native business transaction for atomic comparison. The second focused run passed 14/17 before fixing a fixture's duplicated application reference and cleanup. A later expanded run exposed upfront synchronous rejection in the ledger access facade and an incorrect password-change fixture column; both were corrected. Failed, superseded and final logs remain privately retained and hashed. Historical receipts remain unchanged.
+
+Self-review covers current authority before cached access, consent within the same transaction as writes, scope/revision-bound encryption, single refresh claim, conditional cleanup that cannot destroy newer tokens, immutable caller snapshots, local disable under withdrawal/holds, shared rotation/restore and protected CLI output. New source and fixtures use original repository modules; no private code, dependency or third-party source was copied. Runtime stores, keys, credentials, raw logs and private artifacts remain excluded.
+
+## Limits and continuation
+
+Native credential access is not journal delivery authority. Offline installation cannot independently prove provider company, token provenance, actual processor residency or representative/vendor qualification. Organization OAuth/company verification and remote revocation remain pending. Durable immutable effects/reference reservations/exclusive leases, current source/approval/period/mapping checks, correction ordering and append-only provider outcome/retry binding are required before journal adapter wiring. Browser consent review, further changed-journal/valuation corrections, restore activation/fencing/routing/reconciliation/rollback, current Purolator terms and actual provider/device/security/load/operating acceptance remain open.
+
+All 44 tasks and ten gates remain NOT VERIFIED; full-system work is incomplete. No CI runner/job/workflow, live provider IO, account, delegated/cloud session, PR, merge or deployment was created. Fresh read-only GitHub checks under `SJS1001` confirm ADMIN/push permission, exact published parent, zero workflows and zero Actions runs. Normal authorized publication follows after staged review.

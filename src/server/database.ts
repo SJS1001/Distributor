@@ -218,6 +218,15 @@ export class Database {
       this.#initializing = false;
     }
   }
+  // Native operations may assert a read fence inside their caller's atomic write.
+  // This does not start/join transactions or escape an owning SQL callback.
+  requireTransaction() {
+    check(
+      this.#owner === null && this.#db.isTransaction,
+      "TRANSACTION",
+      "This native fence requires an existing business transaction.",
+    );
+  }
   transaction<T>(fn: () => T): T {
     // Calling this from a Store callback must not escape the SQL authorizer.
     check(

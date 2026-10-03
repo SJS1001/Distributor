@@ -11,6 +11,7 @@ import { Platform } from "./platform.ts";
 import { type Effect } from "./integration.ts";
 import { QuickBooksAuthorization } from "./quickbooks-authorization.ts";
 import { exchangeQuickBooksToken } from "./quickbooks-oauth-protocol.ts";
+import type { LedgerAuthority } from "./organization-residency.ts";
 import { QuickBooksRevocation } from "./quickbooks-revocation.ts";
 
 export type CredentialBinding = {
@@ -38,11 +39,36 @@ type Credential = {
   claim: string | null;
   started_at: number | null;
 };
+// Scope is part of the durable binding ID and thus authenticated encryption AAD.
+// Only this vault constructs branded bindings. Buyer APIs refuse the namespace.
+const ledgerNamespace = "organization-ledger-sandbox-v1:";
+const ledgerBindings = new WeakSet<CredentialBinding>();
+
 // Integration owns credentials. No HTTP route or durable command can return this material.
 export class ProviderCredentials {
   private store: Store;
   private key?: Buffer;
   private generation = 0;
+  readonly ledger: {
+    status: (
+      binding: CredentialBinding,
+    ) => ReturnType<ProviderCredentials["status"]>;
+    install: (
+      binding: CredentialBinding,
+      revision: number,
+      input: TokenBundle,
+      authority: LedgerAuthority,
+    ) => ReturnType<ProviderCredentials["status"]>;
+    disable: (
+      binding: CredentialBinding,
+      revision: number,
+    ) => ReturnType<ProviderCredentials["status"]>;
+    access: (
+      binding: CredentialBinding,
+      clientSecret: string,
+      authority: LedgerAuthority,
+    ) => Promise<string>;
+  };
   readonly authorization: QuickBooksAuthorization;
   readonly revocation: QuickBooksRevocation;
   constructor(
@@ -68,6 +94,48 @@ export class ProviderCredentials {
       singleton INTEGER PRIMARY KEY CHECK(singleton=1),generation INTEGER NOT NULL CHECK(generation>0),fingerprint TEXT NOT NULL
     ) STRICT;`);
     this.generation = this.keyRow()?.generation ?? 0;
+    const publicStatus = (
+      binding: CredentialBinding,
+      internal: CredentialBinding,
+    ) => ({
+      ...this.status(internal),
+      bindingId: binding.id,
+    });
+    this.ledger = Object.freeze({
+      status: (binding: CredentialBinding) =>
+        publicStatus(binding, this.ledgerBinding(binding)),
+      install: (
+        binding: CredentialBinding,
+        revision: number,
+        input: TokenBundle,
+        authority: LedgerAuthority,
+      ) => {
+        const internal = this.ledgerBinding(binding),
+          stamp = this.ledgerStamp(authority);
+        return this.database.transaction(() => {
+          this.writeInstall(internal, revision, input, stamp);
+          return publicStatus(binding, internal);
+        });
+      },
+      disable: (binding: CredentialBinding, revision: number) => {
+        const internal = this.ledgerBinding(binding);
+        return this.database.transaction(() => {
+          this.writeDisable(internal, revision);
+          return publicStatus(binding, internal);
+        });
+      },
+      access: async (
+        binding: CredentialBinding,
+        clientSecret: string,
+        authority: LedgerAuthority,
+      ) =>
+        this.accessScoped(
+          this.ledgerBinding(binding),
+          clientSecret,
+          undefined,
+          this.ledgerStamp(authority),
+        ),
+    });
     this.revocation = new QuickBooksRevocation(
       database,
       this.store,
@@ -321,8 +389,52 @@ export class ProviderCredentials {
       if (!committed) replacement.fill(0);
     }
   }
+  private ledgerStamp(authority: LedgerAuthority): LedgerAuthority {
+    check(
+      authority && typeof authority === "object" && !Array.isArray(authority),
+      "CREDENTIAL_SCOPE",
+      "Supply the exact organization ledger authority stamp.",
+    );
+    // Copy all fields so unexpected scope fields still refuse exact comparison.
+    return Object.freeze({ ...authority });
+  }
+  private ledgerBinding(binding: CredentialBinding): CredentialBinding {
+    this.validateBinding(binding);
+    check(
+      /^[1-9][0-9]{0,39}$/.test(binding.realm),
+      "PROVIDER_CONFIG",
+      "Invalid organization QuickBooks realm.",
+    );
+    const internal = Object.freeze({
+      id:
+        ledgerNamespace +
+        createHash("sha256")
+          .update(JSON.stringify([binding.orgId, binding.id]))
+          .digest("hex"),
+      orgId: binding.orgId,
+      workerUserId: binding.workerUserId,
+      realm: binding.realm,
+      clientId: binding.clientId,
+    });
+    ledgerBindings.add(internal);
+    return internal;
+  }
+  private auditScope(binding: CredentialBinding) {
+    return ledgerBindings.has(binding)
+      ? {
+          purpose: "stock-cost-journal",
+          credentialScope: "organization",
+          environment: "sandbox",
+        }
+      : {};
+  }
   private validateBinding(binding: CredentialBinding) {
     text(binding.id, "binding ID");
+    check(
+      !binding.id.startsWith(ledgerNamespace) || ledgerBindings.has(binding),
+      "CREDENTIAL_SCOPE",
+      "Organization ledger credentials cannot be used through buyer credential APIs.",
+    );
     text(binding.orgId, "organization ID");
     text(binding.workerUserId, "worker ID");
     check(
@@ -337,13 +449,36 @@ export class ProviderCredentials {
     );
     this.identity.workerActor(binding.orgId, binding.workerUserId);
   }
-  private authorize(binding: CredentialBinding, effect?: Effect): Actor {
+  private authorize(
+    binding: CredentialBinding,
+    effect?: Effect,
+    authority?: LedgerAuthority,
+  ): Actor {
     this.validateBinding(binding);
     this.platform.assertProviderAccess();
     const actor = this.identity.workerActor(
       binding.orgId,
       binding.workerUserId,
     );
+    if (ledgerBindings.has(binding)) {
+      check(
+        authority &&
+          authority.orgId === binding.orgId &&
+          authority.realm === binding.realm &&
+          !effect,
+        "CREDENTIAL_SCOPE",
+        "Credential company and organization ledger authority differ.",
+      );
+      this.identity.organizationResidency.assertAllowedInTransaction(
+        actor,
+        authority,
+      );
+    } else
+      check(
+        !authority,
+        "CREDENTIAL_SCOPE",
+        "Buyer credentials cannot satisfy organization ledger authority.",
+      );
     if (effect) {
       check(
         effect.org_id === binding.orgId && effect.provider === "quickbooks",
@@ -372,7 +507,9 @@ export class ProviderCredentials {
   private context(row: Credential) {
     return Buffer.from(
       JSON.stringify([
-        "quickbooks-sandbox-v1",
+        row.binding_id.startsWith(ledgerNamespace)
+          ? "quickbooks-organization-stock-journal-sandbox-v1"
+          : "quickbooks-sandbox-v1",
         row.org_id,
         row.binding_id,
         row.realm,
@@ -503,10 +640,11 @@ export class ProviderCredentials {
     binding: CredentialBinding,
     revision: number,
     input: TokenBundle,
+    authority?: LedgerAuthority,
   ) {
     const bundle = this.validateBundle(input, true);
-    integer(revision, "credential revision");
-    const actor = this.authorize(binding),
+    integer(revision, "credential revision", 0, Number.MAX_SAFE_INTEGER - 1);
+    const actor = this.authorize(binding, undefined, authority),
       old = this.row(binding);
     this.revocation.assertClear(binding);
     check(
@@ -539,6 +677,7 @@ export class ProviderCredentials {
       revision: row.revision,
       provider: "quickbooks",
       environment: "sandbox",
+      ...this.auditScope(binding),
     });
     return this.status(binding);
   }
@@ -548,7 +687,7 @@ export class ProviderCredentials {
     );
   }
   private writeDisable(binding: CredentialBinding, revision: number) {
-    integer(revision, "credential revision");
+    integer(revision, "credential revision", 0, Number.MAX_SAFE_INTEGER - 1);
     this.validateBinding(binding);
     const actor = this.identity.workerActor(
         binding.orgId,
@@ -569,6 +708,7 @@ export class ProviderCredentials {
       revision: revision + 1,
       provider: "quickbooks",
       providerRevocationConfirmed: false,
+      ...this.auditScope(binding),
     });
     return this.status(binding);
   }
@@ -587,8 +727,21 @@ export class ProviderCredentials {
     clientSecret: string,
     effect: Effect,
   ): Promise<string> {
+    // Caller-owned configuration and effect records cannot change during refresh.
+    return this.accessScoped(
+      Object.freeze({ ...binding }),
+      clientSecret,
+      Object.freeze({ ...effect }),
+    );
+  }
+  private async accessScoped(
+    binding: CredentialBinding,
+    clientSecret: string,
+    effect?: Effect,
+    authority?: LedgerAuthority,
+  ): Promise<string> {
     const claim = this.database.transaction(() => {
-      this.authorize(binding, effect);
+      this.authorize(binding, effect, authority);
       this.revocation.assertClear(binding);
       const row = this.row(binding);
       check(
@@ -628,6 +781,12 @@ export class ProviderCredentials {
         "QuickBooks client secret is unavailable.",
         503,
       );
+      integer(
+        row.revision,
+        "credential revision",
+        0,
+        Number.MAX_SAFE_INTEGER - 1,
+      );
       const token = id();
       this.store.run(
         "UPDATE integration_credentials SET state='refreshing',claim=?,started_at=? WHERE org_id=? AND binding_id=?",
@@ -647,7 +806,9 @@ export class ProviderCredentials {
     if ("accessToken" in claim) return claim.accessToken!;
     const { row, bundle, token } = claim;
     try {
-      this.authorize(binding, effect);
+      this.database.transaction(() =>
+        this.authorize(binding, effect, authority),
+      );
       const next = this.validateBundle(
         await exchangeQuickBooksToken(
           binding,
@@ -661,12 +822,15 @@ export class ProviderCredentials {
         true,
       );
       return this.database.transaction(() => {
-        const actor = this.authorize(binding, effect),
+        const actor = this.authorize(binding, effect, authority),
           current = this.row(binding);
         check(
           current?.state === "refreshing" &&
             current.claim === token &&
-            current.revision === row.revision,
+            current.revision === row.revision &&
+            current.started_at !== null &&
+            Date.now() >= current.started_at &&
+            Date.now() - current.started_at <= 90000,
           "CREDENTIAL_STALE",
           "Token refresh was superseded.",
           503,
@@ -682,6 +846,7 @@ export class ProviderCredentials {
         this.platform.audit(actor, "provider.credentials.refresh", binding.id, {
           revision: updated.revision,
           provider: "quickbooks",
+          ...this.auditScope(binding),
         });
         return next.accessToken;
       });

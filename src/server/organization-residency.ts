@@ -505,28 +505,41 @@ export class OrganizationResidency {
   // Capture a stamp for a prospective immutable effect. This is permission only:
   // it never supplies credentials, clears recovery holds, or authorizes sending.
   permission(actor: Actor, realm: string): LedgerAuthority {
-    return this.database.transaction(() => {
-      actor = this.actor(actor);
-      this.platform.assertProviderAccess();
-      const { choice, terms, allowed } = this.status(actor);
-      check(
-        allowed && choice.realm === realm && terms && choice.acceptance,
-        "RESIDENCY_BLOCKED",
-        "Organization has not accepted current stock-journal terms for this QuickBooks sandbox company.",
-      );
-      return {
-        ...scope,
-        orgId: actor.orgId,
-        region: this.region,
-        realm,
-        revision: choice.revision,
-        disclosureId: terms.id,
-        disclosureHash: terms.hash,
-      };
-    });
+    return this.database.transaction(() =>
+      this.capturePermission(actor, realm),
+    );
+  }
+  private capturePermission(actor: Actor, realm: string): LedgerAuthority {
+    actor = this.actor(actor);
+    this.platform.assertProviderAccess();
+    const { choice, terms, allowed } = this.status(actor);
+    check(
+      allowed && choice.realm === realm && terms && choice.acceptance,
+      "RESIDENCY_BLOCKED",
+      "Organization has not accepted current stock-journal terms for this QuickBooks sandbox company.",
+    );
+    return {
+      ...scope,
+      orgId: actor.orgId,
+      region: this.region,
+      realm,
+      revision: choice.revision,
+      disclosureId: terms.id,
+      disclosureHash: terms.hash,
+    };
   }
   assertAllowed(actor: Actor, stamp: LedgerAuthority) {
-    const current = this.permission(actor, stamp.realm);
+    return this.database.transaction(() =>
+      this.comparePermission(actor, stamp),
+    );
+  }
+  // Vault/effect owners retain the same atomic transaction as their write.
+  assertAllowedInTransaction(actor: Actor, stamp: LedgerAuthority) {
+    this.database.requireTransaction();
+    return this.comparePermission(actor, stamp);
+  }
+  private comparePermission(actor: Actor, stamp: LedgerAuthority) {
+    const current = this.capturePermission(actor, stamp.realm);
     check(
       canonical(stamp) === canonical(current),
       "RESIDENCY_CHANGED",

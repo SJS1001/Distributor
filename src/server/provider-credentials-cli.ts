@@ -2,6 +2,7 @@ import { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError, integer } from "./core.ts";
 import { type Region } from "./iam.ts";
+import type { LedgerAuthority } from "./organization-residency.ts";
 import { type TokenBundle } from "./provider-credentials.ts";
 
 let app: Application | undefined;
@@ -10,6 +11,10 @@ try {
   check(
     process.argv.length === 3 &&
       [
+        "ledger-status",
+        "ledger-permission",
+        "ledger-install",
+        "ledger-disable",
         "status",
         "install",
         "disable",
@@ -20,7 +25,7 @@ try {
         "revocation-review",
       ].includes(action ?? ""),
     "CLI",
-    "Usage: provider-credentials <status|install|disable|key-status|rotate|revoke|revocation-status|revocation-review>; operation input must arrive through protected stdin.",
+    "Usage: provider-credentials <ledger-status|ledger-permission|ledger-install|ledger-disable|status|install|disable|key-status|rotate|revoke|revocation-status|revocation-review>; operation input must arrive through protected stdin.",
     400,
   );
   const required = (name: string) => {
@@ -41,6 +46,10 @@ try {
     required("QUICKBOOKS_CLIENT_SECRET");
   }
   const binding = [
+    "ledger-status",
+    "ledger-permission",
+    "ledger-install",
+    "ledger-disable",
     "status",
     "install",
     "disable",
@@ -65,7 +74,17 @@ try {
     },
   );
   let result;
-  if (action === "status") result = app.providerCredentials.status(binding!);
+  if (action === "ledger-status")
+    result = app.providerCredentials.ledger.status(binding!);
+  else if (action === "ledger-permission") {
+    // This is a prospective stamp, not credentials or delivery authorization.
+    app.providerCredentials.ledger.status(binding!);
+    result = app.identity.organizationResidency.permission(
+      app.identity.workerActor(binding!.orgId, binding!.workerUserId),
+      binding!.realm,
+    );
+  } else if (action === "status")
+    result = app.providerCredentials.status(binding!);
   else if (action === "key-status")
     result = app.providerCredentials.keyStatus();
   else {
@@ -86,6 +105,7 @@ try {
     const value = JSON.parse(input) as {
       revision: number;
       tokens?: TokenBundle;
+      authority?: LedgerAuthority;
       generation?: number;
       nextKey?: string;
       workers?: { orgId: string; workerUserId: string }[];
@@ -98,7 +118,34 @@ try {
       "CREDENTIAL_INPUT",
       "Supply a credential operation object.",
     );
-    if (revocationAction) {
+    if (action === "ledger-install" || action === "ledger-disable") {
+      const allowed =
+        action === "ledger-install"
+          ? ["revision", "tokens", "authority"]
+          : ["revision"];
+      check(
+        Object.keys(value).every((name) => allowed.includes(name)),
+        "CREDENTIAL_INPUT",
+        "Unexpected organization credential input.",
+      );
+      if (action === "ledger-install") {
+        check(
+          value.tokens && value.authority,
+          "CREDENTIAL_INPUT",
+          "Supply tokens and the exact reviewed organization authority stamp.",
+        );
+        result = app.providerCredentials.ledger.install(
+          binding!,
+          value.revision,
+          value.tokens,
+          value.authority,
+        );
+      } else
+        result = app.providerCredentials.ledger.disable(
+          binding!,
+          value.revision,
+        );
+    } else if (revocationAction) {
       const allowed =
         action === "revoke"
           ? ["receiptId", "revision"]

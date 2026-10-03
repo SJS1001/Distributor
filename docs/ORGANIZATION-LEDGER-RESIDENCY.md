@@ -1,6 +1,6 @@
 # Organization residency review for stock journals
 
-D-009/D-034/D-036/D-039 engineering work. The native service and authenticated API record an organization's separate processing choice for QuickBooks **sandbox stock-cost journals**. No journal execution, scoped ledger credentials, durable delivery queue or browser form is connected by this change. All product tasks and gates remain NOT VERIFIED.
+D-009/D-034/D-036/D-039 engineering work. The native service and authenticated API record an organization's separate processing choice for QuickBooks **sandbox stock-cost journals**. Separate [organization ledger credentials](ORGANIZATION-LEDGER-CREDENTIALS.md) now consume these permission stamps. No journal execution, durable delivery queue or browser form is connected. All product tasks and gates remain NOT VERIFIED.
 
 ## Review and authority
 
@@ -36,7 +36,7 @@ The read result's `allowed` describes consent eligibility only. It does not clea
 
 `identity.organizationResidency.permission(actor, realm)` checks current native authority, region, current accepted disclosure/revision/company and the provider recovery hold in one transaction. It returns an exact permission stamp. `assertAllowed(actor, stamp)` recaptures and compares every scope field and revision, refusing later withdrawal, terms drift or a different company. A held restored store may retain consent eligibility in its history while execution permission refuses with `RECOVERY_HOLD`.
 
-These synchronous methods are foundations for a future native guard. They supply no token, lease or delivery authorization by themselves. Before connecting the [disabled journal candidate](QUICKBOOKS-STOCK-JOURNAL.md), implement organization-scoped credential authority, durable immutable source/effect/reference reservations and exclusive leases, current approval/mapping/period checks, correction ordering, interruption handling and append-only provider observations/retry binding. Independent external reconciliation and actual vendor, infrastructure and representative qualification remain required. In-flight or previously transmitted data cannot be recalled by a later local choice.
+These synchronous methods are foundations for a future native guard. They supply no token, lease or delivery authorization by themselves. Before connecting the [disabled journal candidate](QUICKBOOKS-STOCK-JOURNAL.md), implement durable immutable source/effect/reference reservations and exclusive leases, current approval/mapping/period checks, correction ordering, interruption handling and append-only provider observations/retry binding. Independent external reconciliation and actual vendor, infrastructure and representative qualification remain required. In-flight or previously transmitted data cannot be recalled by a later local choice.
 
 ## Upgrade and evidence
 

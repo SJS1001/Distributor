@@ -41,6 +41,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
 | [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks; organization-owned native delivery remains pending |
 | [Organization ledger residency](docs/ORGANIZATION-LEDGER-RESIDENCY.md) | Separate native sandbox company consent, retained terms/revisions and execution permission fences |
+| [Organization ledger credentials](docs/ORGANIZATION-LEDGER-CREDENTIALS.md) | Separate encrypted sandbox tokens, exact consent checks, exclusive refresh and protected offline operator controls |
 | [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
 | [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |
 | [Bulk count queue and review duties](docs/COUNT-REVIEWS.md) | Scoped twenty-count pages, state filters, exact read retries, organization policy and immutable decision history |
