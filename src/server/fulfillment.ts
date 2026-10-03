@@ -3,6 +3,8 @@ import type { SerialShipment } from "../shared/serial-dossier.ts";
 import { serialCursor } from "./serial-dossier-cursor.ts";
 import {
   account,
+  canonical,
+  digest,
   check,
   id,
   integer,
@@ -43,6 +45,15 @@ export type Shipment = {
   created_at: string;
   shipped_at: string | null;
 };
+/** Current native custody only; hashes neither authorize nor qualify recovery. */
+export type PackedCarrierCustodyReview = Readonly<{
+  version: "fulfillment-packed-carrier-custody/v1";
+  shipment: Readonly<Shipment>;
+  allocations: readonly Readonly<{ allocationId: string; quantity: number }>[];
+  history: Readonly<{ coverage: 0; delivery: 0; deliveryObservations: 0 }>;
+  custodyHash: string;
+}>;
+
 type DeliveryState =
   "in_transit" | "delayed" | "lost" | "returned" | "delivered";
 type DeliveryObservation = {
@@ -88,7 +99,7 @@ export class Fulfillment {
     this.carrierGuard = guard;
   }
   constructor(
-    database: Database,
+    private database: Database,
     private platform: Platform,
     private identity: Identity,
     private inventory: Inventory,
@@ -156,6 +167,212 @@ export class Fulfillment {
     account(actor, row.account_id);
     if (actor.role === "warehouse") site(actor, row.warehouse_id);
     return row;
+  }
+  /** Fixed owner read inside the caller's writer transaction. This intentionally
+   * does not read foreign inventory, invoice, provider or Platform history. */
+  reviewPackedCarrierCustodyInTransaction(
+    actor: Actor,
+    shipmentId: string,
+  ): PackedCarrierCustodyReview {
+    this.database.requireTransaction();
+    actor = this.identity.currentActor(actor);
+    permit(actor, ["warehouse"]);
+    check(
+      !this.identity.security(actor).passwordChangeRequired,
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reviewing packed custody.",
+      403,
+    );
+    check(
+      typeof shipmentId === "string" &&
+        shipmentId.length > 0 &&
+        shipmentId.length <= 160 &&
+        shipmentId === shipmentId.trim(),
+      "VALIDATION",
+      "Supply an exact shipment identifier.",
+      400,
+    );
+    // Every variable-width returned column is bounded in SQLite before fetch.
+    // Fixed code-owned identifiers only; no caller SQL or callback is accepted.
+    const columns = [
+      "id",
+      "org_id",
+      "order_id",
+      "account_id",
+      "warehouse_id",
+      "state",
+      "mode",
+      "address",
+      "tracking",
+      "carrier",
+      "lines",
+      "units",
+      "invoice_id",
+      "created_at",
+      "shipped_at",
+    ] as const;
+    const nullable = new Set<string>([
+      "tracking",
+      "carrier",
+      "invoice_id",
+      "shipped_at",
+    ]);
+    const widths = columns.map(
+      (column) => `coalesce(length(CAST(${column} AS BLOB)),0)`,
+    );
+    const invalid = columns
+      .map((column, index) => {
+        const limit =
+          column === "lines" || column === "units"
+            ? 32768
+            : column === "address"
+              ? 8000
+              : 4096;
+        return `(typeof(${column}) NOT IN (${nullable.has(column) ? "'text','null'" : "'text'"}) OR ${widths[index]}>${limit})`;
+      })
+      .join(" OR ");
+    const size = widths.join("+");
+    const bounds = this.store.get<{
+      count: number;
+      invalid: number;
+      bytes: number;
+      maximum: number;
+    }>(
+      `SELECT count(*) AS count, coalesce(sum(CASE WHEN ${invalid} THEN 1 ELSE 0 END),0) AS invalid,
+       coalesce(sum(${size}),0) AS bytes, coalesce(max(${size}),0) AS maximum
+       FROM fulfillment_shipments WHERE id=? AND org_id=?`,
+      shipmentId,
+      actor.orgId,
+    )!;
+    check(bounds.count > 0, "NOT_FOUND", "Shipment not found.", 404);
+    check(
+      bounds.count === 1 &&
+        bounds.invalid === 0 &&
+        bounds.bytes <= 49152 &&
+        bounds.maximum <= 49152,
+      "CUSTODY_BOUNDS",
+      "Native custody exceeds the fixed scalar or aggregate bounds.",
+    );
+    const shipment = this.store.get<Shipment>(
+      `SELECT ${columns.join(",")} FROM fulfillment_shipments WHERE id=? AND org_id=?`,
+      shipmentId,
+      actor.orgId,
+    )!;
+    check(
+      shipment.org_id === actor.orgId,
+      "NOT_FOUND",
+      "Shipment not found.",
+      404,
+    );
+    site(actor, shipment.warehouse_id);
+    // No history values need materializing: any row contradicts this subtype.
+    // Deliberately do not filter by org, state, revision or latest receipt.
+    const history = this.store.get<{
+      coverage: number;
+      delivery: number;
+      observations: number;
+    }>(
+      `SELECT
+       (SELECT count(*) FROM fulfillment_coverage WHERE shipment_id=?) AS coverage,
+       (SELECT count(*) FROM fulfillment_delivery WHERE shipment_id=?) AS delivery,
+       (SELECT count(*) FROM fulfillment_delivery_history WHERE shipment_id=?) AS observations`,
+      shipmentId,
+      shipmentId,
+      shipmentId,
+    )!;
+    check(
+      history.coverage === 0 &&
+        history.delivery === 0 &&
+        history.observations === 0,
+      "CUSTODY_HISTORY",
+      "Retained coverage or delivery history contradicts packed custody.",
+    );
+    const validId = (value: string) =>
+      value.length > 0 &&
+      value.length <= 160 &&
+      value.trim() === value &&
+      !value.includes("\0");
+    check(
+      [
+        shipment.id,
+        shipment.org_id,
+        shipment.order_id,
+        shipment.account_id,
+        shipment.warehouse_id,
+      ].every(validId) &&
+        shipment.id === shipmentId &&
+        shipment.state === "packed" &&
+        shipment.mode === "carrier" &&
+        shipment.tracking === null &&
+        shipment.carrier === null &&
+        shipment.invoice_id === null &&
+        shipment.shipped_at === null &&
+        shipment.units === "[]" &&
+        shipment.address.trim().length > 0 &&
+        shipment.address.length <= 2000 &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+          shipment.created_at,
+        ) &&
+        Number.isFinite(Date.parse(shipment.created_at)) &&
+        new Date(shipment.created_at).toISOString() === shipment.created_at,
+      "CUSTODY_STATE",
+      "An ordinary packed carrier shipment without handover artifacts is required.",
+    );
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(shipment.lines);
+    } catch {
+      check(false, "CUSTODY_LINES", "Packed allocations are malformed.");
+    }
+    check(
+      Array.isArray(parsed) && parsed.length > 0 && parsed.length <= 100,
+      "CUSTODY_LINES",
+      "Supply 1–100 retained packed allocations.",
+    );
+    const seen = new Set<string>();
+    const allocations = parsed.map((line: unknown) => {
+      check(
+        line !== null && typeof line === "object" && !Array.isArray(line),
+        "CUSTODY_LINES",
+        "Packed allocation must be a record.",
+      );
+      const entry = line as Record<string, unknown>;
+      check(
+        Object.keys(entry).length === 2 &&
+          typeof entry.allocationId === "string" &&
+          validId(entry.allocationId) &&
+          !seen.has(entry.allocationId) &&
+          typeof entry.quantity === "number" &&
+          Number.isSafeInteger(entry.quantity) &&
+          entry.quantity > 0 &&
+          entry.quantity <= 100000,
+        "CUSTODY_LINES",
+        "Packed allocations must be unique, exact and positive.",
+      );
+      seen.add(entry.allocationId);
+      return Object.freeze({
+        allocationId: entry.allocationId,
+        quantity: entry.quantity,
+      });
+    });
+    // Native packing uses compact JSON. Catch duplicate keys, coercive numbers,
+    // unknown fields and non-native encodings without rewriting retained bytes.
+    check(
+      JSON.stringify(parsed) === shipment.lines,
+      "CUSTODY_LINES",
+      "Packed allocation bytes are not native compact JSON.",
+    );
+    const facts = {
+      version: "fulfillment-packed-carrier-custody/v1" as const,
+      shipment: Object.freeze(shipment),
+      allocations: Object.freeze(allocations),
+      history: Object.freeze({
+        coverage: 0,
+        delivery: 0,
+        deliveryObservations: 0,
+      } as const),
+    };
+    return Object.freeze({ ...facts, custodyHash: digest(canonical(facts)) });
   }
   // Billing resolves its own financial rows; fulfillment alone resolves custody.
   // Packed sources are needed during native invoice capture, before handover
