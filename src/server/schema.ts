@@ -1,3 +1,4 @@
+import { STOCK_JOURNAL_SCHEMA } from "./stock-journal-schema.ts";
 import { ORGANIZATION_RESIDENCY_SCHEMA } from "./organization-residency-schema.ts";
 import { COST_CORRECTION_RETRY_SCHEMA } from "./cost-correction-retry-schema.ts";
 import { COST_CORRECTION_OUTCOME_SCHEMA } from "./cost-correction-outcome-schema.ts";
@@ -14,7 +15,7 @@ import { CANADA_POST_SCHEMA } from "./canada-post-schema.ts";
 import { QUICKBOOKS_REVOCATION_SCHEMA } from "./quickbooks-revocation-schema.ts";
 import { ACCOUNTING_CANCELLATION_SCHEMA } from "./accounting-cancellation-schema.ts";
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 export const SCHEMA_TABLE = "platform_schema_version";
 // This DDL is part of the frozen v1 schema identity. Changing it requires a new version.
 export const SCHEMA_DDL =
@@ -254,6 +255,31 @@ const profiles = baseline.schemas.map((profile) => {
                 : 0,
       ),
     ),
+    versionElevenHash: fingerprint(
+      [
+        ...previous,
+        ...CANADA_POST_SCHEMA,
+        ...QUICKBOOKS_REVOCATION_SCHEMA,
+        ...ACCOUNTING_CANCELLATION_SCHEMA,
+        ...CLAIM_COVERAGE_SCHEMA,
+        ...SHIPMENT_COVERAGE_SCHEMA,
+        ...SUPPLIER_AVAILABILITY_SCHEMA,
+        ...COST_CORRECTION_SCHEMA,
+        ...COST_CORRECTION_OUTCOME_SCHEMA,
+        ...COST_CORRECTION_RETRY_SCHEMA,
+        ...ORGANIZATION_RESIDENCY_SCHEMA,
+      ].sort((a, b) =>
+        a.type < b.type
+          ? -1
+          : a.type > b.type
+            ? 1
+            : a.name < b.name
+              ? -1
+              : a.name > b.name
+                ? 1
+                : 0,
+      ),
+    ),
     currentHash: fingerprint(
       [
         ...previous,
@@ -267,6 +293,7 @@ const profiles = baseline.schemas.map((profile) => {
         ...COST_CORRECTION_OUTCOME_SCHEMA,
         ...COST_CORRECTION_RETRY_SCHEMA,
         ...ORGANIZATION_RESIDENCY_SCHEMA,
+        ...STOCK_JOURNAL_SCHEMA,
       ].sort((a, b) =>
         a.type < b.type
           ? -1
@@ -300,6 +327,9 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
       initializedAt: null,
     };
   const current = profiles.find((p) => p.currentHash === schemaHash);
+  const versionEleven = profiles.find(
+    (p) => p.versionElevenHash === schemaHash,
+  );
   const versionTen = profiles.find((p) => p.versionTenHash === schemaHash);
   const versionNine = profiles.find((p) => p.versionNineHash === schemaHash);
   const versionEight = profiles.find((p) => p.versionEightHash === schemaHash);
@@ -310,6 +340,7 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
   const versionThree = profiles.find((p) => p.versionThreeHash === schemaHash);
   const versionTwo = profiles.find((p) => p.versionTwoHash === schemaHash);
   const previous =
+    versionEleven ??
     versionTen ??
     versionNine ??
     versionEight ??
@@ -360,25 +391,27 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
     row.version ===
       (current
         ? SCHEMA_VERSION
-        : versionTen
-          ? 10
-          : versionNine
-            ? 9
-            : versionEight
-              ? 8
-              : versionSeven
-                ? 7
-                : versionSix
-                  ? 6
-                  : versionFive
-                    ? 5
-                    : versionFour
-                      ? 4
-                      : versionThree
-                        ? 3
-                        : versionTwo
-                          ? 2
-                          : 1),
+        : versionEleven
+          ? 11
+          : versionTen
+            ? 10
+            : versionNine
+              ? 9
+              : versionEight
+                ? 8
+                : versionSeven
+                  ? 7
+                  : versionSix
+                    ? 6
+                    : versionFive
+                      ? 5
+                      : versionFour
+                        ? 4
+                        : versionThree
+                          ? 3
+                          : versionTwo
+                            ? 2
+                            : 1),
     "SCHEMA_VERSION",
     "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
   );
@@ -408,25 +441,27 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
     kind: current ? "current" : "previous",
     version: current
       ? SCHEMA_VERSION
-      : versionTen
-        ? 10
-        : versionNine
-          ? 9
-          : versionEight
-            ? 8
-            : versionSeven
-              ? 7
-              : versionSix
-                ? 6
-                : versionFive
-                  ? 5
-                  : versionFour
-                    ? 4
-                    : versionThree
-                      ? 3
-                      : versionTwo
-                        ? 2
-                        : 1,
+      : versionEleven
+        ? 11
+        : versionTen
+          ? 10
+          : versionNine
+            ? 9
+            : versionEight
+              ? 8
+              : versionSeven
+                ? 7
+                : versionSix
+                  ? 6
+                  : versionFive
+                    ? 5
+                    : versionFour
+                      ? 4
+                      : versionThree
+                        ? 3
+                        : versionTwo
+                          ? 2
+                          : 1,
     schemaHash,
     eventReports: (current ?? previous)!.eventReports,
     region: row.region,

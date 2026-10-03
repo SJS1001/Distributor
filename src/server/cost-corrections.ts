@@ -201,6 +201,61 @@ export class CostCorrections {
   policy(actor: Actor) {
     return this.database.transaction(() => this.current(this.principal(actor)));
   }
+  // Task-shaped native read fences share the delivery owner's transaction.
+  deliveryPolicyInTransaction(actor: Actor) {
+    this.database.requireTransaction();
+    return this.current(this.principal(actor));
+  }
+  deliverySourceInTransaction(actor: Actor, correctionId: string) {
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    const file = this.approvedFile(actor, correctionId),
+      row = this.row(actor, correctionId);
+    const document = JSON.parse(file.bytes);
+    check(
+      document.reviewHash === row.review_hash &&
+        digest(row.plan) === row.review_hash &&
+        canonical(document.input) === canonical(JSON.parse(row.input)) &&
+        document.reviewedBy === row.decision_by &&
+        document.reviewedAt === row.decision_at &&
+        document.originalId === row.original_id &&
+        document.originalHash === row.original_hash,
+      "COST_INTEGRITY",
+      "Correction delivery source differs from its retained review.",
+    );
+    return { file, state: this.outcomeSnapshot(actor, correctionId) };
+  }
+  deliveryCancellationInTransaction(
+    actor: Actor,
+    correctionId: string,
+    leg: "reversal" | "replacement",
+    attemptId: string | null,
+  ) {
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    this.approvedFile(actor, correctionId);
+    const retry = attemptId ? this.retryRow(actor, attemptId) : null;
+    check(
+      !retry ||
+        (retry.correction_id === correctionId &&
+          retry.leg === leg &&
+          retry.state === "reviewed"),
+      "COST_ATTEMPT_CHANGED",
+      "Cancellation must identify this approved attempt.",
+    );
+    const history = retry
+      ? this.retryObservations(actor, retry)
+      : this.observations(actor, correctionId).filter(
+          (o) => o.input.leg === leg,
+        );
+    const last = history.at(-1);
+    check(
+      last?.input.outcome === "cancelled-unposted",
+      "COST_RETRY_CANCELLED",
+      "Final cancellation and verified non-posting evidence is required.",
+    );
+    return last;
+  }
   configure(actor: Actor, key: string, input: CostPolicyInput) {
     actor = this.principal(actor);
     return this.platform.command(
@@ -361,6 +416,22 @@ export class CostCorrections {
       "COST_REFERENCE_CONFLICT",
       "Original outcome reference identifies another cost handoff.",
     );
+    const native = this.store.all(
+      "SELECT realm,state,external_id,posting_date FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg='original' AND state<>'rejected'",
+      actor.orgId,
+      packet.id,
+    );
+    if (native.length)
+      check(
+        native.length === 1 &&
+          native[0]!.state === "posted" &&
+          input.outcome === "posted" &&
+          input.receiverRef === `quickbooks-sandbox:${native[0]!.realm}` &&
+          input.externalRef === native[0]!.external_id &&
+          input.originalPostingDate === native[0]!.posting_date,
+        "COST_NATIVE_OUTCOME",
+        "Reconcile the native original before correction; multi-date native originals require a separately qualified correction contract.",
+      );
     const receipt = packet.receipt;
     check(
       !receipt ||
@@ -704,11 +775,18 @@ export class CostCorrections {
   ) {
     check(
       !this.store.get(
-        "SELECT retry_id FROM integration_cost_retry_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+        "SELECT r.journal_id FROM integration_stock_journal_references r JOIN integration_stock_journals j ON j.id=r.journal_id WHERE r.org_id=? AND ('quickbooks-sandbox:' || r.realm)=? AND r.request_ref=? AND j.source_id<>?",
         actor.orgId,
         receiver,
         external,
+        originalId ?? "",
       ) &&
+        !this.store.get(
+          "SELECT retry_id FROM integration_cost_retry_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
+          actor.orgId,
+          receiver,
+          external,
+        ) &&
         !this.store.get(
           "SELECT correction_id FROM integration_cost_correction_references WHERE org_id=? AND receiver_ref=? AND external_ref=?",
           actor.orgId,

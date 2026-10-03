@@ -2,7 +2,7 @@ import { canonical, check, digest, integer, text } from "./core.ts";
 import { accountingDate } from "./cost-corrections.ts";
 import type { Adapter, Effect, EffectResult } from "./integration.ts";
 
-// Sandbox protocol candidate only. No native queue or startup binding. A source
+// Sandbox protocol candidate only. No startup binding. A source
 // hash verifies bytes, not approval/authority; the supplied guard must re-read
 // native approval, organization consent, period, lease and correction ordering.
 export type StockJournalIntent = {
@@ -12,7 +12,7 @@ export type StockJournalIntent = {
   source: { bytes: string; hash: string };
   leg: "original" | "reversal" | "replacement";
   postingDate: string;
-  closedThrough: string;
+  closedThrough: string | null;
   accounts: { sourceAccount: string; accountId: string }[];
 };
 type ObjectValue = Record<string, unknown>;
@@ -124,9 +124,9 @@ export function stockJournalIntent(
   identifier(intent.realmId);
   text(intent.organizationId, "organization");
   accountingDate(intent.postingDate);
-  accountingDate(intent.closedThrough);
+  if (intent.closedThrough !== null) accountingDate(intent.closedThrough);
   check(
-    intent.postingDate > intent.closedThrough,
+    intent.closedThrough === null || intent.postingDate > intent.closedThrough,
     "JOURNAL_PERIOD",
     "Posting date is in a closed period.",
   );

@@ -1,3 +1,4 @@
+import versionEleven from "./schema-version-eleven.json" with { type: "json" };
 import versionTen from "./schema-version-ten.json" with { type: "json" };
 import versionNine from "./schema-version-nine.json" with { type: "json" };
 import versionEight from "./schema-version-eight.json" with { type: "json" };
@@ -231,7 +232,7 @@ for (const region of ["CA", "US"] as const) {
         "backup must leave every source row and exact schema unchanged",
       );
       assert.equal(receipt.version, 1);
-      assert.equal(receipt.schemaVersion, 11);
+      assert.equal(receipt.schemaVersion, 12);
       assert.equal(receipt.eventReports, eventReports);
       assert.equal(receipt.schemaHash, before.schemaHash);
       assert.equal(
@@ -255,7 +256,7 @@ for (const region of ["CA", "US"] as const) {
       ship(f, accept(f, 1, "later-order").id);
       const after = inspect(f.path);
       const restored = await restoreBackup(archive, target, region, key);
-      assert.equal(restored.schemaVersion, 11);
+      assert.equal(restored.schemaVersion, 12);
       assert.equal(restored.eventReports, eventReports);
       assert.equal(restored.schemaHash, before.schemaHash);
       assert.equal(restored.snapshotHash, receipt.snapshotHash);
@@ -517,7 +518,7 @@ test("authenticated altered version/profile receipts and legacy/foreign layouts 
   }
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   test(`authenticated version-${sourceVersion} archives require a separate upgrade procedure and never restore implicitly`, async (t) => {
     const f = fixture(t, { eventReports: false }),
       key = randomBytes(32),
@@ -549,11 +550,17 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
                       ? versionEight.hashes.disabled
                       : sourceVersion === 9
                         ? versionNine.hashes.disabled
-                        : versionTen.hashes.disabled;
+                        : sourceVersion === 10
+                          ? versionTen.hashes.disabled
+                          : versionEleven.hashes.disabled;
     try {
       db.exec(
-        "DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures",
+        "DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals",
       );
+      if (sourceVersion < 11)
+        db.exec(
+          "DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures",
+        );
       if (sourceVersion < 10)
         db.exec(
           "DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries",
@@ -623,7 +630,7 @@ test("operator CLI backs up/restores disabled US profile through protected stdin
   assert.equal(restored.code, 0, restored.err);
   for (const result of [backed, restored]) {
     const receipt = JSON.parse(result.out);
-    assert.equal(receipt.schemaVersion, 11);
+    assert.equal(receipt.schemaVersion, 12);
     assert.equal(receipt.eventReports, false);
     assert.equal(receipt.schemaHash, before.schemaHash);
     assert.equal(receipt.region, region);

@@ -1,3 +1,4 @@
+import { StockJournalDelivery } from "./stock-journal-delivery.ts";
 import {
   canonical,
   check,
@@ -109,6 +110,7 @@ const accountCode = (raw: string) => {
 export class IntegrationCosts {
   private store: Store;
   corrections: CostCorrections;
+  readonly journals: StockJournalDelivery;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -143,6 +145,12 @@ export class IntegrationCosts {
         );
         return { packet, report: packet.report, artifact };
       },
+    );
+    this.journals = new StockJournalDelivery(
+      database,
+      platform,
+      identity,
+      this,
     );
   }
   private principal(actor: Actor) {
@@ -655,6 +663,46 @@ export class IntegrationCosts {
       filename: `distributor-cost-${packet.id}.json`,
     };
   }
+  deliverySourceInTransaction(actor: Actor, packetId: string) {
+    this.database.requireTransaction();
+    actor = this.principal(actor);
+    const file = this.download(actor, packetId),
+      packet = this.packet(actor, packetId);
+    const document = JSON.parse(file.bytes),
+      input = JSON.parse(packet.input),
+      report = JSON.parse(packet.report);
+    check(
+      document.organizationId === actor.orgId &&
+        document.packetId === packet.id &&
+        document.region === packet.region &&
+        document.currency === packet.currency &&
+        document.reviewHash === packet.review_hash &&
+        document.reviewedBy === packet.decision_by &&
+        document.reviewedAt === packet.decision_at &&
+        digest(canonical(input)) === packet.input_hash &&
+        digest(
+          canonical({
+            inputHash: packet.input_hash,
+            report,
+            region: packet.region,
+            currency: packet.currency,
+          }),
+        ) === packet.review_hash &&
+        canonical(document.input) === canonical(input) &&
+        canonical(document.report) === canonical(report),
+      "COST_INTEGRITY",
+      "Journal delivery source differs from its retained review.",
+    );
+    return {
+      file,
+      accepted: !!packet.receipt,
+      superseded: !!this.store.get(
+        "SELECT id FROM integration_cost_corrections WHERE org_id=? AND original_id=? AND state='reviewed'",
+        actor.orgId,
+        packetId,
+      ),
+    };
+  }
   accept(
     actor: Actor,
     key: string,
@@ -727,6 +775,21 @@ export class IntegrationCosts {
           "COST_CONTROL",
           "Receiver debit and credit totals must match the reviewed journal.",
         );
+        const native = this.store.all(
+          "SELECT realm,state,external_id FROM integration_stock_journals WHERE org_id=? AND source_id=? AND leg='original' AND state<>'rejected'",
+          actor.orgId,
+          packet.id,
+        );
+        if (native.length)
+          check(
+            native.length === 1 &&
+              native[0]!.state === "posted" &&
+              normalized.receiverRef ===
+                `quickbooks-sandbox:${native[0]!.realm}` &&
+              normalized.externalRef === native[0]!.external_id,
+            "COST_NATIVE_OUTCOME",
+            "Acceptance must match the reconciled native original; multi-date native outcomes require separate qualification.",
+          );
         const { packetId: _packetId, ...evidence } = normalized;
         if (packet.receipt) {
           const {

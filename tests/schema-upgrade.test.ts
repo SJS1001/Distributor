@@ -1,3 +1,4 @@
+import versionEleven from "./schema-version-eleven.json" with { type: "json" };
 import versionTen from "./schema-version-ten.json" with { type: "json" };
 import versionNine from "./schema-version-nine.json" with { type: "json" };
 import { approvedCorrection, outcomeInput } from "./cost-correction-fixture.ts";
@@ -25,7 +26,7 @@ import { join } from "node:path";
 import { Application } from "../src/server/application.ts";
 import { Database, Store } from "../src/server/database.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
-import { fixture, accept, ship } from "./fixtures.ts";
+import { fixture, accept, ship, syntheticDisclosure } from "./fixtures.ts";
 import baseline from "../src/server/schema-baseline.json" with { type: "json" };
 
 import versionTwo from "./schema-version-two.json" with { type: "json" };
@@ -345,6 +346,42 @@ function frozenVersionTen(
     db.exec("COMMIT");
   });
 }
+function frozenVersionEleven(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionTen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of [
+      ...versionEleven.additions.filter((o) => o.type === "table"),
+      ...versionEleven.additions.filter((o) => o.type !== "table"),
+    ])
+      db.exec(object.sql);
+    for (const object of versionEleven.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=11,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionEleven.hashes.enabled
+        : versionEleven.hashes.disabled,
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -395,7 +432,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -406,6 +443,9 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "integration_stock_journal_observations",
+    "integration_stock_journal_references",
+    "integration_stock_journals",
     "iam_ledger_choices",
     "iam_ledger_disclosure_current",
     "iam_ledger_disclosures",
@@ -424,6 +464,7 @@ function conservedUpgrade(
     "integration_cost_policies",
     "integration_cost_corrections",
   ]) {
+    if (sourceVersion >= 11 && name.startsWith("iam_ledger_")) continue;
     if (sourceVersion >= 2 && name.startsWith("integration_canada_post"))
       continue;
     if (sourceVersion >= 3 && name === "integration_credential_revocations")
@@ -519,7 +560,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
       test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
@@ -561,6 +602,28 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
               reason: "Synthetic independent historical review",
             });
           }
+        }
+        if (sourceVersion >= 11) {
+          const r = f.app.identity.organizationResidency;
+          const { provider: _provider, ...terms } = syntheticDisclosure(
+            f.app,
+            "quickbooks",
+          );
+          r.publish(f.actor, "historical-ledger-terms", terms);
+          const current = r.current(f.actor);
+          r.choose(f.actor, "historical-ledger-choice", {
+            region,
+            revision: current.choice.revision,
+            mode: "provider-exception",
+            realm: "12345",
+            acknowledgment: "Synthetic historical organization exception",
+            acceptance: {
+              disclosureId: current.terms!.id,
+              disclosureHash: current.terms!.hash,
+              representative: "Synthetic finance",
+              evidenceRef: "synthetic:ledger",
+            },
+          });
         }
         const nativeShipment = ship(f, accept(f).id);
         const invoice = nativeShipment.invoiceId;
@@ -656,7 +719,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
                         ? frozenVersionEight
                         : sourceVersion === 9
                           ? frozenVersionNine
-                          : frozenVersionTen)(
+                          : sourceVersion === 10
+                            ? frozenVersionTen
+                            : frozenVersionEleven)(
           f.path,
           source,
           eventReports,
@@ -688,7 +753,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
                               ? versionEight.hashes
                               : sourceVersion === 9
                                 ? versionNine.hashes
-                                : versionTen.hashes
+                                : sourceVersion === 10
+                                  ? versionTen.hashes
+                                  : versionEleven.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -708,7 +775,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
                               ? versionEight.hashes
                               : sourceVersion === 9
                                 ? versionNine.hashes
-                                : versionTen.hashes
+                                : sourceVersion === 10
+                                  ? versionTen.hashes
+                                  : versionEleven.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -737,10 +806,10 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 11);
+        assert.equal(upgraded.version, 12);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 11);
+        assert.equal(inspection.version, 12);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);
@@ -1545,7 +1614,7 @@ test("version-ten receipt lies and partial organization consent layouts reject w
   const f = fixture(t),
     dir = directory(t);
   for (const [name, sql] of [
-    ["version", "UPDATE platform_schema_version SET version=11"],
+    ["version", "UPDATE platform_schema_version SET version=12"],
     [
       "hash",
       `UPDATE platform_schema_version SET schema_hash='${"0".repeat(64)}'`,
@@ -1578,3 +1647,58 @@ test("version-ten receipt lies and partial organization consent layouts reject w
     );
   }
 });
+
+test("version-eleven partial journal ownership and lying version receipts reject without mutation or publication", async (t) => {
+  const f = fixture(t),
+    dir = directory(t);
+  for (const [name, sql] of [
+    ["lying-version", "UPDATE platform_schema_version SET version=12"],
+    [
+      "partial-journal",
+      "CREATE TABLE integration_stock_journals(id TEXT PRIMARY KEY) STRICT",
+    ],
+    [
+      "partial-reference",
+      "CREATE TABLE integration_stock_journal_references(org_id TEXT PRIMARY KEY) STRICT",
+    ],
+    [
+      "partial-observation",
+      "CREATE TABLE integration_stock_journal_observations(journal_id TEXT PRIMARY KEY) STRICT",
+    ],
+  ]) {
+    const source = join(dir, name + ".db"),
+      destination = join(dir, name + "-destination.db");
+    frozenVersionEleven(f.path, source, true, "CA");
+    raw(source, (db) => db.exec(sql!));
+    const rows = snapshot(source),
+      bytes = readFileSync(source);
+    assert.throws(() => inspectSchema(source));
+    assert.throws(() => new Application(source));
+    await assert.rejects(
+      upgradeSchema(source, destination, hash(source), "CA"),
+    );
+    assert.equal(existsSync(destination), false);
+    assert.deepEqual(snapshot(source), rows);
+    assert.deepEqual(readFileSync(source), bytes);
+  }
+});
+
+for (const name of [
+  "integration_stock_journal_source",
+  "integration_stock_journal_external",
+])
+  test(`missing ${name} eligibility/identity constraint rejects startup and clone unchanged`, async (t) => {
+    const f = fixture(t),
+      dir = directory(t),
+      destination = join(dir, "missing-index.db");
+    raw(f.path, (db) => db.exec(`DROP INDEX ${name}`));
+    const rows = snapshot(f.path),
+      bytes = readFileSync(f.path);
+    assert.throws(() => new Application(f.path));
+    await assert.rejects(
+      upgradeSchema(f.path, destination, hash(f.path), "CA"),
+    );
+    assert.deepEqual(snapshot(f.path), rows);
+    assert.deepEqual(readFileSync(f.path), bytes);
+    assert.equal(existsSync(destination), false);
+  });
