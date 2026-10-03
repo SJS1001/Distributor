@@ -1,6 +1,6 @@
 # Stock-journal browser review and recovery
 
-D-034/D-036/D-039 engineering continuation. Billing now exposes internal finance/admin review of the [native stock-journal queue](STOCK-JOURNAL-CONTROLS.md). Preparation and correction cancellation remain authenticated API operations. This browser reads retained plans/history and records independent approve/reject decisions. Approval queues the local instruction; the disabled transport has no browser execution route. All tasks and gates remain NOT VERIFIED.
+D-034/D-036/D-039 engineering continuation. Billing now exposes internal finance/admin review of the [native stock-journal queue](STOCK-JOURNAL-CONTROLS.md). Preparation remains an authenticated API operation; [correction cancellation review and recovery](STOCK-JOURNAL-CANCELLATION.md) are now connected. This browser reads retained plans/history and records independent approve/reject decisions. Approval queues the local instruction; the disabled transport has no browser execution route. All tasks and gates remain NOT VERIFIED.
 
 ## Review the frozen instruction
 
@@ -8,7 +8,7 @@ Select a state and load the queue. Each page contains at most twenty preparation
 
 Open a journal to inspect its exact leg, posting date, currency, sandbox company, permanent document reference, immutable source/review hashes, credential binding/attempt, preparer, reason, policy revision and organization permission/terms. The frozen date-specific journal lines show original source accounts, selected receiver account IDs and debit/credit amounts. Current state, independent decision and observed external ID appear when retained. Recent observations have separate twenty-item pages; each exposes the recorder/time/hash and retained body. Reading these records cannot send, reconcile, cancel or release a journal.
 
-A journal's preparer cannot approve or reject it. A different current finance/admin principal selects a decision and reason, opens a fixed review, then confirms. The fixed review identifies the exact source, hash, company, reference and decision. Approval does not establish actual finance acceptance or provider posting. Unknown delivery has no browser resend or cancellation action.
+A journal's preparer cannot approve or reject it. A different current finance/admin principal selects a decision and reason, opens a fixed review, then confirms. The fixed review identifies the exact source, hash, company, reference and decision. Approval does not establish actual finance acceptance or provider posting. Unknown delivery has no browser resend action. Unknown correction legs can link separately recorded final non-posting evidence through [independent cancellation review](STOCK-JOURNAL-CANCELLATION.md).
 
 ## Recover an uncertain decision
 
@@ -24,4 +24,4 @@ Closing or navigating away aborts pending reads/decision fetches and prevents la
 
 The [local browser receipt](evidence/LOCAL-STOCK-JOURNAL-BROWSER-2026-10-03.md) records direct workstation production Chromium journeys and native/runtime checks. Fixtures use synthetic organizations, terms, companies, accounts and finance evidence. They do not qualify real QuickBooks processing, current vendor terms, residency, approved charts/valuation, device/browser fleets, operator procedures, production scan/lock/load costs or release readiness.
 
-Browser preparation/cancellation and reviewed organization permission replacement remain dependent work, alongside organization OAuth/company verification/remote revocation, original cancellation/fresh retry and multiple-date reconciliation. Further changed-journal/valuation corrections, durable restore activation and current Purolator contract remain open. No product gate is passed by the UI or a synthetic receipt.
+Browser preparation and reviewed organization permission replacement remain dependent work, alongside organization OAuth/company verification/remote revocation, original cancellation/fresh retry and multiple-date reconciliation. Further changed-journal/valuation corrections, durable restore activation and current Purolator contract remain open. No product gate is passed by the UI or a synthetic receipt.

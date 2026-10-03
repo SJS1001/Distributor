@@ -1,6 +1,7 @@
 // Synthetic frozen journals only. No receiver transport or actual finance evidence.
 import { journalFixture } from "./stock-journal-fixture.ts";
 import { createHttp } from "../src/server/http.ts";
+import { cancellationFixture } from "./stock-journal-cancellation-fixture.ts";
 
 export async function stockJournalBrowser(after: (fn: () => void) => void) {
   const queue = journalFixture({ after });
@@ -26,9 +27,13 @@ export async function stockJournalBrowser(after: (fn: () => void) => void) {
       "transport-uncertain",
     );
   const servers: Awaited<ReturnType<typeof createHttp>>[] = [];
+  const cancellationCA = cancellationFixture({ after });
+  const cancellationUS = cancellationFixture({ after }, "US");
   for (const [app, port] of [
     [queue.f.app, 3168],
     [history.f.app, 3169],
+    [cancellationCA.f.app, 3170],
+    [cancellationUS.f.app, 3171],
   ] as const) {
     const http = await createHttp(app, { origin: `http://127.0.0.1:${port}` });
     await http.listen({ host: "127.0.0.1", port });

@@ -799,6 +799,13 @@ export class StockJournalDelivery {
       revision,
       hash: evidenceHash,
     });
+    return {
+      revision,
+      body,
+      hash: evidenceHash,
+      recordedBy: actor.id,
+      recordedAt,
+    };
   }
   private clear(
     row: Journal,
@@ -1102,6 +1109,28 @@ export class StockJournalDelivery {
       return this.view(this.row(lease.actor, row.id));
     });
   }
+  cancellationReview(actor: Actor, journalId: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const row = this.row(actor, journalId);
+      check(
+        row.state === "unknown" && row.leg !== "original",
+        "JOURNAL_STATE",
+        "Only an unresolved correction attempt can retain final cancellation.",
+      );
+      const evidence = this.costs.corrections.deliveryCancellationInTransaction(
+        actor,
+        row.source_id,
+        row.leg as "reversal" | "replacement",
+        row.attempt_id || null,
+      );
+      return {
+        journal: this.view(row),
+        evidence,
+        canConfirm: actor.id !== evidence.recordedBy,
+      };
+    });
+  }
   cancelCorrectionAttempt(
     actor: Actor,
     key: string,
@@ -1144,14 +1173,14 @@ export class StockJournalDelivery {
           "JOURNAL_CANCELLATION",
           "A separate finance reviewer must bind final cancellation evidence to this exact native request reference.",
         );
-        this.observe(actor, row, {
+        const cancellation = this.observe(actor, row, {
           outcome: "cancelled-unposted",
           evidenceHash: evidence.evidenceHash,
           reason,
           requestRef: requestRef(row.id),
         });
         this.clear(row, "cancelled");
-        return this.view(this.row(actor, row.id));
+        return { ...this.view(this.row(actor, row.id)), cancellation };
       },
     );
   }

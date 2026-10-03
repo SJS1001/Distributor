@@ -1,3 +1,4 @@
+import "./stock-journal-cancellation-browser.ts";
 import "./stock-journal-browser-journey.ts";
 import "./cost-correction-browser-journey.ts";
 import "./pdf-browser-journey.ts";
@@ -10212,6 +10213,12 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   });
   const original = snapshot(before);
   const showCarrierRow = async (p: Page) => {
+    // Initial dashboard rendering precedes supplementary queues. Wait for the
+    // last startup read to publish before pagination can be replaced by it.
+    await nav(p, "Security");
+    await expect(
+      p.getByText(/example\.test · [1-9]\d* active sessions/),
+    ).toBeVisible();
     await nav(p, "Orders");
     const panel = p.getByRole("region", {
       name: "Shipment history",
@@ -11819,6 +11826,11 @@ test("browser: recorded payment pages preserve USD without dashboard invoices, r
     await route.fulfill({ response, json: { ...dashboard, invoices: [] } });
   });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  // This journey needs the refreshed invoice-free snapshot. Navigating while
+  // Refresh is pending intentionally aborts it and retains the previous one.
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeEnabled();
   await nav(page, "Billing");
   const payments = page.getByRole("region", {
     name: "Recorded cash payments",

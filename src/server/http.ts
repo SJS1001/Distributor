@@ -3452,6 +3452,17 @@ export async function createHttp(app: Application, options: HttpOptions) {
       );
     },
   );
+  http.get<{ Params: { journalId: string } }>(
+    "/api/accounting/journals/:journalId/cancellation-review",
+    { schema: { params: obj({ journalId: str }), querystring: obj({}) } },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.cancellationReview(
+        actor(request),
+        request.params.journalId,
+      );
+    },
+  );
   http.get<{ Params: { journalId: string }; Querystring: { after?: string } }>(
     "/api/accounting/journals/:journalId/observations",
     {

@@ -42,6 +42,7 @@ The intended product covers billing, online ordering, inventory, equipment scann
 | [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks and remaining transport qualification |
 | [Explicit stock journal transport](docs/STOCK-JOURNAL-TRANSPORT.md) | Disabled one-operation coordinator, revision fences and lookup-only uncertainty |
 | [Stock-journal browser review](docs/STOCK-JOURNAL-BROWSER.md) | Frozen independent review, queue/history paging and exact uncertain-decision recovery |
+| [Stock-journal correction cancellation](docs/STOCK-JOURNAL-CANCELLATION.md) | Final evidence, separate finance confirmation and exact uncertain-cancellation recovery |
 | [Stock-journal review controls](docs/STOCK-JOURNAL-CONTROLS.md) | Authenticated local preparation/independent decisions, scoped queues and complete paged observations |
 | [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md) | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order |
 | [Organization ledger residency](docs/ORGANIZATION-LEDGER-RESIDENCY.md) | Separate native sandbox company consent, retained terms/revisions and execution permission fences |

@@ -1,10 +1,10 @@
 # Stock-journal review and history controls
 
-D-034/D-036/D-039 engineering continuation. Authenticated task-shaped HTTP operations expose the integration-owned [native journal queue](STOCK-JOURNAL-DELIVERY.md). These operations prepare and review local instructions, read retained records and link separately reviewed correction cancellation evidence. They do not send, look up or claim a provider operation. Creating an application does not connect the [disabled transport](STOCK-JOURNAL-TRANSPORT.md). [Browser independent decision review and recovery](STOCK-JOURNAL-BROWSER.md) are now connected; preparation/cancellation forms remain dependent work. All tasks and gates remain NOT VERIFIED.
+D-034/D-036/D-039 engineering continuation. Authenticated task-shaped HTTP operations expose the integration-owned [native journal queue](STOCK-JOURNAL-DELIVERY.md). These operations prepare and review local instructions, read retained records and link separately reviewed correction cancellation evidence. They do not send, look up or claim a provider operation. Creating an application does not connect the [disabled transport](STOCK-JOURNAL-TRANSPORT.md). [Browser independent decision review and recovery](STOCK-JOURNAL-BROWSER.md) are now connected; [correction cancellation review](STOCK-JOURNAL-CANCELLATION.md) is connected; preparation forms remain dependent work. All tasks and gates remain NOT VERIFIED.
 
 ## Review commands
 
-Use the existing authenticated command endpoint with a same-origin request, current session CSRF token and an idempotency key. Nested fields are strict; additional fields refuse. Current persisted internal finance/admin authority, organization, active status and password requirements govern new commands and cached receipts. Provider recovery hold refuses journal mutations. Preparation does not approve or dispatch anything.
+Use the existing authenticated command endpoint with a same-origin request, current session CSRF token and an idempotency key. Nested fields are strict; additional fields refuse. Current persisted internal finance/admin authority, organization, active status and password requirements govern new commands and cached receipts. Provider recovery hold refuses preparation/decision and provider claims; the existing separately evidenced local correction cancellation remains available under the hold without releasing it. Preparation does not approve or dispatch anything.
 
 | Command | Exact reviewed inputs and effect |
 | --- | --- |
@@ -14,7 +14,7 @@ Use the existing authenticated command endpoint with a same-origin request, curr
 
 Receiver company and account IDs are positive numeric strings of at most thirty digits. Source/observation hashes are lowercase SHA-256 strings. The permission stamp names QuickBooks, stock-cost-journal, sandbox, organization, CA/US region, exact company, current choice revision and disclosure ID/hash. Buyer payment consent cannot supply this organization permission. The server verifies the full native contract; valid JSON alone is insufficient.
 
-An exact retry uses the original body and key. A retained preparation receipt does not bypass fresh authority; independent decision and native delivery fences still apply. A lost command reply may represent a committed local effect. Closing a browser or aborting its fetch cannot undo that effect. Independent decision review has [durable browser recovery](STOCK-JOURNAL-BROWSER.md); preparation/cancellation remain API operations.
+An exact retry uses the original body and key. A retained preparation receipt does not bypass fresh authority; independent decision and native delivery fences still apply. A lost command reply may represent a committed local effect. Closing a browser or aborting its fetch cannot undo that effect. Independent decision review has [durable browser recovery](STOCK-JOURNAL-BROWSER.md); [correction cancellation](STOCK-JOURNAL-CANCELLATION.md) has separate durable browser recovery; preparation remains an API operation.
 
 ## Read operations
 
@@ -22,6 +22,7 @@ An exact retry uses the original body and key. A retained preparation receipt do
 | --- | --- |
 | `/api/accounting/journals` | Up to twenty descriptors with optional exact `sourceId`, state and `after` cursor. Omits the frozen source plan and operation ownership nonce/actor. |
 | `/api/accounting/journals/:journalId` | Exact frozen review plan, current retained state and newest one hundred hash-checked observations. `olderObservations` signals additional retained history. No query fields accepted. |
+| `/api/accounting/journals/:journalId/cancellation-review` | Exact unknown correction journal and hash-checked final operator evidence/current attempt, with separate-recorder eligibility. No query fields; read-only even under a provider hold. |
 | `/api/accounting/journals/:journalId/observations` | Up to twenty hash-checked observations with optional `after` cursor. Continue until `next` is null to inspect older records beyond the detail cap. |
 
 Reads return `Cache-Control: no-store` and require fresh persisted internal finance/admin authority, including before an empty result or cursor anchor. They remain available during a provider recovery hold and conserve native business records. Foreign journals and principals cannot access a position. Queue headers are checked against the frozen plan before return; every returned observation hash binds organization, journal, revision, body, recorder and time. Reading recent observations does not verify uninspected older ones or independently reconcile provider outcomes.
@@ -36,4 +37,4 @@ Correction approval now captures one decision timestamp for both its canonical a
 
 ## Verification and next work
 
-The [local controls receipt](evidence/LOCAL-STOCK-JOURNAL-CONTROLS-2026-10-03.md) binds fresh workstation synthetic checks to tested source/configuration hashes and retained private failures. No actual provider, independent finance reconciliation, browser qualification, production database performance, device, infrastructure or residency acceptance is established. Scoped browser review/history and exact uncertain-decision recovery are now connected; browser preparation/cancellation, explicit permission replacement, organization OAuth/company verification/remote revocation, original cancellation/retry and multiple-date reconciliation remain separate contracts.
+The [local controls receipt](evidence/LOCAL-STOCK-JOURNAL-CONTROLS-2026-10-03.md) binds fresh workstation synthetic checks to tested source/configuration hashes and retained private failures. No actual provider, independent finance reconciliation, browser qualification, production database performance, device, infrastructure or residency acceptance is established. Scoped browser review/history and exact uncertain-decision recovery are now connected; browser preparation, explicit permission replacement, organization OAuth/company verification/remote revocation, original cancellation/retry and multiple-date reconciliation remain separate contracts.

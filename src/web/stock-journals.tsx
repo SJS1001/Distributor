@@ -3,6 +3,7 @@ import type { StockJournalDelivery } from "../server/stock-journal-delivery.ts";
 import type { JournalLine } from "../server/integration-costs.ts";
 import { request } from "./api.ts";
 import { StockJournalDecision } from "./stock-journal-decision.tsx";
+import { StockJournalCancellation } from "./stock-journal-cancellation.tsx";
 
 type Queue = ReturnType<StockJournalDelivery["queue"]>;
 type Detail = ReturnType<StockJournalDelivery["detail"]>;
@@ -431,6 +432,15 @@ export function StockJournals({
         </section>
       )}
       <StockJournalDecision
+        orgId={orgId}
+        actorId={actorId}
+        journal={detail}
+        saved={(id) => {
+          setQueue(null);
+          loadDetail(id);
+        }}
+      />
+      <StockJournalCancellation
         orgId={orgId}
         actorId={actorId}
         journal={detail}
