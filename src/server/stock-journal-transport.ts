@@ -22,6 +22,7 @@ export type JournalTransportResult =
 
 // One explicitly invoked operation, disabled by default. No application startup,
 // HTTP route, worker registration, polling, automatic reconciliation or resend.
+// The protected foreground CLI invokes one explicitly selected operation.
 export class StockJournalTransport {
   private readonly binding: Readonly<CredentialBinding>;
   constructor(

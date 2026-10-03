@@ -289,6 +289,21 @@ async function regionCheck(region) {
     ),
     /PROVIDER_DISABLED:/,
   );
+  assert.match(
+    await command(["run", "provider:ledger-journal"], runtime, config, "", 1),
+    /JOURNAL_INPUT:/,
+  );
+  for (const action of ["write", "lookup"])
+    assert.match(
+      await command(
+        ["run", "provider:ledger-journal", "--", action],
+        runtime,
+        config,
+        "",
+        1,
+      ),
+      /PROVIDER_DISABLED:/,
+    );
   let original, unit, prepared;
   for (let cycle = 0; cycle < 2; cycle++) {
     const selectedPort = await port(),

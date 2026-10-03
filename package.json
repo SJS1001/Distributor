@@ -28,7 +28,8 @@
     "verify:runtime": "node scripts/verify_runtime.mjs",
     "verify:load-recovery": "tsx scripts/rehearsal.ts",
     "recovery:review": "tsx src/server/restore-review-cli.ts",
-    "provider:ledger-revoke": "tsx src/server/organization-revocation-cli.ts"
+    "provider:ledger-revoke": "tsx src/server/organization-revocation-cli.ts",
+    "provider:ledger-journal": "tsx src/server/stock-journal-transport-cli.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
