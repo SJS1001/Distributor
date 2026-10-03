@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { chmodSync, readFileSync, writeFileSync, symlinkSync } from "node:fs";
+import {
+  chmodSync,
+  readFileSync,
+  writeFileSync,
+  symlinkSync,
+  mkdirSync,
+  linkSync,
+  truncateSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
@@ -15,6 +23,10 @@ import {
   type RestoreDossier,
   type RestoreApprover,
 } from "../src/server/restore-review.ts";
+import {
+  reviewRestoreEvidence,
+  type RestoreEvidenceManifest,
+} from "../src/server/restore-evidence.ts";
 
 function setup(
   t: Parameters<typeof fixture>[0],
@@ -106,6 +118,316 @@ function setup(
     }));
   return { f, at, dossier, trust, approve };
 }
+
+function evidenceSetup(
+  t: Parameters<typeof fixture>[0],
+  region: "CA" | "US" = "CA",
+  reports = true,
+) {
+  const result = setup(t, region, reports),
+    { f, dossier } = result,
+    root = join(dirname(f.path), "private-evidence");
+  mkdirSync(root, { mode: 0o700 });
+  const manifest: RestoreEvidenceManifest = { version: 1, root, files: [] };
+  let bytes = 0;
+  const item = () => {
+    const index = manifest.files.length,
+      reference = `synthetic:private-evidence-${index}`,
+      path = `evidence-${index}.txt`,
+      value = `Private synthetic evidence bytes ${index}; never publish these values.\n`;
+    writeFileSync(join(root, path), value, { mode: 0o600 });
+    manifest.files.push({ reference, path });
+    bytes += Buffer.byteLength(value);
+    return { reference, sha256: digest(value) };
+  };
+  dossier.source.cutoff = item();
+  dossier.operations.fencing = item();
+  dossier.operations.routing = item();
+  dossier.operations.rollback = item();
+  for (const org of dossier.organizations) {
+    org.inventory = item();
+    org.billing = item();
+    org.access = item();
+    org.residency = item();
+    for (const provider of org.providers) provider.evidence = item();
+  }
+  const review = (
+    value = manifest,
+    loadTrust = () => result.trust,
+    clock = () => result.at,
+  ) =>
+    reviewRestoreEvidence(
+      f.path,
+      dossier,
+      result.approve(),
+      loadTrust,
+      value,
+      clock,
+    );
+  return { ...result, root, manifest, bytes, review };
+}
+
+for (const region of ["CA", "US"] as const)
+  for (const reports of [false, true])
+    test(`${region}/${reports} private restore evidence checks every signed file without mutating candidate or disclosing bytes`, (t) => {
+      const { f, manifest, bytes, review } = evidenceSetup(t, region, reports),
+        before = captureRestoreCandidate(f.path),
+        result = review();
+      assert.equal(result.status, "reviewed-evidence-isolated");
+      assert.equal(result.activationAuthorized, false);
+      assert.equal(result.providerHold, true);
+      assert.equal(result.evidence.files, manifest.files.length);
+      assert.equal(result.evidence.bytes, bytes);
+      assert.deepEqual(
+        review({ ...manifest, files: [...manifest.files].reverse() }),
+        result,
+      );
+      assert.deepEqual(captureRestoreCandidate(f.path), before);
+      assert.throws(() => f.app.platform.assertProviderAccess(), {
+        code: "RECOVERY_HOLD",
+      });
+      const output = JSON.stringify(result);
+      for (const privateValue of [
+        manifest.root,
+        "Private synthetic evidence bytes",
+        "synthetic:private-evidence",
+        "long-test-only-password",
+      ])
+        assert.equal(output.includes(privateValue), false);
+    });
+
+test("restore evidence requires exact signed reference coverage and strict manifest names", (t) => {
+  const { manifest, review } = evidenceSetup(t);
+  const alterations: ((m: RestoreEvidenceManifest) => void)[] = [
+    (m) => {
+      m.files.pop();
+    },
+    (m) => {
+      m.files.push({ reference: "unsigned-extra", path: "extra.txt" });
+    },
+    (m) => {
+      m.files.push({ ...m.files[0]! });
+    },
+    (m) => {
+      m.files[1]!.path = m.files[0]!.path;
+    },
+    (m) => {
+      m.files[0]!.path = "../private.txt";
+    },
+    (m) => {
+      m.files[0]!.path = "/tmp/private.txt";
+    },
+    (m) => {
+      m.files[0]!.path = "nested/../private.txt";
+    },
+    (m) => {
+      m.files[0]!.path = "nested//private.txt";
+    },
+    (m) => {
+      m.files[0]!.path = "nested\\private.txt";
+    },
+    (m) => {
+      m.files[0]!.path = "private\u0000.txt";
+    },
+    (m) => {
+      m.files[0]!.path = "./private.txt";
+    },
+    (m) => {
+      m.root = "relative-root";
+    },
+    (m) => {
+      Object.assign(m, { extra: true });
+    },
+    (m) => {
+      Object.assign(m.files[0]!, { sha256: "a".repeat(64) });
+    },
+    (m) => {
+      m.files = Array.from({ length: 1001 }, () => m.files[0]!);
+    },
+  ];
+  for (const alter of alterations) {
+    const next = structuredClone(manifest);
+    alter(next);
+    assert.throws(() => review(next), { code: "RESTORE_EVIDENCE" });
+  }
+});
+
+test("restore evidence rejects altered, empty, oversized and nonprivate files", (t) => {
+  const { root, manifest, review } = evidenceSetup(t),
+    path = join(root, manifest.files[0]!.path),
+    original = readFileSync(path);
+  writeFileSync(path, "Changed private data, same signed dossier");
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+  writeFileSync(path, "");
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+  truncateSync(path, 64 * 1024 ** 2 + 1);
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+  writeFileSync(path, original);
+  chmodSync(path, 0o644);
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+  chmodSync(path, 0o600);
+  chmodSync(root, 0o755);
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+});
+
+test("restore evidence enforces the aggregate byte limit before reading the next file", (t) => {
+  const { root, dossier, manifest, review } = evidenceSetup(t),
+    size = 64 * 1024 ** 2,
+    sha256 = digest(Buffer.alloc(size)),
+    items = [
+      dossier.source.cutoff,
+      dossier.operations.fencing,
+      dossier.operations.routing,
+      dossier.operations.rollback,
+      dossier.organizations[0]!.inventory,
+    ];
+  for (let index = 0; index < 5; index++) {
+    const path = join(root, manifest.files[index]!.path);
+    writeFileSync(path, "");
+    truncateSync(path, size);
+    items[index]!.sha256 = sha256;
+  }
+  assert.throws(() => review(), {
+    code: "RESTORE_EVIDENCE",
+    message: "Evidence exceeds the 256 MiB review limit.",
+  });
+});
+
+test("restore evidence rejects root, nested directory, file symlinks and hard links", (t) => {
+  const { root, manifest, review } = evidenceSetup(t),
+    base = dirname(root),
+    original = join(root, manifest.files[0]!.path);
+  symlinkSync(root, join(base, "root-link"));
+  assert.throws(() => review({ ...manifest, root: join(base, "root-link") }), {
+    code: "RESTORE_EVIDENCE",
+  });
+  symlinkSync(root, join(root, "nested-link"));
+  const nested = structuredClone(manifest);
+  nested.files[0]!.path = `nested-link/${manifest.files[0]!.path}`;
+  assert.throws(() => review(nested), { code: "RESTORE_EVIDENCE" });
+  symlinkSync(original, join(root, "file-link"));
+  const linked = structuredClone(manifest);
+  linked.files[0]!.path = "file-link";
+  assert.throws(() => review(linked), { code: "RESTORE_EVIDENCE" });
+  linkSync(original, join(root, "file-hard-link"));
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+});
+
+test("restore evidence supports private nested directories and a shared signed reference", (t) => {
+  const { root, dossier, manifest, review } = evidenceSetup(t);
+  mkdirSync(join(root, "nested"), { mode: 0o700 });
+  const first = manifest.files[0]!;
+  writeFileSync(
+    join(root, "nested", "evidence.txt"),
+    readFileSync(join(root, first.path)),
+    { mode: 0o600 },
+  );
+  first.path = "nested/evidence.txt";
+  const removed = manifest.files.pop()!;
+  const provider = dossier.organizations[0]!.providers.at(-1)!;
+  assert.equal(provider.evidence.reference, removed.reference);
+  provider.evidence = { ...dossier.source.cutoff };
+  assert.equal(review().evidence.files, manifest.files.length);
+  provider.evidence.sha256 = "0".repeat(64);
+  assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+});
+
+test("restore evidence rechecks candidate, current approver authority, expiry and retained files after hashing", (t) => {
+  for (const change of [
+    "authority",
+    "candidate",
+    "file",
+    "directory",
+    "expiry",
+    "clock",
+  ] as const) {
+    const child = evidenceSetup(t);
+    // Each fixture has an independently allocated directory/store.
+    let loads = 0,
+      clocks = 0;
+    const loadTrust = () => {
+      if (++loads === 2) {
+        if (change === "authority") return [];
+        if (change === "candidate")
+          child.f.app.platform.audit(
+            child.f.actor,
+            "SyntheticDuringEvidence",
+            "synthetic",
+            {},
+          );
+        if (change === "file")
+          writeFileSync(
+            join(child.root, child.manifest.files[0]!.path),
+            "Changed during verification",
+          );
+        if (change === "directory") chmodSync(child.root, 0o755);
+      }
+      return child.trust;
+    };
+    const clock = () => {
+      ++clocks;
+      if (change === "expiry" && clocks > 1)
+        return Date.parse(child.dossier.expiresAt);
+      if (change === "clock" && clocks > 2) return child.at - 1;
+      return child.at;
+    };
+    assert.throws(() => child.review(child.manifest, loadTrust, clock));
+    assert.throws(() => child.f.app.platform.assertProviderAccess(), {
+      code: "RECOVERY_HOLD",
+    });
+  }
+});
+
+test("CLI verifies private evidence and sanitizes missing file and mismatch failures", (t) => {
+  const { f, dossier, trust, approve, manifest } = evidenceSetup(t);
+  const inputs = [dossier, approve(), trust, manifest].map((value, index) => {
+    const path = join(dirname(f.path), `evidence-input-${index}.json`);
+    writeFileSync(path, JSON.stringify(value), { mode: 0o600 });
+    return path;
+  });
+  const run = () =>
+    spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "src/server/restore-review-cli.ts",
+        "verify-evidence",
+        f.path,
+        ...inputs,
+      ],
+      { encoding: "utf8", timeout: 15000 },
+    );
+  const success = run();
+  assert.equal(success.status, 0, success.stderr);
+  assert.equal(
+    JSON.parse(success.stdout).evidence.files,
+    manifest.files.length,
+  );
+  assert.equal(JSON.parse(success.stdout).activationAuthorized, false);
+  assert.equal(success.stdout.includes(manifest.root), false);
+  writeFileSync(
+    join(manifest.root, manifest.files[0]!.path),
+    "private-provider-token-never-print",
+  );
+  const mismatch = run();
+  assert.equal(mismatch.status, 1);
+  assert.equal(mismatch.stdout, "");
+  assert.match(
+    mismatch.stderr,
+    /RESTORE_EVIDENCE: Restore review did not complete/,
+  );
+  assert.equal(mismatch.stderr.includes("private-provider-token"), false);
+  manifest.files[0]!.path = "private-missing-file-never-print";
+  writeFileSync(inputs[3]!, JSON.stringify(manifest));
+  const missing = run();
+  assert.equal(missing.status, 1);
+  assert.equal(missing.stdout, "");
+  assert.equal(missing.stderr.includes("private-missing-file"), false);
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
 for (const region of ["CA", "US"] as const)
   for (const reports of [false, true])
     test(`${region}/${reports} signed restore review binds all persisted rows and leaves provider hold intact`, (t) => {

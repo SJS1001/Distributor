@@ -7,6 +7,10 @@ import {
   type RestoreApprover,
 } from "./restore-review.ts";
 import { check, DomainError } from "./core.ts";
+import {
+  reviewRestoreEvidence,
+  type RestoreEvidenceManifest,
+} from "./restore-evidence.ts";
 function input(path: string) {
   const stat = lstatSync(path);
   check(
@@ -21,7 +25,8 @@ function input(path: string) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 try {
-  const [action, candidate, dossier, approvals, trust] = process.argv.slice(2);
+  const [action, candidate, dossier, approvals, trust, manifest] =
+    process.argv.slice(2);
   check(
     candidate &&
       ((action === "capture" && process.argv.length === 4) ||
@@ -29,20 +34,34 @@ try {
           process.argv.length === 7 &&
           dossier &&
           approvals &&
-          trust)),
+          trust) ||
+        (action === "verify-evidence" &&
+          process.argv.length === 8 &&
+          dossier &&
+          approvals &&
+          trust &&
+          manifest)),
     "CLI",
-    "Usage: restore-review capture <candidate.db> | restore-review review <candidate.db> <dossier.json> <approvals.json> <trusted-approvers.json>",
+    "Usage: restore-review capture <candidate.db> | restore-review review <candidate.db> <dossier.json> <approvals.json> <trusted-approvers.json> | restore-review verify-evidence <candidate.db> <dossier.json> <approvals.json> <trusted-approvers.json> <manifest.json>",
     400,
   );
   const result =
     action === "capture"
       ? captureRestoreCandidate(candidate)
-      : reviewRestoreDossier(
-          candidate,
-          input(dossier!) as RestoreDossier,
-          input(approvals!) as RestoreApproval[],
-          input(trust!) as RestoreApprover[],
-        );
+      : action === "verify-evidence"
+        ? reviewRestoreEvidence(
+            candidate,
+            input(dossier!) as RestoreDossier,
+            input(approvals!) as RestoreApproval[],
+            () => input(trust!) as RestoreApprover[],
+            input(manifest!) as RestoreEvidenceManifest,
+          )
+        : reviewRestoreDossier(
+            candidate,
+            input(dossier!) as RestoreDossier,
+            input(approvals!) as RestoreApproval[],
+            input(trust!) as RestoreApprover[],
+          );
   process.stdout.write(JSON.stringify(result) + "\n");
 } catch (error) {
   process.stderr.write(

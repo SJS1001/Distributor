@@ -1,5 +1,12 @@
 # Distributor setup handoff
 
+## Current continuation — private restore evidence verification, 2026-10-03
+
+- Resumed clean published parent `bc43e38a63e43e163c9c4e384900381a53789357` on `codex/local-distributor-checkpoint`. Owner accepted recommended continuation; current source/tests/documentation publication is authorized. Direct workstation checks only, with no CI runner, workflow, delegated/cloud session, provider IO, PR, merge or deployment.
+- Implemented read-only `recovery:review -- verify-evidence`: exact signed reference coverage, private operator-owned root/directories/files, no traversal/symlinks/file hard links, bounded streaming SHA-256 and identity/change checks, current external trust reload, fresh candidate recapture and expiry/clock rechecks. Receipts contain counts/hashes without evidence bytes or filesystem paths. Both review commands retain the provider hold and `activationAuthorized: false`. Matching bytes do not prove report truth or external outcomes. Trusted ancestors and exclusion of concurrent writers remain operator responsibilities.
+- Fresh full native checks pass 2,055/2,055, zero failures/skips/cancellations, 80.7 seconds; all nineteen restore-review checks are included. Initial focused checks passed 18/18 before adding aggregate-size and clock/nonblocking-read refinements. TypeScript and formatting pass. Browser/schema/dependency inputs are unchanged; no fresh browser/build/runtime/static-clean claim is made. See the [local receipt](evidence/LOCAL-RESTORE-EVIDENCE-2026-10-03.md) for tested hashes and private log hashes. Publication and final documentation verification follow after self-review.
+- Full-system goal remains incomplete: durable activation/fencing/routing/reconciliation/rollback, ledger transport/further changed-journal and valuation corrections, current authorized Purolator contract, and actual operating/provider/device/residency/security/load/recovery/operator release qualification remain open. All 44 tasks/ten gates remain NOT VERIFIED. Keep historical receipts and private verification artifacts excluded.
+
 ## Current continuation — separately approved correction retries, 2026-10-03
 
 - Resumed clean published parent `0ac28129f6e6a4032c40a51e5ff54026bbcbbc62` on `codex/local-distributor-checkpoint`. Owner accepted recommended continuation and current source/test/documentation publication remains authorized. Direct workstation checks only; no CI runner, workflow, new delegated/cloud session, provider IO, PR, merge or deployment.
