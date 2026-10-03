@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, verify } from "node:crypto";
-import { lstatSync } from "node:fs";
+import { lstatSync, type BigIntStats } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { canonical, check, digest, integer, text } from "./core.ts";
 import { checkIntegrity, inspectConnection } from "./schema.ts";
@@ -100,28 +100,66 @@ function instant(raw: string) {
  * snapshot. No row values or credentials leave this function. A hash is not
  * external reconciliation or proof that infrastructure writers are fenced. */
 export function captureRestoreCandidate(path: string): RestoreCandidate {
-  const stat = lstatSync(path);
+  const stat = lstatSync(path, { bigint: true });
   check(
     stat.isFile() && !stat.isSymbolicLink(),
     "RESTORE_REVIEW",
     "Candidate must be a regular database file.",
   );
-  for (const suffix of ["-wal", "-shm", "-journal"]) {
+  const files = new Map<string, BigIntStats | undefined>([["", stat]]);
+  const inspectFile = (suffix: string) => {
     try {
-      const sidecar = lstatSync(path + suffix);
-      check(
-        sidecar.isFile() && !sidecar.isSymbolicLink(),
-        "RESTORE_REVIEW",
-        "Candidate sidecars must be regular files.",
-      );
+      return lstatSync(path + suffix, { bigint: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return undefined;
     }
+  };
+  for (const suffix of ["-wal", "-shm", "-journal"]) {
+    const sidecar = inspectFile(suffix);
+    check(
+      !sidecar || (sidecar.isFile() && !sidecar.isSymbolicLink()),
+      "RESTORE_REVIEW",
+      "Candidate sidecars must be regular files.",
+    );
+    files.set(suffix, sidecar);
   }
+  const unchanged = (allowReadSidecars = false) => {
+    for (const [suffix, before] of files) {
+      const after = inspectFile(suffix);
+      // A read-only WAL connection may create its empty WAL and shared index.
+      // Retain their identities once opened; a nonempty new WAL is a write.
+      if (
+        allowReadSidecars &&
+        !before &&
+        after?.isFile() &&
+        (suffix === "-shm" || (suffix === "-wal" && after.size === 0n))
+      ) {
+        files.set(suffix, after);
+        continue;
+      }
+      const identity = ["dev", "ino", "mode", "nlink", "uid", "gid"] as const;
+      const content = ["size", "mtimeNs", "ctimeNs"] as const;
+      check(
+        (!before && !after) ||
+          (before &&
+            after &&
+            after.isFile() &&
+            identity.every((key) => before[key] === after[key]) &&
+            // SQLite itself updates shared-index read marks. Its identity must
+            // remain fixed, but only the main/WAL/journal bytes are content.
+            (suffix === "-shm" ||
+              content.every((key) => before[key] === after[key]))),
+        "RESTORE_REVIEW_CHANGED",
+        "Candidate files changed during inspection.",
+      );
+    }
+  };
   const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
   try {
     db.exec("PRAGMA trusted_schema=OFF; PRAGMA temp_store=MEMORY; BEGIN");
     const schema = inspectConnection(db);
+    unchanged(true);
     check(
       schema.kind === "current" && schema.region,
       "RESTORE_REVIEW",
@@ -182,12 +220,7 @@ export function captureRestoreCandidate(path: string): RestoreCandidate {
         );
     }
     db.exec("COMMIT");
-    const after = lstatSync(path);
-    check(
-      stat.dev === after.dev && stat.ino === after.ino,
-      "RESTORE_REVIEW",
-      "Candidate file identity changed during inspection.",
-    );
+    unchanged();
     return {
       logicalHash: hash.digest("hex"),
       schemaHash: schema.schemaHash,
@@ -197,6 +230,11 @@ export function captureRestoreCandidate(path: string): RestoreCandidate {
       region: schema.region,
       organizations,
     };
+  } catch (error) {
+    // A sidecar swap may first surface as a SQLite error. Prefer the stable
+    // boundary failure when the filesystem evidence proves a concurrent change.
+    unchanged();
+    throw error;
   } finally {
     db.close();
   }
@@ -221,20 +259,23 @@ export function reviewRestoreDossier(
   dossier: RestoreDossier,
   approvals: RestoreApproval[],
   trustedApprovers: RestoreApprover[],
-  at = Date.now(),
+  at: number | (() => number) = Date.now,
 ) {
   check(
     dossier && dossier.version === 1,
     "RESTORE_REVIEW",
     "Unsupported restore dossier.",
   );
-  const preparer = text(dossier.preparedBy, "Preparer ID"),
+  const clock = typeof at === "function" ? at : () => at,
+    startedAt = clock(),
+    preparer = text(dossier.preparedBy, "Preparer ID"),
     preparedAt = instant(dossier.preparedAt),
     expiresAt = instant(dossier.expiresAt);
   check(
-    Number.isFinite(at) &&
-      preparedAt <= at &&
-      expiresAt > at &&
+    dossier.preparedBy === preparer &&
+      Number.isFinite(startedAt) &&
+      preparedAt <= startedAt &&
+      expiresAt > startedAt &&
       expiresAt > preparedAt &&
       expiresAt - preparedAt <= 15 * 60 * 1000,
     "RESTORE_REVIEW",
@@ -300,7 +341,12 @@ export function reviewRestoreDossier(
       "RESTORE_REVIEW",
       "List each app, worker, CLI and callback writer authority in the fencing evidence.",
     );
-    for (const writer of writers) text(writer, "Writer authority", 1000);
+    for (const writer of writers)
+      check(
+        writer === text(writer, "Writer authority", 1000),
+        "RESTORE_REVIEW",
+        "Writer authority identities must not contain surrounding whitespace.",
+      );
   }
   check(
     !ops.sourceWriters.some((w) => ops.candidateWriters.includes(w)),
@@ -323,14 +369,32 @@ export function reviewRestoreDossier(
     "Separate finance and security approvals are required.",
   );
   check(
-    new Set(trustedApprovers.map((a) => a.id)).size === trustedApprovers.length,
+    trustedApprovers.every(
+      (a) =>
+        a &&
+        typeof a.id === "string" &&
+        a.id.length > 0 &&
+        a.id.length <= 160 &&
+        a.id === a.id.trim() &&
+        ["finance", "security"].includes(a.role) &&
+        typeof a.publicKey === "string",
+    ) &&
+      new Set(trustedApprovers.map((a) => a.id)).size ===
+        trustedApprovers.length,
     "RESTORE_APPROVAL",
-    "Trusted approver IDs must be unique.",
+    "Trusted approvers require unique exact identities, roles and public keys.",
   );
   const identities = new Set<string>(),
     keys = new Set<string>(),
     roles = new Set<string>();
   for (const approval of approvals) {
+    check(
+      approval &&
+        typeof approval.signerId === "string" &&
+        approval.signerId === approval.signerId.trim(),
+      "RESTORE_APPROVAL",
+      "Approval must identify an exact trusted person.",
+    );
     const trusted = trustedApprovers.find(
       (a) => a.id === approval.signerId && a.role === approval.role,
     );
@@ -374,11 +438,19 @@ export function reviewRestoreDossier(
     keys.add(keyHash);
     roles.add(approval.role);
   }
+  const completedAt = clock();
+  check(
+    Number.isFinite(completedAt) &&
+      completedAt >= startedAt &&
+      completedAt < expiresAt,
+    "RESTORE_REVIEW",
+    "Restore review expired or its clock moved backwards.",
+  );
   return {
     version: 1,
     dossierHash,
     candidateHash: candidate.logicalHash,
-    reviewedAt: new Date(at).toISOString(),
+    reviewedAt: new Date(completedAt).toISOString(),
     expiresAt: dossier.expiresAt,
     approvers: approvals.map((a) => ({ id: a.signerId, role: a.role })),
     status: "reviewed-isolated",

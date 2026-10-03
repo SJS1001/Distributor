@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import {
   chmodSync,
   readFileSync,
@@ -9,6 +11,8 @@ import {
   mkdirSync,
   linkSync,
   truncateSync,
+  renameSync,
+  unlinkSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -638,6 +642,317 @@ test("CLI review requires private evidence files and never exposes business valu
   assert.equal(refused.status, 1);
   assert.equal(refused.stdout, "");
   assert.equal(refused.stderr.includes("admin@example.test"), false);
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("restore approval rejects whitespace aliases of the preparer and of another trusted person", (t) => {
+  const { f, at, dossier, trust, approve } = setup(t);
+  for (const alias of [dossier.preparedBy, trust[1]!.id]) {
+    trust[0]!.id = ` ${alias} `;
+    assert.throws(
+      () => reviewRestoreDossier(f.path, dossier, approve(), trust, at),
+      { code: "RESTORE_APPROVAL" },
+    );
+    assert.throws(() => f.app.platform.assertProviderAccess(), {
+      code: "RECOVERY_HOLD",
+    });
+  }
+});
+
+test("restore review refuses whitespace aliases across signed writer authority lists", (t) => {
+  const { f, at, dossier, trust, approve } = setup(t);
+  dossier.operations.candidateWriters = [
+    ` ${dossier.operations.sourceWriters[0]} `,
+  ];
+  assert.throws(
+    () => reviewRestoreDossier(f.path, dossier, approve(), trust, at),
+    { code: "RESTORE_REVIEW" },
+  );
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("restore review expires while capturing the candidate instead of issuing a stale receipt", (t) => {
+  const { f, at, dossier, trust, approve } = setup(t);
+  const approvals = approve();
+  let reads = 0;
+  const clock = t.mock.method(Date, "now", () =>
+    ++reads === 1 ? at : Date.parse(dossier.expiresAt),
+  );
+  try {
+    assert.throws(
+      () => reviewRestoreDossier(f.path, dossier, approvals, trust),
+      { code: "RESTORE_REVIEW" },
+    );
+  } finally {
+    clock.mock.restore();
+  }
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("restore review refuses a WAL write committed by another process during candidate capture", (t) => {
+  const { f, at, dossier, trust, approve } = setup(t);
+  const approvals = approve(),
+    exec = DatabaseSync.prototype.exec;
+  let writes = 0;
+  const hook = t.mock.method(
+    DatabaseSync.prototype,
+    "exec",
+    function (this: DatabaseSync, sql: string) {
+      if (sql === "COMMIT" && writes++ === 0) {
+        const child = spawnSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "-e",
+            `
+          import { DatabaseSync } from 'node:sqlite';
+          const db = new DatabaseSync(process.argv[1], { timeout: 5000 });
+          try { db.exec("UPDATE iam_organizations SET name='Synthetic concurrent replacement'"); }
+          finally { db.close(); }
+        `,
+            f.path,
+          ],
+          { encoding: "utf8", timeout: 10000 },
+        );
+        assert.equal(child.status, 0, child.stderr);
+      }
+      return exec.call(this, sql);
+    },
+  );
+  try {
+    assert.throws(
+      () => reviewRestoreDossier(f.path, dossier, approvals, trust, at),
+      { code: "RESTORE_REVIEW_CHANGED" },
+    );
+  } finally {
+    hook.mock.restore();
+  }
+  assert.equal(writes, 1);
+  assert.notEqual(
+    captureRestoreCandidate(f.path).logicalHash,
+    dossier.candidate.logicalHash,
+  );
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+for (const suffix of ["-wal", "-shm"]) {
+  test(`restore capture refuses a ${suffix} symlink introduced after its initial path check`, (t) => {
+    const { f } = setup(t),
+      exec = DatabaseSync.prototype.exec;
+    const path = f.path + suffix,
+      retained = path + ".retained";
+    let replaced = false;
+    const hook = t.mock.method(
+      DatabaseSync.prototype,
+      "exec",
+      function (this: DatabaseSync, sql: string) {
+        const result = exec.call(this, sql);
+        if (sql.includes("BEGIN") && !replaced) {
+          const child = spawnSync(
+            process.execPath,
+            [
+              "--input-type=module",
+              "-e",
+              `
+            import { renameSync, symlinkSync } from 'node:fs';
+            renameSync(process.argv[1], process.argv[2]);
+            symlinkSync(process.argv[2], process.argv[1]);
+          `,
+              path,
+              retained,
+            ],
+            { encoding: "utf8", timeout: 10000 },
+          );
+          assert.equal(child.status, 0, child.stderr);
+          replaced = true;
+        }
+        return result;
+      },
+    );
+    try {
+      assert.throws(() => captureRestoreCandidate(f.path), {
+        code: "RESTORE_REVIEW_CHANGED",
+      });
+    } finally {
+      hook.mock.restore();
+      if (replaced) {
+        unlinkSync(path);
+        renameSync(retained, path);
+      }
+    }
+    assert.equal(replaced, true);
+    assert.throws(() => f.app.platform.assertProviderAccess(), {
+      code: "RECOVERY_HOLD",
+    });
+  });
+}
+
+test("restore evidence rejects a same-byte file replacement by another process during hashing", (t) => {
+  const { f, root, manifest, review } = evidenceSetup(t),
+    before = captureRestoreCandidate(f.path),
+    path = join(root, manifest.files[0]!.path),
+    read = fs.readSync;
+  let replaced = false;
+  const hook = t.mock.method(fs, "readSync", ((
+    ...args: Parameters<typeof fs.readSync>
+  ) => {
+    const count = Reflect.apply(read, fs, args);
+    if (count > 0 && !replaced) {
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+          import { renameSync, copyFileSync, chmodSync } from 'node:fs';
+          const path = process.argv[1];
+          renameSync(path, path + '.retained');
+          copyFileSync(path + '.retained', path);
+          chmodSync(path, 0o600);
+        `,
+          path,
+        ],
+        { encoding: "utf8", timeout: 10000 },
+      );
+      assert.equal(child.status, 0, child.stderr);
+      replaced = true;
+    }
+    return count;
+  }) as typeof fs.readSync);
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => review(), { code: "RESTORE_EVIDENCE" });
+  } finally {
+    hook.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.equal(replaced, true);
+  assert.deepEqual(captureRestoreCandidate(f.path), before);
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("restore evidence closes its descriptor on an interrupted read and retains the exact held candidate", (t) => {
+  const { f, review } = evidenceSetup(t),
+    before = captureRestoreCandidate(f.path);
+  let descriptor: number | undefined;
+  const hook = t.mock.method(fs, "readSync", ((
+    ...args: Parameters<typeof fs.readSync>
+  ) => {
+    descriptor = args[0];
+    throw Object.assign(new Error("Synthetic interrupted evidence read"), {
+      code: "EINTR",
+    });
+  }) as typeof fs.readSync);
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => review(), { code: "EINTR" });
+  } finally {
+    hook.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.notEqual(descriptor, undefined);
+  assert.throws(() => fs.fstatSync(descriptor!), { code: "EBADF" });
+  assert.deepEqual(captureRestoreCandidate(f.path), before);
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("restore evidence reloads current role and signing key even when the approver ID is unchanged", (t) => {
+  const { f, manifest, trust, review } = evidenceSetup(t),
+    before = captureRestoreCandidate(f.path),
+    replacement = generateKeyPairSync("ed25519")
+      .publicKey.export({ type: "spki", format: "pem" })
+      .toString();
+  for (const altered of [
+    [{ ...trust[0]!, role: "security" as const }, trust[1]!],
+    [{ ...trust[0]!, publicKey: replacement }, trust[1]!],
+  ]) {
+    let loads = 0;
+    assert.throws(
+      () => review(manifest, () => (++loads === 1 ? trust : altered)),
+      { code: "RESTORE_APPROVAL" },
+    );
+    assert.equal(loads, 2);
+  }
+  assert.deepEqual(captureRestoreCandidate(f.path), before);
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("restore signatures bind nested evidence, outcome declarations and writer lists", (t) => {
+  const { f, at, dossier, trust, approve } = setup(t),
+    approvals = approve();
+  const alterations: ((d: RestoreDossier) => void)[] = [
+    (d) => {
+      d.operations.fencing.sha256 = "a".repeat(64);
+    },
+    (d) => {
+      d.operations.rollback.reference = "synthetic:other-rollback";
+    },
+    (d) => {
+      d.organizations[0]!.providers[0]!.outcome = "reconciled";
+    },
+    (d) => {
+      d.operations.candidateWriters.push("synthetic-unreviewed-writer");
+    },
+    (d) => {
+      d.operations.rpoMinutes++;
+    },
+  ];
+  for (const alter of alterations) {
+    const next = structuredClone(dossier);
+    alter(next);
+    assert.throws(
+      () => reviewRestoreDossier(f.path, next, approvals, trust, at),
+      { code: "RESTORE_APPROVAL" },
+    );
+  }
+  assert.throws(() => f.app.platform.assertProviderAccess(), {
+    code: "RECOVERY_HOLD",
+  });
+});
+
+test("closed WAL candidates can be recaptured without requiring a preexisting shared index", (t) => {
+  const { f, dossier } = setup(t),
+    path = join(dirname(f.path), "closed-wal.db"),
+    source = new DatabaseSync(f.path);
+  try {
+    source.prepare("VACUUM INTO ?").run(path);
+  } finally {
+    source.close();
+  }
+  const copy = new DatabaseSync(path);
+  try {
+    copy.exec("PRAGMA journal_mode=WAL");
+  } finally {
+    copy.close();
+  }
+  assert.deepEqual(captureRestoreCandidate(path), dossier.candidate);
+  assert.deepEqual(captureRestoreCandidate(path), dossier.candidate);
+});
+
+test("restore review refuses a backwards completion clock", (t) => {
+  const { f, at, dossier, trust, approve } = setup(t);
+  let reads = 0;
+  assert.throws(
+    () =>
+      reviewRestoreDossier(f.path, dossier, approve(), trust, () =>
+        ++reads === 1 ? at : at - 1,
+      ),
+    { code: "RESTORE_REVIEW" },
+  );
   assert.throws(() => f.app.platform.assertProviderAccess(), {
     code: "RECOVERY_HOLD",
   });
