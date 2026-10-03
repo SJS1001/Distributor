@@ -27,7 +27,8 @@
     "provider:ledger-authorize": "tsx src/server/organization-authorization-cli.ts",
     "verify:runtime": "node scripts/verify_runtime.mjs",
     "verify:load-recovery": "tsx scripts/rehearsal.ts",
-    "recovery:review": "tsx src/server/restore-review-cli.ts"
+    "recovery:review": "tsx src/server/restore-review-cli.ts",
+    "provider:ledger-revoke": "tsx src/server/organization-revocation-cli.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",

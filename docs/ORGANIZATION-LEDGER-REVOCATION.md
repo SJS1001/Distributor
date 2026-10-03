@@ -1,6 +1,6 @@
 # Native organization QuickBooks revocation
 
-Partial D-034/D-036/D-039 engineering. All 44 tasks and ten product gates remain NOT VERIFIED. This is a native sandbox operation for the separate organization stock-cost journal credential scope. No protected operator command, HTTP route, browser control, startup invocation or polling worker invokes it yet. The buyer-account revocation command cannot substitute. The preview keeps all provider connections disabled.
+Partial D-034/D-036/D-039 engineering. All 44 tasks and ten product gates remain NOT VERIFIED. This is a native sandbox operation for the separate organization stock-cost journal credential scope. Dedicated protected operator commands invoke it explicitly. No HTTP route, browser control, startup invocation or polling worker invokes it yet. The buyer-account revocation command cannot substitute. The preview keeps all provider connections disabled.
 
 ## Exact scope and request
 
@@ -33,4 +33,20 @@ Schema 14 adds dedicated integration-owned organization revocation storage and a
 
 [Encrypted isolated restore](RECOVERY.md) changes copied organization `sending` receipts to `unknown`, clears claims, disables/discards copied credentials and advances their revisions. Current offline review uses the restored disabled revision and retains the provider hold. Historical terminal receipts remain history. Current recovery refuses old versions 1–13 archives rather than silently migrating them.
 
-The [local receipt](evidence/LOCAL-ORGANIZATION-REVOCATION-2026-10-03.md) binds source/test hashes and direct workstation verification. All provider responses are intercepted synthetic requests. Dedicated protected CLI/HTTP/browser exposure, actual vendor sandbox outcomes and grant-wide revocation semantics, external evidence truth, process/clock/storage faults at production scale, key custody, residency, security and human operator/release qualification remain open. No CI runner, workflow, deployment, PR or merge was used.
+The [local receipt](evidence/LOCAL-ORGANIZATION-REVOCATION-2026-10-03.md) binds source/test hashes and direct workstation verification. All provider responses are intercepted synthetic requests. Dedicated HTTP/browser exposure, actual vendor sandbox outcomes and grant-wide revocation semantics, external evidence truth, process/clock/storage faults at production scale, key custody, residency, security and human operator/release qualification remain open. No CI runner, workflow, deployment, PR or merge was used.
+
+## Protected operator commands
+
+Use `npm run provider:ledger-revoke -- <revoke|status|review>` with the current schema-14 store and protected noninteractive UTF-8 stdin, bounded to 32 KiB. No additional arguments are accepted. Set exact `DATABASE_PATH`, `DATA_REGION`, `PROVIDER_BINDING_ID`, `PROVIDER_ORG_ID`, `PROVIDER_WORKER_USER_ID`, `QUICKBOOKS_REALM_ID` and `QUICKBOOKS_CLIENT_ID`; preserve the configured event-reporting profile. No buyer account or callback URI substitutes for organization authority. Filesystem access is privileged; this is an operator interface, not a browser authorization mechanism.
+
+| Action | Exact protected input fields | Behavior |
+| --- | --- | --- |
+| `revoke` | `receiptId`, `revision`, `authority` | One explicit sandbox request under the inspected ready credential revision and complete separately reviewed organization permission stamp |
+| `status` | `receiptId` | Read retained scoped metadata offline |
+| `review` | `receiptId`, `revision`, `resolution`, `evidence` | Record externally established outcome against the current disabled credential revision, offline |
+
+For `revoke`, additionally configure the current `PROVIDER_ENCRYPTION_KEY`, `QUICKBOOKS_CLIENT_SECRET` and explicitly `PROVIDERS_ENABLED=true`. This flag is an application refusal boundary, not permission to activate a provider. Default-disabled or missing/invalid secret configuration rejects before opening the store. Exact replay still needs explicit CLI enablement and a syntactically valid secret; use `status` while outbound access is disabled. Revoke requires the complete nine-field `LedgerAuthority` returned by the separate organization permission review: provider/purpose/environment, organization/region/company, permission revision and disclosure ID/hash. Never reconstruct it from buyer consent.
+
+`status` and `review` ignore ambient encryption keys and need neither secrets nor enabled providers; current original worker and binding authority remain mandatory after withdrawal or during a restore hold. Review accepts only `provider-confirmed` or `provider-unconfirmed` and a nonempty evidence reference of at most 2,000 characters. It leaves credentials disabled and the hold intact. Unknown, missing, surplus, malformed or oversized fields/UTF-8 are refused before application construction. Credential and permission revisions must be inspected, not copied from examples. Errors omit input/provider bodies. Never include tokens, keys, secrets or customer data in evidence, command arguments, shell history or published files.
+
+The protected command checks use independent child processes and intercepted HTTP in CA/US; production installation separately checks default refusals. These are workstation protocol checks, not actual provider qualification or verified residency.

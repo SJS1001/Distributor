@@ -275,6 +275,20 @@ async function regionCheck(region) {
     ),
     /PROVIDER_DISABLED:/,
   );
+  assert.match(
+    await command(["run", "provider:ledger-revoke"], runtime, config, "", 1),
+    /REVOCATION_INPUT:/,
+  );
+  assert.match(
+    await command(
+      ["run", "provider:ledger-revoke", "--", "revoke"],
+      runtime,
+      config,
+      "",
+      1,
+    ),
+    /PROVIDER_DISABLED:/,
+  );
   let original, unit, prepared;
   for (let cycle = 0; cycle < 2; cycle++) {
     const selectedPort = await port(),
