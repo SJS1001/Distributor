@@ -8,7 +8,7 @@ Inventory includes [evidenced carrying-value adjustments and independent finance
 
 Inventory also has a native/API [bulk quantity-error correction](docs/INVENTORY-QUANTITY-CORRECTIONS.md) with separate finance review and [fixed browser confirmation and exact recovery](docs/INVENTORY-QUANTITY-UI.md). A [durable restore coordinator](docs/RESTORE-ACTIVATION.md) retains interrupted transitions and current authority checks; actual infrastructure fencing/routing still requires qualification.
 
-Read-only historical restore dispositions now cover canceled carrier membership and retained terminal integration effects. Their restore consumer remains pending. The [current local integration receipt](docs/evidence/LOCAL-QUANTITY-RESTORE-INTEGRATION-2026-10-03.md) records focused browser repairs, native checks and remaining limits.
+Read-only historical restore dispositions now cover canceled carrier membership and retained terminal integration effects. Their [native restore consumer](docs/RESTORE-NATIVE-DISPOSITIONS-2026-10-03.md) is integrated with default-closed, separately configured current maintenance authority; combined verification and the qualified offline import coordinator remain in progress. The [current local integration receipt](docs/evidence/LOCAL-QUANTITY-RESTORE-INTEGRATION-2026-10-03.md) records focused browser repairs, native checks and remaining limits.
 
 Billing includes [subsequent account mapping correction review and exact preparation recovery](docs/ACCOUNTING-CORRECTIONS.md#recover-a-subsequent-preparation). These synthetic engineering checks do not qualify actual ledger posting or complete the product gates.
 
@@ -16,66 +16,66 @@ The intended product covers billing, online ordering, inventory, equipment scann
 
 ## Start here
 
-| Document | Purpose |
-| --- | --- |
-| [Plan and timeline](docs/PLAN.md) | Scope, assumptions, delivery sequence, staffing and realistic ranges |
-| [Task list](docs/TASKS.md) | 44 numbered tasks with dependencies, effort, acceptance criteria and evidence |
-| [Checkpoints](docs/CHECKPOINTS.md) | Gates, repeatable scenarios, evidence rules and current status |
-| [Architecture](docs/ARCHITECTURE.md) | Module ownership, extension contract, scanning and bus boundaries |
-| [Requirements and workflows](docs/REQUIREMENTS.md) | Full scope mapped to tasks/checkpoints, personas, screens and acceptance |
-| [Proposed domain contracts](docs/CONTRACTS.md) | Records, commands, states, authorization and failure behavior |
-| [Discovery workbook](docs/DISCOVERY.md) | Decision answer sheets, target inputs and independent synthetic stock/money example |
-| [Delivery and risks](docs/DELIVERY.md) | Review packets, staffing/cost controls, risks, future CI and operating/release plan |
-| [Decisions and inputs](docs/DECISIONS.md) | Confirmed direction, proposed choices and unanswered business questions |
-| [Reuse assessment](docs/REUSE.md) | OPUS extraction, open-source shortlist, licensing and UB readiness |
-| [Billing documents and aging](docs/BILLING-DOCUMENTS.md) | Original invoice/credit PDFs, prepared requests, current balances and qualification limits |
-| [Invoice checkout access](docs/CHECKOUT.md) | Fresh scoped payment links, reviewed closure/replacement, retained verification history and native balance checks |
-| [Order queue](docs/ORDER-QUEUES.md) | Scoped twenty-header pages, live state filters, full open-order counts and retry/history controls |
-| [Catalog lifecycle](docs/CATALOG-LIFECYCLE.md) | Reviewed retirement/reactivation, staff search, retained history and customer-ordering effects |
-| [Customer pricing](docs/CUSTOMER-PRICING.md) | Current assigned-customer prices, selected-account quantity editing, fresh quotes and saved cart recovery |
-| [Purchase order entry](docs/PURCHASE-ENTRY.md) | Paged supplier/product selection, explicit original costs and retained exact-attempt recovery |
-| [Purchase order queue](docs/PURCHASE-QUEUES.md) | Scoped twenty-header pages, live state filters and saved receipt drafts independent of visible orders |
-| [Invoice queue](docs/INVOICE-QUEUES.md) | Scoped twenty-header pages, current balance filters, full receivable totals and credit publication independent of visible invoices |
-| [Stock and replacement search](docs/STOCK-QUEUES.md) | Scoped twenty-record stock pages, full availability totals and independent eligible replacement serial search |
-| [Stock bin movement](docs/BIN-RELOCATION.md) | Reviewed whole or partial bulk relocation, retained locations, exact retries and conserved original cost |
-| [Stock movement history](docs/STOCK-HISTORY.md) | Scoped serial/bulk pages, current positions, original movement costs and exact read retry |
-| [Transfer queue](docs/TRANSFER-QUEUES.md) | Scoped twenty-header pages, live custody-state filters, reference identifiers and retained exact dispatch, arrival, loss approval and found-stock recovery |
-| [Serial dossier](docs/SERIAL-DOSSIER.md) | Scoped receipt, movement, shipment, invoice and claim lineage with browser paging, retry and refresh |
-| [Order reservation deadlines](docs/RESERVATIONS.md) | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history |
-| [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md) | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections |
-| [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md) | Reviewed local capacity release, retained history and uncertainty/restore refusals |
-| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md) | Explicit policy/period controls, independent review, retained ledger observations, separately approved cancelled-attempt retries and native/API settled correction chains |
-| [Isolated restore review](docs/RESTORE-REVIEW.md) | Source-bound reconciliation dossier, private evidence byte verification, independent signed approvals and retained recovery hold |
-| [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md) | Reviewed original-cost journals, regional files and receiver evidence |
-| [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md) | Disabled sandbox protocol checks and remaining transport qualification |
-| [Explicit stock journal transport](docs/STOCK-JOURNAL-TRANSPORT.md) | Protected foreground status/write/lookup, default-disabled transport and native uncertainty fences |
-| [Stock-journal permission replacement](docs/STOCK-JOURNAL-PERMISSIONS.md) | Independent native/API/browser approval, fixed review and exact receipt recovery, immutable journal and lookup-only uncertainty |
-| [Original stock-journal reconciliation](docs/STOCK-JOURNAL-RECONCILIATION.md) | Complete per-date native evidence, fixed Billing review, separate finance attestations and read-first exact recovery |
-| [Stock-journal preparation](docs/STOCK-JOURNAL-PREPARATION.md) | Approved source/date/account mapping, fixed confirmation and original receipt recovery |
-| [Stock-journal browser review](docs/STOCK-JOURNAL-BROWSER.md) | Frozen independent review, queue/history paging and exact uncertain-decision recovery |
-| [Original stock-journal cancellation](docs/STOCK-JOURNAL-ORIGINAL-CANCELLATION.md) | Fixed final non-posting review, separate finance cancellation, exact browser recovery and permanent reservations |
-| [Original stock-journal retries](docs/STOCK-JOURNAL-ORIGINAL-RETRIES.md) | Fixed Billing predecessor review, exact recovery, distinct ready attempt, separate approval and one posted leaf per date |
-| [Stock-journal correction cancellation](docs/STOCK-JOURNAL-CANCELLATION.md) | Final evidence, separate finance confirmation and exact uncertain-cancellation recovery |
-| [Stock-journal review controls](docs/STOCK-JOURNAL-CONTROLS.md) | Authenticated local preparation/independent decisions, scoped queues and complete paged observations |
-| [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md) | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order |
-| [Organization ledger residency](docs/ORGANIZATION-LEDGER-RESIDENCY.md) | Separate native sandbox company consent, retained terms/revisions and execution permission fences |
-| [Organization ledger authorization](docs/ORGANIZATION-LEDGER-AUTHORIZATION.md) | Separate native sandbox OAuth/company proof, operator and login-bound HTTP controls, local disconnect and dedicated browser review |
-| [Organization ledger revocation](docs/ORGANIZATION-LEDGER-REVOCATION.md) | Native sandbox revocation, protected operator/HTTP/Billing controls, exact browser history recovery, offline evidence review and schema-14 recovery |
-| [Organization ledger credentials](docs/ORGANIZATION-LEDGER-CREDENTIALS.md) | Separate encrypted sandbox tokens, exact consent checks, exclusive refresh and protected offline operator controls |
-| [Scanning and saved receipt drafts](docs/SCANNING.md) | Camera/manual input, saved evidence and explicit stock confirmation |
-| [Fulfillment, delivery and short picks](docs/FULFILLMENT.md) | Packed commitments, delivery history, shortage holds, backorders and separate count review |
-| [Bulk count queue and review duties](docs/COUNT-REVIEWS.md) | Scoped twenty-count pages, state filters, exact read retries, organization policy and immutable decision history |
-| [Warranty and replacements](docs/WARRANTY.md) | Native returns, replacement collection/dispatch, manufacturer evidence and remaining qualification |
-| [Runtime installation](docs/RUNTIME.md) | Production dependencies, required package inputs and isolated local startup checks |
-| [Load and recovery rehearsal](docs/LOAD-RECOVERY.md) | Configurable synthetic concurrent writers/readers, cutoff restore and measured local limits |
-| [Schema startup and upgrades](docs/SCHEMA-UPGRADES.md) | Atomic initialization, exact supported versions and reviewed fresh-file clones |
-| [User access](docs/USER-ACCESS.md) | Staff/buyer grants, password changes, resets, optional/required role MFA and session revocation |
-| [Local event reporting](docs/EVENTS.md) | Bounded optional report processing, scoped diagnostics and reviewed failure recovery |
-| [Operations health](docs/OPERATIONS-HEALTH.md) | Current organization queue counts, creation age, due checks and recovery hold without processing work |
-| [Stock and billing reconciliation](docs/RECONCILIATION.md) | Native control totals, bounded discrepancy details and investigation limits |
-| [Providers, residency and devices](docs/PROVIDERS.md) | Customer choice, major-provider candidates and local provider operations |
-| [Evidence instructions](docs/evidence/README.md) | Receipt template for future verification |
-| [Handoff](docs/HANDOFF.md) | Historical setup and current implementation continuation |
+| Document                                                                           | Purpose                                                                                                                                                                   |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Plan and timeline](docs/PLAN.md)                                                  | Scope, assumptions, delivery sequence, staffing and realistic ranges                                                                                                      |
+| [Task list](docs/TASKS.md)                                                         | 44 numbered tasks with dependencies, effort, acceptance criteria and evidence                                                                                             |
+| [Checkpoints](docs/CHECKPOINTS.md)                                                 | Gates, repeatable scenarios, evidence rules and current status                                                                                                            |
+| [Architecture](docs/ARCHITECTURE.md)                                               | Module ownership, extension contract, scanning and bus boundaries                                                                                                         |
+| [Requirements and workflows](docs/REQUIREMENTS.md)                                 | Full scope mapped to tasks/checkpoints, personas, screens and acceptance                                                                                                  |
+| [Proposed domain contracts](docs/CONTRACTS.md)                                     | Records, commands, states, authorization and failure behavior                                                                                                             |
+| [Discovery workbook](docs/DISCOVERY.md)                                            | Decision answer sheets, target inputs and independent synthetic stock/money example                                                                                       |
+| [Delivery and risks](docs/DELIVERY.md)                                             | Review packets, staffing/cost controls, risks, future CI and operating/release plan                                                                                       |
+| [Decisions and inputs](docs/DECISIONS.md)                                          | Confirmed direction, proposed choices and unanswered business questions                                                                                                   |
+| [Reuse assessment](docs/REUSE.md)                                                  | OPUS extraction, open-source shortlist, licensing and UB readiness                                                                                                        |
+| [Billing documents and aging](docs/BILLING-DOCUMENTS.md)                           | Original invoice/credit PDFs, prepared requests, current balances and qualification limits                                                                                |
+| [Invoice checkout access](docs/CHECKOUT.md)                                        | Fresh scoped payment links, reviewed closure/replacement, retained verification history and native balance checks                                                         |
+| [Order queue](docs/ORDER-QUEUES.md)                                                | Scoped twenty-header pages, live state filters, full open-order counts and retry/history controls                                                                         |
+| [Catalog lifecycle](docs/CATALOG-LIFECYCLE.md)                                     | Reviewed retirement/reactivation, staff search, retained history and customer-ordering effects                                                                            |
+| [Customer pricing](docs/CUSTOMER-PRICING.md)                                       | Current assigned-customer prices, selected-account quantity editing, fresh quotes and saved cart recovery                                                                 |
+| [Purchase order entry](docs/PURCHASE-ENTRY.md)                                     | Paged supplier/product selection, explicit original costs and retained exact-attempt recovery                                                                             |
+| [Purchase order queue](docs/PURCHASE-QUEUES.md)                                    | Scoped twenty-header pages, live state filters and saved receipt drafts independent of visible orders                                                                     |
+| [Invoice queue](docs/INVOICE-QUEUES.md)                                            | Scoped twenty-header pages, current balance filters, full receivable totals and credit publication independent of visible invoices                                        |
+| [Stock and replacement search](docs/STOCK-QUEUES.md)                               | Scoped twenty-record stock pages, full availability totals and independent eligible replacement serial search                                                             |
+| [Stock bin movement](docs/BIN-RELOCATION.md)                                       | Reviewed whole or partial bulk relocation, retained locations, exact retries and conserved original cost                                                                  |
+| [Stock movement history](docs/STOCK-HISTORY.md)                                    | Scoped serial/bulk pages, current positions, original movement costs and exact read retry                                                                                 |
+| [Transfer queue](docs/TRANSFER-QUEUES.md)                                          | Scoped twenty-header pages, live custody-state filters, reference identifiers and retained exact dispatch, arrival, loss approval and found-stock recovery                |
+| [Serial dossier](docs/SERIAL-DOSSIER.md)                                           | Scoped receipt, movement, shipment, invoice and claim lineage with browser paging, retry and refresh                                                                      |
+| [Order reservation deadlines](docs/RESERVATIONS.md)                                | Reviewed unpicked releases, retained picked stock, explicit renewal and buyer-visible history                                                                             |
+| [Supplier returns and finance follow-up](docs/SUPPLIER-RETURNS.md)                 | Original-cost handover, supplier credit evidence, received replacement links and reviewed corrections                                                                     |
+| [Unsent accounting credit cancellation](docs/ACCOUNTING-CANCELLATIONS.md)          | Reviewed local capacity release, retained history and uncertainty/restore refusals                                                                                        |
+| [Approved stock-cost mapping corrections](docs/ACCOUNTING-CORRECTIONS.md)          | Explicit policy/period controls, independent review, retained ledger observations, separately approved cancelled-attempt retries and native/API settled correction chains |
+| [Isolated restore review](docs/RESTORE-REVIEW.md)                                  | Source-bound reconciliation dossier, private evidence byte verification, independent signed approvals and retained recovery hold                                          |
+| [Stock cost accounting handoffs](docs/ACCOUNTING-COSTS.md)                         | Reviewed original-cost journals, regional files and receiver evidence                                                                                                     |
+| [QuickBooks stock journal candidate](docs/QUICKBOOKS-STOCK-JOURNAL.md)             | Disabled sandbox protocol checks and remaining transport qualification                                                                                                    |
+| [Explicit stock journal transport](docs/STOCK-JOURNAL-TRANSPORT.md)                | Protected foreground status/write/lookup, default-disabled transport and native uncertainty fences                                                                        |
+| [Stock-journal permission replacement](docs/STOCK-JOURNAL-PERMISSIONS.md)          | Independent native/API/browser approval, fixed review and exact receipt recovery, immutable journal and lookup-only uncertainty                                           |
+| [Original stock-journal reconciliation](docs/STOCK-JOURNAL-RECONCILIATION.md)      | Complete per-date native evidence, fixed Billing review, separate finance attestations and read-first exact recovery                                                      |
+| [Stock-journal preparation](docs/STOCK-JOURNAL-PREPARATION.md)                     | Approved source/date/account mapping, fixed confirmation and original receipt recovery                                                                                    |
+| [Stock-journal browser review](docs/STOCK-JOURNAL-BROWSER.md)                      | Frozen independent review, queue/history paging and exact uncertain-decision recovery                                                                                     |
+| [Original stock-journal cancellation](docs/STOCK-JOURNAL-ORIGINAL-CANCELLATION.md) | Fixed final non-posting review, separate finance cancellation, exact browser recovery and permanent reservations                                                          |
+| [Original stock-journal retries](docs/STOCK-JOURNAL-ORIGINAL-RETRIES.md)           | Fixed Billing predecessor review, exact recovery, distinct ready attempt, separate approval and one posted leaf per date                                                  |
+| [Stock-journal correction cancellation](docs/STOCK-JOURNAL-CANCELLATION.md)        | Final evidence, separate finance confirmation and exact uncertain-cancellation recovery                                                                                   |
+| [Stock-journal review controls](docs/STOCK-JOURNAL-CONTROLS.md)                    | Authenticated local preparation/independent decisions, scoped queues and complete paged observations                                                                      |
+| [Native stock-journal ownership](docs/STOCK-JOURNAL-DELIVERY.md)                   | Immutable review, permanent references, exclusive write/lookup leases and uncertainty/correction order                                                                    |
+| [Organization ledger residency](docs/ORGANIZATION-LEDGER-RESIDENCY.md)             | Separate native sandbox company consent, retained terms/revisions and execution permission fences                                                                         |
+| [Organization ledger authorization](docs/ORGANIZATION-LEDGER-AUTHORIZATION.md)     | Separate native sandbox OAuth/company proof, operator and login-bound HTTP controls, local disconnect and dedicated browser review                                        |
+| [Organization ledger revocation](docs/ORGANIZATION-LEDGER-REVOCATION.md)           | Native sandbox revocation, protected operator/HTTP/Billing controls, exact browser history recovery, offline evidence review and schema-14 recovery                       |
+| [Organization ledger credentials](docs/ORGANIZATION-LEDGER-CREDENTIALS.md)         | Separate encrypted sandbox tokens, exact consent checks, exclusive refresh and protected offline operator controls                                                        |
+| [Scanning and saved receipt drafts](docs/SCANNING.md)                              | Camera/manual input, saved evidence and explicit stock confirmation                                                                                                       |
+| [Fulfillment, delivery and short picks](docs/FULFILLMENT.md)                       | Packed commitments, delivery history, shortage holds, backorders and separate count review                                                                                |
+| [Bulk count queue and review duties](docs/COUNT-REVIEWS.md)                        | Scoped twenty-count pages, state filters, exact read retries, organization policy and immutable decision history                                                          |
+| [Warranty and replacements](docs/WARRANTY.md)                                      | Native returns, replacement collection/dispatch, manufacturer evidence and remaining qualification                                                                        |
+| [Runtime installation](docs/RUNTIME.md)                                            | Production dependencies, required package inputs and isolated local startup checks                                                                                        |
+| [Load and recovery rehearsal](docs/LOAD-RECOVERY.md)                               | Configurable synthetic concurrent writers/readers, cutoff restore and measured local limits                                                                               |
+| [Schema startup and upgrades](docs/SCHEMA-UPGRADES.md)                             | Atomic initialization, exact supported versions and reviewed fresh-file clones                                                                                            |
+| [User access](docs/USER-ACCESS.md)                                                 | Staff/buyer grants, password changes, resets, optional/required role MFA and session revocation                                                                           |
+| [Local event reporting](docs/EVENTS.md)                                            | Bounded optional report processing, scoped diagnostics and reviewed failure recovery                                                                                      |
+| [Operations health](docs/OPERATIONS-HEALTH.md)                                     | Current organization queue counts, creation age, due checks and recovery hold without processing work                                                                     |
+| [Stock and billing reconciliation](docs/RECONCILIATION.md)                         | Native control totals, bounded discrepancy details and investigation limits                                                                                               |
+| [Providers, residency and devices](docs/PROVIDERS.md)                              | Customer choice, major-provider candidates and local provider operations                                                                                                  |
+| [Evidence instructions](docs/evidence/README.md)                                   | Receipt template for future verification                                                                                                                                  |
+| [Handoff](docs/HANDOFF.md)                                                         | Historical setup and current implementation continuation                                                                                                                  |
 
 All product checkpoints are **NOT VERIFIED**. Documentation is not evidence that a business workflow works. Implementation authorization permits engineering work; outstanding discovery decisions still require owner/operator evidence.
 

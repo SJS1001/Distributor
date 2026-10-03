@@ -1,24 +1,19 @@
-import { createHash, createPublicKey, verify } from "node:crypto";
-import { lstatSync, type BigIntStats } from "node:fs";
+import { createPublicKey, verify } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { canonical, check, digest, integer, text } from "./core.ts";
-import { checkIntegrity, inspectConnection } from "./schema.ts";
+import { inspectConnection } from "./schema.ts";
+import {
+  pinRestoreCandidateFiles,
+  readRestoreCandidateSnapshot,
+  type RestoreCandidate,
+} from "./restore-candidate-snapshot.ts";
 import {
   providerNames,
   type ProviderName,
 } from "../shared/provider-choices.ts";
-import type { Region } from "./iam.ts";
 
 type Evidence = { reference: string; sha256: string };
-export type RestoreCandidate = {
-  logicalHash: string;
-  schemaHash: string;
-  snapshotHash: string;
-  sourceCompletedAt: string;
-  restoredAt: string;
-  region: Region;
-  organizations: { id: string; currency: string }[];
-};
+export type { RestoreCandidate } from "./restore-candidate-snapshot.ts";
 export type RestoreDossier = {
   version: 1;
   preparedBy: string;
@@ -100,139 +95,17 @@ function instant(raw: string) {
  * snapshot. No row values or credentials leave this function. A hash is not
  * external reconciliation or proof that infrastructure writers are fenced. */
 export function captureRestoreCandidate(path: string): RestoreCandidate {
-  const stat = lstatSync(path, { bigint: true });
-  check(
-    stat.isFile() && !stat.isSymbolicLink(),
-    "RESTORE_REVIEW",
-    "Candidate must be a regular database file.",
-  );
-  const files = new Map<string, BigIntStats | undefined>([["", stat]]);
-  const inspectFile = (suffix: string) => {
-    try {
-      return lstatSync(path + suffix, { bigint: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return undefined;
-    }
-  };
-  for (const suffix of ["-wal", "-shm", "-journal"]) {
-    const sidecar = inspectFile(suffix);
-    check(
-      !sidecar || (sidecar.isFile() && !sidecar.isSymbolicLink()),
-      "RESTORE_REVIEW",
-      "Candidate sidecars must be regular files.",
-    );
-    files.set(suffix, sidecar);
-  }
-  const unchanged = (allowReadSidecars = false) => {
-    for (const [suffix, before] of files) {
-      const after = inspectFile(suffix);
-      // A read-only WAL connection may create its empty WAL and shared index.
-      // Retain their identities once opened; a nonempty new WAL is a write.
-      if (
-        allowReadSidecars &&
-        !before &&
-        after?.isFile() &&
-        (suffix === "-shm" || (suffix === "-wal" && after.size === 0n))
-      ) {
-        files.set(suffix, after);
-        continue;
-      }
-      const identity = ["dev", "ino", "mode", "nlink", "uid", "gid"] as const;
-      const content = ["size", "mtimeNs", "ctimeNs"] as const;
-      check(
-        (!before && !after) ||
-          (before &&
-            after &&
-            after.isFile() &&
-            identity.every((key) => before[key] === after[key]) &&
-            // SQLite itself updates shared-index read marks. Its identity must
-            // remain fixed, but only the main/WAL/journal bytes are content.
-            (suffix === "-shm" ||
-              content.every((key) => before[key] === after[key]))),
-        "RESTORE_REVIEW_CHANGED",
-        "Candidate files changed during inspection.",
-      );
-    }
-  };
+  const unchanged = pinRestoreCandidateFiles(path);
   const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
   try {
     db.exec("PRAGMA trusted_schema=OFF; PRAGMA temp_store=MEMORY; BEGIN");
-    const schema = inspectConnection(db);
+    // Establish the read snapshot before allowing SQLite-created read sidecars.
+    inspectConnection(db);
     unchanged(true);
-    check(
-      schema.kind === "current" && schema.region,
-      "RESTORE_REVIEW",
-      "Review requires an exact current regional schema.",
-    );
-    checkIntegrity(db);
-    const hold = db.prepare("SELECT * FROM platform_recovery WHERE id=1").get();
-    check(
-      hold,
-      "RESTORE_REVIEW",
-      "Candidate is not an isolated restored store.",
-    );
-    const organizations = db
-      .prepare("SELECT id,currency FROM iam_organizations ORDER BY id")
-      .all() as { id: string; currency: string }[];
-    check(
-      organizations.length > 0,
-      "RESTORE_REVIEW",
-      "Candidate has no organizations to reconcile.",
-    );
-    const hash = createHash("sha256");
-    hash.update(
-      "distributor-restore-candidate-v1\n" + schema.schemaHash + "\n",
-    );
-    const tables = db
-      .prepare(
-        "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name",
-      )
-      .all();
-    const quote = (s: string) => '"' + s.replaceAll('"', '""') + '"';
-    for (const table of tables) {
-      // Release metadata changes during orchestration; business facts and the
-      // original recovery generation remain bound. DDL is still schema-hashed.
-      if (table.name === "platform_restore_releases") continue;
-      const name = String(table.name),
-        columns = db
-          .prepare(`PRAGMA table_info(${quote(name)})`)
-          .all()
-          .map((c) => String(c.name));
-      hash.update(canonical({ table: name, columns }) + "\n");
-      const statement = db.prepare(
-        `SELECT * FROM ${quote(name)} ORDER BY ${columns.map(quote).join(",")}`,
-      );
-      statement.setReadBigInts(true);
-      for (const row of statement.iterate())
-        hash.update(
-          canonical(
-            columns.map((column) => {
-              const value = row[column];
-              return value === null
-                ? ["null"]
-                : typeof value === "bigint"
-                  ? ["integer", value.toString()]
-                  : typeof value === "number"
-                    ? ["real", value.toString()]
-                    : value instanceof Uint8Array
-                      ? ["blob", Buffer.from(value).toString("hex")]
-                      : ["text", value];
-            }),
-          ) + "\n",
-        );
-    }
+    const candidate = readRestoreCandidateSnapshot(db);
     db.exec("COMMIT");
     unchanged();
-    return {
-      logicalHash: hash.digest("hex"),
-      schemaHash: schema.schemaHash,
-      snapshotHash: sha(String(hold.snapshot_hash)),
-      sourceCompletedAt: String(hold.source_completed_at),
-      restoredAt: String(hold.restored_at),
-      region: schema.region,
-      organizations,
-    };
+    return candidate;
   } catch (error) {
     // A sidecar swap may first surface as a SQLite error. Prefer the stable
     // boundary failure when the filesystem evidence proves a concurrent change.

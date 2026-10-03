@@ -1,7 +1,9 @@
+import type { CarrierBookings } from "./carrier-bookings.ts";
 import {
   IntegrationRestoreDispositions,
   type IntegrationDispositionBinding,
   type IntegrationDispositionReceipts,
+  type RestoreNativeDispositionTarget,
 } from "./integration-restore-dispositions.ts";
 import {
   account,
@@ -216,6 +218,158 @@ export class Integration {
       (a, creditId) => this.refundCredit(a, creditId),
       (a, creditId) => this.creditApplicationCapacity(a, creditId),
     ).getInTransaction(actor, binding);
+  }
+
+  /** Complete owner queue inspection on the candidate's existing writer connection.
+   * Only the three exact historical projections can qualify nonterminal rows.
+   * Independent successors, bookings, groups, callbacks and claims still block. */
+  assertRestoreQueuesSettledInTransaction(
+    authority: (target: RestoreNativeDispositionTarget) => Actor,
+    receipts: (actor: Actor) => IntegrationDispositionReceipts,
+    carriers: CarrierBookings,
+  ): void {
+    this.database.requireTransaction();
+    const unchanged = this.store.get("SELECT total_changes() AS n")!.n;
+    const unresolved = (condition: unknown) =>
+      check(
+        condition,
+        "RESTORE_UNRESOLVED",
+        "Copied provider work requires owning-module reconciliation before release.",
+      );
+    for (const [table, terminal] of [
+      ["integration_callbacks", ["completed"]],
+      ["integration_refund_callbacks", ["completed"]],
+      ["integration_carrier_bookings", ["booked", "canceled"]],
+      ["integration_canada_post_groups", ["transmitted", "canceled"]],
+      ["integration_stock_journals", ["posted", "cancelled", "rejected"]],
+      ["integration_credential_revocations", ["confirmed", "released"]],
+      ["integration_ledger_revocations", ["confirmed", "released"]],
+      [
+        "integration_authorizations",
+        ["completed", "canceled", "denied", "expired"],
+      ],
+      [
+        "integration_ledger_authorizations",
+        ["completed", "canceled", "denied", "expired"],
+      ],
+    ] as const) {
+      unresolved(
+        !this.store.get(
+          `SELECT 1 FROM ${table} WHERE state NOT IN (${terminal.map(() => "?").join(",")}) LIMIT 1`,
+          ...terminal,
+        ),
+      );
+    }
+    for (const table of [
+      "integration_operation_leases",
+      "integration_balance_reads",
+      "integration_refund_polls",
+    ]) {
+      unresolved(
+        !this.store.get(
+          `SELECT 1 FROM ${table} WHERE token IS NOT NULL LIMIT 1`,
+        ),
+      );
+    }
+    // No LIMIT/paging: every outstanding historical effect must qualify itself.
+    for (const effect of this.store.all<Effect>(
+      "SELECT * FROM integration_effects WHERE state NOT IN ('completed','rejected') ORDER BY id",
+    )) {
+      const projection =
+        effect.provider === "quickbooks" && effect.kind === "credit-application"
+          ? ("canceled-unsent-credit-application" as const)
+          : effect.provider === "stripe" && effect.kind === "checkout"
+            ? ("superseded-unsent-checkout" as const)
+            : null;
+      unresolved(effect.state === "blocked" && projection);
+      // Refusal-only eligibility: unrelated blocked intents have no historical
+      // disposition to review. A matching identity is never sufficient proof;
+      // current authority and the complete owning validators still follow.
+      unresolved(
+        projection === "superseded-unsent-checkout"
+          ? this.store.get(
+              "SELECT 1 FROM integration_checkout_renewals WHERE org_id=? AND predecessor_id=?",
+              effect.org_id,
+              effect.id,
+            )
+          : this.store.get(
+              "SELECT 1 FROM integration_credit_cancellations WHERE org_id=? AND effect_id=?",
+              effect.org_id,
+              effect.id,
+            ),
+      );
+      const effectHash = digest(canonical(effect));
+      const actor = authority({
+        orgId: effect.org_id,
+        projection: projection!,
+        recordId: effect.id,
+        recordHash: effectHash,
+      });
+      unresolved(actor.orgId === effect.org_id);
+      const org = this.identity.organization(actor);
+      const binding: IntegrationDispositionBinding = {
+        effectId: effect.id,
+        effectHash,
+        orgId: effect.org_id,
+        accountId: effect.account_id,
+        region: org.region,
+        currency: org.currency,
+        provider: effect.provider as "stripe" | "quickbooks",
+        residencyVersion: effect.residency_version,
+      };
+      const disposition = this.restoreDispositionInTransaction(
+        actor,
+        binding,
+        receipts(actor),
+      );
+      unresolved(
+        disposition &&
+          disposition.disposition === projection &&
+          canonical(disposition.binding) === canonical(binding) &&
+          disposition.transportPermission === false &&
+          disposition.externalOutcomeVerified === false,
+      );
+    }
+    for (const member of this.store.all<{
+      org_id: string;
+      group_id: string;
+      booking_id: string;
+    }>(
+      "SELECT * FROM integration_canada_post_members WHERE state!='created' ORDER BY group_id,booking_id",
+    )) {
+      const group = this.store.get(
+        "SELECT * FROM integration_canada_post_groups WHERE id=?",
+        member.group_id,
+      );
+      unresolved(group && group.org_id === member.org_id);
+      const actor = authority({
+        orgId: member.org_id,
+        projection: "canceled-unused-membership",
+        recordId: member.booking_id,
+        recordHash: digest(canonical({ group, member })),
+      });
+      unresolved(actor.orgId === member.org_id);
+      const disposition =
+        carriers.canceledCanadaPostMemberDispositionInTransaction(
+          actor,
+          member.group_id,
+          member.booking_id,
+        );
+      unresolved(
+        disposition.disposition === "canceled-unused-membership" &&
+          disposition.orgId === member.org_id &&
+          disposition.groupId === member.group_id &&
+          disposition.bookingId === member.booking_id &&
+          disposition.members.some(
+            (m) =>
+              m.bookingId === member.booking_id &&
+              m.memberHash === digest(canonical(member)),
+          ),
+      );
+    }
+    // Trusted synchronous adapters must remain readers, including other owners.
+    // A faulty adapter cannot change an earlier inspected row and commit a release.
+    unresolved(this.store.get("SELECT total_changes() AS n")!.n === unchanged);
   }
 
   private principal(actor: Actor, roles: Role[]) {

@@ -1,3 +1,4 @@
+import type { RestoreNativeDispositionConfiguration } from "./restore-activation.ts";
 import { salesControls } from "./sales-controls.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
 import { check, permit, now, type Actor, type Role } from "./core.ts";
@@ -91,6 +92,12 @@ export class Application {
         claims: this.warranty.serialClaims(actor, unitId, input.claimAfter),
       };
     });
+  }
+  /** Explicit trusted host composition; no tenant/dossier or environment switch. */
+  configureRestoreNativeDispositions(
+    configuration?: RestoreNativeDispositionConfiguration,
+  ) {
+    this.platform.restore.configureNativeDispositions(configuration);
   }
   constructor(
     path: string,
@@ -216,6 +223,12 @@ export class Application {
             this.identity,
             this.billing,
             this.inventory,
+          );
+          this.platform.restore.configureNativeDispositionOwners(
+            this.integration,
+            this.carriers,
+            this.identity,
+            (actor) => this.platform.integrationDispositionReceipts(actor),
           );
           this.migration = new Migration(
             this.database,

@@ -1,5 +1,5 @@
 import { DatabaseSync, constants, type SQLInputValue } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DomainError, check, type Row } from "./core.ts";
 
@@ -12,6 +12,10 @@ import {
   supportedSchemaHash,
 } from "./schema.ts";
 import type { Region } from "./iam.ts";
+import {
+  pinRestoreCandidateFiles,
+  readRestoreCandidateSnapshot,
+} from "./restore-candidate-snapshot.ts";
 
 export type Owner =
   | "iam"
@@ -34,11 +38,18 @@ export class Database {
   #constructorTransaction = false;
   #initializationFailed = false;
   #inspecting = false;
+  #openedFileIdentity?: { dev: bigint; ino: bigint };
+  #openedPath: string;
   constructor(public path: string) {
+    this.#openedPath = path;
     if (path !== ":memory:")
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.#db = new DatabaseSync(path, { timeout: 5000 });
     try {
+      if (path !== ":memory:") {
+        const stat = lstatSync(path, { bigint: true });
+        this.#openedFileIdentity = { dev: stat.dev, ino: stat.ino };
+      }
       this.#db.exec(
         "PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;",
       );
@@ -226,6 +237,33 @@ export class Database {
       "TRANSACTION",
       "This native fence requires an existing business transaction.",
     );
+  }
+  /** Fixed native maintenance read of this exact writer snapshot. No new
+   * connection, SQL callback, transaction or permission is provided. */
+  captureRestoreCandidateInTransaction() {
+    this.requireTransaction();
+    check(
+      this.path === this.#openedPath,
+      "RESTORE_REVIEW_CHANGED",
+      "Candidate pathname differs from the opened application store.",
+    );
+    check(
+      this.#initialized && !this.#initializing && this.#openedFileIdentity,
+      "RESTORE_REVIEW",
+      "Candidate hashing requires an initialized file-backed application store.",
+    );
+    const unchanged = pinRestoreCandidateFiles(
+      this.path,
+      this.#openedFileIdentity,
+    );
+    try {
+      const candidate = this.#inspect(readRestoreCandidateSnapshot);
+      unchanged();
+      return candidate;
+    } catch (error) {
+      unchanged();
+      throw error;
+    }
   }
   transaction<T>(fn: () => T): T {
     // Calling this from a Store callback must not escape the SQL authorizer.

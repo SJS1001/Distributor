@@ -1,6 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
+import { createPublicKey, randomUUID, verify } from "node:crypto";
 import { lstatSync } from "node:fs";
-import { canonical, check, digest, text } from "./core.ts";
+import { canonical, check, digest, text, type Actor } from "./core.ts";
 import { Database, type Store } from "./database.ts";
 import { RESTORE_ACTIVATION_DDL } from "./restore-activation-schema.ts";
 import {
@@ -15,6 +15,57 @@ import {
   reviewRestoreEvidence,
   type RestoreEvidenceManifest,
 } from "./restore-evidence.ts";
+
+import type { Integration } from "./integration.ts";
+import type { CarrierBookings } from "./carrier-bookings.ts";
+import type { Identity } from "./iam.ts";
+import type {
+  IntegrationDispositionReceipts,
+  RestoreNativeDispositionTarget,
+} from "./integration-restore-dispositions.ts";
+
+export type RestoreNativeMaintenanceMapping = {
+  orgId: string;
+  projection: RestoreNativeDispositionTarget["projection"];
+  principal: Actor;
+  externalAuthorityId: string;
+};
+export type RestoreNativeMaintenanceRequest = RestoreNativeDispositionTarget & {
+  purpose: "distributor-restore-native-history-v1";
+  challenge: string;
+  nativePrincipalId: string;
+  externalAuthorityId: string;
+  generation: {
+    snapshotHash: string;
+    restoredAt: string;
+    sourceCompletedAt: string;
+  };
+};
+export type RestoreNativeMaintenanceAssociation = {
+  request: RestoreNativeMaintenanceRequest;
+  associationId: string;
+  evidenceHash: string;
+  observedAt: number;
+  validUntil: number;
+  signature: string;
+};
+/** Filesystem/application composition ONLY, absent by default. The separately
+ * qualified external authority must evaluate a fresh challenge against current
+ * maintenance association/revocation evidence; copied IAM is not that evidence.
+ * Both callbacks are synchronous, bounded, read-only and independently qualified.
+ * This port neither imports external results nor grants transport/release rights. */
+export type RestoreNativeDispositionConfiguration = {
+  mappings: readonly RestoreNativeMaintenanceMapping[];
+  loadTrust(): readonly { id: string; publicKey: string }[];
+  observe(
+    request: RestoreNativeMaintenanceRequest,
+  ): RestoreNativeMaintenanceAssociation | null;
+};
+export function restoreNativeMaintenanceMessage(
+  association: Omit<RestoreNativeMaintenanceAssociation, "signature">,
+) {
+  return canonical(association);
+}
 
 export function restoreReleaseApprovalMessage(
   binding: string,
@@ -132,6 +183,142 @@ export class RestoreActivation {
     this.adapter = adapter;
     this.loadTrust = loadTrust;
     this.clock = clock;
+  }
+  private nativeOwners?: {
+    integration: Integration;
+    carriers: CarrierBookings;
+    identity: Identity;
+    receipts: (actor: Actor) => IntegrationDispositionReceipts;
+  };
+  private nativeConfiguration?: RestoreNativeDispositionConfiguration;
+  /** Application composition, never an HTTP or dossier-selected reader. */
+  configureNativeDispositionOwners(
+    integration: Integration,
+    carriers: CarrierBookings,
+    identity: Identity,
+    receipts: (actor: Actor) => IntegrationDispositionReceipts,
+  ) {
+    this.nativeOwners = { integration, carriers, identity, receipts };
+  }
+  configureNativeDispositions(
+    configuration?: RestoreNativeDispositionConfiguration,
+  ) {
+    this.nativeConfiguration = configuration
+      ? {
+          mappings: structuredClone(configuration.mappings),
+          loadTrust: configuration.loadTrust.bind(configuration),
+          observe: configuration.observe.bind(configuration),
+        }
+      : undefined;
+  }
+  private nativeAuthority(target: RestoreNativeDispositionTarget): Actor {
+    this.database.requireTransaction();
+    const configuration = this.nativeConfiguration;
+    const matches =
+      configuration?.mappings.filter(
+        (m) => m.orgId === target.orgId && m.projection === target.projection,
+      ) ?? [];
+    check(
+      matches.length === 1 && configuration && this.nativeOwners,
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "An explicit current external/native maintenance association is required.",
+    );
+    const mapping = matches[0]!;
+    check(
+      mapping.principal.orgId === target.orgId &&
+        mapping.externalAuthorityId ===
+          text(
+            mapping.externalAuthorityId,
+            "External maintenance authority",
+            160,
+          ),
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Maintenance mapping is inconsistent.",
+    );
+    const generation = this.recovery();
+    check(
+      generation,
+      "RESTORE_STATE",
+      "An isolated recovery generation is required.",
+    );
+    const request: RestoreNativeMaintenanceRequest = {
+      ...target,
+      purpose: "distributor-restore-native-history-v1",
+      challenge: randomUUID(),
+      nativePrincipalId: mapping.principal.id,
+      externalAuthorityId: mapping.externalAuthorityId,
+      generation: {
+        snapshotHash: String(generation.snapshot_hash),
+        restoredAt: String(generation.restored_at),
+        sourceCompletedAt: String(generation.source_completed_at),
+      },
+    };
+    const observed = configuration.observe(structuredClone(request));
+    check(
+      observed && canonical(observed.request) === canonical(request),
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Fresh exact maintenance association is unavailable.",
+    );
+    const { signature, ...body } = observed;
+    const at = this.clock();
+    check(
+      Number.isSafeInteger(at) &&
+        Number.isSafeInteger(body.observedAt) &&
+        Number.isSafeInteger(body.validUntil) &&
+        body.observedAt <= at &&
+        at < body.validUntil &&
+        body.validUntil - body.observedAt <= 30000 &&
+        body.associationId ===
+          text(body.associationId, "Maintenance association", 160) &&
+        /^[a-f0-9]{64}$/.test(body.evidenceHash) &&
+        typeof signature === "string" &&
+        /^[A-Za-z0-9+/]{86}==$/.test(signature),
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Maintenance association is malformed or expired.",
+    );
+    // Load current independent trust AFTER observation, so revocation wins.
+    const authorities = configuration
+      .loadTrust()
+      .filter((a) => a.id === mapping.externalAuthorityId);
+    check(
+      authorities.length === 1,
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Maintenance authority is unavailable or ambiguous.",
+    );
+    const key = createPublicKey(authorities[0]!.publicKey);
+    const currentAt = this.clock();
+    check(
+      key.asymmetricKeyType === "ed25519" &&
+        verify(
+          null,
+          Buffer.from(restoreNativeMaintenanceMessage(body)),
+          key,
+          Buffer.from(signature, "base64"),
+        ) &&
+        Number.isSafeInteger(currentAt) &&
+        currentAt >= at &&
+        currentAt < body.validUntil,
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Maintenance association signature or freshness failed.",
+    );
+    check(
+      this.nativeConfiguration === configuration,
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Maintenance configuration changed during review.",
+    );
+    const actor = this.nativeOwners.identity.currentActor(mapping.principal);
+    check(
+      actor.orgId === target.orgId &&
+        !actor.accountId &&
+        actor.role ===
+          (target.projection === "canceled-unused-membership"
+            ? "warehouse"
+            : "finance") &&
+        !this.nativeOwners.identity.security(actor).passwordChangeRequired,
+      "RESTORE_MAINTENANCE_AUTHORITY",
+      "Current scoped native maintenance principal is unavailable.",
+    );
+    return actor;
   }
   private configured() {
     check(
@@ -325,6 +512,7 @@ export class RestoreActivation {
         "Release approvals must precede writer controls.",
       );
       this.releaseAuthority({ ...r, releaseApprovals: approvals });
+      this.settledNativeQueues();
       check(
         !r.releaseApprovals ||
           canonical(r.releaseApprovals) === canonical(approvals),
@@ -335,57 +523,17 @@ export class RestoreActivation {
     });
   }
   private settledNativeQueues() {
-    // Read-only maintenance inspection under the caller's candidate writer lock.
-    // Never turn copied pending work into evidence of a negative external outcome.
-    const db = new DatabaseSync(this.database.path, {
-      readOnly: true,
-      timeout: 5000,
-    });
-    try {
-      for (const [table, terminal] of [
-        ["integration_effects", ["completed", "rejected"]],
-        ["integration_callbacks", ["completed"]],
-        ["integration_refund_callbacks", ["completed"]],
-        ["integration_carrier_bookings", ["booked", "canceled"]],
-        ["integration_canada_post_groups", ["transmitted", "canceled"]],
-        ["integration_canada_post_members", ["created"]],
-        ["integration_stock_journals", ["posted", "cancelled", "rejected"]],
-        ["integration_credential_revocations", ["confirmed", "released"]],
-        ["integration_ledger_revocations", ["confirmed", "released"]],
-        [
-          "integration_authorizations",
-          ["completed", "canceled", "denied", "expired"],
-        ],
-        [
-          "integration_ledger_authorizations",
-          ["completed", "canceled", "denied", "expired"],
-        ],
-      ] as const) {
-        check(
-          !db
-            .prepare(
-              `SELECT 1 FROM ${table} WHERE state NOT IN (${terminal.map(() => "?").join(",")}) LIMIT 1`,
-            )
-            .get(...terminal),
-          "RESTORE_UNRESOLVED",
-          "Copied provider work requires owning-module reconciliation before release.",
-        );
-      }
-      for (const table of [
-        "integration_operation_leases",
-        "integration_balance_reads",
-        "integration_refund_polls",
-      ])
-        check(
-          !db
-            .prepare(`SELECT 1 FROM ${table} WHERE token IS NOT NULL LIMIT 1`)
-            .get(),
-          "RESTORE_UNRESOLVED",
-          "An external operation claim remains unresolved.",
-        );
-    } finally {
-      db.close();
-    }
+    this.database.requireTransaction();
+    check(
+      this.nativeOwners,
+      "RESTORE_UNRESOLVED",
+      "Native owning queue readers are unavailable.",
+    );
+    this.nativeOwners.integration.assertRestoreQueuesSettledInTransaction(
+      (target) => this.nativeAuthority(target),
+      this.nativeOwners.receipts,
+      this.nativeOwners.carriers,
+    );
   }
   private review(r: RestoreRelease, input: RestoreReleaseInput) {
     check(

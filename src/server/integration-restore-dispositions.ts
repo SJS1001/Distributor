@@ -76,6 +76,15 @@ export type IntegrationRestoreDisposition = {
   // This is only an identity edge, never a disposition of the successor.
   successorId: string | null;
 };
+/** Exact native target requested by the restore consumer, never transport authority. */
+export type RestoreNativeDispositionTarget = {
+  orgId: string;
+  projection:
+    IntegrationRestoreDisposition["disposition"] | "canceled-unused-membership";
+  recordId: string;
+  recordHash: string;
+};
+
 type CreditSource = {
   native: RecordedCredit;
   invoice: Invoice;
