@@ -57,6 +57,12 @@ For each settled choice record date, responsible reviewer, rationale, considered
 
 All DEC items above are pending except the confirmed direction. Missing business answers block the relevant gate, not unrelated planning work.
 
+## Researched recommendations — 2026-10-02
+
+The owner asked for research or recommendations for each of the three identified coding prerequisites. [The recommendations](MISSING-INPUT-RECOMMENDATIONS.md) now supply concrete Purolator contract intake/manual interim shipping, restored-store reconciliation/release/rollback controls, and accounting valuation/period/immutable correction proposals. [Purolator research](research/PUROLATOR-CONTRACT-2026-10-02.md) records fresh official-source access limitations and an exact specification checklist.
+
+These are proposed configurable design inputs, not newly confirmed business decisions. They permit bounded policy-model and synthetic engineering work without selecting real approvers, inventing vendor requests, rewriting an established costing method, claiming actual ledger reconciliation or releasing a restored store. DEC-06, DEC-07, DEC-10 and DEC-12 remain pending for actual operational acceptance; all task/gate statuses remain unchanged.
+
 
 ## Initial schema compatibility contract — 2026-10-01
 
