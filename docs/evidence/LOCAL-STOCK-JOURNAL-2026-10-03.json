@@ -577,6 +577,16 @@
     "No CI workflow/runner, live provider IO, account, PR, merge or deployment. Private logs/stores/credentials/artifacts excluded."
   ],
   "publication": {
-    "status": "pending normal authorized snapshot commit/push"
+    "source_commit": "8bcf2e18f3d7674c88571169f198a7a0af2e11da",
+    "remote_equal": true,
+    "clean_checkout": true,
+    "matched_input_count": 497,
+    "matched_private_log_count": 16,
+    "github_identity": "SJS1001",
+    "push_permission": true,
+    "workflows": 0,
+    "actions_runs": 0,
+    "method": "Normal authorized current-branch push; no PR or merge",
+    "record": "Publication observations recorded in a companion documentation commit"
   }
 }
