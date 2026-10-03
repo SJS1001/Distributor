@@ -13,6 +13,6 @@ export default defineConfig({
     command: "tsx tests/browser-server.ts",
     url: "http://127.0.0.1:3117/api/health",
     reuseExistingServer: false,
-    timeout: 15000,
+    timeout: 30000,
   },
 });

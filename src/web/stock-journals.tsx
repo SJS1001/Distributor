@@ -4,6 +4,7 @@ import type { JournalLine } from "../server/integration-costs.ts";
 import { request } from "./api.ts";
 import { StockJournalDecision } from "./stock-journal-decision.tsx";
 import { StockJournalCancellation } from "./stock-journal-cancellation.tsx";
+import { StockJournalPreparation } from "./stock-journal-preparation.tsx";
 
 type Queue = ReturnType<StockJournalDelivery["queue"]>;
 type Detail = ReturnType<StockJournalDelivery["detail"]>;
@@ -172,6 +173,14 @@ export function StockJournals({
         delivery runs separately. Uncertain delivery remains held for
         reconciliation.
       </p>
+      <StockJournalPreparation
+        orgId={orgId}
+        actorId={actorId}
+        saved={(id) => {
+          setQueue(null);
+          loadDetail(id);
+        }}
+      />
       <form
         aria-label="Select journal queue"
         onSubmit={(event) => {

@@ -117,6 +117,30 @@ export class Platform {
       return result;
     });
   }
+  // Read-only recovery for the journal owner's one named preparation command.
+  // An absent receipt never authorizes abandoning or replacing a pending key.
+  journalPreparationReceiptInTransaction(actor: Actor, key: string) {
+    this.database.requireTransaction();
+    actor = this.authorizeRead(actor);
+    permit(actor, ["finance"]);
+    text(key, "Preparation key", 128);
+    const row = this.store.get(
+      "SELECT hash,result FROM platform_commands WHERE org_id=? AND actor_id=? AND name='accounting.journal.prepare' AND key=?",
+      actor.orgId,
+      actor.id,
+      key,
+    );
+    check(
+      row,
+      "NOT_FOUND",
+      "No committed journal preparation receipt was found for this principal and key.",
+      404,
+    );
+    return {
+      requestHash: String(row.hash),
+      result: JSON.parse(String(row.result)) as unknown,
+    };
+  }
   audit(actor: Actor, action: string, reference: string, detail: unknown) {
     this.store.run(
       "INSERT INTO platform_audit VALUES(?,?,?,?,?,?,?)",

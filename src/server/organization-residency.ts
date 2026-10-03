@@ -509,6 +509,11 @@ export class OrganizationResidency {
       this.capturePermission(actor, realm),
     );
   }
+  currentPermissionInTransaction(actor: Actor): LedgerAuthority {
+    this.database.requireTransaction();
+    actor = this.actor(actor);
+    return this.capturePermission(actor, this.latest(actor).realm ?? "");
+  }
   private capturePermission(actor: Actor, realm: string): LedgerAuthority {
     actor = this.actor(actor);
     this.platform.assertProviderAccess();

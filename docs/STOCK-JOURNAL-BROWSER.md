@@ -1,6 +1,6 @@
 # Stock-journal browser review and recovery
 
-D-034/D-036/D-039 engineering continuation. Billing now exposes internal finance/admin review of the [native stock-journal queue](STOCK-JOURNAL-CONTROLS.md). Preparation remains an authenticated API operation; [correction cancellation review and recovery](STOCK-JOURNAL-CANCELLATION.md) are now connected. This browser reads retained plans/history and records independent approve/reject decisions. Approval queues the local instruction; the disabled transport has no browser execution route. All tasks and gates remain NOT VERIFIED.
+D-034/D-036/D-039 engineering continuation. Billing now exposes internal finance/admin review of the [native stock-journal queue](STOCK-JOURNAL-CONTROLS.md). [Approved source/account mapping preparation and original receipt recovery](STOCK-JOURNAL-PREPARATION.md) are now connected; [correction cancellation review and recovery](STOCK-JOURNAL-CANCELLATION.md) are now connected. This browser reads retained plans/history and records independent approve/reject decisions. Approval queues the local instruction; the disabled transport has no browser execution route. All tasks and gates remain NOT VERIFIED.
 
 ## Review the frozen instruction
 
@@ -24,4 +24,4 @@ Closing or navigating away aborts pending reads/decision fetches and prevents la
 
 The [local browser receipt](evidence/LOCAL-STOCK-JOURNAL-BROWSER-2026-10-03.md) records direct workstation production Chromium journeys and native/runtime checks. Fixtures use synthetic organizations, terms, companies, accounts and finance evidence. They do not qualify real QuickBooks processing, current vendor terms, residency, approved charts/valuation, device/browser fleets, operator procedures, production scan/lock/load costs or release readiness.
 
-Browser preparation and reviewed organization permission replacement remain dependent work, alongside organization OAuth/company verification/remote revocation, original cancellation/fresh retry and multiple-date reconciliation. Further changed-journal/valuation corrections, durable restore activation and current Purolator contract remain open. No product gate is passed by the UI or a synthetic receipt.
+Reviewed organization permission replacement remains dependent work, alongside organization OAuth/company verification/remote revocation, original cancellation/fresh retry and multiple-date reconciliation. Further changed-journal/valuation corrections, durable restore activation and current Purolator contract remain open. No product gate is passed by the UI or a synthetic receipt.

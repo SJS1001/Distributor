@@ -394,6 +394,154 @@ export class StockJournalDelivery {
     });
     return { input, intent, policyHash: policy.hash };
   }
+  preparationReview(
+    actor: Actor,
+    sourceId: string,
+    selection: { leg: JournalDeliveryInput["leg"]; postingDate?: string },
+  ) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      this.platform.assertProviderAccess();
+      text(sourceId, "Journal source", 160);
+      check(
+        selection &&
+          typeof selection === "object" &&
+          Object.keys(selection).every((key) =>
+            ["leg", "postingDate"].includes(key),
+          ) &&
+          ["original", "reversal", "replacement"].includes(selection.leg) &&
+          (selection.postingDate === undefined ||
+            typeof selection.postingDate === "string"),
+        "JOURNAL_INPUT",
+        "Select a supported source leg and date.",
+      );
+      const authority =
+          this.identity.organizationResidency.currentPermissionInTransaction(
+            actor,
+          ),
+        policy = this.costs.corrections.deliveryPolicyInTransaction(actor);
+      check(policy, "JOURNAL_POLICY", "Select a current reviewed cost policy.");
+      const correction =
+          selection.leg === "original"
+            ? null
+            : this.costs.corrections.deliverySourceInTransaction(
+                actor,
+                sourceId,
+              ),
+        file =
+          correction?.file ??
+          this.costs.deliverySourceInTransaction(actor, sourceId).file,
+        document = JSON.parse(file.bytes),
+        journal: JournalLine[] =
+          selection.leg === "original"
+            ? document.report.journal
+            : document[selection.leg];
+      check(
+        Array.isArray(journal) && journal.length > 0 && journal.length <= 20000,
+        "JOURNAL_SOURCE",
+        "Select a nonempty approved journal leg.",
+      );
+      const dates = [...new Set(journal.map((line) => line.date))].sort(),
+        postingDate =
+          selection.postingDate ??
+          dates.find(
+            (date) =>
+              policy.input.closedThrough === null ||
+              date > policy.input.closedThrough,
+          ) ??
+          dates[0]!,
+        lines = journal.filter((line) => line.date === postingDate),
+        sourceAccounts = [...new Set(lines.map((line) => line.account))].sort();
+      check(
+        sourceAccounts.length <= 30,
+        "JOURNAL_INPUT",
+        "Browser preparation supports at most 30 source accounts per date.",
+      );
+      const attemptId =
+        correction?.state.legs.find((leg) => leg.leg === selection.leg)
+          ?.attemptId ?? null;
+      // Temporary identities validate the immutable source and current native
+      // authority only. This read creates no journal, command, lease or binding.
+      this.plan(actor, {
+        sourceId,
+        sourceHash: file.hash,
+        leg: selection.leg,
+        postingDate,
+        attemptId,
+        bindingId: "read-only-source-review",
+        realm: authority.realm,
+        policyRevision: policy.revision,
+        authority,
+        accounts: sourceAccounts.map((sourceAccount, index) => ({
+          sourceAccount,
+          accountId: String(index + 1),
+        })),
+        reason: "Read-only approved source review",
+      });
+      return {
+        sourceId,
+        sourceHash: file.hash,
+        leg: selection.leg,
+        postingDate,
+        attemptId,
+        authority,
+        policyRevision: policy.revision,
+        policyHash: policy.hash,
+        closedThrough: policy.input.closedThrough,
+        establishedValuation: policy.input.establishedValuation,
+        approvedBy: String(document.reviewedBy),
+        approvedAt: String(document.reviewedAt),
+        region: authority.region,
+        currency: String(document.currency),
+        dates,
+        lines,
+        sourceAccounts,
+      };
+    });
+  }
+  preparationReceipt(actor: Actor, key: string) {
+    return this.database.transaction(() => {
+      actor = this.principal(actor);
+      const retained = this.platform.journalPreparationReceiptInTransaction(
+          actor,
+          key,
+        ),
+        receipt = retained.result as ReturnType<
+          StockJournalDelivery["prepare"]
+        >;
+      check(
+        receipt &&
+          typeof receipt.id === "string" &&
+          receipt.plan &&
+          digest(canonical(receipt.plan.input)) === retained.requestHash &&
+          receipt.createdBy === actor.id &&
+          receipt.state === "ready",
+        "JOURNAL_INTEGRITY",
+        "Preparation receipt differs from its original command.",
+      );
+      const current = this.view(this.row(actor, receipt.id));
+      check(
+        canonical(receipt.plan) === canonical(current.plan) &&
+          receipt.reviewHash === current.reviewHash &&
+          receipt.createdAt === current.createdAt &&
+          receipt.requestRef === current.requestRef &&
+          canonical({
+            ...current,
+            state: "ready",
+            externalId: null,
+            decisionBy: null,
+            decisionAt: null,
+            decisionReason: null,
+            leaseStarted: null,
+            leaseMode: null,
+            dispatched: false,
+          }) === canonical(receipt),
+        "JOURNAL_INTEGRITY",
+        "Preparation receipt differs from the retained native journal.",
+      );
+      return { receipt, currentState: current.state };
+    });
+  }
   prepare(actor: Actor, key: string, raw: JournalDeliveryInput) {
     const input = structuredClone(raw);
     return this.platform.command(

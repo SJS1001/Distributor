@@ -3411,6 +3411,54 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/accounting/cost-policy", async (request) =>
     app.integration.costs.corrections.policy(actor(request)),
   );
+  http.get<{
+    Params: { sourceId: string };
+    Querystring: {
+      leg: "original" | "reversal" | "replacement";
+      postingDate?: string;
+    };
+  }>(
+    "/api/accounting/journal-sources/:sourceId",
+    {
+      schema: {
+        params: obj({ sourceId: { ...str, maxLength: 160 } }),
+        querystring: obj(
+          {
+            leg: choice("original", "reversal", "replacement"),
+            postingDate: {
+              type: "string",
+              pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            },
+          },
+          ["postingDate"],
+        ),
+      },
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.preparationReview(
+        actor(request),
+        request.params.sourceId,
+        request.query,
+      );
+    },
+  );
+  http.get<{ Params: { key: string } }>(
+    "/api/accounting/journal-preparations/:key/receipt",
+    {
+      schema: {
+        params: obj({ key: { ...str, maxLength: 128 } }),
+        querystring: obj({}),
+      },
+    },
+    (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.integration.costs.journals.preparationReceipt(
+        actor(request),
+        request.params.key,
+      );
+    },
+  );
   http.get<{ Querystring: JournalQueueInput }>(
     "/api/accounting/journals",
     {

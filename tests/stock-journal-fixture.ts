@@ -1,4 +1,5 @@
 // Synthetic native journal ownership fixtures. No provider I/O or real finance approval.
+import { DatabaseSync } from "node:sqlite";
 import { fixture, syntheticDisclosure } from "./fixtures.ts";
 import {
   setup,
@@ -15,8 +16,28 @@ export function journalFixture(
   t: Parameters<typeof fixture>[0],
   region: "CA" | "US" = "CA",
   correction = false,
+  movementDates?: readonly string[],
 ) {
   const f = fixture(t, { eventReports: false }, region);
+  if (movementDates) {
+    const db = new DatabaseSync(f.path);
+    try {
+      const movements = db
+        .prepare(
+          "SELECT m.id FROM inventory_movements m JOIN inventory_cost_sequences s ON s.movement_id=m.id AND s.org_id=m.org_id ORDER BY s.sequence",
+        )
+        .all();
+      if (movements.length !== movementDates.length)
+        throw Error("Select one fixture date per movement");
+      movements.forEach((movement, i) =>
+        db
+          .prepare("UPDATE inventory_movements SET created_at=? WHERE id=?")
+          .run(`${movementDates[i]}T12:00:00.000Z`, String(movement.id)),
+      );
+    } finally {
+      db.close();
+    }
+  }
   const { original, reviewer } = setup(f),
     c = f.app.integration.costs.corrections;
   c.configure(f.actor, "journal-policy", { ...policy(), closedThrough: null });
