@@ -211,6 +211,15 @@ export type OfflineFailedRefundReview = Frozen<{
   };
   factsHash: string;
 }>;
+/** Complete retained Billing consistency, never proof of an offline import. */
+export type OfflineFailedRefundRecovery = Frozen<{
+  version: 1;
+  purpose: "billing.offline-failed-refund-result.v1";
+  receipt: OfflineFailedRefundApplicationReceipt;
+  failed: OfflineFailedRefundTuple;
+  native: OfflineFailedRefundReview;
+  factsHash: string;
+}>;
 /** Refuse oversized complete facts, never return an apparently complete page. */
 export const offlineRefundReviewLimits = Object.freeze({
   rowsPerSet: 1000,
@@ -346,6 +355,128 @@ export class BillingRefunds {
     actor: Actor,
     refundId: string,
   ): OfflineFailedRefundReview {
+    return this.captureOfflineRefundInTransaction(actor, refundId, "unknown");
+  }
+  /** Exact retained result selected by original observation/notice identities.
+   * Later ignored observations and notice acknowledgements are retained in full.
+   * Root must separately join the Platform receipt and Integration provenance;
+   * this owning read cannot authenticate evidence, retry, import or release. */
+  recoverOfflineFailedRefundInTransaction(
+    actor: Actor,
+    refundId: string,
+    observationId: number,
+    noticeSequence: number,
+    failed: OfflineFailedRefundTuple,
+  ): OfflineFailedRefundRecovery {
+    this.database.requireTransaction();
+    check(
+      typeof refundId === "string" &&
+        exactText(refundId, 128) &&
+        !refundId.includes("\0") &&
+        Buffer.byteLength(refundId) <= 128 &&
+        safe(observationId, 1) &&
+        safe(noticeSequence, 1),
+      "OFFLINE_REFUND_INPUT",
+      "Supply the exact retained refund, observation and notice identities.",
+      400,
+    );
+    const captured = captureOfflineFailedRefundTuple(failed);
+    const native = this.captureOfflineRefundInTransaction(
+      actor,
+      refundId,
+      "rejected",
+    );
+    const own = <T extends { refund_id: string }>(rows: readonly T[]) =>
+      rows.filter((row) => row.refund_id === refundId);
+    const observations = own(native.observations),
+      mappings = own(native.providerMappings),
+      notices = own(native.notices),
+      updates = own(native.noticeUpdates);
+    const first = observations[0],
+      notice = notices[0];
+    check(
+      captured.refundId === refundId &&
+        canonical(native.intent) ===
+          canonical({
+            refundId: captured.refundId,
+            invoiceId: captured.invoiceId,
+            paymentId: captured.paymentId,
+            paymentAmount: captured.paymentAmount,
+            amount: captured.amount,
+            currency: captured.currency,
+          }) &&
+        first?.id === observationId &&
+        first.applied === 1 &&
+        first.status === "failed" &&
+        first.external_ref === captured.externalReference &&
+        observations.slice(1).every((row) => row.applied === 0) &&
+        mappings.length === 1 &&
+        mappings[0]!.status === "failed" &&
+        mappings[0]!.external_ref === captured.externalReference &&
+        !own(native.manualProofs).length &&
+        notices.length === 1 &&
+        notice?.seq === noticeSequence &&
+        notice.revision === 1 &&
+        notice.status === "failed" &&
+        notice.state === "open" &&
+        updates.length === 1 &&
+        updates[0]!.source === "observation",
+      "OFFLINE_REFUND_RECOVERY",
+      "Retained Billing result does not match the original failed transition.",
+    );
+    // Reference collisions can sit outside the selected invoice or have no
+    // surviving refund. Return numeric existence only, never unrelated text.
+    check(
+      !this.store.get(
+        `SELECT 1 AS conflict WHERE
+        EXISTS(SELECT 1 FROM billing_refund_provider WHERE org_id=? AND external_ref=? AND refund_id<>?) OR
+        EXISTS(SELECT 1 FROM billing_refund_observations WHERE org_id=? AND external_ref=? AND refund_id<>?) OR
+        EXISTS(SELECT 1 FROM billing_refund_proofs WHERE org_id=? AND external_ref=?)`,
+        native.orgId,
+        captured.externalReference,
+        refundId,
+        native.orgId,
+        captured.externalReference,
+        refundId,
+        native.orgId,
+        captured.externalReference,
+      ),
+      "OFFLINE_REFUND_RECOVERY",
+      "Retained Billing provider identity has conflicting history.",
+    );
+    const receipt: OfflineFailedRefundApplicationReceipt = {
+      version: 1,
+      refundId,
+      observationId,
+      applied: true,
+      state: "rejected",
+      status: "failed",
+      noticeId: refundId,
+      noticeSequence,
+      noticeRevision: 1,
+      noticeStatus: "failed",
+      noticeState: "open",
+    };
+    const body = {
+      version: 1 as const,
+      purpose: "billing.offline-failed-refund-result.v1" as const,
+      receipt,
+      failed: captured,
+      native,
+    };
+    const raw = canonical(body);
+    check(
+      Buffer.byteLength(raw) <= offlineRefundReviewLimits.bytes,
+      "OFFLINE_REFUND_REVIEW_LIMIT",
+      "Complete native refund recovery exceeds the byte bound.",
+    );
+    return frozen({ ...body, factsHash: digest(raw) });
+  }
+  private captureOfflineRefundInTransaction(
+    actor: Actor,
+    refundId: string,
+    state: "unknown" | "rejected",
+  ): OfflineFailedRefundReview {
     this.database.requireTransaction();
     actor = this.history.reader(actor);
     permit(actor, ["finance"]);
@@ -459,7 +590,7 @@ export class BillingRefunds {
     const org = this.identity.organization(actor);
     const customer = this.identity.customer(actor, scopedInvoice.account_id);
     reviewAssert(
-      row.state === "unknown" &&
+      row.state === state &&
         customer.org_id === org.id &&
         customer.currency === org.currency &&
         scopedInvoice.currency === org.currency,
