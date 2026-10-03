@@ -1,3 +1,4 @@
+import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
 import type { RestoreNativeDispositionConfiguration } from "./restore-activation.ts";
 import { salesControls } from "./sales-controls.ts";
 import { validateMfaPolicy } from "./mfa-policy.ts";
@@ -29,6 +30,7 @@ import type {
 export class Application {
   database: Database;
   platform!: Platform;
+  platformOfflineRefundReview!: PlatformOfflineRefundReviewReader;
   identity!: Identity;
   catalog!: Catalog;
   inventory!: Inventory;
@@ -137,6 +139,8 @@ export class Application {
             security.mfaEncryptionKey,
             mfaRoles,
           );
+          this.platformOfflineRefundReview =
+            new PlatformOfflineRefundReviewReader(this.database, this.identity);
           this.platform.configureReadAuthority((actor) => {
             const current = this.identity.currentActor(actor);
             check(

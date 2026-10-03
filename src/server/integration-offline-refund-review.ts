@@ -69,6 +69,9 @@ function freeze<T>(value: T): Frozen<T> {
   }
   return value as Frozen<T>;
 }
+function nonnegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
 function token(row: Row) {
   consistent(
     (row.token === null && row.started_at === null) ||
@@ -226,6 +229,7 @@ export class IntegrationOfflineRefundReview {
         consistent(polls.filter((r) => r.effect_id === e.id).length === 1);
     for (const p of polls) {
       token(p);
+      consistent(nonnegativeInteger(p.retry_at));
       consistent(
         byId.get(String(p.effect_id))!.provider === "stripe" &&
           byId.get(String(p.effect_id))!.kind === "refund",
@@ -243,8 +247,23 @@ export class IntegrationOfflineRefundReview {
         "id",
       ),
     );
+    // A copied effect_id must not hide a callback whose retained session still
+    // identifies a selected native checkout. Never attribute unrelated inbox rows.
+    const checkoutSessions = effects
+      .filter(
+        (e) =>
+          e.provider === "stripe" && e.kind === "checkout" && e.external_ref,
+      )
+      .map((e) => e.external_ref!);
     const checkoutCallbacks = scoped(
-      rows("integration_callbacks", linked, ids, "id"),
+      rows(
+        "integration_callbacks",
+        checkoutSessions.length
+          ? `${linked} OR session_id IN (${checkoutSessions.map(() => "?").join(",")})`
+          : linked,
+        [...ids, ...checkoutSessions],
+        "id",
+      ),
     );
     for (const [list, kind] of [
       [refundCallbacks, "refund"],
@@ -275,7 +294,19 @@ export class IntegrationOfflineRefundReview {
               ) &&
               (!e.external_ref || e.external_ref === c.provider_reference),
           );
-        else consistent(!e.external_ref || e.external_ref === c.session_id);
+        else {
+          consistent(!e.external_ref || e.external_ref === c.session_id);
+          const matches = effects.filter(
+            (candidate) =>
+              candidate.provider === "stripe" &&
+              candidate.kind === "checkout" &&
+              candidate.external_ref === c.session_id,
+          );
+          consistent(
+            matches.length === 0 ||
+              (matches.length === 1 && matches[0]!.id === e.id),
+          );
+        }
       }
     const callbacks = [...refundCallbacks, ...checkoutCallbacks];
     for (const c of callbacks) {
@@ -350,6 +381,24 @@ export class IntegrationOfflineRefundReview {
       );
       return e;
     };
+    const invoiceSummary = (invoice: Record<string, any> | undefined) => {
+      consistent(
+        invoice &&
+          typeof invoice.id === "string" &&
+          invoice.id.length > 0 &&
+          typeof invoice.number === "string" &&
+          invoice.number.length > 0 &&
+          nonnegativeInteger(invoice.total) &&
+          invoice.currency === organization.currency,
+      );
+      // Descendants intentionally retain only this immutable subset.
+      return {
+        id: invoice.id,
+        number: invoice.number,
+        total: invoice.total,
+        currency: invoice.currency,
+      };
+    };
     for (const e of effects) {
       const p = payloads.get(e.id)!;
       if (e.provider === "stripe") {
@@ -374,14 +423,20 @@ export class IntegrationOfflineRefundReview {
           "refund-application",
         ].includes(e.kind),
       );
-      if (e.kind === "invoice") consistent(p.invoice?.id === e.reference);
+      if (e.kind === "invoice") {
+        consistent(invoiceSummary(p.invoice).id === e.reference);
+      }
       if (e.kind === "credit" || e.kind === "payment") {
         const original = parent(
           p.invoiceEffectId,
           "invoice",
           p.externalInvoiceRef,
         );
-        consistent(p.invoice?.id === original.reference);
+        consistent(
+          p.invoice?.id === original.reference &&
+            canonical(invoiceSummary(p.invoice)) ===
+              canonical(invoiceSummary(payloads.get(original.id)!.invoice)),
+        );
         if (e.kind === "credit") consistent(p.credit?.id === e.reference);
         else consistent(p.payment?.id === e.reference);
       }
@@ -521,7 +576,12 @@ export class IntegrationOfflineRefundReview {
           snapshot.effectId === e.id &&
           snapshot.invoiceId === r.invoice_id &&
           payloads.get(e.id)!.invoiceId === r.invoice_id &&
-          digest(String(r.snapshot)) === r.hash,
+          digest(String(r.snapshot)) === r.hash &&
+          nonnegativeInteger(snapshot.amount) &&
+          snapshot.amount > 0 &&
+          snapshot.amount === payloads.get(e.id)!.amount &&
+          snapshot.currency === organization.currency &&
+          payloads.get(e.id)!.currency === organization.currency.toLowerCase(),
       );
     }
     const balanceReads = scoped(
@@ -536,8 +596,33 @@ export class IntegrationOfflineRefundReview {
       consistent(e.provider === "quickbooks" && e.kind === "invoice");
       if (r.result !== null) {
         const p = parse(r.result);
+        const invoice = invoiceSummary(payloads.get(e.id)!.invoice);
         consistent(
-          p.id === r.id && p.effectId === e.id && p.invoiceId === e.reference,
+          p.id === r.id &&
+            p.effectId === e.id &&
+            p.invoiceId === e.reference &&
+            e.state === "completed" &&
+            typeof e.external_ref === "string" &&
+            p.reference === e.external_ref &&
+            p.total === invoice.total &&
+            p.currency === invoice.currency &&
+            p.requestedAt === r.requested_at &&
+            [p.total, p.credited, p.paid, p.refunded, p.providerBalance].every(
+              nonnegativeInteger,
+            ) &&
+            p.providerBalance <= p.total &&
+            Number.isSafeInteger(p.nativeBalance) &&
+            Number.isSafeInteger(p.difference),
+        );
+        // Compare historical arithmetic exactly, not with today's native balance.
+        consistent(
+          BigInt(p.nativeBalance) ===
+            BigInt(p.total) -
+              BigInt(p.credited) -
+              BigInt(p.paid) +
+              BigInt(p.refunded) &&
+            BigInt(p.difference) ===
+              BigInt(p.providerBalance) - BigInt(p.nativeBalance),
         );
       }
     }
