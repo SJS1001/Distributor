@@ -85,7 +85,6 @@
     "scripts/rehearsal.ts": "b6c051b6a2131273f5cf4bd95bfc40dc1a6279e7dfeaeb7be695b0b4fc5e9ed0",
     "scripts/verify_plan.py": "34071d7d4f1488f6549bfd48e4480509f681bbcb66f61ad503bfa74cc5e844cc",
     "scripts/verify_runtime.mjs": "a293413546e7a1775a5038a042fb5feee14a2dd421e9636c6894e96368243d72",
-    "src/.DS_Store": "d574eb43ff03738d134bfe2b19556a393d32473c41e9aefe5d03cbe263948c64",
     "src/server/accounting-cancellation-schema.ts": "52605d4c4dc46d6b1cdf9334e46ad0a8051c916b8d3e4d535dd84eae50e93175",
     "src/server/application.ts": "a2fed87f17307889545ddb77f640dcbd43d24053bfcbea56ab897aa570cf71c1",
     "src/server/assets/notosans/NotoSans.ttf": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5",
@@ -900,6 +899,8 @@
     "native-focused-initial.log": "747492cdead8680d19bb8474d7ceb545f18e452eec43789cdbb5ac38079bd511",
     "native-full.log": "3bd983aa45fc8f5a7bb114d84a4f934dd579c3fd974977a261a1015e434d8bc0",
     "plan.log": "440dc384821992349fb59a25dd19840aabf8a0b7b9fda3b199073e1a95950b6d",
+    "publication-review-initial-failure.log": "225bb7b070f853bf5cf13064cc9ad49b7cb7d671180f20f88eeb343c1d1fafae",
+    "publication-review.log": "f31e7b9699be5ebef1dab8f3e09e204efbe33241d7e1ff6c4296e85189405026",
     "react-doctor-final/diagnostics.json": "12d7f806b775a814ecc863171e37a2362445c9c073f570310bcfef31feb6270b",
     "react-doctor-final/react-doctor--async-await-in-loop.txt": "671e2db85bb506fa9ed488050807b2fa9d08841bb8a163db76619eb1943c43da",
     "react-doctor-final/react-doctor--button-has-type.txt": "fd03f7b8f0247ff500a76e2856268d997d13e9c0fa224796b5b45bc0ba9e6db5",
@@ -1003,5 +1004,21 @@
     "Existing initial supplementary-load page replacement, broader React errors and bundle warning remain",
     "Browser startup allowance changed from 15 to 30 seconds; per-test limits unchanged"
   ],
-  "publication": "Owner-authorized current-branch snapshot; publication not yet recorded"
+  "publication": {
+    "status": "Source/test/documentation commit normally pushed; publication receipt follows in companion documentation commit",
+    "sourceCommit": "c296862708c6e2ff9c1c0b82b2933e106eca2a31",
+    "branch": "codex/local-distributor-checkpoint",
+    "identity": "SJS1001",
+    "remoteEqualityVerified": true,
+    "cleanCheckoutVerifiedAtSourceCommit": true,
+    "committedTestedInputsVerified": 523,
+    "runtimeCommittedSourceInputsVerified": 264,
+    "runtimeGeneratedAssetInputsVerified": 3,
+    "privateEvidenceHashesVerified": 122,
+    "workflows": 0,
+    "actionsRuns": 0
+  },
+  "excluded_test_manifest_metadata": {
+    "src/.DS_Store": "d574eb43ff03738d134bfe2b19556a393d32473c41e9aefe5d03cbe263948c64"
+  }
 }
