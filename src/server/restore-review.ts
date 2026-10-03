@@ -96,7 +96,7 @@ function instant(raw: string) {
 }
 
 /** Filesystem-authorized read-only maintenance: bind every persisted application
- * row, including sessions, grants, policies, effects and audit, to one SQLite
+ * business row, including sessions, grants, policies, effects and audit, to one SQLite
  * snapshot. No row values or credentials leave this function. A hash is not
  * external reconciliation or proof that infrastructure writers are fenced. */
 export function captureRestoreCandidate(path: string): RestoreCandidate {
@@ -191,6 +191,9 @@ export function captureRestoreCandidate(path: string): RestoreCandidate {
       .all();
     const quote = (s: string) => '"' + s.replaceAll('"', '""') + '"';
     for (const table of tables) {
+      // Release metadata changes during orchestration; business facts and the
+      // original recovery generation remain bound. DDL is still schema-hashed.
+      if (table.name === "platform_restore_releases") continue;
       const name = String(table.name),
         columns = db
           .prepare(`PRAGMA table_info(${quote(name)})`)
@@ -361,6 +364,61 @@ export function reviewRestoreDossier(
   integer(ops.rpoMinutes, "Rehearsal RPO minutes", 1, 10080);
   integer(ops.rtoMinutes, "Rehearsal RTO minutes", 1, 43200);
   const dossierHash = digest(canonical(dossier));
+  assertRestoreApprovals(dossier, approvals, trustedApprovers, startedAt);
+  const completedAt = clock();
+  check(
+    Number.isFinite(completedAt) &&
+      completedAt >= startedAt &&
+      completedAt < expiresAt,
+    "RESTORE_REVIEW",
+    "Restore review expired or its clock moved backwards.",
+  );
+  return {
+    version: 1,
+    dossierHash,
+    candidateHash: candidate.logicalHash,
+    reviewedAt: new Date(completedAt).toISOString(),
+    expiresAt: dossier.expiresAt,
+    approvers: approvals.map((a) => ({ id: a.signerId, role: a.role })),
+    status: "reviewed-isolated",
+    providerHold: true,
+    activationAuthorized: false,
+  } as const;
+}
+
+/** Revalidate retained signatures against current external authority. This does not
+ * recapture the candidate or authorize any release by itself. */
+export function assertRestoreApprovals(
+  dossier: RestoreDossier,
+  approvals: RestoreApproval[],
+  trustedApprovers: RestoreApprover[],
+  at: number,
+) {
+  const preparer = text(dossier.preparedBy, "Preparer ID");
+  check(
+    preparer === dossier.preparedBy &&
+      Number.isFinite(at) &&
+      at >= instant(dossier.preparedAt) &&
+      at < instant(dossier.expiresAt),
+    "RESTORE_APPROVAL",
+    "Release approvals are expired or not current.",
+  );
+  assertRestoreSignatures(
+    digest(canonical(dossier)),
+    preparer,
+    approvals,
+    trustedApprovers,
+    restoreApprovalMessage,
+  );
+}
+
+export function assertRestoreSignatures(
+  dossierHash: string,
+  preparer: string,
+  approvals: RestoreApproval[],
+  trustedApprovers: RestoreApprover[],
+  message: typeof restoreApprovalMessage,
+) {
   check(
     Array.isArray(approvals) &&
       approvals.length === 2 &&
@@ -425,9 +483,7 @@ export function reviewRestoreDossier(
         /^[A-Za-z0-9+/]{86}==$/.test(approval.signature) &&
         verify(
           null,
-          Buffer.from(
-            restoreApprovalMessage(dossierHash, trusted.id, approval.role),
-          ),
+          Buffer.from(message(dossierHash, trusted.id, approval.role)),
           key,
           Buffer.from(approval.signature, "base64"),
         ),
@@ -438,23 +494,4 @@ export function reviewRestoreDossier(
     keys.add(keyHash);
     roles.add(approval.role);
   }
-  const completedAt = clock();
-  check(
-    Number.isFinite(completedAt) &&
-      completedAt >= startedAt &&
-      completedAt < expiresAt,
-    "RESTORE_REVIEW",
-    "Restore review expired or its clock moved backwards.",
-  );
-  return {
-    version: 1,
-    dossierHash,
-    candidateHash: candidate.logicalHash,
-    reviewedAt: new Date(completedAt).toISOString(),
-    expiresAt: dossier.expiresAt,
-    approvers: approvals.map((a) => ({ id: a.signerId, role: a.role })),
-    status: "reviewed-isolated",
-    providerHold: true,
-    activationAuthorized: false,
-  } as const;
 }

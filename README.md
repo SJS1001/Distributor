@@ -6,6 +6,8 @@ Independent distributor application and planning workspace for multiple warehous
 
 Inventory includes [evidenced carrying-value adjustments and independent finance review](docs/INVENTORY-VALUATIONS.md), with original acquisition cost and physical quantity preserved. Browser recovery retains the exact reviewed attempt when a reply is uncertain.
 
+Inventory also has a native/API [bulk quantity-error correction](docs/INVENTORY-QUANTITY-CORRECTIONS.md) with separate finance review. A [durable restore coordinator](docs/RESTORE-ACTIVATION.md) retains interrupted transitions and current authority checks; actual infrastructure fencing/routing still requires qualification.
+
 Billing includes [subsequent account mapping correction review and exact preparation recovery](docs/ACCOUNTING-CORRECTIONS.md#recover-a-subsequent-preparation). These synthetic engineering checks do not qualify actual ledger posting or complete the product gates.
 
 The intended product covers billing, online ordering, inventory, equipment scanning, fulfillment/logistics and warranty/returns. Modules should be added through defined interfaces without rewriting the product core. Project UB is a candidate optional integration, not a prerequisite for routine distributor operations.

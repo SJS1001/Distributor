@@ -1,3 +1,4 @@
+import type { InventoryQuantityCorrections } from "./inventory-quantity-corrections.ts";
 import type { InventoryValuations } from "./inventory-valuations.ts";
 import { check, integer, permit, type Actor } from "./core.ts";
 import type { Store } from "./database.ts";
@@ -19,6 +20,8 @@ export type CostMovement = {
   valuationId?: string;
   valuationHash?: string;
   accountingDate?: string;
+  quantityCorrectionId?: string;
+  quantityCorrectionHash?: string;
 };
 export const movementSigns: Record<
   string,
@@ -30,6 +33,7 @@ export const movementSigns: Record<
   shipment: "negative",
   "supplier.return": "negative",
   count: "either",
+  "quantity.correction": "either",
   inspection: "zero",
   relocation: "zero",
   "relocation.split.out": "transfer",
@@ -76,6 +80,7 @@ export class InventoryCosts {
   constructor(
     private store: Store,
     private valuations: InventoryValuations,
+    private quantityCorrections: InventoryQuantityCorrections,
   ) {}
   window(
     actor: Actor,
@@ -130,6 +135,7 @@ export class InventoryCosts {
       selected.slice(0, 500).at(-1)?.sequence ??
       afterSequence;
     const valuation = this.valuations.evidence(actor.orgId);
+    const corrections = this.quantityCorrections.evidence(actor.orgId);
     let originalHistory = 0n;
     let more = false;
     let history = 0n,
@@ -193,6 +199,20 @@ export class InventoryCosts {
           "Valuation adjustment has no approved carrying evidence.",
         );
         const delta = effect ? BigInt(effect.valueDelta) : originalDelta;
+        const correction = corrections.get(r.id);
+        check(
+          r.type !== "quantity.correction" || correction,
+          "QUANTITY_INTEGRITY",
+          "Quantity movement has no independent approval evidence.",
+        );
+        check(
+          !correction ||
+            (BigInt(correction.valueDelta) === delta &&
+              (!effect?.accountingDate ||
+                effect.accountingDate === correction.accountingDate)),
+          "QUANTITY_INTEGRITY",
+          "Quantity correction carrying effect or posting date differs.",
+        );
         history += delta;
         if (r.sequence <= afterSequence) opening += delta;
         if (r.sequence <= end) closing += delta;
@@ -208,6 +228,13 @@ export class InventoryCosts {
         movements.push({
           ...r,
           valueDelta,
+          ...(correction
+            ? {
+                quantityCorrectionId: correction.correctionId,
+                quantityCorrectionHash: correction.correctionHash,
+                accountingDate: correction.accountingDate,
+              }
+            : {}),
           ...(effect
             ? {
                 valuationId: effect.valuationId,

@@ -1060,6 +1060,29 @@ export function commands(
       }),
       run: (a, k, p) => app.procurement.followups.review(a, k, p),
     },
+    "inventory.quantity.prepare": {
+      schema: obj({
+        unitId: str,
+        sourceMovementId: str,
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        reference: str,
+        targetQuantity: { type: "integer", minimum: 0, maximum: 100000 },
+        postingDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        reason: str,
+        physicalEvidence: str,
+        accountantEvidence: str,
+      }),
+      run: (a, k, p) => app.inventory.quantityCorrections.prepare(a, k, p),
+    },
+    "inventory.quantity.decide": {
+      schema: obj({
+        correctionId: str,
+        reviewHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.quantityCorrections.decide(a, k, p),
+    },
     "inventory.valuation.policy": {
       schema: obj(
         {
@@ -2230,6 +2253,48 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     },
     async (request) => app.inventory.countPage(actor(request), request.query),
+  );
+  http.get<{
+    Params: { unitId: string };
+    Querystring: { sourceMovementId: string };
+  }>(
+    "/api/stock/:unitId/quantity-review",
+    {
+      schema: {
+        params: obj({ unitId: str }),
+        querystring: obj({ sourceMovementId: str }),
+      },
+    },
+    async (request) =>
+      app.inventory.quantityCorrections.review(
+        actor(request),
+        request.params.unitId,
+        request.query.sourceMovementId,
+      ),
+  );
+  http.get<{ Params: { unitId: string }; Querystring: { after?: string } }>(
+    "/api/stock/:unitId/quantity-corrections",
+    {
+      schema: {
+        params: obj({ unitId: str }),
+        querystring: obj({ after: str }, ["after"]),
+      },
+    },
+    async (request) =>
+      app.inventory.quantityCorrections.history(
+        actor(request),
+        request.params.unitId,
+        request.query.after,
+      ),
+  );
+  http.get<{ Params: { correctionId: string } }>(
+    "/api/stock/quantity-corrections/:correctionId",
+    { schema: { params: obj({ correctionId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.inventory.quantityCorrections.get(
+        actor(request),
+        request.params.correctionId,
+      ),
   );
   http.get<{ Params: { unitId: string } }>(
     "/api/stock/:unitId/valuation-policy",

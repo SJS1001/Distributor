@@ -1,3 +1,4 @@
+import { InventoryQuantityCorrections } from "./inventory-quantity-corrections.ts";
 import { InventoryValuations } from "./inventory-valuations.ts";
 import {
   countQueueStates,
@@ -156,6 +157,7 @@ export class Inventory {
   private store: Store;
   readonly costs: InventoryCosts;
   readonly valuations: InventoryValuations;
+  readonly quantityCorrections: InventoryQuantityCorrections;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -221,7 +223,23 @@ export class Inventory {
         this.costs.window(actor, 0);
       },
     );
-    this.costs = new InventoryCosts(this.store, this.valuations);
+    this.quantityCorrections = new InventoryQuantityCorrections(
+      database,
+      this.store,
+      platform,
+      identity,
+      this.valuations,
+      (actor, input, reference) =>
+        this.applyCount(actor, input, reference, "quantity.correction"),
+      (actor) => {
+        this.costs.window(actor, 0);
+      },
+    );
+    this.costs = new InventoryCosts(
+      this.store,
+      this.valuations,
+      this.quantityCorrections,
+    );
   }
   warehouses(actor: Actor) {
     actor = this.custodyActor(actor, [
@@ -1326,6 +1344,7 @@ export class Inventory {
     actor: Actor,
     input: { unitId: string; revision: number; count: number; reason: string },
     reference: string,
+    movementType: "count" | "quantity.correction" = "count",
   ) {
     const u = this.unit(actor, input.unitId),
       count = integer(input.count, "count", 0, 100000),
@@ -1351,7 +1370,14 @@ export class Inventory {
       count,
       u.id,
     );
-    this.movement(actor, u, "count", count - u.quantity, reference, reason);
+    this.movement(
+      actor,
+      u,
+      movementType,
+      count - u.quantity,
+      reference,
+      reason,
+    );
     return {
       id: u.id,
       revision: u.revision + 1,

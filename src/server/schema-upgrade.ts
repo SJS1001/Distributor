@@ -1,3 +1,5 @@
+import { RESTORE_ACTIVATION_DDL } from "./restore-activation-schema.ts";
+import { INVENTORY_QUANTITY_DDL } from "./inventory-quantity-schema.ts";
 import { INVENTORY_VALUATION_DDL } from "./inventory-valuation-schema.ts";
 import { COST_CORRECTION_CHAIN_UPGRADE_DDL } from "./cost-correction-chain-schema.ts";
 import { ORGANIZATION_REVOCATION_DDL } from "./organization-revocation-schema.ts";
@@ -212,6 +214,8 @@ export async function upgradeSchema(
         copied.exec(ORGANIZATION_REVOCATION_DDL);
         copied.exec(COST_CORRECTION_CHAIN_UPGRADE_DDL);
         copied.exec(INVENTORY_VALUATION_DDL);
+        copied.exec(INVENTORY_QUANTITY_DDL);
+        copied.exec(RESTORE_ACTIVATION_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -237,7 +241,9 @@ export async function upgradeSchema(
         if (before.version! <= 13) copied.exec(ORGANIZATION_REVOCATION_DDL);
         if (before.version! <= 14)
           copied.exec(COST_CORRECTION_CHAIN_UPGRADE_DDL);
-        copied.exec(INVENTORY_VALUATION_DDL);
+        if (before.version! <= 15) copied.exec(INVENTORY_VALUATION_DDL);
+        if (before.version! <= 16) copied.exec(INVENTORY_QUANTITY_DDL);
+        if (before.version! <= 16) copied.exec(RESTORE_ACTIVATION_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

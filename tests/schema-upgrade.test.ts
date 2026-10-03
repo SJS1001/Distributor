@@ -1,3 +1,4 @@
+import versionSixteen from "./schema-version-sixteen.json" with { type: "json" };
 import versionFifteen from "./schema-version-fifteen.json" with { type: "json" };
 import versionFourteen from "./schema-version-fourteen.json" with { type: "json" };
 import versionThirteen from "./schema-version-thirteen.json" with { type: "json" };
@@ -516,6 +517,37 @@ function frozenVersionFifteen(
     db.exec("COMMIT");
   });
 }
+function frozenVersionSixteen(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionFifteen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN");
+    for (const object of versionSixteen.additions) db.exec(object.sql);
+    for (const object of versionSixteen.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    db.prepare(
+      "UPDATE platform_schema_version SET version=16,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionSixteen.hashes.enabled
+        : versionSixteen.hashes.disabled,
+    );
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -566,7 +598,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -577,6 +609,8 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "platform_restore_releases",
+    "inventory_quantity_corrections",
     "inventory_valuation_policies",
     "inventory_valuations",
     "inventory_valuation_positions",
@@ -605,6 +639,12 @@ function conservedUpgrade(
     "integration_cost_policies",
     "integration_cost_corrections",
   ]) {
+    if (
+      sourceVersion >= 16 &&
+      (name.startsWith("inventory_valuation") ||
+        name.startsWith("inventory_value_"))
+    )
+      continue;
     if (sourceVersion >= 14 && name === "integration_ledger_revocations")
       continue;
     if (sourceVersion >= 13 && name === "integration_ledger_authorizations")
@@ -707,7 +747,9 @@ test("blank initialization publishes one version receipt atomically; restart pre
   assert.doesNotThrow(() => inspectSchema(path));
 });
 
-for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+for (const sourceVersion of [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
       test(`independent version-${sourceVersion} ${region}/${eventReports} fixture requires explicit upgrade and preserves native records, sessions and ciphertext`, async (t) => {
@@ -894,7 +936,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
                                   ? frozenVersionThirteen
                                   : sourceVersion === 14
                                     ? frozenVersionFourteen
-                                    : frozenVersionFifteen)(
+                                    : sourceVersion === 15
+                                      ? frozenVersionFifteen
+                                      : frozenVersionSixteen)(
           f.path,
           source,
           eventReports,
@@ -936,7 +980,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
                                         ? versionThirteen.hashes
                                         : sourceVersion === 14
                                           ? versionFourteen.hashes
-                                          : versionFifteen.hashes
+                                          : sourceVersion === 15
+                                            ? versionFifteen.hashes
+                                            : versionSixteen.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -966,7 +1012,9 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
                                         ? versionThirteen.hashes
                                         : sourceVersion === 14
                                           ? versionFourteen.hashes
-                                          : versionFifteen.hashes
+                                          : sourceVersion === 15
+                                            ? versionFifteen.hashes
+                                            : versionSixteen.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -995,10 +1043,10 @@ for (const sourceVersion of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
           region,
         );
         assert.equal(upgraded.sourceVersion, sourceVersion);
-        assert.equal(upgraded.version, 16);
+        assert.equal(upgraded.version, 17);
         const inspection = inspectSchema(destination);
         assert.equal(inspection.kind, "current");
-        assert.equal(inspection.version, 16);
+        assert.equal(inspection.version, 17);
         assert.equal(inspection.initializedAt, receipt.initializedAt);
         assert.equal(inspection.eventReports, eventReports);
         conservedUpgrade(destination, before, sourceVersion);

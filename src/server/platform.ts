@@ -1,3 +1,4 @@
+import { RestoreActivation } from "./restore-activation.ts";
 import {
   canonical,
   check,
@@ -22,6 +23,7 @@ import {
 } from "./reconciliation-receipt.ts";
 
 export class Platform {
+  readonly restore: RestoreActivation;
   private store: Store;
   private projection?: () => number;
   private readAuthority?: (actor: Actor) => Actor;
@@ -34,6 +36,7 @@ export class Platform {
       CREATE TABLE IF NOT EXISTS platform_projections (event_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, type TEXT NOT NULL, reference TEXT NOT NULL, created_at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS platform_recovery (id INTEGER PRIMARY KEY CHECK(id=1), snapshot_hash TEXT NOT NULL, restored_at TEXT NOT NULL, source_completed_at TEXT NOT NULL) STRICT;
     `);
+    this.restore = new RestoreActivation(database);
     // Preserve existing IDs/bytes. A durable sequence avoids timestamp ties,
     // clock rollback and rowid changes during later SQLite maintenance.
     this.database.transaction(() =>
@@ -53,7 +56,9 @@ export class Platform {
     );
   }
   recoveryHold() {
-    return this.store.get("SELECT * FROM platform_recovery WHERE id=1") ?? null;
+    const hold =
+      this.store.get("SELECT * FROM platform_recovery WHERE id=1") ?? null;
+    return hold && !this.restore.permits() ? hold : null;
   }
   assertProviderAccess() {
     check(
@@ -65,6 +70,7 @@ export class Platform {
   }
   // Filesystem-authorized restore orchestration only; never exposed as a tenant command.
   isolateRestore(snapshotHash: string, sourceCompletedAt: string) {
+    this.restore.isolate();
     this.store.run(
       "INSERT INTO platform_recovery VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET snapshot_hash=excluded.snapshot_hash,restored_at=excluded.restored_at,source_completed_at=excluded.source_completed_at",
       snapshotHash,
@@ -82,6 +88,7 @@ export class Platform {
   ): T {
     text(key, "Idempotency key", 128);
     return this.database.transaction(() => {
+      this.restore.assertCommandAccess();
       const old = this.store.get(
         "SELECT hash,result FROM platform_commands WHERE org_id=? AND actor_id=? AND name=? AND key=?",
         actor.orgId,

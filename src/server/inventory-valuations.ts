@@ -221,6 +221,14 @@ export class InventoryValuations {
     );
     return { value, hash: row.hash };
   }
+  /** Inventory-owned policy snapshot inside an existing command transaction. */
+  policySnapshot(actor: Actor, unitId: string) {
+    this.database.requireTransaction();
+    actor = this.actor(actor);
+    const unit = this.unit(actor, unitId);
+    const current = this.policy(actor, unit.product_id);
+    return { ...current.value, policyHash: current.hash };
+  }
   currentPolicy(actor: Actor, unitId: string) {
     return this.database.transaction(() => {
       actor = this.actor(actor);

@@ -4,7 +4,7 @@ Engineering continuation, 2026-10-03. The owner accepted source-bound reconcilia
 
 ## Capture the candidate
 
-Keep the restored store isolated, stop every rehearsal writer, preserve its recorded reporting profile and use its exact current schema-16 profile. Capture a fresh descriptor on the workstation:
+Keep the restored store isolated, stop every rehearsal writer, preserve its recorded reporting profile and use its exact current schema-17 profile. Capture a fresh descriptor on the workstation:
 
 ```sh
 npm run recovery:review -- capture /absolute/private/recovered.db > /absolute/private/candidate.json
@@ -40,7 +40,7 @@ npm run recovery:review -- review /absolute/private/recovered.db /absolute/priva
 
 The tool recaptures and exactly compares the candidate, checks full organization/provider evidence coverage, timestamps, writer-list separation, rollback declaration and both signatures against the supplied current registry. The command checks its clock before capture and after signature review; expiry during capture or a backwards completion clock refuses a receipt. Success returns `status: reviewed-isolated`, `providerHold: true`, `activationAuthorized: false`, exact dossier/candidate hashes, approver IDs/roles and review/expiry times. Retain the exact input files, registry provenance and receipt privately. It persists no approval in the database, clears no hold, changes no routing and performs no provider IO. Failure leaves those states unchanged.
 
-Candidate writes, evidence changes, expiry, unknown outcomes, missing organizations/providers, shared keys/principals or removed approvers require fresh review. Approval is a snapshot receipt, not a lock or durable release authorization. An activation transition must independently recapture within writer fencing and implement interruption recovery before it can use these reviews. No activation/release command exists.
+Candidate writes, evidence changes, expiry, unknown outcomes, missing organizations/providers, shared keys/principals or removed approvers require fresh review. Approval is a snapshot receipt, not a lock or durable release authorization. An activation transition must independently recapture within writer fencing and implement interruption recovery before it can use these reviews. The separate [durable restore coordinator](RESTORE-ACTIVATION.md) now implements a retained lifecycle through an explicitly configured operations adapter and independently signed release authority. It has no HTTP route or live CLI activation switch.
 
 ## Verify the private evidence files
 
