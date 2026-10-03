@@ -1,3 +1,4 @@
+import { CostCorrectionSuccessor } from "./cost-correction-successor.tsx";
 import { CostCorrectionOutcomes } from "./cost-correction-outcomes.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import type { CostPacketView } from "../server/integration-costs.ts";
@@ -33,7 +34,11 @@ const mappings = (v: FormData) => {
 export function CostCorrectionsPanel({
   original,
   recoveryHold,
+  orgId,
+  actorId,
 }: {
+  orgId: string;
+  actorId: string;
   original: CostPacketView;
   recoveryHold: boolean;
 }) {
@@ -411,6 +416,21 @@ export function CostCorrectionsPanel({
               >
                 Download approved cost correction
               </button>
+              <CostCorrectionSuccessor
+                key={`successor:${detail.id}`}
+                original={original}
+                predecessorId={detail.id}
+                predecessorHash={detail.contentHash}
+                orgId={orgId}
+                actorId={actorId}
+                recoveryHold={recoveryHold}
+                saved={async (id) => {
+                  await run(async (signal) => {
+                    await open(id, signal);
+                    await load(signal);
+                  });
+                }}
+              />
               <CostCorrectionOutcomes
                 key={detail.id}
                 correctionId={detail.id}

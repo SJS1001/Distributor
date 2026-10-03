@@ -3477,7 +3477,13 @@ function App() {
                 orgId={actor.orgId}
               />
             )}
-            {can("finance") && <AccountingCosts />}
+            {can("finance") && (
+              <AccountingCosts
+                key={`costs:${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+              />
+            )}
             {can("finance") && (
               <StockJournalReconciliation
                 key={`reconciliation:${actor.orgId}:${actor.id}`}

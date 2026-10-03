@@ -1,3 +1,4 @@
+import "./cost-correction-successor-browser.ts";
 import "./organization-revocation-browser-journey.ts";
 import "./organization-quickbooks-browser-journey.ts";
 import "./stock-journal-original-retry-browser.ts";

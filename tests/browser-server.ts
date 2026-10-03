@@ -1,3 +1,4 @@
+import { costCorrectionSuccessorBrowser } from "./cost-correction-successor-browser-fixture.ts";
 import { organizationQuickBooksBrowser } from "./organization-quickbooks-browser-fixture.ts";
 import { stockJournalBrowser } from "./stock-journal-browser-fixture.ts";
 import { costCorrectionBrowser } from "./cost-correction-browser-fixture.ts";
@@ -987,6 +988,9 @@ const retiredReceivingHttp = await retiredReceivingBrowser((fn) =>
   cleanup.push(fn),
 );
 const stockJournalHttp = await stockJournalBrowser((fn) => cleanup.push(fn));
+const costCorrectionSuccessorHttp = await costCorrectionSuccessorBrowser((fn) =>
+  cleanup.push(fn),
+);
 const costCorrectionHttp = await costCorrectionBrowser((fn) =>
   cleanup.push(fn),
 );
@@ -1014,6 +1018,7 @@ const stop = async () => {
   for (const server of organizationAuthorizationHttp) await server.close();
   await stockJournalHttp.close();
   await costCorrectionHttp.close();
+  for (const server of costCorrectionSuccessorHttp) await server.close();
   await paymentHttp.close();
   await authorizationHttp.close();
   await cpHttp.close();

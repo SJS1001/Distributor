@@ -39,7 +39,13 @@ const field = (
   </div>
 );
 
-export function AccountingCosts() {
+export function AccountingCosts({
+  orgId,
+  actorId,
+}: {
+  orgId: string;
+  actorId: string;
+}) {
   const [source, setSource] = useState<Source | null>(null),
     [items, setItems] = useState<CostPacketView[]>([]),
     [next, setNext] = useState<number | null>(null),
@@ -434,6 +440,8 @@ export function AccountingCosts() {
             <>
               <CostCorrectionsPanel
                 key={detail.id}
+                orgId={orgId}
+                actorId={actorId}
                 original={detail}
                 recoveryHold={Boolean(source?.recoveryHold)}
               />
