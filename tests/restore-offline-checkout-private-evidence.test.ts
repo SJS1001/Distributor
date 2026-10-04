@@ -188,8 +188,10 @@ async function setup(
   region: "CA" | "US" = "CA",
   currency: "CAD" | "USD" = "CAD",
   reports = false,
+  beforeHold?: (f: F) => void | Promise<void>,
 ) {
   const f = await nativeSetup(t, region, currency, reports);
+  await beforeHold?.(f);
   f.hold();
   f.app.database.transaction(() => {
     const { logicalHash: _hash, ...candidate } =
@@ -373,6 +375,7 @@ for (const [region, currency] of [
         io = tracked(t),
         h = f.read();
       assert.deepEqual(Object.keys(h).sort(), [
+        "captureForApplicationInTransaction",
         "complete",
         "dispose",
         "reviewInTransaction",
@@ -1077,4 +1080,681 @@ test("distinct captures cannot substitute tokens or stale phase; identity refusa
     /rollback phase/,
   );
   assert.equal(f.snapshot(), before);
+});
+
+import * as ApplicationCapture from "../src/server/restore-offline-checkout-private-evidence.ts";
+import {
+  RestoreOfflineCheckoutReferenceJoin,
+  isCapturedOfflineCheckoutReferenceJoin,
+} from "../src/server/restore-offline-checkout-reference-join.ts";
+import { isCapturedOfflineCheckoutComparison } from "../src/server/integration-offline-checkout-evidence.ts";
+async function applicationSetup(...args: Parameters<typeof setup>) {
+  const f = await setup(...args);
+  f.envelope.task.expectedStateHash = f.app.database.transaction(
+    () =>
+      new RestoreOfflineCheckoutReferenceJoin(
+        f.app.database,
+        f.app.identity,
+        f.app.billing,
+        f.app.integration.checkouts,
+      ).getInTransaction(f.reviewer, compare(f.inputData)).hash,
+  );
+  return f;
+}
+for (const [region, currency] of [
+  ["CA", "CAD"],
+  ["CA", "USD"],
+  ["US", "USD"],
+] as const)
+  for (const reports of [false, true])
+    test(`application capture ${region}/${currency} reports=${reports}: actual branded comparison/reference/phase and zero writes`, async (t) => {
+      const f = await applicationSetup(t, region, currency, reports),
+        before = f.snapshot(),
+        n = totals(f),
+        io = tracked(t),
+        h = f.read();
+      h.complete();
+      fs.unlinkSync(f.file);
+      const capture = f.app.database.transaction(() =>
+        h.captureForApplicationInTransaction(f.reviewer),
+      );
+      frozen(capture);
+      assert(
+        ApplicationCapture.isCapturedCheckoutPrivateApplicationCapture(capture),
+      );
+      assert(isCapturedOfflineCheckoutComparison(capture.comparison));
+      assert(isCapturedOfflineCheckoutReferenceJoin(capture.referenceJoin));
+      assert(captured(capture.native));
+      assert.equal(capture.envelopeBinding, offlineTaskBinding(f.envelope));
+      assert.equal(capture.setHash, f.envelope.evidence.setHash);
+      assert.equal(capture.payloadHash, f.envelope.task.payloadHash);
+      assert.deepEqual(capture.comparison, compare(f.inputData));
+      assert.equal(capture.referenceJoin.nativeJoinHash, capture.native.hash);
+      assert.equal(capture.phase.envelopeBinding, capture.envelopeBinding);
+      const joined = f.app.database.transaction(() =>
+        new RestoreOfflineCheckoutReferenceJoin(
+          f.app.database,
+          f.app.identity,
+          f.app.billing,
+          f.app.integration.checkouts,
+        ).getInTransaction(f.reviewer, capture.comparison),
+      );
+      assert.deepEqual(joined, capture.referenceJoin);
+      assert.equal(
+        capture.comparison.outcome.reference,
+        f.inputData.provider.session.id,
+      );
+      assert.equal(
+        capture.comparison.outcome.settlement.paymentId,
+        f.inputData.provider.session.payment_intent.id,
+      );
+      const { captureHash, ...body } = capture;
+      assert.equal(
+        captureHash,
+        digest(
+          canonical({
+            domain:
+              "distributor-offline-checkout-private-application-capture-v1",
+            body,
+          }),
+        ),
+      );
+      assert(
+        capture.referenceJoin.requiredChecks.includes(
+          "qualified-source-candidate-fences-and-authority-through-commit",
+        ),
+      );
+      assert(
+        capture.referenceJoin.requiredChecks.includes(
+          "fixed-checkout-owner-application-contract-required",
+        ),
+      );
+      assert.equal("input" in capture, false);
+      assert.equal("bytes" in capture, false);
+      assert.equal("allowed" in capture, false);
+      assert.equal(totals(f), n);
+      assert.equal(f.snapshot(), before);
+      assert.equal(f.calls(), 1);
+      assert.equal(io.opened.length, 1);
+      assert.deepEqual(io.opened, io.closed);
+      assert(
+        io.allocations
+          .filter((b) => b.length === f.bytes.length)
+          .every((b) => b.every((v) => v === 0)),
+      );
+      assert.throws(
+        () => h.captureForApplicationInTransaction(f.reviewer),
+        refused,
+      );
+      assert.throws(() => h.reviewInTransaction(f.reviewer), refused);
+      h.dispose();
+    });
+
+test("application capture brand rejects forged hashes/clones/prototypes and normal/revoked proxies without traps", async (t) => {
+  const f = await applicationSetup(t),
+    h = f.read();
+  h.complete();
+  const c = f.app.database.transaction(() =>
+    h.captureForApplicationInTransaction(f.reviewer),
+  );
+  let traps = 0;
+  const trap = () => {
+    traps++;
+    throw Error("private trap");
+  };
+  const p = new Proxy(c, {
+    get: trap,
+    getPrototypeOf: trap,
+    ownKeys: trap,
+    getOwnPropertyDescriptor: trap,
+  });
+  const rev = Proxy.revocable(c, {});
+  rev.revoke();
+  for (const value of [
+    null,
+    undefined,
+    {},
+    structuredClone(c),
+    Object.freeze({ ...c }),
+    Object.create(c),
+    p,
+    rev.proxy,
+    () => c,
+  ])
+    assert.equal(
+      ApplicationCapture.isCapturedCheckoutPrivateApplicationCapture(value),
+      false,
+    );
+  const changed = structuredClone(c);
+  changed.comparison.outcome.settlement.paymentId = "pi_forged";
+  const { captureHash: _hash, ...body } = changed;
+  const rehashed = {
+    ...changed,
+    captureHash: digest(
+      canonical({
+        domain: "distributor-offline-checkout-private-application-capture-v1",
+        body,
+      }),
+    ),
+  };
+  assert.equal(
+    ApplicationCapture.isCapturedCheckoutPrivateApplicationCapture(rehashed),
+    false,
+  );
+  assert.equal(traps, 0);
+  assert(ApplicationCapture.isCapturedCheckoutPrivateApplicationCapture(c));
+  assert.throws(() => {
+    (c.comparison.outcome.settlement as any).paymentId = "changed";
+  }, TypeError);
+});
+
+test("review and application capture are mutually exclusive; pending/disposed/fake receivers cannot consume", async (t) => {
+  const f = await applicationSetup(t),
+    io = tracked(t),
+    before = f.snapshot();
+  for (const operation of ["review", "capture"]) {
+    f.envelope.task.expectedStateHash =
+      operation === "review"
+        ? f.inputData.candidate.factsHash
+        : f.app.database.transaction(
+            () =>
+              new RestoreOfflineCheckoutReferenceJoin(
+                f.app.database,
+                f.app.identity,
+                f.app.billing,
+                f.app.integration.checkouts,
+              ).getInTransaction(f.reviewer, compare(f.inputData)).hash,
+          );
+    const h = f.read();
+    h.complete();
+    const r = f.app.database.transaction(() =>
+      operation === "review"
+        ? h.reviewInTransaction(f.reviewer)
+        : h.captureForApplicationInTransaction(f.reviewer),
+    );
+    assert.equal(
+      ApplicationCapture.isCapturedCheckoutPrivateApplicationCapture(r),
+      operation === "capture",
+    );
+    if (operation === "review") {
+      assert.equal("comparison" in r, false);
+      assert.equal("referenceJoin" in r, false);
+      assert.equal("captureHash" in r, false);
+    }
+    assert.throws(
+      () => h.captureForApplicationInTransaction(f.reviewer),
+      refused,
+    );
+    assert.throws(() => h.reviewInTransaction(f.reviewer), refused);
+    assert.throws(() => h.complete(), refused);
+    h.dispose();
+  }
+  let trapped = false;
+  const p = new Proxy(
+    {},
+    {
+      get() {
+        trapped = true;
+        throw Error("trap");
+      },
+      getPrototypeOf() {
+        trapped = true;
+        throw Error("trap");
+      },
+    },
+  );
+  for (const mode of ["pending", "disposed", "receiver"]) {
+    const h = f.read();
+    if (mode !== "pending") h.complete();
+    if (mode === "disposed") h.dispose();
+    assert.throws(
+      () =>
+        f.app.database.transaction(() =>
+          mode === "receiver"
+            ? h.captureForApplicationInTransaction.call(p as any, f.reviewer)
+            : h.captureForApplicationInTransaction(f.reviewer),
+        ),
+      refused,
+    );
+    assert.throws(() => h.complete(), refused);
+  }
+  assert.equal(trapped, false);
+  assert.equal(f.snapshot(), before);
+  assert(
+    io.allocations
+      .filter((b) => b.length === f.bytes.length)
+      .every((b) => b.every((x) => x === 0)),
+  );
+  assert.deepEqual(io.opened, io.closed);
+});
+
+for (const mode of ["capture", "review", "read", "dispose"] as const)
+  test(`application capture ${mode} reentry poisons outer mint and erases`, async (t) => {
+    const f = await applicationSetup(t),
+      io = tracked(t),
+      h = f.read();
+    h.complete();
+    let reached = false;
+    const stat = fs.lstatSync;
+    t.mock.method(fs, "lstatSync", ((...args: any[]) => {
+      if (!reached) {
+        reached = true;
+        if (mode === "dispose") h.dispose();
+        else if (mode === "read") assert.throws(() => f.read(), refused);
+        else
+          assert.throws(
+            () =>
+              mode === "capture"
+                ? h.captureForApplicationInTransaction(f.reviewer)
+                : h.reviewInTransaction(f.reviewer),
+            refused,
+          );
+      }
+      return Reflect.apply(stat, fs, args);
+    }) as typeof fs.lstatSync);
+    syncBuiltinESMExports();
+    assert.throws(
+      () =>
+        f.app.database.transaction(() =>
+          h.captureForApplicationInTransaction(f.reviewer),
+        ),
+      refused,
+    );
+    assert(reached);
+    assert.throws(() => h.complete(), refused);
+    assert(
+      io.allocations
+        .filter((b) => b.length === f.bytes.length)
+        .every((b) => b.every((x) => x === 0)),
+    );
+  });
+
+test("application envelope digest cannot be replaced after capture; same allocation is checked again and erased on failure", async (t) => {
+  const f = await applicationSetup(t),
+    io = tracked(t);
+  f.envelope.task.payloadHash = digest("wrong input");
+  let h = f.read();
+  h.complete();
+  assert.throws(
+    () =>
+      f.app.database.transaction(() =>
+        h.captureForApplicationInTransaction(f.reviewer),
+      ),
+    refused,
+  );
+  f.envelope.task.payloadHash = digest(canonical(f.inputData));
+  h = f.read();
+  h.complete();
+  const bytes = io.allocations.findLast((b) => b.length === f.bytes.length)!;
+  assert(bytes);
+  bytes[0] = bytes[0]! ^ 1;
+  assert.throws(
+    () =>
+      f.app.database.transaction(() =>
+        h.captureForApplicationInTransaction(f.reviewer),
+      ),
+    refused,
+  );
+  assert(bytes.every((v) => v === 0));
+  const fresh = f.read();
+  fresh.complete();
+  const expected = compare(f.inputData);
+  f.inputData.provider.session.id = "cs_test_mutated";
+  f.envelope.task.payloadHash = digest(canonical(f.inputData));
+  const c = f.app.database.transaction(() =>
+    fresh.captureForApplicationInTransaction(f.reviewer),
+  );
+  assert.deepEqual(c.comparison, expected);
+});
+
+for (const change of [
+  "active",
+  "role",
+  "password",
+  "org",
+  "hold",
+  "history",
+  "claim",
+  "phase",
+])
+  test(`application fresh ${change} refusal rolls back fixture mutation and disposes`, async (t) => {
+    const f = await applicationSetup(t),
+      before = f.snapshot(),
+      io = tracked(t),
+      h = f.read();
+    h.complete();
+    assert.throws(
+      () =>
+        f.app.database.transaction(() => {
+          const iam = f.app.database.owned("iam"),
+            i = f.app.database.owned("integration");
+          if (change === "active")
+            iam.run("UPDATE iam_users SET active=0 WHERE id=?", f.reviewer.id);
+          if (change === "role")
+            iam.run(
+              "UPDATE iam_users SET role='support' WHERE id=?",
+              f.reviewer.id,
+            );
+          if (change === "password")
+            iam.run(
+              "INSERT INTO iam_user_security VALUES(?,1,1,'2026-10-04T00:00:00.000Z') ON CONFLICT(user_id) DO UPDATE SET password_change_required=1",
+              f.reviewer.id,
+            );
+          if (change === "org")
+            iam.run(
+              "UPDATE iam_users SET org_id='foreign' WHERE id=?",
+              f.reviewer.id,
+            );
+          if (change === "hold")
+            f.app.database
+              .owned("platform")
+              .run("DELETE FROM platform_recovery");
+          if (change === "history")
+            i.run(
+              "UPDATE integration_effects SET error='changed' WHERE id=?",
+              f.effectId,
+            );
+          if (change === "claim")
+            i.run(
+              "UPDATE integration_operation_leases SET token='copied',started_at=1 WHERE effect_id=?",
+              f.effectId,
+            );
+          if (change === "phase") {
+            const s = f.app.platform.offline.readInTransaction()!;
+            f.app.platform.offline.transitionInTransaction(
+              s.state.generation,
+              s.anchor,
+              { kind: "drain" },
+              [],
+            );
+          }
+          assert.throws(
+            () => h.captureForApplicationInTransaction(f.reviewer),
+            refused,
+          );
+          throw Error("rollback application fixture");
+        }),
+      /rollback application fixture/,
+    );
+    assert.equal(f.snapshot(), before);
+    assert.throws(() => h.complete(), refused);
+    assert(
+      io.allocations
+        .filter((b) => b.length === f.bytes.length)
+        .every((b) => b.every((v) => v === 0)),
+    );
+  });
+
+test("application capture requires actual writer and current unmodified owning methods", async (t) => {
+  const f = await applicationSetup(t),
+    before = f.snapshot();
+  let h = f.read();
+  h.complete();
+  assert.throws(
+    () => h.captureForApplicationInTransaction(f.reviewer),
+    refused,
+  );
+  h = f.read();
+  h.complete();
+  let called = false;
+  Object.defineProperty(f.app.billing, "verifiedPayment", {
+    value: () => {
+      called = true;
+      throw Error("foreign");
+    },
+    configurable: true,
+  });
+  try {
+    assert.throws(
+      () =>
+        f.app.database.transaction(() =>
+          h.captureForApplicationInTransaction(f.reviewer),
+        ),
+      refused,
+    );
+  } finally {
+    delete (f.app.billing as any).verifiedPayment;
+  }
+  assert.equal(called, false);
+  assert.equal(f.snapshot(), before);
+});
+
+for (const reference of ["payment", "session"] as const)
+  test(`application actual ${reference} collision outside selected invoice refuses even with current candidate/native facts`, async (t) => {
+    const f = await setup(t, "CA", "CAD", false, async (f) => {
+      const otherBuyer = f.app.identity.createCustomer(
+        f.actor,
+        "collision-buyer",
+        {
+          name: "Synthetic collision customer",
+          tier: "standard",
+          creditLimit: 1000000,
+        },
+      ).id;
+      const other = { ...f, buyer: otherBuyer },
+        invoiceId = ship(
+          other,
+          accept(other, 1, "collision-order").id,
+        ).invoiceId;
+      if (reference === "payment")
+        f.app.database.transaction(() =>
+          f.app.billing.verifiedPayment(
+            f.actor,
+            invoiceId,
+            1,
+            "stripe",
+            "pi_synthetic",
+          ),
+        );
+      else {
+        chooseProviders(other, f.actor, "collision-choice", {
+          accountId: otherBuyer,
+          region: "CA",
+          mode: "provider-exceptions",
+          providers: ["stripe"],
+          version: 1,
+          acknowledgment: "Synthetic only",
+        });
+        const e = f.app.integration.checkout(f.actor, "collision-checkout", {
+          invoiceId,
+        });
+        const result = {
+          reference: "cs_test_synthetic",
+          result: {
+            amount: 11300,
+            currency: "cad",
+            status: "complete",
+            paymentStatus: "paid",
+            expiresAt: 1893456000,
+          },
+        };
+        await f.app.integration.execute(f.actor, e.id, {
+          execute: async () => result,
+          lookup: async () => result,
+        });
+      }
+    });
+    const comparison = compare(f.inputData),
+      before = f.snapshot(),
+      n = totals(f);
+    // Prove the selected baseline native join succeeds; this refusal needs the
+    // new actual global owning reference join, not merely an old candidate hash.
+    assert(
+      f.app.database.transaction(() =>
+        f.join().getInTransaction(f.reviewer, comparison),
+      ),
+    );
+    assert.throws(
+      () =>
+        f.app.database.transaction(() =>
+          new RestoreOfflineCheckoutReferenceJoin(
+            f.app.database,
+            f.app.identity,
+            f.app.billing,
+            f.app.integration.checkouts,
+          ).getInTransaction(f.reviewer, comparison),
+        ),
+      {
+        code:
+          reference === "payment"
+            ? "OFFLINE_CHECKOUT_PAYMENT_REFERENCE_COLLISION"
+            : "OFFLINE_CHECKOUT_SESSION_REFERENCE_COLLISION",
+      },
+    );
+    const h = f.read();
+    h.complete();
+    assert.throws(
+      () =>
+        f.app.database.transaction(() =>
+          h.captureForApplicationInTransaction(f.reviewer),
+        ),
+      refused,
+    );
+    assert.equal(totals(f), n);
+    assert.equal(f.snapshot(), before);
+  });
+
+test("application reference change in same writer after completion is visible and whole fixture rolls back", async (t) => {
+  let invoiceId = "";
+  const f = await applicationSetup(t, "CA", "CAD", false, (f) => {
+    invoiceId = ship(f, accept(f, 1, "later-payment").id).invoiceId;
+  });
+  const before = f.snapshot(),
+    h = f.read();
+  h.complete();
+  assert.throws(
+    () =>
+      f.app.database.transaction(() => {
+        f.app.billing.verifiedPayment(
+          f.actor,
+          invoiceId,
+          1,
+          "stripe",
+          "pi_synthetic",
+        );
+        assert.throws(
+          () => h.captureForApplicationInTransaction(f.reviewer),
+          refused,
+        );
+        throw Error("rollback late payment");
+      }),
+    /rollback late payment/,
+  );
+  assert.equal(f.snapshot(), before);
+  assert.throws(() => h.complete(), refused);
+});
+
+test("application capture after exact reopen is fresh native consistency; old process capture is not durable qualification", async (t) => {
+  const f = await applicationSetup(t),
+    h = f.read();
+  h.complete();
+  const c = f.app.database.transaction(() =>
+      h.captureForApplicationInTransaction(f.reviewer),
+    ),
+    before = f.snapshot();
+  f.app.close();
+  f.app = new Application(f.path, "CA", { eventReports: false });
+  const reader = new Private(
+      f.app.database,
+      f.app.identity,
+      f.app.billing,
+      f.app.integration.checkouts,
+    ),
+    next = reader.read(f.envelope, f.manifest);
+  next.complete();
+  const result = f.app.database.transaction(() =>
+    next.captureForApplicationInTransaction(f.reviewer),
+  );
+  assert.deepEqual(result, c);
+  assert.notEqual(result, c);
+  assert(
+    ApplicationCapture.isCapturedCheckoutPrivateApplicationCapture(result),
+  );
+  assert.equal(f.snapshot(), before);
+  assert(
+    result.referenceJoin.requiredChecks.includes(
+      "qualified-stripe-account-runtime-binding-and-provider-truth",
+    ),
+  );
+});
+
+test("application capture refuses a logically identical write during phase review and outer rollback conserves state", async (t) => {
+  const f = await applicationSetup(t),
+    io = tracked(t),
+    h = f.read(),
+    before = f.snapshot();
+  h.complete();
+  let injected = false;
+  const stat = fs.lstatSync;
+  t.mock.method(fs, "lstatSync", ((...args: any[]) => {
+    if (
+      !injected &&
+      new Error().stack?.includes(
+        "RestoreOfflineNativePhase.reviewInTransaction",
+      )
+    ) {
+      injected = true;
+      f.app.database
+        .owned("integration")
+        .run(
+          "UPDATE integration_effects SET error=error WHERE id=?",
+          f.effectId,
+        );
+    }
+    return Reflect.apply(stat, fs, args);
+  }) as typeof fs.lstatSync);
+  syncBuiltinESMExports();
+  assert.throws(
+    () =>
+      f.app.database.transaction(() => {
+        const n = totals(f);
+        assert.throws(
+          () => h.captureForApplicationInTransaction(f.reviewer),
+          refused,
+        );
+        assert(injected);
+        assert.equal(totals(f), (n as number) + 1);
+        throw Error("fixture rollback");
+      }),
+    /fixture rollback/,
+  );
+  assert.equal(f.snapshot(), before);
+  assert.throws(() => h.complete(), refused);
+  assert(
+    io.allocations
+      .filter((b) => b.length === f.bytes.length)
+      .every((b) => b.every((x) => x === 0)),
+  );
+});
+
+test("application requires enhanced reference hash while redacted review retains native hash contract", async (t) => {
+  const f = await applicationSetup(t);
+  const enhanced = f.envelope.task.expectedStateHash;
+  assert.notEqual(enhanced, f.inputData.candidate.factsHash);
+  f.envelope.task.expectedStateHash = f.inputData.candidate.factsHash;
+  const rejected = f.read();
+  rejected.complete();
+  assert.throws(
+    () =>
+      f.app.database.transaction(() =>
+        rejected.captureForApplicationInTransaction(f.reviewer),
+      ),
+    refused,
+  );
+  const reviewed = f.read();
+  reviewed.complete();
+  assert.equal(
+    f.app.database.transaction(() => reviewed.reviewInTransaction(f.reviewer))
+      .status,
+    "native-private-checkout-consistency-only",
+  );
+  f.envelope.task.expectedStateHash = enhanced;
+  const accepted = f.read();
+  accepted.complete();
+  assert.equal(
+    f.app.database.transaction(() =>
+      accepted.captureForApplicationInTransaction(f.reviewer),
+    ).referenceJoin.hash,
+    enhanced,
+  );
 });

@@ -14,6 +14,10 @@ import { InventoryValuations } from "./inventory-valuations.ts";
 import { InventoryQuantityCorrections } from "./inventory-quantity-corrections.ts";
 import { Catalog } from "./catalog.ts";
 import { RestoreOfflineStorage } from "./restore-offline-storage.ts";
+import { PlatformOfflineOriginalCommandReviewReader } from "./platform-offline-original-command-review.ts";
+import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
+import { RestoreOfflineCommitRecoveryReader } from "./restore-offline-commit-recovery.ts";
+import { RestoreActivation } from "./restore-activation.ts";
 import {
   RestoreOfflineCommitGuard,
   type OfflineCommitAdapter,
@@ -86,6 +90,13 @@ const ownerDescriptors = new Map<object, PropertyDescriptorMap>(
     InventoryQuantityCorrections,
     Catalog,
     RestoreOfflineStorage,
+    IntegrationOfflineOriginalLeaseRetirement,
+    PlatformOfflineOriginalLeaseCommandReviewReader,
+    PlatformOfflineOriginalCommandReviewReader,
+    RestoreOfflineNativePhase,
+    RestoreOfflineCommitRecoveryReader,
+    RestoreActivation,
+    RestoreOfflineCommitGuard,
   ].map((owner) => [
     owner.prototype,
     Object.getOwnPropertyDescriptors(owner.prototype),
@@ -275,7 +286,8 @@ export class RestoreOfflineOriginalLeaseRetirementCoordinator {
       valuations = child(inventoryCosts, "valuations"),
       quantityCorrections = child(inventoryCosts, "quantityCorrections"),
       catalog = child(inventory, "catalog"),
-      offline = child(platform, "offline");
+      offline = child(platform, "offline"),
+      restore = child(platform, "restore");
     const nativeOwners = [
       [database, Database.prototype],
       [identity, Identity.prototype],
@@ -289,6 +301,7 @@ export class RestoreOfflineOriginalLeaseRetirementCoordinator {
       [quantityCorrections, InventoryQuantityCorrections.prototype],
       [catalog, Catalog.prototype],
       [offline, RestoreOfflineStorage.prototype],
+      [restore, RestoreActivation.prototype],
     ];
     const stores = nativeOwners
       .filter(([owner]) => owner !== database)
@@ -397,6 +410,7 @@ export class RestoreOfflineOriginalLeaseRetirementCoordinator {
           "inventory",
           "catalog",
           "platform",
+          "platform",
         ][i];
         insist(name && "value" in name && name.value === expected);
         return [
@@ -420,6 +434,20 @@ export class RestoreOfflineOriginalLeaseRetirementCoordinator {
     this.#host = host === undefined ? undefined : captureHost(host);
   }
   private owners() {
+    // Helper instances use private slots; their callable prototypes and the
+    // restore owner still belong to the same immutable implementation closure.
+    for (const [prototype, pinned] of ownerDescriptors) {
+      const current = Object.getOwnPropertyDescriptors(prototype);
+      insist(
+        Reflect.ownKeys(current).length === Reflect.ownKeys(pinned).length,
+      );
+      for (const [key, d] of Object.entries(pinned))
+        insist(
+          current[key]?.value === d.value &&
+            current[key]?.get === d.get &&
+            current[key]?.set === d.set,
+        );
+    }
     for (const { owner, prototype, methods } of this.#ownerMethods) {
       insist(
         !types.isProxy(owner) && Object.getPrototypeOf(owner) === prototype,

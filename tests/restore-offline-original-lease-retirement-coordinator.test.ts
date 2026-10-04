@@ -448,3 +448,85 @@ test("swallowed nested coordinator refusal poisons the enclosing commit", (t) =>
   assert(attempted);
   assert.equal(snapshot(f), before);
 });
+
+// The closed helper implementation graph is checked before any callback hook.
+import { IntegrationOfflineOriginalLeaseRetirement } from "../src/server/integration-offline-original-lease-retirement.ts";
+import { PlatformOfflineOriginalCommandReviewReader } from "../src/server/platform-offline-original-command-review.ts";
+import { RestoreOfflineNativePhase } from "../src/server/restore-offline-native-phase.ts";
+import { RestoreOfflineCommitRecoveryReader } from "../src/server/restore-offline-commit-recovery.ts";
+import { RestoreActivation } from "../src/server/restore-activation.ts";
+for (const [prototype, method] of [
+  [IntegrationOfflineOriginalLeaseRetirement.prototype, "applyInTransaction"],
+  [
+    IntegrationOfflineOriginalLeaseRetirement.prototype,
+    "recoverRetainedInTransaction",
+  ],
+  [
+    PlatformOfflineOriginalLeaseCommandReviewReader.prototype,
+    "getInTransaction",
+  ],
+  [PlatformOfflineOriginalCommandReviewReader.prototype, "getInTransaction"],
+  [RestoreOfflineNativePhase.prototype, "reviewInTransaction"],
+  [RestoreOfflineCommitRecoveryReader.prototype, "getInTransaction"],
+  [RestoreActivation.prototype, "offlineReleaseHistoryInTransaction"],
+] as const) {
+  for (const late of [false, true])
+    test(`helper ${prototype.constructor.name}.${method} substitution late=${late} refuses before hook and conserves rows`, (t) => {
+      const f = ready(t),
+        before = snapshot(f);
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, method)!;
+      assert(descriptor);
+      let hooks = 0,
+        reached = false;
+      const replace = () =>
+        Object.defineProperty(prototype, method, {
+          ...descriptor,
+          value: () => {
+            hooks++;
+            throw Error("replacement hook executed");
+          },
+        });
+      f.state.onRead = () => {
+        if (
+          !late ||
+          f.f.app.database
+            .owned("integration")
+            .get("SELECT COUNT(*) n FROM integration_offline_original_leases")!
+            .n === 1
+        ) {
+          reached = true;
+          replace();
+        }
+      };
+      try {
+        assert.throws(() => execute(f));
+      } finally {
+        Object.defineProperty(prototype, method, descriptor);
+      }
+      assert(reached);
+      assert.equal(hooks, 0);
+      assert.equal(snapshot(f), before);
+    });
+}
+test("retained recovery rejects replaced task method before a forged result can be returned", (t) => {
+  const f = ready(t);
+  execute(f);
+  const before = snapshot(f);
+  const p = IntegrationOfflineOriginalLeaseRetirement.prototype;
+  const d = Object.getOwnPropertyDescriptor(p, "recoverRetainedInTransaction")!;
+  let hooks = 0;
+  Object.defineProperty(p, "recoverRetainedInTransaction", {
+    ...d,
+    value: () => {
+      hooks++;
+      return { resultHash: "forged" };
+    },
+  });
+  try {
+    assert.throws(() => recovery(f));
+  } finally {
+    Object.defineProperty(p, "recoverRetainedInTransaction", d);
+  }
+  assert.equal(hooks, 0);
+  assert.equal(snapshot(f), before);
+});

@@ -1,15 +1,17 @@
 import { types } from "node:util";
 import { canonical, digest, DomainError } from "./core.ts";
-import { Database } from "./database.ts";
+import { Database, Store } from "./database.ts";
 import { Identity } from "./iam.ts";
 import { Billing } from "./billing.ts";
 import { IntegrationCheckouts } from "./integration-checkouts.ts";
 import { Platform } from "./platform.ts";
 import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
 import { RestoreOfflineCheckoutNativeJoin } from "./restore-offline-checkout-native-join.ts";
+import { RestoreOfflineCheckoutReferenceJoin } from "./restore-offline-checkout-reference-join.ts";
 import {
   compareOfflineCheckoutPaidEvidence,
   offlineCheckoutEvidenceLimits,
+  type OfflineCheckoutComparison,
 } from "./integration-offline-checkout-evidence.ts";
 import {
   parseOfflineTaskEnvelope,
@@ -30,6 +32,30 @@ export const checkoutPrivateEvidenceBytes = offlineCheckoutEvidenceLimits.bytes;
 const nativeReview =
   RestoreOfflineCheckoutNativeJoin.prototype.getInTransaction;
 const phaseReview = RestoreOfflineNativePhase.prototype.reviewInTransaction;
+const referenceReview =
+  RestoreOfflineCheckoutReferenceJoin.prototype.getInTransaction;
+const readCounter = Store.prototype.get;
+const applicationCaptureDomain =
+  "distributor-offline-checkout-private-application-capture-v1";
+const applicationCaptures = new WeakSet<object>();
+/** Process provenance only. No inspection/coercion of untrusted values, including
+ * revoked proxies. This is not external qualification or a reusable permission. */
+export function isCapturedCheckoutPrivateApplicationCapture(
+  value: unknown,
+): value is CheckoutPrivateApplicationCapture {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    applicationCaptures.has(value)
+  );
+}
+function freeze<T>(value: T): T {
+  if (value !== null && typeof value === "object") {
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  return value;
+}
 function fail(): never {
   throw new DomainError(
     "RESTORE_OFFLINE_CHECKOUT_PRIVATE",
@@ -185,6 +211,20 @@ export type CheckoutPrivateReview = Readonly<{
   native: ReturnType<RestoreOfflineCheckoutNativeJoin["getInTransaction"]>;
   phase: ReturnType<RestoreOfflineNativePhase["reviewInTransaction"]>;
 }>;
+export type CheckoutPrivateApplicationCapture = Readonly<{
+  version: 1;
+  purpose: "native-private-checkout-application-consistency-only";
+  envelopeBinding: string;
+  setHash: string;
+  payloadHash: string;
+  comparison: OfflineCheckoutComparison;
+  referenceJoin: ReturnType<
+    RestoreOfflineCheckoutReferenceJoin["getInTransaction"]
+  >;
+  native: CheckoutPrivateReview["native"];
+  phase: CheckoutPrivateReview["phase"];
+  captureHash: string;
+}>;
 export type CheckoutPrivateHandle = Readonly<{
   complete(): Readonly<{
     status: "historical-byte-binding";
@@ -194,14 +234,19 @@ export type CheckoutPrivateHandle = Readonly<{
     qualification: "unverified";
   }>;
   reviewInTransaction(actorLocator: unknown): CheckoutPrivateReview;
+  captureForApplicationInTransaction(
+    actorLocator: unknown,
+  ): CheckoutPrivateApplicationCapture;
   dispose(): void;
   [Symbol.dispose](): void;
 }>;
-/** Fixed internal read/review only. No payload getter, owner application bridge,
- * mutation, task registry or external qualification/COMMIT contract. */
+/** Fixed internal review/application capture only. No raw payload getter,
+ * owning mutation, task registry or external qualification/COMMIT contract. */
 export class RestoreOfflineCheckoutPrivateEvidence {
   readonly #native: RestoreOfflineCheckoutNativeJoin;
   readonly #phase: RestoreOfflineNativePhase;
+  readonly #references: RestoreOfflineCheckoutReferenceJoin;
+  readonly #counter: Store;
   #busy = false;
   #poison = false;
   constructor(
@@ -224,6 +269,13 @@ export class RestoreOfflineCheckoutPrivateEvidence {
     )?.value;
     need(platform instanceof Platform);
     this.#phase = new RestoreOfflineNativePhase(database, platform);
+    this.#references = new RestoreOfflineCheckoutReferenceJoin(
+      database,
+      identity,
+      billing,
+      checkouts,
+    );
+    this.#counter = database.owned("integration");
   }
   #enter() {
     if (this.#busy) {
@@ -287,6 +339,116 @@ export class RestoreOfflineCheckoutPrivateEvidence {
         { references: [item.reference], maxBytes: item.bytes },
       );
       need(!this.#poison);
+      // Both fixed operations consume the very same allocation/lifetime. No
+      // caller callback or caller-supplied comparison/reference receipt enters.
+      const consume = (
+        self: unknown,
+        actorLocator: unknown,
+        application: boolean,
+      ): CheckoutPrivateReview | CheckoutPrivateApplicationCapture => {
+        let owns = false;
+        try {
+          identity(self);
+          reader.#enter();
+          owns = true;
+          need(held.state === "completed" && captured);
+          held.state = "reviewing";
+          const bytes = captured.get(item.reference);
+          need(
+            bytes &&
+              bytes.length === item.bytes &&
+              digest(bytes) === item.sha256,
+          );
+          const text = new TextDecoder("utf-8", {
+            fatal: true,
+            ignoreBOM: true,
+          }).decode(bytes);
+          preflight(text);
+          const input = data(JSON.parse(text), true);
+          need(
+            json(input) === text &&
+              digest(canonical(input)) === envelope.task.payloadHash,
+          );
+          const comparison = compareOfflineCheckoutPaidEvidence(input);
+          need(
+            comparison.orgId === envelope.task.orgId &&
+              comparison.effectId === envelope.task.subjectId &&
+              (application ||
+                comparison.nativeHash === envelope.task.expectedStateHash),
+          );
+          // Validate current native owner graph before invoking phase reads on it.
+          const joined = nativeReview.call(native, actorLocator, comparison);
+          // Native join first validates the current actual owner graph. A fixed
+          // counter covers phase/reference reads too, detecting even logically
+          // identical attempted writes without reading foreign business tables.
+          const changes = application
+            ? readCounter.call(reader.#counter, "SELECT total_changes() AS n")!
+                .n
+            : undefined;
+          const current = phaseReview.call(phase, envelope);
+          if (application) {
+            const referenceJoin = referenceReview.call(
+              reader.#references,
+              actorLocator,
+              comparison,
+            );
+            const finalPhase = phaseReview.call(phase, envelope);
+            need(
+              held.state === "reviewing" &&
+                !reader.#poison &&
+                referenceJoin.hash === envelope.task.expectedStateHash &&
+                referenceJoin.comparisonHash === comparison.hash &&
+                referenceJoin.nativeJoinHash === joined.hash &&
+                referenceJoin.candidateHash === joined.candidateHash &&
+                canonical(finalPhase) === canonical(current) &&
+                current.envelopeBinding === offlineTaskBinding(envelope) &&
+                readCounter.call(
+                  reader.#counter,
+                  "SELECT total_changes() AS n",
+                )!.n === changes,
+            );
+            const body = {
+              version: 1 as const,
+              purpose:
+                "native-private-checkout-application-consistency-only" as const,
+              envelopeBinding: current.envelopeBinding,
+              setHash,
+              payloadHash: envelope.task.payloadHash,
+              comparison,
+              referenceJoin,
+              native: joined,
+              phase: finalPhase,
+            };
+            const result = freeze({
+              ...body,
+              captureHash: digest(
+                canonical({ domain: applicationCaptureDomain, body }),
+              ),
+            });
+            applicationCaptures.add(result);
+            return result;
+          }
+          need(
+            held.state === "reviewing" &&
+              !reader.#poison &&
+              current.envelopeBinding === offlineTaskBinding(envelope),
+          );
+          return Object.freeze({
+            version: 1,
+            status: "native-private-checkout-consistency-only",
+            envelopeBinding: current.envelopeBinding,
+            setHash,
+            payloadHash: envelope.task.payloadHash,
+            native: joined,
+            phase: current,
+          });
+        } catch {
+          return fail();
+        } finally {
+          dispose();
+          if (owns) reader.#busy = false;
+        }
+      };
       token = Object.freeze({
         dispose() {
           need(this === token);
@@ -337,58 +499,16 @@ export class RestoreOfflineCheckoutPrivateEvidence {
           }
         },
         reviewInTransaction(actorLocator: unknown): CheckoutPrivateReview {
-          let owns = false;
-          try {
-            identity(this);
-            reader.#enter();
-            owns = true;
-            need(held.state === "completed" && captured);
-            held.state = "reviewing";
-            const bytes = captured.get(item.reference);
-            need(
-              bytes &&
-                bytes.length === item.bytes &&
-                digest(bytes) === item.sha256,
-            );
-            const text = new TextDecoder("utf-8", {
-              fatal: true,
-              ignoreBOM: true,
-            }).decode(bytes);
-            preflight(text);
-            const input = data(JSON.parse(text), true);
-            need(
-              json(input) === text &&
-                digest(canonical(input)) === envelope.task.payloadHash,
-            );
-            const comparison = compareOfflineCheckoutPaidEvidence(input);
-            need(
-              comparison.orgId === envelope.task.orgId &&
-                comparison.effectId === envelope.task.subjectId &&
-                comparison.nativeHash === envelope.task.expectedStateHash,
-            );
-            // Validate current native owner graph before invoking phase reads on it.
-            const joined = nativeReview.call(native, actorLocator, comparison);
-            const current = phaseReview.call(phase, envelope);
-            need(
-              held.state === "reviewing" &&
-                !reader.#poison &&
-                current.envelopeBinding === offlineTaskBinding(envelope),
-            );
-            return Object.freeze({
-              version: 1,
-              status: "native-private-checkout-consistency-only",
-              envelopeBinding: current.envelopeBinding,
-              setHash,
-              payloadHash: envelope.task.payloadHash,
-              native: joined,
-              phase: current,
-            });
-          } catch {
-            return fail();
-          } finally {
-            dispose();
-            if (owns) reader.#busy = false;
-          }
+          return consume(this, actorLocator, false) as CheckoutPrivateReview;
+        },
+        captureForApplicationInTransaction(
+          actorLocator: unknown,
+        ): CheckoutPrivateApplicationCapture {
+          return consume(
+            this,
+            actorLocator,
+            true,
+          ) as CheckoutPrivateApplicationCapture;
         },
       });
       captures.set(token, held);
