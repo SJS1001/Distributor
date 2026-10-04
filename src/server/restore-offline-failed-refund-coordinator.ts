@@ -118,6 +118,9 @@ function detach(input: unknown): any {
           key.length <= 160 &&
           !["__proto__", "constructor", "prototype"].includes(key),
       );
+      // Property names consume the same UTF-8 budget and Unicode validation
+      // as values; bounded node/key counts alone do not bound their bytes.
+      visit(key, depth + 1);
       const d = Object.getOwnPropertyDescriptor(value, key);
       insist(d && "value" in d && d.enumerable);
       result[key] = visit(d.value, depth + 1);

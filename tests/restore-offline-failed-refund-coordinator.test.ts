@@ -411,6 +411,42 @@ test("proxy and accessor qualification are refused without executing hooks", asy
     assert.equal(snapshot(f), before);
   }
 });
+for (const defect of ["aggregate-key-bytes", "unpaired-key-surrogate"] as const)
+  test(
+    "inert manifest refuses " + defect + " before entering host",
+    async (t) => {
+      const f = await ready(t),
+        before = snapshot(f),
+        manifest: Record<string, unknown> = { ...f.manifest };
+      if (defect === "aggregate-key-bytes") {
+        // Every individual key/record and the complete node count are bounded.
+        // Only the combined UTF-8 property-name bytes exceed one MiB.
+        for (let branch = 0; branch < 40; branch++) {
+          const child: Record<string, unknown> = {};
+          for (let entry = 0; entry < 64; entry++)
+            child["界".repeat(158) + entry.toString(16).padStart(2, "0")] =
+              null;
+          manifest["branch" + branch] = child;
+        }
+      } else manifest["invalid-\ud800"] = null;
+      let reads = 0;
+      f.state.onRead = () => {
+        reads++;
+      };
+      assert.throws(() =>
+        f.coordinator.execute(
+          f.finance,
+          f.envelope,
+          f.approvals,
+          manifest,
+          "refund-evidence",
+        ),
+      );
+      assert.equal(reads, 0);
+      assert.equal(f.state.heldReads, 0);
+      assert.equal(snapshot(f), before);
+    },
+  );
 test("default host closed; absent durable receipt never permits application", async (t) => {
   const f = await ready(t),
     before = snapshot(f),
