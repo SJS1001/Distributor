@@ -355,6 +355,20 @@ test("absent host remains disabled: no input traps, adapter work or writes", (t)
   assert.equal(traps, 0);
 });
 
+test("fixed checkout commit entry refuses another task before acquiring a hold", (t) => {
+  const f = setup(t),
+    configured = host(f);
+  let holds = 0;
+  configured.adapter = {
+    ...configured.adapter,
+    hold() {
+      holds++;
+    },
+  };
+  refuses(f, () => guard(f, configured).executeCapturedCheckout(f.envelope()));
+  assert.equal(holds, 0);
+});
+
 for (const field of ["authority", "source", "candidate"] as const)
   for (const boundary of ["entry", "precommit"] as const)
     test(`${field} loss at ${boundary} rolls back exact native receipt/journal`, (t) => {

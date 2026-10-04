@@ -129,6 +129,8 @@ const descriptors = new Map<object, PropertyDescriptorMap>(
 );
 const capturedReceiptRecovery =
   RestoreOfflineCommitRecoveryReader.prototype.getCapturedCheckoutInTransaction;
+const capturedCheckoutCommit =
+  RestoreOfflineCommitGuard.prototype.executeCapturedCheckout;
 // Poison all attempts on the same native Database, even an early nested refusal
 // swallowed before it could reach the shared commit guard.
 const active = new WeakMap<Database, () => void>();
@@ -374,6 +376,12 @@ export class RestoreOfflineCheckoutPaidCoordinator {
       [member(platform, "restore"), RestoreActivation.prototype],
     ];
     for (const [owner, prototype] of [...list]) {
+      insist(
+        owner &&
+          typeof owner === "object" &&
+          !types.isProxy(owner) &&
+          Object.getPrototypeOf(owner) === prototype,
+      );
       const db = Object.getOwnPropertyDescriptor(owner, "database");
       if (db) insist("value" in db && db.value === database);
       const s = Object.getOwnPropertyDescriptor(owner, "store");
@@ -696,7 +704,7 @@ export class RestoreOfflineCheckoutPaidCoordinator {
           },
         },
       );
-      return guard.execute(envelope);
+      return capturedCheckoutCommit.call(guard, envelope);
     } finally {
       handle?.dispose();
       active.delete(this.#database);

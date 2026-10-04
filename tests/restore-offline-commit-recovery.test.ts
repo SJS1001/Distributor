@@ -996,3 +996,62 @@ test("legacy recovery keeps intentional late read hooks and unrelated Store faul
   }
   assert.equal(tables(f.path), before);
 });
+
+for (const substituted of [false, true])
+  test(`strict recovery poisons swallowed legacy reentry${substituted ? " before a self-removing offline hook" : ""}`, (t) => {
+    const f = setup(t),
+      input = f.envelope();
+    guard(f).execute(input);
+    const reader = f.app.restoreOfflineCommitRecovery,
+      before = tables(f.path),
+      stat = fs.lstatSync,
+      target = f.app.platform.offline,
+      key = "readInTransaction",
+      descriptor = Object.getOwnPropertyDescriptor(target, key),
+      original = target.readInTransaction;
+    let reached = false,
+      hooks = 0,
+      nestedRefusals = 0;
+    Object.defineProperty(fs, "lstatSync", {
+      configurable: true,
+      writable: true,
+      value: (...args: any[]) => {
+        if (!reached) {
+          reached = true;
+          if (substituted)
+            Object.defineProperty(target, key, {
+              configurable: true,
+              writable: true,
+              value: function (this: typeof target, ...parameters: any[]) {
+                hooks++;
+                if (descriptor) Object.defineProperty(target, key, descriptor);
+                else Reflect.deleteProperty(target, key);
+                return original.apply(this, parameters as []);
+              },
+            });
+          try {
+            reader.getInTransaction(f.actor, input);
+          } catch (error) {
+            assert.equal((error as any).code, refusal.code);
+            nestedRefusals++;
+          }
+          // Swallowing the nested refusal cannot authorize the outer strict read.
+        }
+        return Reflect.apply(stat, fs, args);
+      },
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => strictRecover(f, input), refusal);
+    } finally {
+      Object.defineProperty(fs, "lstatSync", { value: stat });
+      syncBuiltinESMExports();
+      if (descriptor) Object.defineProperty(target, key, descriptor);
+      else Reflect.deleteProperty(target, key);
+    }
+    assert(reached);
+    assert.equal(nestedRefusals, 1);
+    assert.equal(hooks, 0);
+    assert.equal(tables(f.path), before);
+    assert.deepEqual(strictRecover(f, input), recover(f, input));
+  });

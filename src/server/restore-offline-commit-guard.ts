@@ -126,6 +126,8 @@ function captureHost(input: unknown): OfflineCommitHost {
 // Shared across guard instances on the same real connection. Reentry poisons
 // the active attempt even if trusted host code swallows the nested refusal.
 const active = new WeakMap<Database, () => void>();
+const capturedPhaseReview =
+  RestoreOfflineNativePhase.prototype.reviewCapturedCheckoutInTransaction;
 
 /** No Application wiring. Undefined host configuration is permanently disabled.
  * Trusted composition must supply the same Application's Database and Platform.
@@ -148,6 +150,16 @@ export class RestoreOfflineCommitGuard {
     this.#host = host === undefined ? undefined : captureHost(host);
   }
   execute(envelopeInput: unknown): OfflineCommitOutcome {
+    return this.#execute(envelopeInput, false);
+  }
+  /** Fixed checkout composition retains the original native phase graph. */
+  executeCapturedCheckout(envelopeInput: unknown): OfflineCommitOutcome {
+    return this.#execute(envelopeInput, true);
+  }
+  #execute(
+    envelopeInput: unknown,
+    capturedCheckout: boolean,
+  ): OfflineCommitOutcome {
     const busy = active.get(this.#database);
     if (busy) {
       busy();
@@ -178,6 +190,12 @@ export class RestoreOfflineCommitGuard {
       }
       insist(!existingWriter);
       const envelope = parseOfflineTaskEnvelope(envelopeInput);
+      if (capturedCheckout)
+        insist(
+          envelope.task.owner === "integration" &&
+            envelope.task.name === "integration.checkout-paid.import" &&
+            envelope.task.version === 1,
+        );
       insist(
         envelope.task.owner === host.task.owner &&
           envelope.task.name === host.task.name &&
@@ -202,7 +220,9 @@ export class RestoreOfflineCommitGuard {
         try {
           this.#transaction(() => {
             held();
-            const review = this.#phase.reviewInTransaction(envelope);
+            const review = capturedCheckout
+              ? capturedPhaseReview.call(this.#phase, envelope)
+              : this.#phase.reviewInTransaction(envelope);
             insist(review.envelopeBinding === request.envelopeBinding);
             const before = this.#platform.offline.readInTransaction();
             insist(before);

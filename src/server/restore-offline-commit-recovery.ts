@@ -222,6 +222,11 @@ export class RestoreOfflineCommitRecoveryReader {
     actor: Actor,
     envelopeInput: unknown,
   ): OfflineCommitRecovery {
+    // Legacy projection cannot bypass an active strict reader's reentry fence.
+    if (this.#busy) {
+      this.#poison = true;
+      insist(false);
+    }
     return this.#get(actor, envelopeInput, false);
   }
   #get(

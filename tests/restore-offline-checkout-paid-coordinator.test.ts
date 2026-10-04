@@ -475,6 +475,7 @@ const helpers = [
   [RestoreOfflineStorage.prototype, "readInTransaction"],
   [RestoreActivation.prototype, "offlineReleaseHistoryInTransaction"],
   [RestoreOfflineCommitGuard.prototype, "execute"],
+  [RestoreOfflineCommitGuard.prototype, "executeCapturedCheckout"],
 ] as const;
 for (const [prototype, method] of helpers)
   for (const stage of ["early", "late"] as const)
@@ -803,3 +804,108 @@ for (const stage of ["apply", "recover"] as const)
         if (stage === "recover")
           assert.equal(recover(f).status, "native-owner-application-only");
       });
+
+for (const point of ["early", "final"] as const)
+  for (const selfRemoving of [false, true])
+    test(`coordinator commit phase refuses ${point} ${selfRemoving ? "self-removing" : "persistent"} offline hook before invocation`, async (t) => {
+      const f = await ready(t),
+        before = snapshot(f),
+        stat = fs.lstatSync,
+        target = f.app.platform.offline,
+        key = "readInTransaction",
+        descriptor = Object.getOwnPropertyDescriptor(target, key),
+        original = target.readInTransaction;
+      let reads = 0,
+        reached = false,
+        hits = 0;
+      Object.defineProperty(fs, "lstatSync", {
+        configurable: true,
+        writable: true,
+        value: (...args: any[]) => {
+          const limit = Error.stackTraceLimit;
+          let stack: string;
+          try {
+            Error.stackTraceLimit = 50;
+            stack = new Error().stack ?? "";
+          } finally {
+            Error.stackTraceLimit = limit;
+          }
+          if (
+            stack.includes("RestoreOfflineNativePhase.") &&
+            stack.includes("RestoreOfflineCommitGuard.") &&
+            !stack.includes("RestoreOfflineCheckoutPrivateEvidence.") &&
+            !stack.includes("IntegrationOfflineCheckoutPaid.") &&
+            !stack.includes("captureRestoreCandidateInTransaction") &&
+            ++reads === (point === "early" ? 1 : 9)
+          ) {
+            reached = true;
+            Object.defineProperty(target, key, {
+              configurable: true,
+              writable: true,
+              value: function (this: typeof target, ...parameters: any[]) {
+                hits++;
+                if (selfRemoving) {
+                  if (descriptor)
+                    Object.defineProperty(target, key, descriptor);
+                  else Reflect.deleteProperty(target, key);
+                }
+                return original.apply(this, parameters as []);
+              },
+            });
+          }
+          return Reflect.apply(stat, fs, args);
+        },
+      });
+      syncBuiltinESMExports();
+      try {
+        assert.throws(() => execute(f));
+      } finally {
+        Object.defineProperty(fs, "lstatSync", { value: stat });
+        syncBuiltinESMExports();
+        if (descriptor) Object.defineProperty(target, key, descriptor);
+        else Reflect.deleteProperty(target, key);
+      }
+      assert(reached);
+      assert.equal(hits, 0);
+      assert.equal(snapshot(f), before);
+    });
+for (const key of ["documents", "delivery"] as const)
+  test(`coordinator constructor rejects Billing.${key} proxy before descriptor traps`, async (t) => {
+    const f = await ready(t),
+      a = f.app,
+      before = snapshot(f),
+      old = a.billing[key];
+    let traps = 0;
+    (a.billing as any)[key] = new Proxy(old, {
+      getOwnPropertyDescriptor() {
+        traps++;
+        throw Error("constructor descriptor trap");
+      },
+      getPrototypeOf() {
+        traps++;
+        throw Error("constructor prototype trap");
+      },
+      ownKeys() {
+        traps++;
+        throw Error("constructor keys trap");
+      },
+    });
+    try {
+      assert.throws(
+        () =>
+          new Coordinator(
+            a.database,
+            a.identity,
+            a.platform,
+            a.billing,
+            a.integration.checkouts,
+            f.host,
+          ),
+      );
+    } finally {
+      (a.billing as any)[key] = old;
+    }
+    assert.equal(traps, 0);
+    assert.equal(f.holds(), 0);
+    assert.equal(snapshot(f), before);
+  });
