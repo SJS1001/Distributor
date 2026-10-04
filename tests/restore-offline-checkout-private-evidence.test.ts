@@ -1758,3 +1758,135 @@ test("application requires enhanced reference hash while redacted review retains
     enhanced,
   );
 });
+
+for (const application of [false, true])
+  for (const target of ["offline", "restore"] as const)
+    for (const prototype of [false, true])
+      for (const late of [false, true])
+        test(`${application ? "application" : "review"} phase ${target} ${prototype ? "prototype" : "instance"} wrapper ${late ? "during phase filesystem read" : "after completion"} refuses before hook and disposes`, async (t) => {
+          const f = await (application ? applicationSetup(t) : setup(t)),
+            io = tracked(t),
+            h = f.read(),
+            before = f.snapshot(),
+            object = f.app.platform[target],
+            subject = prototype ? Object.getPrototypeOf(object) : object,
+            key =
+              target === "offline"
+                ? "readInTransaction"
+                : "offlineReleaseHistoryInTransaction",
+            descriptor = Object.getOwnPropertyDescriptor(subject, key),
+            original = (object as any)[key];
+          h.complete();
+          let hooks = 0,
+            injected = false;
+          const inject = () => {
+            injected = true;
+            Object.defineProperty(subject, key, {
+              value: function (...args: unknown[]) {
+                hooks++;
+                return original.apply(this, args);
+              },
+              configurable: true,
+              writable: true,
+            });
+          };
+          if (late) {
+            const stat = fs.lstatSync;
+            t.mock.method(fs, "lstatSync", ((...args: any[]) => {
+              if (
+                !injected &&
+                new Error().stack?.includes(
+                  "RestoreOfflineNativePhase.reviewInTransaction",
+                )
+              )
+                inject();
+              return Reflect.apply(stat, fs, args);
+            }) as typeof fs.lstatSync);
+            syncBuiltinESMExports();
+          } else inject();
+          try {
+            assert.throws(
+              () =>
+                f.app.database.transaction(() => {
+                  const n = totals(f);
+                  assert.throws(
+                    () =>
+                      application
+                        ? h.captureForApplicationInTransaction(f.reviewer)
+                        : h.reviewInTransaction(f.reviewer),
+                    refused,
+                  );
+                  assert.equal(totals(f), n);
+                  throw Error("fixture rollback");
+                }),
+              /fixture rollback/,
+            );
+          } finally {
+            if (descriptor) Object.defineProperty(subject, key, descriptor);
+            else delete (subject as any)[key];
+            t.mock.restoreAll();
+            syncBuiltinESMExports();
+          }
+          assert(injected);
+          assert.equal(hooks, 0);
+          assert.equal(f.snapshot(), before);
+          assert.throws(() => h.complete(), refused);
+          assert(
+            io.allocations
+              .filter((b) => b.length === f.bytes.length)
+              .every((b) => b.every((x) => x === 0)),
+          );
+        });
+
+for (const target of ["offline", "restore"] as const)
+  for (const link of ["database", "store"] as const)
+    test(`application phase actual ${target}.${link} identity replacement refuses without hooks`, async (t) => {
+      const f = await applicationSetup(t),
+        io = tracked(t),
+        h = f.read(),
+        before = f.snapshot(),
+        object = f.app.platform[target],
+        descriptor = Object.getOwnPropertyDescriptor(object, link)!;
+      h.complete();
+      let hooks = 0;
+      const replacement = new Proxy(
+        {},
+        {
+          get() {
+            hooks++;
+            throw Error("unexpected");
+          },
+          ownKeys() {
+            hooks++;
+            return [];
+          },
+          getPrototypeOf() {
+            hooks++;
+            return null;
+          },
+        },
+      );
+      Object.defineProperty(object, link, {
+        ...descriptor,
+        value: replacement,
+      });
+      try {
+        assert.throws(
+          () =>
+            f.app.database.transaction(() =>
+              h.captureForApplicationInTransaction(f.reviewer),
+            ),
+          refused,
+        );
+      } finally {
+        Object.defineProperty(object, link, descriptor);
+      }
+      assert.equal(hooks, 0);
+      assert.equal(f.snapshot(), before);
+      assert.throws(() => h.complete(), refused);
+      assert(
+        io.allocations
+          .filter((b) => b.length === f.bytes.length)
+          .every((b) => b.every((x) => x === 0)),
+      );
+    });

@@ -556,7 +556,7 @@ for (const [label, points] of histories)
     }
   });
 
-test("a release appended after pinned capture is caught by the final complete history recheck", (t) => {
+test("a substituted candidate-capture callback is refused before it can append a release", (t) => {
   const f = setup(t),
     input = f.envelope(),
     before = fingerprint(f.path),
@@ -572,7 +572,7 @@ test("a release appended after pinned capture is caught by the final complete hi
   );
   try {
     assert.throws(() => f.review(input), refusal);
-    assert.equal(hook.mock.callCount(), 1);
+    assert.equal(hook.mock.callCount(), 0);
   } finally {
     hook.mock.restore();
   }
