@@ -62,6 +62,7 @@ export class QuickBooksAuthorization {
       binding: CredentialBinding,
       revision: number,
     ) => ReturnType<ProviderCredentials["status"]>,
+    startupMaintenance = true,
   ) {
     store.migrate(`CREATE TABLE IF NOT EXISTS integration_authorizations (
       id TEXT PRIMARY KEY,org_id TEXT NOT NULL,binding_id TEXT NOT NULL,account_id TEXT NOT NULL,worker_id TEXT NOT NULL,
@@ -71,7 +72,7 @@ export class QuickBooksAuthorization {
       claim TEXT,started_at INTEGER,installed_revision INTEGER
     ) STRICT;
     CREATE INDEX IF NOT EXISTS integration_authorization_binding ON integration_authorizations(org_id,binding_id);`);
-    this.expireAttempts();
+    if (startupMaintenance) this.expireAttempts();
   }
   // Filesystem-authorized local maintenance; no tenant endpoint or provider I/O.
   // A transmitted code may have been consumed, so abandoned exchanges are unknown.

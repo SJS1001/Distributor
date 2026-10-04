@@ -1,5 +1,7 @@
 # Current coding continuation — 2026-10-04
 
+**Current owner sequencing, 2026-10-04:** complete host-independent code wiring now; actual server connections and operational qualification can follow later. Distributor has a backend and an API-connected frontend. [Runtime wiring](RUNTIME-WIRING.md) describes shared executable composition and fixed recovery dispatch. This supplies the code connection point, not actual host fencing, routing or production approval. Earlier statements that composition itself awaits host selection are historical; concrete host-specific adapter/services, current Purolator inputs, dependency rights/native distribution and actual product qualification remain outstanding.
+
 Latest standalone fix: [eight inventory boundary checks](evidence/LOCAL-LICENSE-INVENTORY-BOUNDARIES-2026-10-04.md) pass at `2a983fe2adb70f5ed3061c33d9120a680cbd1e56` after reproducing linked-manifest metadata escape and platform-dependent Windows-separator acceptance. Actual inventory output remains byte-identical, all739 application inputs unchanged. [Reference follow-up](research/LICENSE-REFERENCE-FOLLOWUP-2026-10-04.md) recovers abstract-logging's historical author/template inputs without inventing a rendered grant; exact Fontkit source/grant and full native distribution qualification remain open. No PR merge or CI occurred. Actual host/runtime/region clarification is pending; conditional host/provider implementation and product qualification remain incomplete.
 
 Previous independent application/inventory checkpoint:

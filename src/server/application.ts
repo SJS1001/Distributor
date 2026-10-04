@@ -117,6 +117,9 @@ export class Application {
       mfaRequiredRoles?: readonly Role[];
       providerEncryptionKey?: string;
       eventReports?: boolean;
+      /** Operator inspection must preserve an already captured candidate.
+       * Normal services retain startup housekeeping; expiry checks at use remain. */
+      startupMaintenance?: boolean;
     } = {},
   ) {
     check(
@@ -135,7 +138,10 @@ export class Application {
         region,
         security.eventReports !== false,
         () => {
-          this.platform = new Platform(this.database);
+          this.platform = new Platform(
+            this.database,
+            security.startupMaintenance !== false,
+          );
           this.restoreOfflineNativePhase = new RestoreOfflineNativePhase(
             this.database,
             this.platform,
@@ -150,6 +156,7 @@ export class Application {
             },
             security.mfaEncryptionKey,
             mfaRoles,
+            security.startupMaintenance !== false,
           );
           this.platformOfflineRefundReview =
             new PlatformOfflineRefundReviewReader(this.database, this.identity);
@@ -184,6 +191,7 @@ export class Application {
             this.platform,
             this.identity,
             security.providerEncryptionKey,
+            security.startupMaintenance !== false,
           );
           this.catalog = new Catalog(
             this.database,
@@ -195,6 +203,7 @@ export class Application {
             this.platform,
             this.catalog,
             this.identity,
+            security.startupMaintenance !== false,
           );
           this.labels = new StockLabels(
             this.database,
@@ -217,6 +226,7 @@ export class Application {
             this.catalog,
             (actor, source) =>
               this.fulfillment.authorizeInvoiceSource(actor, source),
+            security.startupMaintenance !== false,
           );
           this.orders = new Orders(
             this.database,
@@ -233,6 +243,7 @@ export class Application {
             this.inventory,
             this.orders,
             this.billing,
+            security.startupMaintenance !== false,
           );
           this.warranty = new Warranty(
             this.database,

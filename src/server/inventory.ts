@@ -163,6 +163,7 @@ export class Inventory {
     private platform: Platform,
     private catalog: Catalog,
     private identity: Identity,
+    startupMaintenance = true,
   ) {
     this.store = database.owned("inventory");
     this.store.migrate(`
@@ -197,13 +198,20 @@ export class Inventory {
       CREATE UNIQUE INDEX IF NOT EXISTS inventory_serial_recovery_reference ON inventory_serial_reviews(org_id,recovery_ref) WHERE recovery_ref IS NOT NULL;
       CREATE INDEX IF NOT EXISTS inventory_serial_review_history ON inventory_serial_reviews(org_id,created_at,id);
       CREATE TABLE IF NOT EXISTS inventory_counts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,unit_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,product_id TEXT NOT NULL,bin TEXT NOT NULL,condition TEXT NOT NULL,stock_revision INTEGER NOT NULL,expected_quantity INTEGER NOT NULL,unit_cost INTEGER NOT NULL,count_ref TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN('draft','submitted','approved','rejected')),observed_quantity INTEGER CHECK(observed_quantity>=0),observation_reason TEXT,observed_by TEXT,observed_at TEXT,decision_reason TEXT,decided_by TEXT,decided_at TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL,start_hash TEXT NOT NULL,decision_result TEXT,UNIQUE(org_id,count_ref)) STRICT;
-      INSERT OR IGNORE INTO inventory_transfer_manifest
+      ${
+        startupMaintenance
+          ? `INSERT OR IGNORE INTO inventory_transfer_manifest
         SELECT l.id,l.org_id,l.transfer_id,l.unit_id,u.product_id,u.serial,-m.quantity,m.unit_cost
         FROM inventory_transfer_lines l JOIN inventory_units u ON u.id=l.unit_id AND u.org_id=l.org_id
-        JOIN inventory_movements m ON m.org_id=l.org_id AND m.unit_id=l.unit_id AND m.reference=l.transfer_id AND m.type='transfer.dispatch' AND m.quantity<0;
+        JOIN inventory_movements m ON m.org_id=l.org_id AND m.unit_id=l.unit_id AND m.reference=l.transfer_id AND m.type='transfer.dispatch' AND m.quantity<0;`
+          : ""
+      }
     `);
     database.transaction(() => {
-      if (!this.store.get("SELECT id FROM inventory_cost_clock WHERE id=1")) {
+      if (
+        startupMaintenance &&
+        !this.store.get("SELECT id FROM inventory_cost_clock WHERE id=1")
+      ) {
         this.store.run(
           "INSERT INTO inventory_cost_sequences(org_id,movement_id) SELECT org_id,id FROM inventory_movements ORDER BY rowid",
         );

@@ -1,4 +1,5 @@
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError, integer } from "./core.ts";
 import { type Region } from "./iam.ts";
@@ -65,14 +66,14 @@ try {
         clientId: required("QUICKBOOKS_CLIENT_ID"),
       }
     : undefined;
-  app = new Application(
+  app = createRuntimeApplication(
     required("DATABASE_PATH"),
     (process.env.DATA_REGION ?? "CA") as Region,
     {
       eventReports: configuredEventReports(),
       providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
     },
-  );
+  ).app;
   let result;
   if (action === "ledger-status")
     result = app.providerCredentials.ledger.status(binding!);

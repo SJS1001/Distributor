@@ -21,6 +21,7 @@ export class MultiFactor {
     private platform: Platform,
     private access: Access,
     key?: string,
+    startupMaintenance = true,
   ) {
     this.cipher = new FactorCipher(key);
     this.store = database.owned("iam");
@@ -30,7 +31,7 @@ export class MultiFactor {
       CREATE TABLE IF NOT EXISTS iam_mfa_pending (user_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,key TEXT NOT NULL,enrollment_id TEXT NOT NULL,revision INTEGER NOT NULL,material TEXT NOT NULL,expires_at INTEGER NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS iam_mfa_pending_expiry ON iam_mfa_pending(expires_at,user_id) WHERE material<>'';
     `);
-    this.purgeExpiredEnrollments();
+    if (startupMaintenance) this.purgeExpiredEnrollments();
   }
   // Filesystem-authorized maintenance, never an HTTP operation. One atomic statement
   // bounds each batch; no key/decryption or principal data is needed.

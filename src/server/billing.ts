@@ -104,6 +104,7 @@ export class Billing {
       actor: Actor,
       source: InvoiceSource,
     ) => void,
+    startupMaintenance = true,
   ) {
     this.store = database.owned("billing");
     this.store.migrate(`
@@ -128,6 +129,7 @@ export class Billing {
       this.store,
       platform,
       this,
+      startupMaintenance,
     );
     this.opening = new BillingOpening(this.store, identity, catalog, platform);
     this.documents = new BillingDocuments(database, platform, identity, this);

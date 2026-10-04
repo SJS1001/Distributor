@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { check } from "./core.ts";
 import { type Region } from "./iam.ts";
@@ -11,11 +11,11 @@ check(
   "Supported actions: bootstrap, demo.",
   400,
 );
-const app = new Application(
+const app = createRuntimeApplication(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
   { eventReports: configuredEventReports() },
-);
+).app;
 try {
   let password = process.env.BOOTSTRAP_PASSWORD;
   if (!password && action === "demo")

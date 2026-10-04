@@ -1,4 +1,5 @@
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError, text } from "./core.ts";
 import { type Region } from "./iam.ts";
@@ -62,14 +63,14 @@ try {
     "OAUTH_INPUT",
     "Supply an authorization request object.",
   );
-  app = new Application(
+  app = createRuntimeApplication(
     required("DATABASE_PATH"),
     (process.env.DATA_REGION ?? "CA") as Region,
     {
       eventReports: configuredEventReports(),
       providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
     },
-  );
+  ).app;
   const flow = app.providerCredentials.authorization;
   let result;
   if (action === "begin") result = flow.begin(binding, value.revision);

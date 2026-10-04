@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError } from "./core.ts";
 import { type Region } from "./iam.ts";
@@ -33,7 +34,9 @@ try {
     "Select the database region.",
     400,
   );
-  app = new Application(path, region as Region, { eventReports: true });
+  app = createRuntimeApplication(path, region as Region, {
+    eventReports: true,
+  }).app;
   process.stdout.write(
     `${JSON.stringify(app.eventDelivery.tick("event-report", { enabled: true }))}\n`,
   );

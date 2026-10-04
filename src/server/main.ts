@@ -1,5 +1,5 @@
 import { configuredMfaRoles } from "./mfa-policy.ts";
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { createHttp } from "./http.ts";
 import { check } from "./core.ts";
@@ -25,7 +25,7 @@ check(
   "Non-loopback deployment requires HTTPS origin and secure cookies.",
   500,
 );
-const app = new Application(
+const app = createRuntimeApplication(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
   {
@@ -34,7 +34,7 @@ const app = new Application(
     mfaRequiredRoles: configuredMfaRoles(),
     providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
   },
-);
+).app;
 const organizationQuickbooksBrowser = configuredOrganizationQuickBooksBrowser(
   app,
   origin,

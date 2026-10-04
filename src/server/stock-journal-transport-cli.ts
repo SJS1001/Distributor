@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { check, DomainError, text } from "./core.ts";
 import type { Region } from "./iam.ts";
 import { configuredEventReports } from "./report-runtime.ts";
@@ -93,10 +94,10 @@ try {
     "JOURNAL_STORE",
     "Use an existing regional store.",
   );
-  app = new Application(path, region as Region, {
+  app = createRuntimeApplication(path, region as Region, {
     eventReports: configuredEventReports(),
     providerEncryptionKey: encryptionKey,
-  });
+  }).app;
   const actor = app.identity.workerActor(binding.orgId, binding.workerUserId),
     journals = app.integration.costs.journals,
     current = journals.detail(actor, journalId);

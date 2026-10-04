@@ -1,4 +1,5 @@
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { check, DomainError, integer, text } from "./core.ts";
 import { type Region } from "./iam.ts";
 import { type LedgerAuthority } from "./organization-residency.ts";
@@ -93,13 +94,17 @@ try {
       );
   }
   // Refused input must not initialize a new database or perform store maintenance.
-  app = new Application(path, (process.env.DATA_REGION ?? "CA") as Region, {
-    eventReports: configuredEventReports(),
-    providerEncryptionKey:
-      action === "status" || action === "cancel"
-        ? undefined
-        : process.env.PROVIDER_ENCRYPTION_KEY,
-  });
+  app = createRuntimeApplication(
+    path,
+    (process.env.DATA_REGION ?? "CA") as Region,
+    {
+      eventReports: configuredEventReports(),
+      providerEncryptionKey:
+        action === "status" || action === "cancel"
+          ? undefined
+          : process.env.PROVIDER_ENCRYPTION_KEY,
+    },
+  ).app;
   const flow = app.providerCredentials.ledger.authorization;
   let result;
   if (action === "begin")

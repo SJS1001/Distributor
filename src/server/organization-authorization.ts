@@ -71,9 +71,10 @@ export class OrganizationLedgerAuthorization {
       bundle: TokenBundle,
       authority: LedgerAuthority,
     ) => { revision: number },
+    startupMaintenance = true,
   ) {
     store.migrate(ORGANIZATION_AUTHORIZATION_INITIALIZE_DDL);
-    this.expireAttempts();
+    if (startupMaintenance) this.expireAttempts();
   }
   // Filesystem-authorized local maintenance; no tenant endpoint or provider I/O.
   // A transmitted code may have been consumed, so abandoned exchanges are unknown.

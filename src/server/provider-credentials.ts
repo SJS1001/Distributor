@@ -95,6 +95,7 @@ export class ProviderCredentials {
     private platform: Platform,
     private identity: Identity,
     key?: string,
+    startupMaintenance = true,
   ) {
     check(
       key === undefined || /^[a-fA-F0-9]{64}$/.test(key),
@@ -175,6 +176,7 @@ export class ProviderCredentials {
           bundle,
           this.ledgerStamp(authority),
         ),
+      startupMaintenance,
     );
     this.ledger = Object.freeze({
       authorization: ledgerAuthorization,
@@ -283,6 +285,7 @@ export class ProviderCredentials {
       (binding, revision, bundle) =>
         this.writeInstall(binding, revision, bundle),
       (binding, revision) => this.writeDisable(binding, revision),
+      startupMaintenance,
     );
   }
   get available() {

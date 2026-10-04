@@ -33,7 +33,10 @@ export class Platform {
   private store: Store;
   private projection?: () => number;
   private readAuthority?: (actor: Actor) => Actor;
-  constructor(private database: Database) {
+  constructor(
+    private database: Database,
+    startupMaintenance = true,
+  ) {
     this.store = database.owned("platform");
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS platform_commands (org_id TEXT NOT NULL, actor_id TEXT NOT NULL, name TEXT NOT NULL, key TEXT NOT NULL, hash TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(org_id,actor_id,name,key)) STRICT;
@@ -50,11 +53,15 @@ export class Platform {
       this.store.migrate(`
       CREATE TABLE IF NOT EXISTS platform_audit_order (sequence INTEGER PRIMARY KEY, audit_id TEXT NOT NULL UNIQUE REFERENCES platform_audit(id), org_id TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS platform_audit_clock (id INTEGER PRIMARY KEY CHECK(id=1),sequence INTEGER NOT NULL) STRICT;
-      INSERT INTO platform_audit_clock VALUES(1,0) ON CONFLICT(id) DO NOTHING;
+      ${startupMaintenance ? "INSERT INTO platform_audit_clock VALUES(1,0) ON CONFLICT(id) DO NOTHING;" : ""}
       CREATE INDEX IF NOT EXISTS platform_audit_order_org ON platform_audit_order(org_id,sequence);
-      INSERT INTO platform_audit_order(sequence,audit_id,org_id)
+      ${
+        startupMaintenance
+          ? `INSERT INTO platform_audit_order(sequence,audit_id,org_id)
         SELECT rowid,id,org_id FROM platform_audit WHERE id NOT IN (SELECT audit_id FROM platform_audit_order) ORDER BY rowid;
-      UPDATE platform_audit_clock SET sequence=MAX(sequence,COALESCE((SELECT MAX(sequence) FROM platform_audit_order),0)) WHERE id=1;
+      UPDATE platform_audit_clock SET sequence=MAX(sequence,COALESCE((SELECT MAX(sequence) FROM platform_audit_order),0)) WHERE id=1;`
+          : ""
+      }
       CREATE TRIGGER IF NOT EXISTS platform_audit_sequence AFTER INSERT ON platform_audit BEGIN
         UPDATE platform_audit_clock SET sequence=sequence+1 WHERE id=1;
         INSERT INTO platform_audit_order(sequence,audit_id,org_id) SELECT sequence,new.id,new.org_id FROM platform_audit_clock WHERE id=1;

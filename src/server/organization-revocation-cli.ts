@@ -1,4 +1,5 @@
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { check, DomainError, integer, text } from "./core.ts";
 import type { Region } from "./iam.ts";
 import type { LedgerAuthority } from "./organization-residency.ts";
@@ -134,11 +135,15 @@ try {
     text(value.evidence, "provider review evidence", 2000);
   }
   // Refused input cannot initialize a store. Offline metadata/review ignores ambient keys.
-  app = new Application(path, (process.env.DATA_REGION ?? "CA") as Region, {
-    eventReports: configuredEventReports(),
-    providerEncryptionKey:
-      action === "revoke" ? process.env.PROVIDER_ENCRYPTION_KEY : undefined,
-  });
+  app = createRuntimeApplication(
+    path,
+    (process.env.DATA_REGION ?? "CA") as Region,
+    {
+      eventReports: configuredEventReports(),
+      providerEncryptionKey:
+        action === "revoke" ? process.env.PROVIDER_ENCRYPTION_KEY : undefined,
+    },
+  ).app;
   const flow = app.providerCredentials.ledger.revocation;
   const result =
     action === "revoke"

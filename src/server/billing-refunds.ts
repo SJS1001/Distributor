@@ -341,12 +341,19 @@ export class BillingRefunds {
     private store: Store,
     private platform: Platform,
     private billing: Billing,
+    startupMaintenance = true,
   ) {
     store.migrate(`
       CREATE TABLE IF NOT EXISTS billing_refund_provider(refund_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,UNIQUE(org_id,external_ref)) STRICT;
       CREATE TABLE IF NOT EXISTS billing_refund_observations(id INTEGER PRIMARY KEY,org_id TEXT NOT NULL,refund_id TEXT NOT NULL,external_ref TEXT NOT NULL,status TEXT NOT NULL,applied INTEGER NOT NULL CHECK(applied IN(0,1)),created_at TEXT NOT NULL) STRICT;
     `);
-    this.alerts = new BillingRefundAlerts(database, store, identity, platform);
+    this.alerts = new BillingRefundAlerts(
+      database,
+      store,
+      identity,
+      platform,
+      startupMaintenance,
+    );
     this.history = new BillingRefundHistory(database, store, identity, this);
   }
   /** Native Billing facts only. Does not determine Integration/offline eligibility,

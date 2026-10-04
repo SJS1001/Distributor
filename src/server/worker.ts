@@ -1,18 +1,12 @@
-import { Application } from "./application.ts";
+import { createRuntimeApplication } from "./runtime-application.ts";
+import type { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { configuredProviders } from "./provider-runtime.ts";
 import { check, DomainError } from "./core.ts";
 import { type Region } from "./iam.ts";
 
 // One bounded foreground batch. A qualified deployment may schedule repeated invocations.
-const app = new Application(
-  process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
-  (process.env.DATA_REGION ?? "CA") as Region,
-  {
-    eventReports: configuredEventReports(),
-    providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
-  },
-);
+let app: Application | undefined;
 try {
   check(
     process.argv.length === 2,
@@ -20,6 +14,14 @@ try {
     "The worker accepts no arguments; it runs one bounded batch.",
     400,
   );
+  app = createRuntimeApplication(
+    process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
+    (process.env.DATA_REGION ?? "CA") as Region,
+    {
+      eventReports: configuredEventReports(),
+      providerEncryptionKey: process.env.PROVIDER_ENCRYPTION_KEY,
+    },
+  ).app;
   const providers = configuredProviders(app);
   check(
     providers,
@@ -35,5 +37,5 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  app.close();
+  app?.close();
 }

@@ -80,6 +80,7 @@ export class Identity {
     private validateSites: (actor: Actor, sites: string[]) => void,
     mfaEncryptionKey?: string,
     mfaRequiredRoles: readonly Role[] = [],
+    startupMaintenance = true,
   ) {
     this.mfaRequiredRoles = validateMfaPolicy(
       mfaRequiredRoles,
@@ -142,6 +143,7 @@ export class Identity {
           ),
       },
       mfaEncryptionKey,
+      startupMaintenance,
     );
   }
   bootstrap(

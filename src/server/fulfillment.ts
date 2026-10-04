@@ -105,6 +105,7 @@ export class Fulfillment {
     private inventory: Inventory,
     private orders: Orders,
     private billing: Billing,
+    startupMaintenance = true,
   ) {
     this.store = database.owned("fulfillment");
     this.store.migrate(`
@@ -119,31 +120,32 @@ export class Fulfillment {
     ${SHIPMENT_COVERAGE_INITIALIZE_DDL};
   `);
     // Keep the compatibility receipt, importing its recorded fact only once.
-    for (const legacy of this.store.all<{
-      id: string;
-      org_id: string;
-      shipment_id: string;
-      reference: string;
-      delivered_at: string;
-      actor_id: string;
-    }>(
-      "SELECT d.* FROM fulfillment_delivery d WHERE NOT EXISTS(SELECT 1 FROM fulfillment_delivery_history h WHERE h.org_id=d.org_id AND h.shipment_id=d.shipment_id)",
-    ))
-      this.store.run(
-        "INSERT OR IGNORE INTO fulfillment_delivery_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-        legacy.id,
-        legacy.org_id,
-        legacy.shipment_id,
-        1,
-        "delivered",
-        legacy.reference,
-        legacy.reference.trim().normalize("NFKC").toLowerCase(),
-        "Imported legacy delivery reference",
-        legacy.delivered_at,
-        legacy.actor_id,
-        now(),
-        "legacy",
-      );
+    if (startupMaintenance)
+      for (const legacy of this.store.all<{
+        id: string;
+        org_id: string;
+        shipment_id: string;
+        reference: string;
+        delivered_at: string;
+        actor_id: string;
+      }>(
+        "SELECT d.* FROM fulfillment_delivery d WHERE NOT EXISTS(SELECT 1 FROM fulfillment_delivery_history h WHERE h.org_id=d.org_id AND h.shipment_id=d.shipment_id)",
+      ))
+        this.store.run(
+          "INSERT OR IGNORE INTO fulfillment_delivery_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+          legacy.id,
+          legacy.org_id,
+          legacy.shipment_id,
+          1,
+          "delivered",
+          legacy.reference,
+          legacy.reference.trim().normalize("NFKC").toLowerCase(),
+          "Imported legacy delivery reference",
+          legacy.delivered_at,
+          legacy.actor_id,
+          now(),
+          "legacy",
+        );
   }
   // Internal sales controls; never project addresses, tracking or serials to the report.
   salesEvidence(actor: Actor): FulfillmentSalesEvidence {

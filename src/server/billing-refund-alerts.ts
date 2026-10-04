@@ -38,6 +38,7 @@ export class BillingRefundAlerts {
     private store: Store,
     private identity: Identity,
     private platform: Platform,
+    startupMaintenance = true,
   ) {
     database.transaction(() => {
       store.migrate(`
@@ -46,17 +47,19 @@ export class BillingRefundAlerts {
         CREATE TABLE IF NOT EXISTS billing_refund_alert_updates(org_id TEXT NOT NULL,refund_id TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,state TEXT NOT NULL,source TEXT NOT NULL CHECK(source IN('observation','existing-state')),created_at TEXT NOT NULL,PRIMARY KEY(org_id,refund_id,revision)) STRICT;
         CREATE TABLE IF NOT EXISTS billing_refund_alert_reads(org_id TEXT NOT NULL,refund_id TEXT NOT NULL,actor_id TEXT NOT NULL,revision INTEGER NOT NULL,acknowledged_at TEXT NOT NULL,PRIMARY KEY(org_id,refund_id,actor_id)) STRICT;
       `);
-      // Existing verified exceptions become visible without reconstructing notices
-      // for older transitions. The original observation history remains authoritative.
-      store.run(
-        `INSERT OR IGNORE INTO billing_refund_alerts(org_id,refund_id,invoice_id,status,state,revision,created_at,updated_at)
+      if (startupMaintenance) {
+        // Existing verified exceptions become visible without reconstructing notices
+        // for older transitions. The original observation history remains authoritative.
+        store.run(
+          `INSERT OR IGNORE INTO billing_refund_alerts(org_id,refund_id,invoice_id,status,state,revision,created_at,updated_at)
         SELECT r.org_id,r.id,r.invoice_id,p.status,'open',1,COALESCE((SELECT MAX(o.created_at) FROM billing_refund_observations o WHERE o.org_id=r.org_id AND o.refund_id=r.id),r.created_at),?
         FROM billing_refunds r JOIN billing_refund_provider p ON p.org_id=r.org_id AND p.refund_id=r.id WHERE p.status IN('failed','canceled','requires_action')`,
-        now(),
-      );
-      store.run(
-        `INSERT OR IGNORE INTO billing_refund_alert_updates SELECT org_id,refund_id,revision,status,state,'existing-state',updated_at FROM billing_refund_alerts`,
-      );
+          now(),
+        );
+        store.run(
+          `INSERT OR IGNORE INTO billing_refund_alert_updates SELECT org_id,refund_id,revision,status,state,'existing-state',updated_at FROM billing_refund_alerts`,
+        );
+      }
     });
   }
   private principal(actor: Actor) {
