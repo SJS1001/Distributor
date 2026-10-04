@@ -40,7 +40,9 @@ function rows(path: string) {
             r.name !== "platform_schema_version" &&
             r.name !== table &&
             r.name !== "integration_offline_original_cancellations" &&
-            r.name !== "integration_offline_canada_post_members",
+            r.name !== "integration_offline_canada_post_members" &&
+            r.name !== "integration_offline_original_leases" &&
+            r.name !== "integration_offline_checkout_paid",
         )
         .map((r) => [
           String(r.name),
@@ -56,7 +58,9 @@ function rows(path: string) {
 function previous(source: string, target: string, reports: boolean) {
   raw(source, (db) => db.prepare("VACUUM INTO ?").run(target));
   raw(target, (db) => {
-    db.exec("DROP TABLE integration_offline_canada_post_members");
+    db.exec(
+      "DROP TABLE integration_offline_checkout_paid; DROP TABLE integration_offline_original_leases; DROP TABLE integration_offline_canada_post_members",
+    );
     db.exec("DROP TABLE integration_offline_original_cancellations");
     db.exec(`DROP TABLE ${table}`);
     const expected = reports ? v18.enabled : v18.disabled;

@@ -1,3 +1,5 @@
+import { INTEGRATION_OFFLINE_CHECKOUT_PAID_INITIALIZE_DDL } from "./integration-offline-checkout-paid-schema.ts";
+import { INTEGRATION_OFFLINE_ORIGINAL_LEASE_INITIALIZE_DDL } from "./integration-offline-original-lease-schema.ts";
 import { INTEGRATION_OFFLINE_CANADA_POST_INITIALIZE_DDL } from "./integration-offline-canada-post-schema.ts";
 import { INTEGRATION_OFFLINE_ORIGINAL_INITIALIZE_DDL } from "./integration-offline-original-schema.ts";
 import { INTEGRATION_OFFLINE_REFUND_INITIALIZE_DDL } from "./integration-offline-refund-schema.ts";
@@ -171,6 +173,8 @@ export class Integration {
     this.store.migrate(INTEGRATION_OFFLINE_REFUND_INITIALIZE_DDL);
     this.store.migrate(INTEGRATION_OFFLINE_ORIGINAL_INITIALIZE_DDL);
     this.store.migrate(INTEGRATION_OFFLINE_CANADA_POST_INITIALIZE_DDL);
+    this.store.migrate(INTEGRATION_OFFLINE_ORIGINAL_LEASE_INITIALIZE_DDL);
+    this.store.migrate(INTEGRATION_OFFLINE_CHECKOUT_PAID_INITIALIZE_DDL);
     this.checkouts = new IntegrationCheckouts(
       database,
       identity,
