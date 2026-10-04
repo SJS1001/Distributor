@@ -1,0 +1,59 @@
+{
+  "testedSource": "34c985b123b7b96bf0ea0101ff4f2415cbe0b086",
+  "capturedAt": "2026-10-04T04:33:49.528236+00:00",
+  "environment": {
+    "platform": "Darwin",
+    "architecture": "arm64",
+    "node": "v24.16.0"
+  },
+  "inputCount": 746,
+  "inputsSha256": "f7b5d91ea2a4dad00fc2ca985d79372c5d82a67eb48b4a29c35dd461284d9c2d",
+  "checks": [
+    {
+      "command": "npx tsx --test tests/restore-runtime.test.ts tests/restore-operator-cli.test.ts",
+      "passed": 16,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "durationMs": 4689.400833,
+      "exitCode": 0,
+      "logSha256": "2c3afa85c3cda59369d6b3e6dbcda5bd73b5da81de6afa8afffbc33c902706b2"
+    },
+    {
+      "command": "npx tsx --test tests/mfa-cleanup.test.ts tests/quickbooks-authorization-maintenance.test.ts",
+      "passed": 20,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "durationMs": 3810.4165,
+      "exitCode": 0,
+      "logSha256": "31f7361d4a17a8930082721a64cb816fe74597decd802375ce8ccca2a129a0cd",
+      "note": "Executed after final constructor edits before source commit; exercised code matches testedSource."
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "targeted prettier --check",
+      "exitCode": 0
+    },
+    {
+      "command": "python3 scripts/verify_plan.py",
+      "exitCode": 0,
+      "note": "Structure only, not gate acceptance."
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "limitations": [
+    "Synthetic direct workstation correctness checks only.",
+    "No broad native/browser rerun or deployment/provider qualification.",
+    "Static production host is absent; activation/offline execution stay disabled.",
+    "No CI/runners/workflows, PR/merge, provider IO or deployment."
+  ]
+}
