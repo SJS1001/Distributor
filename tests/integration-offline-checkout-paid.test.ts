@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { fixture, accept, ship, chooseProviders } from "./fixtures.ts";
 import { canonical, digest } from "../src/server/core.ts";
 import { Application } from "../src/server/application.ts";
-import { Database } from "../src/server/database.ts";
+import { Database, Store } from "../src/server/database.ts";
 import { Identity } from "../src/server/iam.ts";
 import { Billing } from "../src/server/billing.ts";
 import { IntegrationCheckouts } from "../src/server/integration-checkouts.ts";
@@ -1378,3 +1378,161 @@ test("captured application refreshes exact owner descriptors before executing su
   assert.equal(hits, 0);
   assert.equal(f.snapshot(), before);
 });
+
+for (const point of ["review", "phase", "payment"] as const)
+  for (const selfRemoving of [false, true])
+    test(`late ${point} callback rejects ${selfRemoving ? "self-removing" : "persistent"} owner substitution before its hook`, async (t) => {
+      const f = await applicationFixture(t),
+        capture = f.app.database.transaction(() => captureInWriter(f)),
+        op = operation(f),
+        before = f.snapshot(),
+        originalStat = fs.lstatSync;
+      const target =
+          point === "review"
+            ? IntegrationOfflineCheckoutReview.prototype
+            : point === "phase"
+              ? f.app.platform.offline
+              : f.app.billing,
+        key =
+          point === "review"
+            ? "getInTransaction"
+            : point === "phase"
+              ? "readInTransaction"
+              : "verifiedPayment",
+        descriptor = Object.getOwnPropertyDescriptor(target, key),
+        original = (target as any)[key];
+      let injected = false,
+        hits = 0;
+      Object.defineProperty(fs, "lstatSync", {
+        configurable: true,
+        writable: true,
+        value: (...args: any[]) => {
+          const stack = new Error().stack ?? "";
+          const selected =
+            point === "review"
+              ? stack.includes("IntegrationOfflineCheckoutPaid.#review")
+              : point === "phase"
+                ? stack.includes("RestoreOfflineNativePhase.review")
+                : stack.includes(
+                    "IntegrationOfflineCheckoutPaid.applyInTransaction",
+                  ) &&
+                  !stack.includes("IntegrationOfflineCheckoutPaid.#review") &&
+                  !stack.includes("RestoreOfflineNativePhase.");
+          if (!injected && selected) {
+            injected = true;
+            Object.defineProperty(target, key, {
+              configurable: true,
+              writable: true,
+              value: function (this: unknown, ...parameters: any[]) {
+                hits++;
+                if (selfRemoving) {
+                  if (descriptor)
+                    Object.defineProperty(target, key, descriptor);
+                  else Reflect.deleteProperty(target, key);
+                }
+                return original.apply(this, parameters);
+              },
+            });
+          }
+          return (originalStat as any)(...args);
+        },
+      });
+      syncBuiltinESMExports();
+      try {
+        assert.throws(
+          () =>
+            f.app.database.transaction(() =>
+              op.applyInTransaction(
+                f.executor,
+                f.reviewer,
+                f.envelope,
+                capture,
+              ),
+            ),
+          (error: any) => {
+            assert.match(error.code, /^(OFFLINE_CHECKOUT|RESTORE_OFFLINE)/);
+            return true;
+          },
+        );
+      } finally {
+        Object.defineProperty(fs, "lstatSync", {
+          configurable: true,
+          writable: true,
+          value: originalStat,
+        });
+        syncBuiltinESMExports();
+        if (descriptor) Object.defineProperty(target, key, descriptor);
+        else Reflect.deleteProperty(target, key);
+      }
+      assert.equal(injected, true, "the intended late filesystem callback ran");
+      assert.equal(hits, 0, "the substituted owner hook must never execute");
+      assert.equal(
+        f.snapshot(),
+        before,
+        "outer rollback conserves all native rows",
+      );
+    });
+
+for (const selfRemoving of [false, true])
+  test(`final recovery candidate callback refuses ${selfRemoving ? "self-removing" : "persistent"} Store hook before invocation`, async (t) => {
+    const f = await applicationFixture(t),
+      result = applyCaptured(f),
+      op = operation(f),
+      before = f.snapshot(),
+      originalStat = fs.lstatSync,
+      descriptor = Object.getOwnPropertyDescriptor(Store.prototype, "get")!,
+      original = descriptor.value;
+    let reads = 0,
+      injected = false,
+      hits = 0;
+    Object.defineProperty(fs, "lstatSync", {
+      configurable: true,
+      writable: true,
+      value: (...args: any[]) => {
+        const stack = new Error().stack ?? "";
+        if (
+          stack.includes(
+            "IntegrationOfflineCheckoutPaid.recoverRetainedInTransaction",
+          ) &&
+          !stack.includes("RestoreOfflineCommitRecoveryReader.") &&
+          ++reads === 9
+        ) {
+          // Each real candidate capture pins four files and rechecks four.
+          // Inject on the second direct capture, after the final offline reread.
+          injected = true;
+          Object.defineProperty(Store.prototype, "get", {
+            ...descriptor,
+            value: function (this: Store, ...parameters: any[]) {
+              hits++;
+              if (selfRemoving)
+                Object.defineProperty(Store.prototype, "get", descriptor);
+              return original.apply(this, parameters);
+            },
+          });
+        }
+        return (originalStat as any)(...args);
+      },
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(
+        () =>
+          f.app.database.transaction(() =>
+            op.recoverRetainedInTransaction(f.executor, f.reviewer, f.envelope),
+          ),
+        code,
+      );
+    } finally {
+      Object.defineProperty(fs, "lstatSync", {
+        configurable: true,
+        writable: true,
+        value: originalStat,
+      });
+      syncBuiltinESMExports();
+      Object.defineProperty(Store.prototype, "get", descriptor);
+    }
+    assert.equal(injected, true);
+    assert.equal(hits, 0);
+    assert.equal(f.snapshot(), before);
+    assert.deepEqual(recoverCaptured(f), result);
+  });

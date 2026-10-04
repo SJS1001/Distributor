@@ -1,6 +1,6 @@
 # Native paid checkout workstation receipt
 
-Tested source `6d7044732c2437e3b874a1e3883e7cae6da00e0a`, macOS arm64 / Node v24.16.0. All 737 captured inputs match working files and tested Git blobs in [the machine-readable receipt](LOCAL-NATIVE-CHECKOUT-PAID-2026-10-04.json).
+Tested source `6d7044732c2437e3b874a1e3883e7cae6da00e0a`, macOS arm64 / Node v24.16.0. All 737 captured inputs match working files and tested Git blobs in [the machine-readable receipt](LOCAL-NATIVE-PAID-CHECKOUT-2026-10-04.json).
 
 Full direct workstation replay passes 5,694/5,694, zero failed/cancelled/skipped/todo, exit0,120378.7385ms. Dedicated owner tests pass50/50; affected tests pass658/658. Complete TypeScript, runtime formatting, plan structure and whitespace checks exit0. Cloud638 affected passes are separate historical evidence; the root suite includes20 additional strict private-phase regressions.
 

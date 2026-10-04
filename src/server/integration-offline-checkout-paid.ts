@@ -33,6 +33,8 @@ export const offlineCheckoutPaidTask = Object.freeze({
   version: 1,
 });
 const purpose = "integration-offline-checkout-paid-application-v1";
+const capturedPhaseReview =
+  RestoreOfflineNativePhase.prototype.reviewCapturedCheckoutInTransaction;
 const code = "OFFLINE_CHECKOUT_PAID";
 function need(v: unknown): asserts v {
   check(v, code, "Fixed native paid checkout application or recovery refused.");
@@ -520,6 +522,7 @@ export class IntegrationOfflineCheckoutPaid {
       joined = this.#join.getInTransaction(locator(executorInput), c);
     need(isCapturedOfflineCheckoutReferenceJoin(joined));
     const beforeCandidate = this.#db.captureRestoreCandidateInTransaction();
+    this.#pair(executorInput, preparerInput);
     need(
       digest(canonical(beforeCandidate)) === c.candidateHash && !this.#poison,
     );
@@ -607,7 +610,7 @@ export class IntegrationOfflineCheckoutPaid {
           envelope.candidate.logicalHash ===
             r.intent.beforeCandidate.logicalHash,
       );
-      const phase = this.#phase.reviewInTransaction(envelope),
+      const phase = capturedPhaseReview.call(this.#phase, envelope),
         binding = offlineTaskBinding(envelope);
       need(canonical(phase) === canonical(capture.phase));
       const { captureHash, ...captureBody } = capture;
@@ -681,9 +684,13 @@ export class IntegrationOfflineCheckoutPaid {
       };
       need(Buffer.byteLength(canonical(base)) <= 45000); // room for receipt + resulting complete Billing facts
       this.#pair(executorInput, preparerInput);
+      const finalCandidate = this.#db.captureRestoreCandidateInTransaction();
+      // Candidate hashing crosses filesystem callbacks. Check the actual graph
+      // again before touching any owning port, even when a wrapper would remove
+      // itself on its first invocation and leave all rows unchanged.
+      this.#pair(executorInput, preparerInput);
       need(
-        canonical(this.#db.captureRestoreCandidateInTransaction()) ===
-          canonical(r.intent.beforeCandidate) &&
+        canonical(finalCandidate) === canonical(r.intent.beforeCandidate) &&
           this.#store.get("SELECT total_changes() AS n")!.n === r.changes &&
           !this.#poison,
       );
@@ -1042,12 +1049,14 @@ export class IntegrationOfflineCheckoutPaid {
         { id: pair.executor.id, orgId: actor.orgId },
         { id: pair.preparer.id, orgId: actor.orgId },
       );
+      const finalRows = this.#scan(1),
+        finalRetained = this.#platform.offline.readInTransaction(),
+        finalCandidate = this.#db.captureRestoreCandidateInTransaction();
+      this.#pair(executorInput, preparerInput);
       need(
-        canonical(this.#scan(1)) === canonical(rows) &&
-          canonical(this.#platform.offline.readInTransaction()) ===
-            canonical(retained) &&
-          canonical(this.#db.captureRestoreCandidateInTransaction()) ===
-            canonical(candidate) &&
+        canonical(finalRows) === canonical(rows) &&
+          canonical(finalRetained) === canonical(retained) &&
+          canonical(finalCandidate) === canonical(candidate) &&
           this.#store.get("SELECT total_changes() AS n")!.n === changes &&
           !this.#poison,
       );
