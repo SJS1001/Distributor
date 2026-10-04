@@ -529,3 +529,145 @@ for (const refusal of [false, true])
       assert.ok(buffers.every((buffer) => buffer.every((byte) => byte === 0)));
     },
   );
+
+for (const ownerName of [
+  "database",
+  "identity",
+  "billing",
+  "platform",
+] as const)
+  test(`refund replaced ${ownerName} method refuses before getter and host`, async (t) => {
+    const f = await ready(t);
+    const owner = f.app[ownerName];
+    const name =
+      ownerName === "database"
+        ? "requireTransaction"
+        : ownerName === "identity"
+          ? "currentActor"
+          : ownerName === "billing"
+            ? "verifiedPayment"
+            : "rawRecoveryHoldInTransaction";
+    let calls = 0;
+    Object.defineProperty(owner, name, {
+      configurable: true,
+      get() {
+        calls++;
+        throw Error("substituted getter");
+      },
+    });
+    try {
+      assert.throws(() => execute(f), {
+        code: "RESTORE_OFFLINE_REFUND_COORDINATOR",
+      });
+      assert.equal(calls, 0);
+      assert.equal(f.state.heldReads, 0);
+    } finally {
+      Reflect.deleteProperty(owner, name);
+    }
+  });
+for (const late of [false, true])
+  test(`refund changed owner association refuses without getter execution, late=${late}`, async (t) => {
+    const f = await ready(t),
+      owner = f.app.identity;
+    const original = Object.getOwnPropertyDescriptor(owner, "database")!;
+    let calls = 0;
+    const replace = () =>
+      Object.defineProperty(owner, "database", {
+        configurable: true,
+        get() {
+          calls++;
+          throw Error("foreign owner association");
+        },
+      });
+    const before = snapshot(f);
+    if (late) f.state.onRead = replace;
+    else replace();
+    try {
+      assert.throws(() => execute(f), {
+        code: late
+          ? "RESTORE_OFFLINE_COMMIT_GUARD"
+          : "RESTORE_OFFLINE_REFUND_COORDINATOR",
+      });
+      assert.equal(calls, 0);
+      assert.equal(snapshot(f), before);
+    } finally {
+      Object.defineProperty(owner, "database", original);
+    }
+  });
+
+for (const late of [false, true])
+  test(`refund child owner replacement refuses without getters, late=${late}`, async (t) => {
+    const f = await ready(t),
+      owner = f.app.billing;
+    const original = Object.getOwnPropertyDescriptor(owner, "refunds")!;
+    let calls = 0;
+    const replace = () =>
+      Object.defineProperty(owner, "refunds", {
+        configurable: true,
+        get() {
+          calls++;
+          throw Error("foreign refund owner");
+        },
+      });
+    const before = snapshot(f);
+    if (late) f.state.onRead = replace;
+    else replace();
+    try {
+      assert.throws(() => execute(f));
+      assert.equal(calls, 0);
+      assert.equal(snapshot(f), before);
+    } finally {
+      Object.defineProperty(owner, "refunds", original);
+    }
+  });
+test("refund child method replacement refuses without getter before host", async (t) => {
+  const f = await ready(t),
+    owner = f.app.billing.refunds;
+  let calls = 0;
+  Object.defineProperty(owner, "applyOfflineFailedRefundInTransaction", {
+    configurable: true,
+    get() {
+      calls++;
+      throw Error("substituted refund method");
+    },
+  });
+  try {
+    assert.throws(() => execute(f), {
+      code: "RESTORE_OFFLINE_REFUND_COORDINATOR",
+    });
+    assert.equal(calls, 0);
+    assert.equal(f.state.heldReads, 0);
+  } finally {
+    Reflect.deleteProperty(owner, "applyOfflineFailedRefundInTransaction");
+  }
+});
+
+test("refund construction refuses child accessor without invocation", async (t) => {
+  const f = await ready(t),
+    billing = f.app.billing;
+  const original = Object.getOwnPropertyDescriptor(billing, "refunds")!;
+  let calls = 0;
+  Object.defineProperty(billing, "refunds", {
+    configurable: true,
+    get() {
+      calls++;
+      throw Error("foreign refund owner");
+    },
+  });
+  try {
+    assert.throws(
+      () =>
+        new RestoreOfflineFailedRefundCoordinator(
+          f.app.database,
+          f.app.identity,
+          billing,
+          f.app.platform,
+          f.host,
+        ),
+      { code: "RESTORE_OFFLINE_REFUND_COORDINATOR" },
+    );
+    assert.equal(calls, 0);
+  } finally {
+    Object.defineProperty(billing, "refunds", original);
+  }
+});

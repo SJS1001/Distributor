@@ -3,6 +3,7 @@ import { canonical, check, permit, type Actor } from "./core.ts";
 import { Database } from "./database.ts";
 import { Identity } from "./iam.ts";
 import { Billing } from "./billing.ts";
+import { BillingRefunds } from "./billing-refunds.ts";
 import { Platform } from "./platform.ts";
 import {
   IntegrationOfflineFailedRefund,
@@ -185,6 +186,12 @@ export class RestoreOfflineFailedRefundCoordinator {
   readonly #operation: IntegrationOfflineFailedRefund;
   readonly #private = new RestoreOfflineFailedRefundPrivateEvidence();
   readonly #host: OfflineFailedRefundHost | undefined;
+  readonly #ownerMethods: readonly Readonly<{
+    owner: object;
+    prototype: object;
+    methods: readonly (readonly [string, unknown])[];
+  }>[];
+  readonly #ownerLinks: readonly (readonly [object, string, object])[];
   constructor(
     private readonly database: Database,
     private readonly identity: Identity,
@@ -192,6 +199,58 @@ export class RestoreOfflineFailedRefundCoordinator {
     private readonly platform: Platform,
     host?: OfflineFailedRefundHost,
   ) {
+    insist(
+      billing &&
+        !types.isProxy(billing) &&
+        Object.getPrototypeOf(billing) === Billing.prototype,
+    );
+    const refundDescriptor = Object.getOwnPropertyDescriptor(
+      billing,
+      "refunds",
+    );
+    insist(refundDescriptor && "value" in refundDescriptor);
+    const refunds = refundDescriptor.value as BillingRefunds;
+    this.#ownerMethods = [
+      [database, Database.prototype],
+      [identity, Identity.prototype],
+      [billing, Billing.prototype],
+      [refunds, BillingRefunds.prototype],
+      [platform, Platform.prototype],
+    ].map(([owner, prototype]) => {
+      insist(
+        owner &&
+          !types.isProxy(owner) &&
+          Object.getPrototypeOf(owner) === prototype,
+      );
+      const methods = Object.getOwnPropertyNames(prototype!)
+        .filter((key) => key !== "constructor")
+        .map(
+          (key) =>
+            [
+              key,
+              Object.getOwnPropertyDescriptor(prototype!, key)?.value,
+            ] as const,
+        );
+      return Object.freeze({
+        owner: owner!,
+        prototype: prototype!,
+        methods: Object.freeze(methods),
+      });
+    });
+    this.#ownerLinks = Object.freeze([
+      Object.freeze([identity, "database", database] as const),
+      Object.freeze([platform, "database", database] as const),
+      Object.freeze([identity, "platform", platform] as const),
+      Object.freeze([billing, "database", database] as const),
+      Object.freeze([billing, "identity", identity] as const),
+      Object.freeze([billing, "platform", platform] as const),
+      Object.freeze([billing, "refunds", refunds] as const),
+      Object.freeze([refunds, "database", database] as const),
+      Object.freeze([refunds, "identity", identity] as const),
+      Object.freeze([refunds, "platform", platform] as const),
+      Object.freeze([refunds, "billing", billing] as const),
+    ]);
+    this.owners();
     this.#operation = new IntegrationOfflineFailedRefund(
       database,
       identity,
@@ -200,6 +259,24 @@ export class RestoreOfflineFailedRefundCoordinator {
     );
     this.#host = host === undefined ? undefined : captureHost(host);
   }
+  private owners() {
+    for (const { owner, prototype, methods } of this.#ownerMethods) {
+      insist(
+        !types.isProxy(owner) && Object.getPrototypeOf(owner) === prototype,
+      );
+      for (const [key, method] of methods)
+        insist(
+          !Object.hasOwn(owner, key) &&
+            Object.getOwnPropertyDescriptor(prototype, key)?.value === method,
+        );
+    }
+    for (const [owner, key, expected] of this.#ownerLinks) {
+      const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+      insist(
+        descriptor && "value" in descriptor && descriptor.value === expected,
+      );
+    }
+  }
   execute(
     actorInput: Actor,
     envelopeInput: unknown,
@@ -207,6 +284,7 @@ export class RestoreOfflineFailedRefundCoordinator {
     manifestInput: unknown,
     referenceInput: unknown,
   ) {
+    this.owners();
     const host = this.#host;
     insist(host);
     // Capture ONLY principal locators; current grants are always native.
@@ -245,11 +323,13 @@ export class RestoreOfflineFailedRefundCoordinator {
       providerReference: string | undefined,
       previousNow: number | undefined;
     const qualified = (request: OfflineCommitRequest) => {
+      this.owners();
       this.database.requireTransaction();
       const store = this.database.owned("integration"),
         changes = store.get("SELECT total_changes() AS n")!.n;
       insist(host.adapter.assertHeld(request) === undefined);
       const captured = host.readCurrent(request);
+      this.owners();
       insist(store.get("SELECT total_changes() AS n")!.n === changes);
       const q = detach(captured) as OfflineFailedRefundQualification;
       record(q, [
@@ -356,6 +436,7 @@ export class RestoreOfflineFailedRefundCoordinator {
   }
   /** Read-only exact durable native receipt. Absence refuses; never retry here. */
   recoverInTransaction(actor: Actor, envelope: unknown) {
+    this.owners();
     return this.#operation.recoverInTransaction(actor, envelope);
   }
 }
