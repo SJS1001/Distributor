@@ -1,0 +1,59 @@
+{
+  "recordedAt": "2026-10-04T03:27:57.628957+00:00",
+  "testedSourceCommit": "2a983fe2adb70f5ed3061c33d9120a680cbd1e56",
+  "environment": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "node": "v24.16.0"
+  },
+  "command": "node --test scripts/verify_licenses.test.mjs",
+  "outcome": {
+    "exitCode": 0,
+    "tests": 8,
+    "passed": 8,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0,
+    "durationMilliseconds": 73.384208
+  },
+  "testedInputsSha256": {
+    "scripts/verify_licenses.mjs": "e37e273cc2a003ee907e115309dca14337d68be0e23f82a086584463c67e7b64",
+    "scripts/verify_licenses.test.mjs": "b028a7155b747607e3d5ceca11622b68e888242af6b34b39979eeb7ec979f0c5",
+    "package-lock.json": "9f40578e1ae7c3556f5d40c22b47b4e6f4ffb72dbdf8ad14c3ce80973a90e206",
+    "docs/licenses/LOCKED-INVENTORY-2026-10-04.json": "1b8d0b69eb8192d9e304a470f637eb4bda1c26c9f2dc04983c11db888961dc0c"
+  },
+  "logsSha256": {
+    "local-evidence/license-boundary-before.log": "ca2125c5fdd614866f1529ccb04d6a0d86d8189152c37dcf0bd2dd57093ff0e8",
+    "local-evidence/license-boundary-final-test.log": "1e1b16b48b947c972fa78c4d939d7001840c591d925bb88f1fb85fd9f750d36e",
+    "local-evidence/license-boundary-final-inventory.json": "1b8d0b69eb8192d9e304a470f637eb4bda1c26c9f2dc04983c11db888961dc0c"
+  },
+  "previousFailure": {
+    "sourceCommit": "5b3cb50a71ebcbbda429fb7cdc3ccba0720acfd4",
+    "tests": 8,
+    "passed": 6,
+    "failed": 2,
+    "description": "New linked-manifest and Windows-separator regressions both failed before the script fix."
+  },
+  "inventory": {
+    "exitCode": 0,
+    "matchesCommittedSnapshotBytes": true,
+    "lockedPackages": 226,
+    "installedPackages": 148,
+    "absentOptionalPackages": 78,
+    "namedNoticeFiles": 159,
+    "discrepancies": 0
+  },
+  "unchangedApplicationInputs": {
+    "count": 739,
+    "historicalFreezeSource": "375d8031d34003a65ce76ab38a832ee0b31b8df6",
+    "workingAndTestedGitBytesMatch": true
+  },
+  "limitations": [
+    "Direct macOS workstation fixture verification; Windows was not executed. Separator rejection is exercised on macOS.",
+    "Stationary installation required; concurrent filesystem replacement is outside this utility contract.",
+    "No fresh full native, browser or isolated runtime replay; all739 application inputs remain identical to their historical verified bytes.",
+    "Artifact/source evidence does not establish complete license grants, native redistribution coverage or product acceptance.",
+    "No PR, merge, CI runner, provider operation or deployment."
+  ]
+}
