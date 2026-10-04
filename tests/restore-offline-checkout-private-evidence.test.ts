@@ -1690,7 +1690,7 @@ test("application capture refuses a logically identical write during phase revie
     if (
       !injected &&
       new Error().stack?.includes(
-        "RestoreOfflineNativePhase.reviewInTransaction",
+        "RestoreOfflineNativePhase.reviewCapturedCheckoutInTransaction",
       )
     ) {
       injected = true;
@@ -1796,7 +1796,7 @@ for (const application of [false, true])
               if (
                 !injected &&
                 new Error().stack?.includes(
-                  "RestoreOfflineNativePhase.reviewInTransaction",
+                  "RestoreOfflineNativePhase.reviewCapturedCheckoutInTransaction",
                 )
               )
                 inject();

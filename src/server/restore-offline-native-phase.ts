@@ -56,7 +56,11 @@ function member(owner: object, key: string): unknown {
   insist(d && "value" in d);
   return d.value;
 }
-function owner(value: unknown, prototype: object): asserts value is object {
+function owner(
+  value: unknown,
+  prototype: object,
+  pinMethods = true,
+): asserts value is object {
   insist(value && typeof value === "object" && !types.isProxy(value));
   insist(Object.getPrototypeOf(value) === prototype);
   insist(Reflect.ownKeys(value).length <= 64);
@@ -64,6 +68,7 @@ function owner(value: unknown, prototype: object): asserts value is object {
     const d = Object.getOwnPropertyDescriptor(value, key);
     insist(d && "value" in d);
   }
+  if (!pinMethods) return;
   const pinned = ownerDescriptors.get(prototype)!;
   const current = Object.getOwnPropertyDescriptors(prototype);
   insist(Reflect.ownKeys(current).length === Reflect.ownKeys(pinned).length);
@@ -98,12 +103,12 @@ export class RestoreOfflineNativePhase {
   readonly #graph: readonly (readonly [object, object])[];
   readonly #links: readonly (readonly [object, string, unknown])[];
   constructor(database: Database, platform: Platform) {
-    owner(database, Database.prototype);
-    owner(platform, Platform.prototype);
+    owner(database, Database.prototype, false);
+    owner(platform, Platform.prototype, false);
     const offline = member(platform, "offline"),
       restore = member(platform, "restore");
-    owner(offline, RestoreOfflineStorage.prototype);
-    owner(restore, RestoreActivation.prototype);
+    owner(offline, RestoreOfflineStorage.prototype, false);
+    owner(restore, RestoreActivation.prototype, false);
     const objects = [
       [platform, Platform.prototype],
       [offline, RestoreOfflineStorage.prototype],
@@ -111,7 +116,7 @@ export class RestoreOfflineNativePhase {
     ] as const;
     const stores = objects.map(([value]) => {
       const store = member(value, "store");
-      owner(store, Store.prototype);
+      owner(store, Store.prototype, false);
       insist(
         member(store, "database") === database &&
           member(store, "owner") === "platform",
@@ -143,7 +148,6 @@ export class RestoreOfflineNativePhase {
     const path = member(database, "path");
     insist(typeof path === "string");
     this.#path = path;
-    this.#owners();
   }
   #owners() {
     for (const [value, prototype] of this.#graph) owner(value, prototype);
@@ -152,7 +156,17 @@ export class RestoreOfflineNativePhase {
     insist(member(this.#database, "path") === this.#path);
   }
   reviewInTransaction(envelopeInput: unknown): OfflineNativePhaseReview {
-    this.#owners();
+    return this.#review(envelopeInput, false);
+  }
+  /** Fixed private checkout entry. Its issued capture requires the complete
+   * original read graph before any owner hook, including unchanged-row reads. */
+  reviewCapturedCheckoutInTransaction(
+    envelopeInput: unknown,
+  ): OfflineNativePhaseReview {
+    return this.#review(envelopeInput, true);
+  }
+  #review(envelopeInput: unknown, strict: boolean): OfflineNativePhaseReview {
+    if (strict) this.#owners();
     this.#database.requireTransaction();
     try {
       const envelope = parseOfflineTaskEnvelope(envelopeInput);
@@ -162,7 +176,7 @@ export class RestoreOfflineNativePhase {
           this.#database.path === this.#path,
       );
       const file = lstatSync(this.#path, { bigint: true });
-      this.#owners();
+      if (strict) this.#owners();
       insist(file.isFile() && !file.isSymbolicLink());
       insist(
         envelope.candidate.file.dev === safeIdentity(file.dev) &&
@@ -171,9 +185,9 @@ export class RestoreOfflineNativePhase {
       // This outer pin extends the existing Database pin around all native reads.
       // Database still independently compares against its private opened identity.
       const unchanged = pinRestoreCandidateFiles(this.#path, file);
-      this.#owners();
+      if (strict) this.#owners();
       const retained = this.#platform.offline.readInTransaction();
-      this.#owners();
+      if (strict) this.#owners();
       const history =
         this.#platform.restore.offlineReleaseHistoryInTransaction();
       insist(retained);
@@ -199,7 +213,7 @@ export class RestoreOfflineNativePhase {
         schemaVersion === SCHEMA_VERSION &&
           canonical(envelope.recovery) === canonical(generation),
       );
-      this.#owners();
+      if (strict) this.#owners();
       const candidate = this.#database.captureRestoreCandidateInTransaction();
       const { instanceId: _instance, ...nativeBinding } = generation;
       const { logicalHash, ...candidateBinding } = candidate;
@@ -209,10 +223,10 @@ export class RestoreOfflineNativePhase {
       );
       // No current()-filtered view: recheck complete native history and the exact
       // durable head before returning, still in this synchronous writer scope.
-      this.#owners();
+      if (strict) this.#owners();
       const finalHistory =
         this.#platform.restore.offlineReleaseHistoryInTransaction();
-      this.#owners();
+      if (strict) this.#owners();
       const finalRetained = this.#platform.offline.readInTransaction();
       insist(
         canonical(finalHistory) === canonical(history) &&
@@ -220,7 +234,7 @@ export class RestoreOfflineNativePhase {
           this.#database.path === this.#path,
       );
       unchanged();
-      this.#owners();
+      if (strict) this.#owners();
       const expectation = offlinePhaseExpectation(retained.state);
       return Object.freeze({
         version: 1,

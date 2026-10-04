@@ -556,7 +556,7 @@ for (const [label, points] of histories)
     }
   });
 
-test("a substituted candidate-capture callback is refused before it can append a release", (t) => {
+test("a release appended during candidate capture invalidates the earlier native phase", (t) => {
   const f = setup(t),
     input = f.envelope(),
     before = fingerprint(f.path),
@@ -572,7 +572,7 @@ test("a substituted candidate-capture callback is refused before it can append a
   );
   try {
     assert.throws(() => f.review(input), refusal);
-    assert.equal(hook.mock.callCount(), 0);
+    assert.equal(hook.mock.callCount(), 1);
   } finally {
     hook.mock.restore();
   }

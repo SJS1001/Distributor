@@ -31,7 +31,8 @@ export const checkoutPrivateTask = Object.freeze({
 export const checkoutPrivateEvidenceBytes = offlineCheckoutEvidenceLimits.bytes;
 const nativeReview =
   RestoreOfflineCheckoutNativeJoin.prototype.getInTransaction;
-const phaseReview = RestoreOfflineNativePhase.prototype.reviewInTransaction;
+const phaseReview =
+  RestoreOfflineNativePhase.prototype.reviewCapturedCheckoutInTransaction;
 const referenceReview =
   RestoreOfflineCheckoutReferenceJoin.prototype.getInTransaction;
 const readCounter = Store.prototype.get;
