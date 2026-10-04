@@ -571,6 +571,153 @@ export class PlatformOfflineOriginalLeaseCommandReviewReader {
     valid(native.orgId === actor.orgId);
     const nativeSourceId = native.packet.id;
     id(nativeSourceId);
+    // Join the retained original cost packet through its owning projection.
+    // Only these exact command/audit objects are discharged below. Names,
+    // aggregate hashes, or an occurrence of the packet ID are not a join.
+    const packet = native.packet;
+    const report = json(String(packet.report), "audit");
+    const input = json(String(packet.input), "audit");
+    const { movements: _movements, journal: _journal, ...controls } = report;
+    valid(packet.state === "reviewed" && packet.receipt === null);
+    const finalView = {
+      id: packet.id,
+      sequence: packet.sequence,
+      batchRef: packet.batch_ref,
+      state: packet.state,
+      reviewHash: packet.review_hash,
+      contentHash: packet.content_hash,
+      createdAt: packet.created_at,
+      createdBy: packet.created_by,
+      decisionAt: packet.decision_at,
+      decisionBy: packet.decision_by,
+      decisionReason: packet.decision_reason,
+      region: packet.region,
+      currency: packet.currency,
+      input,
+      controls,
+      receipt: null,
+    };
+    const prepareView = {
+      ...finalView,
+      state: "ready",
+      contentHash: null,
+      decisionAt: null,
+      decisionBy: null,
+      decisionReason: null,
+    };
+    const joinedSourceCommands = new Set<Row>();
+    const joinedSourceAudits = new Set<Row>();
+    function joinSourceCommand(
+      name: string,
+      expected: unknown,
+      payload: Data,
+      actorId: unknown,
+      semanticAction: string,
+      semanticDetail: unknown,
+      semanticTime: unknown,
+    ) {
+      const selected = commands.filter(
+        (c) =>
+          c.name === name &&
+          json(String(c.result), "command").id === nativeSourceId,
+      );
+      valid(selected.length === 1);
+      const c = selected[0]!;
+      valid(
+        c.actor_id === actorId &&
+          canonical(json(String(c.result), "command")) ===
+            canonical(expected) &&
+          c.hash === digest(canonical(payload)),
+      );
+      const ca = audits.filter(
+        (a) =>
+          a.actor_id === c.actor_id &&
+          a.action === name &&
+          a.reference === c.key,
+      );
+      valid(ca.length === 1);
+      const audit = ca[0]!;
+      valid(
+        canonical(json(String(audit.detail), "audit")) ===
+          canonical({ requestHash: c.hash }) &&
+          String(audit.created_at) >= String(c.created_at),
+      );
+      const semantic = audits.filter(
+        (a) => a.action === semanticAction && a.reference === nativeSourceId,
+      );
+      valid(semantic.length === 1);
+      const event = semantic[0]!;
+      valid(
+        event.actor_id === actorId &&
+          String(event.created_at) >= String(semanticTime) &&
+          String(event.created_at) <= String(audit.created_at) &&
+          canonical(json(String(event.detail), "audit")) ===
+            canonical(semanticDetail) &&
+          Number(event.sequence) < Number(audit.sequence),
+      );
+      joinedSourceCommands.add(c);
+      joinedSourceAudits.add(audit);
+      joinedSourceAudits.add(event);
+      return {
+        actorId: String(c.actor_id),
+        command: name,
+        key: String(c.key),
+        requestHash: String(c.hash),
+        payload,
+        result: expected,
+        createdAt: String(c.created_at),
+        audit: {
+          id: String(audit.id),
+          sequence: Number(audit.sequence),
+          createdAt: String(audit.created_at),
+        },
+        semanticAudit: {
+          id: String(event.id),
+          sequence: Number(event.sequence),
+          createdAt: String(event.created_at),
+          detail: semanticDetail,
+        },
+      };
+    }
+    const sourcePreparation = joinSourceCommand(
+      "accounting.cost.prepare",
+      prepareView,
+      input,
+      packet.created_by,
+      "accounting.cost.prepared",
+      {
+        reviewHash: packet.review_hash,
+        afterSequence: input.afterSequence,
+        throughSequence: input.throughSequence,
+      },
+      packet.created_at,
+    );
+    const sourceDecision = joinSourceCommand(
+      "accounting.cost.decide",
+      finalView,
+      {
+        packetId: packet.id,
+        reviewHash: packet.review_hash,
+        decision: "approve",
+        reason: packet.decision_reason,
+      },
+      packet.decision_by,
+      "accounting.cost.decided",
+      {
+        decision: "approve",
+        reviewHash: packet.review_hash,
+        contentHash: packet.content_hash,
+      },
+      packet.decision_at,
+    );
+    valid(
+      sourcePreparation.audit.sequence < sourceDecision.semanticAudit.sequence,
+    );
+    const sourceCommands = {
+      packetId: nativeSourceId,
+      prepare: sourcePreparation,
+      decision: sourceDecision,
+    };
     const observations = {
       audits: audits
         .filter((a) => a.action === "accounting.journal.observed")
@@ -1091,6 +1238,7 @@ export class PlatformOfflineOriginalLeaseCommandReviewReader {
       nativeIdentities.some((id) => canonical(value).includes(id));
     const unjoinedAudits = audits.filter(
       (a) =>
+        !joinedSourceAudits.has(a) &&
         (String(a.action).startsWith("accounting.journal.") ||
           touches(json(String(a.detail), "audit")) ||
           selectedIds.has(String(a.reference))) &&
@@ -1106,6 +1254,7 @@ export class PlatformOfflineOriginalLeaseCommandReviewReader {
     );
     const unjoinedCommands = commands.filter(
       (c) =>
+        !joinedSourceCommands.has(c) &&
         !names.includes(c.name as Name) &&
         (String(c.name).startsWith("accounting.journal.") ||
           touches(json(String(c.result), "command"))),
@@ -1162,6 +1311,7 @@ export class PlatformOfflineOriginalLeaseCommandReviewReader {
         observationHash: digest(canonical(observations.audits)),
       },
       attempts: attemptFacts,
+      sourceCommands,
       blockers: [
         ...(unjoinedCommands.length
           ? ["COMMAND_PREIMAGE_NOT_OWNER_JOINED"]

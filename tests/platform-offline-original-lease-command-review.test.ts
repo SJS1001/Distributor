@@ -846,3 +846,49 @@ test("late raw hold removal refuses and enclosing writer restores original rows"
   }
   assert.equal(snapshot(c), before);
 });
+
+// The source packet is part of the exact running-lease native scope. Its
+// ordinary cost receipts need their own retained preimages, not a name filter.
+test("source packet prepare and approve receipts have exact owning joins", (t) => {
+  const c = setup(t),
+    before = snapshot(c),
+    r = read(c);
+  assert.equal(snapshot(c), before);
+  assert(!r.blockers.includes("COMMAND_PREIMAGE_NOT_OWNER_JOINED"));
+  const source = (
+    r as unknown as {
+      sourceCommands: {
+        packetId: string;
+        prepare: { requestHash: string; payload: unknown };
+        decision: { requestHash: string; payload: unknown };
+      };
+    }
+  ).sourceCommands;
+  assert.equal(source.packetId, c.original.id);
+  assert.equal(
+    source.prepare.requestHash,
+    digest(canonical(source.prepare.payload)),
+  );
+  assert.equal(
+    source.decision.requestHash,
+    digest(canonical(source.decision.payload)),
+  );
+  assert(r.blockers.includes("CLAIM_START_TIMESTAMP_NOT_IN_PLATFORM_AUDIT"));
+});
+for (const sql of [
+  "DELETE FROM platform_commands WHERE name='accounting.cost.prepare'",
+  "DELETE FROM platform_commands WHERE name='accounting.cost.decide'",
+  "DELETE FROM platform_audit_order WHERE audit_id IN (SELECT id FROM platform_audit WHERE action='accounting.cost.prepared')",
+  "UPDATE platform_commands SET hash=printf('%064d',0) WHERE name='accounting.cost.prepare'",
+  "UPDATE platform_commands SET hash=printf('%064d',0) WHERE name='accounting.cost.decide'",
+  "UPDATE platform_audit SET detail='{}' WHERE action='accounting.cost.decided'",
+  "UPDATE platform_commands SET result=json_set(result,'$.controls.closingValue',99) WHERE name='accounting.cost.prepare'",
+  "UPDATE platform_commands SET result=json_set(result,'$.decisionReason','changed') WHERE name='accounting.cost.decide'",
+])
+  test("source receipt corruption refuses without writes: " + sql, (t) => {
+    const c = setup(t);
+    alter(c, sql);
+    const before = snapshot(c);
+    assert.throws(() => read(c));
+    assert.equal(snapshot(c), before);
+  });
