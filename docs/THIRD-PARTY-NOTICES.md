@@ -1,6 +1,11 @@
-# Billing dependency and font notices
+# Dependency and font notices
 
 Date: 2026-09-30. Actual installed files were read before local reuse. This inventory supplements [reuse qualification](REUSE.md); it neither selects a Distributor product license nor approves publication or redistribution of the full application. Dependency source/integrity is pinned in package-lock.json. Preserve notices when packaging third-party files.
+
+
+## Full lockfile inventory — 2026-10-04
+
+The [reproducible inventory](DEPENDENCY-INVENTORY.md) now covers all226 locked packages and159 actual separately named notice files on macOS arm64. The [bounded primary-source review](research/DEPENDENCY-PROVENANCE-2026-10-04.md) verifies seven exact published artifacts, traces upstream sources where available and retains pinned Skia/rolldown notices. It identifies unresolved source/grant and native distribution gaps explicitly. This supersedes the earlier absence of a complete lockfile inventory; it does not certify full bundled/native provenance or redistribution compliance. The existing checkpoint notices below remain unchanged.
 
 ## Runtime PDF components
 
@@ -34,8 +39,6 @@ pdfjs-dist 6.3.289 independently parses/rasterizes generated PDFs; it is now a r
 Runtime QR encoding uses [node-qrcode](https://github.com/soldair/node-qrcode); independent development-only pixel decoding uses [jsQR](https://github.com/cozmo/jsQR). Added locked packages and their actual installed license texts were inspected and copied unchanged below. QR PDFs reuse the static Noto Sans font and PDF components already inventoried above. No project publication or complete distribution license audit is implied.
 
 The installed dijkstrajs notice includes Wyatt Baldwin's copyright, an MIT reference/link and the disclaimer, but omits the full standalone permission grant. Its exact notice is retained. Complete license provenance and distribution qualification remain pending; a package manifest label alone does not settle that review.
-
-The installed dijkstrajs notice identifies Wyatt Baldwin's copyright and MIT licensing and includes the disclaimer, but refers to an external MIT text instead of containing the full permission grant. Its actual notice is preserved unchanged; complete source/provenance and distribution qualification remains open.
 
 | Added exact package | Declared license | Retained actual text |
 | --- | --- | --- |
