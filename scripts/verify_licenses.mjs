@@ -45,6 +45,7 @@ export async function inventoryLicenses(root) {
     .filter(([key]) => key)
     .sort(([a], [b]) => a.localeCompare(b, "en"))) {
     if (
+      location.includes("\\") ||
       !/^(?:node_modules\/(?:@[^/]+\/)?[^/]+\/)*(?:node_modules\/)(?:@[^/]+\/)?[^/]+$/.test(
         location,
       ) ||
@@ -80,7 +81,13 @@ export async function inventoryLicenses(root) {
           );
       }
       packageDirectoryPresent = true;
-      const manifestBytes = await readFile(resolve(directory, "package.json"));
+      const manifestPath = resolve(directory, "package.json");
+      const manifestStat = await lstat(manifestPath);
+      if (!manifestStat.isFile() || manifestStat.isSymbolicLink())
+        throw new Error(
+          `Package manifest is not an ordinary file: ${location}`,
+        );
+      const manifestBytes = await readFile(manifestPath);
       const manifest = JSON.parse(manifestBytes);
       record.installed = true;
       record.installedVersion = manifest.version ?? null;

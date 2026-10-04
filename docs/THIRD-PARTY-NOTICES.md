@@ -7,6 +7,8 @@ Date: 2026-09-30. Actual installed files were read before local reuse. This inve
 
 The [reproducible inventory](DEPENDENCY-INVENTORY.md) now covers all226 locked packages and159 actual separately named notice files on macOS arm64. The [bounded primary-source review](research/DEPENDENCY-PROVENANCE-2026-10-04.md) verifies seven exact published artifacts, traces upstream sources where available and retains pinned Skia/rolldown notices. It identifies unresolved source/grant and native distribution gaps explicitly. This supersedes the earlier absence of a complete lockfile inventory; it does not certify full bundled/native provenance or redistribution compliance. The existing checkpoint notices below remain unchanged.
 
+The [external-reference follow-up](research/LICENSE-REFERENCE-FOLLOWUP-2026-10-04.md) retains the referenced license service's unchanged [James Sumners record](licenses/provenance/mit-license-606de14-jsumners.json) and [MIT template](licenses/provenance/mit-license-606de14-MIT.ejs.txt) at source `606de148f96ec6033fe529c052eb49378fa6d311`. These narrow abstract-logging's earlier inaccessible-reference gap; they are source evidence, not a replacement rendered package LICENSE. Historical deployment/response and complete distribution sufficiency remain unverified. Fontkit's additional artifact/release avenues did not resolve its exact source/grant gap.
+
 ## Runtime PDF components
 
 | Exact component | Observed license/source | Retained notice |

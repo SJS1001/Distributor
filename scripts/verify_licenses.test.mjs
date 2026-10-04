@@ -164,3 +164,37 @@ test("a present but incomplete optional package is not mistaken for a deliberate
     },
   ]);
 });
+
+test("a linked manifest cannot copy unrelated metadata into a publishable inventory", async (t) => {
+  const root = await fixture(t, {
+    "node_modules/example": { version: "1", license: "MIT" },
+  });
+  await mkdir(join(root, "node_modules/example"), { recursive: true });
+  await writeFile(
+    join(root, "private-manifest.json"),
+    JSON.stringify({
+      name: "example",
+      version: "1",
+      license: "unrelated private metadata",
+    }),
+  );
+  await symlink(
+    join(root, "private-manifest.json"),
+    join(root, "node_modules/example/package.json"),
+  );
+  await assert.rejects(
+    inventoryLicenses(root),
+    /Package manifest is not an ordinary file: node_modules\/example/,
+  );
+});
+
+test("Windows separators in a locked package location are rejected on every platform", async (t) => {
+  const root = await fixture(t, {
+    "node_modules/example\\..\\..\\private": {
+      version: "1",
+      license: "MIT",
+      optional: true,
+    },
+  });
+  await assert.rejects(inventoryLicenses(root), /Unexpected package location/);
+});
