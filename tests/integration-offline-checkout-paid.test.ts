@@ -8,6 +8,7 @@ import { Application } from "../src/server/application.ts";
 import { Database, Store } from "../src/server/database.ts";
 import { Identity } from "../src/server/iam.ts";
 import { Billing } from "../src/server/billing.ts";
+import { BillingOfflineCheckoutReview } from "../src/server/billing-offline-checkout-review.ts";
 import { IntegrationCheckouts } from "../src/server/integration-checkouts.ts";
 import { IntegrationOfflineCheckoutReview } from "../src/server/integration-offline-checkout-review.ts";
 import {
@@ -1379,7 +1380,7 @@ test("captured application refreshes exact owner descriptors before executing su
   assert.equal(f.snapshot(), before);
 });
 
-for (const point of ["review", "phase", "payment"] as const)
+for (const point of ["review", "phase", "payment", "billing-helper"] as const)
   for (const selfRemoving of [false, true])
     test(`late ${point} callback rejects ${selfRemoving ? "self-removing" : "persistent"} owner substitution before its hook`, async (t) => {
       const f = await applicationFixture(t),
@@ -1390,15 +1391,19 @@ for (const point of ["review", "phase", "payment"] as const)
       const target =
           point === "review"
             ? IntegrationOfflineCheckoutReview.prototype
-            : point === "phase"
-              ? f.app.platform.offline
-              : f.app.billing,
+            : point === "billing-helper"
+              ? BillingOfflineCheckoutReview.prototype
+              : point === "phase"
+                ? f.app.platform.offline
+                : f.app.billing,
         key =
           point === "review"
             ? "getInTransaction"
-            : point === "phase"
-              ? "readInTransaction"
-              : "verifiedPayment",
+            : point === "billing-helper"
+              ? "getInTransaction"
+              : point === "phase"
+                ? "readInTransaction"
+                : "verifiedPayment",
         descriptor = Object.getOwnPropertyDescriptor(target, key),
         original = (target as any)[key];
       let injected = false,
@@ -1411,7 +1416,7 @@ for (const point of ["review", "phase", "payment"] as const)
           const selected =
             point === "review"
               ? stack.includes("IntegrationOfflineCheckoutPaid.#review")
-              : point === "phase"
+              : point === "phase" || point === "billing-helper"
                 ? stack.includes("RestoreOfflineNativePhase.review")
                 : stack.includes(
                     "IntegrationOfflineCheckoutPaid.applyInTransaction",
@@ -1536,3 +1541,85 @@ for (const selfRemoving of [false, true])
     assert.equal(f.snapshot(), before);
     assert.deepEqual(recoverCaptured(f), result);
   });
+
+for (const point of ["early", "final"] as const)
+  for (const selfRemoving of [false, true])
+    test(`paid retained recovery rejects ${point} shared-reader ${selfRemoving ? "self-removing" : "persistent"} offline hook before invocation`, async (t) => {
+      const f = await applicationFixture(t),
+        result = applyCaptured(f),
+        op = operation(f),
+        before = f.snapshot(),
+        originalStat = fs.lstatSync;
+      const target = f.app.platform.offline,
+        key = "readInTransaction",
+        descriptor = Object.getOwnPropertyDescriptor(target, key),
+        original = target.readInTransaction;
+      let reads = 0,
+        injected = false,
+        hits = 0;
+      Object.defineProperty(fs, "lstatSync", {
+        configurable: true,
+        writable: true,
+        value: (...args: any[]) => {
+          const stack = new Error().stack ?? "";
+          if (
+            stack.includes("RestoreOfflineCommitRecoveryReader.") &&
+            !stack.includes("captureRestoreCandidateInTransaction") &&
+            ++reads === (point === "early" ? 1 : 9)
+          ) {
+            // Initial file check plus four pin calls, then the four final file checks.
+            // Database candidate captures have their own separately guarded pin.
+            injected = true;
+            Object.defineProperty(target, key, {
+              configurable: true,
+              writable: true,
+              value: function (this: typeof target, ...parameters: any[]) {
+                hits++;
+                if (selfRemoving) {
+                  if (descriptor)
+                    Object.defineProperty(target, key, descriptor);
+                  else Reflect.deleteProperty(target, key);
+                }
+                return original.apply(this, parameters as []);
+              },
+            });
+          }
+          return (originalStat as any)(...args);
+        },
+      });
+      syncBuiltinESMExports();
+      try {
+        assert.throws(
+          () =>
+            f.app.database.transaction(() =>
+              op.recoverRetainedInTransaction(
+                f.executor,
+                f.reviewer,
+                f.envelope,
+              ),
+            ),
+          code,
+        );
+      } finally {
+        Object.defineProperty(fs, "lstatSync", {
+          configurable: true,
+          writable: true,
+          value: originalStat,
+        });
+        syncBuiltinESMExports();
+        if (descriptor) Object.defineProperty(target, key, descriptor);
+        else Reflect.deleteProperty(target, key);
+      }
+      assert.equal(
+        injected,
+        true,
+        "the shared recovery reader reached the intended filesystem boundary",
+      );
+      assert.equal(
+        hits,
+        0,
+        "paid recovery must never invoke a substituted shared owner hook",
+      );
+      assert.equal(f.snapshot(), before);
+      assert.deepEqual(recoverCaptured(f), result);
+    });

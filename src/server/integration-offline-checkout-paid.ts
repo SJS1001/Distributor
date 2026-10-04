@@ -35,6 +35,8 @@ export const offlineCheckoutPaidTask = Object.freeze({
 const purpose = "integration-offline-checkout-paid-application-v1";
 const capturedPhaseReview =
   RestoreOfflineNativePhase.prototype.reviewCapturedCheckoutInTransaction;
+const capturedReceiptRecovery =
+  RestoreOfflineCommitRecoveryReader.prototype.getCapturedCheckoutInTransaction;
 const code = "OFFLINE_CHECKOUT_PAID";
 function need(v: unknown): asserts v {
   check(v, code, "Fixed native paid checkout application or recovery refused.");
@@ -612,6 +614,7 @@ export class IntegrationOfflineCheckoutPaid {
       );
       const phase = capturedPhaseReview.call(this.#phase, envelope),
         binding = offlineTaskBinding(envelope);
+      this.#pair(executorInput, preparerInput);
       need(canonical(phase) === canonical(capture.phase));
       const { captureHash, ...captureBody } = capture;
       need(
@@ -1022,7 +1025,11 @@ export class IntegrationOfflineCheckoutPaid {
         captureHash,
       };
       need(canonical(result) === canonical(rec.result));
-      const recovery = this.#recovery.getInTransaction(actor, envelope),
+      const recovery = capturedReceiptRecovery.call(
+          this.#recovery,
+          actor,
+          envelope,
+        ),
         retained = this.#platform.offline.readInTransaction();
       need(
         retained &&

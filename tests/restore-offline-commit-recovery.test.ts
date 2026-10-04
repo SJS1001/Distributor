@@ -547,3 +547,452 @@ test("a later open session preserves earlier exact historical receipt without ch
   );
   assert.equal(tables(f.path), before);
 });
+
+// Fixed checkout path; legacy cases above remain unchanged.
+import { syncBuiltinESMExports } from "node:module";
+import { RestoreOfflineCommitRecoveryReader } from "../src/server/restore-offline-commit-recovery.ts";
+function strictRecover(f: Fixture, input: unknown, actor = f.actor) {
+  return f.app.database.transaction(() =>
+    f.app.restoreOfflineCommitRecovery.getCapturedCheckoutInTransaction(
+      actor,
+      input,
+    ),
+  );
+}
+function callbackPoints(f: Fixture, input: unknown) {
+  const original = fs.lstatSync;
+  const stacks: string[] = [];
+  Object.defineProperty(fs, "lstatSync", {
+    configurable: true,
+    writable: true,
+    value: (...args: any[]) => {
+      stacks.push(new Error().stack ?? "");
+      return Reflect.apply(original, fs, args);
+    },
+  });
+  syncBuiltinESMExports();
+  try {
+    strictRecover(f, input);
+  } finally {
+    Object.defineProperty(fs, "lstatSync", { value: original });
+    syncBuiltinESMExports();
+  }
+  const candidate =
+    stacks.findIndex((s) =>
+      s.includes("captureRestoreCandidateInTransaction"),
+    ) + 1;
+  assert(candidate > 1 && stacks.length > candidate);
+  return { first: 1, candidate, final: stacks.length };
+}
+for (const [region, currency] of [
+  ["CA", "CAD"],
+  ["CA", "USD"],
+  ["US", "USD"],
+] as const)
+  for (const reports of [false, true])
+    test(`strict ${region}/${currency}/${reports} equals legacy retained receipt after reopen without writes`, (t) => {
+      const f = setup(t, region, reports, "open", currency),
+        input = f.envelope();
+      const beforeAbsent = tables(f.path);
+      assert.deepEqual(strictRecover(f, input), recover(f, input));
+      assert.equal(tables(f.path), beforeAbsent);
+      guard(f).execute(input);
+      const expected = recover(f, input),
+        before = tables(f.path);
+      f.app.close();
+      f.app = new Application(f.path, region, { eventReports: reports });
+      const result = strictRecover(f, input);
+      assert.deepEqual(result, expected);
+      assert(
+        Object.isFrozen(result) &&
+          Object.isFrozen(result.receipt) &&
+          Object.isFrozen(result.requiredChecks),
+      );
+      assert.equal(tables(f.path), before);
+    });
+
+for (const timing of ["early", "first", "candidate", "final"] as const)
+  for (const prototype of [false, true])
+    for (const removesItself of [false, true])
+      test(`strict offline ${prototype ? "prototype" : "instance"} ${timing} ${removesItself ? "self-removing" : "persistent"} substitution refuses before hook`, (t) => {
+        const f = setup(t),
+          input = f.envelope();
+        guard(f).execute(input);
+        const points = callbackPoints(f, input),
+          before = tables(f.path),
+          offline = f.app.platform.offline,
+          subject = prototype ? Object.getPrototypeOf(offline) : offline,
+          key = "readInTransaction",
+          descriptor = Object.getOwnPropertyDescriptor(subject, key),
+          originalMethod = offline.readInTransaction,
+          originalStat = fs.lstatSync;
+        let hooks = 0,
+          calls = 0,
+          injected = false;
+        const restore = () => {
+          if (descriptor) Object.defineProperty(subject, key, descriptor);
+          else Reflect.deleteProperty(subject, key);
+        };
+        const inject = () => {
+          injected = true;
+          Object.defineProperty(subject, key, {
+            configurable: true,
+            writable: true,
+            value: function (this: unknown, ...args: unknown[]) {
+              hooks++;
+              if (removesItself) restore();
+              return Reflect.apply(originalMethod, this, args);
+            },
+          });
+        };
+        if (timing === "early") inject();
+        else {
+          Object.defineProperty(fs, "lstatSync", {
+            configurable: true,
+            writable: true,
+            value: (...args: any[]) => {
+              if (++calls === points[timing]) inject();
+              return Reflect.apply(originalStat, fs, args);
+            },
+          });
+          syncBuiltinESMExports();
+        }
+        try {
+          assert.throws(() => strictRecover(f, input), refusal);
+        } finally {
+          restore();
+          Object.defineProperty(fs, "lstatSync", { value: originalStat });
+          syncBuiltinESMExports();
+        }
+        assert(injected);
+        assert.equal(hooks, 0);
+        assert.equal(tables(f.path), before);
+        assert.deepEqual(strictRecover(f, input), recover(f, input));
+      });
+
+for (const target of [
+  "database",
+  "store",
+  "identity",
+  "mfa",
+  "cipher",
+  "platform",
+  "restore",
+] as const)
+  for (const late of [false, true])
+    test(`strict complete ${target} descriptor closure ${late ? "late" : "early"} refuses self-removing hook`, (t) => {
+      const f = setup(t),
+        input = f.envelope();
+      guard(f).execute(input);
+      const before = tables(f.path),
+        iam = f.app.identity as any,
+        platform = f.app.platform as any;
+      const [value, key] = {
+        database: [f.app.database, "captureRestoreCandidateInTransaction"],
+        store: [platform.offline.store, "all"],
+        identity: [iam, "currentActor"],
+        mfa: [iam.mfa, "summary"],
+        cipher: [iam.mfa.cipher, "available"],
+        platform: [platform, "rawRecoveryHoldInTransaction"],
+        restore: [platform.restore, "offlineStorage"],
+      }[target] as [object, string];
+      const subject = Object.getPrototypeOf(value),
+        d = Object.getOwnPropertyDescriptor(subject, key)!;
+      let hooks = 0,
+        injected = false;
+      const inject = () => {
+        injected = true;
+        const replacement = function (this: unknown, ...args: unknown[]) {
+          hooks++;
+          Object.defineProperty(subject, key, d);
+          return Reflect.apply(d.get ?? d.value, this, args);
+        };
+        Object.defineProperty(
+          subject,
+          key,
+          d.get ? { ...d, get: replacement } : { ...d, value: replacement },
+        );
+      };
+      const stat = fs.lstatSync;
+      if (late) {
+        Object.defineProperty(fs, "lstatSync", {
+          configurable: true,
+          writable: true,
+          value: (...args: any[]) => {
+            if (!injected) inject();
+            return Reflect.apply(stat, fs, args);
+          },
+        });
+        syncBuiltinESMExports();
+      } else inject();
+      try {
+        assert.throws(() => strictRecover(f, input), refusal);
+      } finally {
+        Object.defineProperty(subject, key, d);
+        Object.defineProperty(fs, "lstatSync", { value: stat });
+        syncBuiltinESMExports();
+      }
+      assert(injected);
+      assert.equal(hooks, 0);
+      assert.equal(tables(f.path), before);
+    });
+
+for (const [target, key] of [
+  ["offline", "database"],
+  ["offline", "store"],
+  ["restore", "store"],
+  ["identity", "platform"],
+  ["platform", "offline"],
+  ["platform", "restore"],
+  ["store", "owner"],
+] as const)
+  test(`strict actual ${target}.${key} link rejects proxy without traps after filesystem callback`, (t) => {
+    const f = setup(t),
+      input = f.envelope();
+    guard(f).execute(input);
+    const before = tables(f.path),
+      p = f.app.platform as any;
+    const object = {
+      offline: p.offline,
+      restore: p.restore,
+      platform: p,
+      identity: f.app.identity,
+      store: p.offline.store,
+    }[target];
+    const descriptor = Object.getOwnPropertyDescriptor(object, key)!;
+    let traps = 0,
+      injected = false;
+    const trap = () => {
+      traps++;
+      throw Error("unexpected proxy hook");
+    };
+    const replacement = new Proxy(
+      {},
+      {
+        get: trap,
+        ownKeys: trap,
+        getPrototypeOf: trap,
+        getOwnPropertyDescriptor: trap,
+      },
+    );
+    const stat = fs.lstatSync;
+    Object.defineProperty(fs, "lstatSync", {
+      configurable: true,
+      writable: true,
+      value: (...args: any[]) => {
+        if (!injected) {
+          injected = true;
+          Object.defineProperty(object, key, {
+            ...descriptor,
+            value: replacement,
+          });
+        }
+        return Reflect.apply(stat, fs, args);
+      },
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => strictRecover(f, input), refusal);
+    } finally {
+      Object.defineProperty(object, key, descriptor);
+      Object.defineProperty(fs, "lstatSync", { value: stat });
+      syncBuiltinESMExports();
+    }
+    assert(injected);
+    assert.equal(traps, 0);
+    assert.equal(tables(f.path), before);
+  });
+
+test("strict entry requires writer, inert actor, raw hold and fresh IAM; callbacks cannot hide same-value writes or reentry", (t) => {
+  const f = setup(t),
+    input = f.envelope();
+  guard(f).execute(input);
+  const reader = f.app.restoreOfflineCommitRecovery,
+    before = tables(f.path);
+  assert.throws(() => reader.getCapturedCheckoutInTransaction(f.actor, input), {
+    code: "TRANSACTION",
+  });
+  let traps = 0;
+  const trap = () => {
+    traps++;
+    throw Error("unexpected actor trap");
+  };
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  for (const actor of [
+    new Proxy(f.actor, { get: trap, ownKeys: trap, getPrototypeOf: trap }),
+    revoked.proxy,
+    Object.defineProperty({ ...f.actor }, "id", { get: trap }),
+  ])
+    assert.throws(() => strictRecover(f, input, actor as any), refusal);
+  assert.equal(traps, 0);
+  for (const sql of [
+    "UPDATE iam_users SET role='warehouse' WHERE id=?",
+    "UPDATE iam_users SET active=0 WHERE id=?",
+  ])
+    assert.throws(
+      () =>
+        f.app.database.transaction(() => {
+          f.app.database.owned("iam").run(sql, f.actor.id);
+          assert.throws(
+            () => reader.getCapturedCheckoutInTransaction(f.actor, input),
+            refusal,
+          );
+          throw Error("rollback-authority");
+        }),
+      /rollback-authority/,
+    );
+  assert.throws(
+    () =>
+      f.app.database.transaction(() => {
+        f.app.database.owned("platform").run("DELETE FROM platform_recovery");
+        assert.throws(
+          () => reader.getCapturedCheckoutInTransaction(f.actor, input),
+          refusal,
+        );
+        throw Error("rollback-hold");
+      }),
+    /rollback-hold/,
+  );
+  for (const mode of ["write", "reenter"]) {
+    const stat = fs.lstatSync;
+    let hit = false;
+    Object.defineProperty(fs, "lstatSync", {
+      configurable: true,
+      writable: true,
+      value: (...args: any[]) => {
+        if (!hit) {
+          hit = true;
+          if (mode === "write")
+            f.app.database
+              .owned("iam")
+              .run("UPDATE iam_users SET active=active WHERE id=?", f.actor.id);
+          else
+            assert.throws(
+              () => reader.getCapturedCheckoutInTransaction(f.actor, input),
+              refusal,
+            );
+        }
+        return Reflect.apply(stat, fs, args);
+      },
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => strictRecover(f, input), refusal);
+    } finally {
+      Object.defineProperty(fs, "lstatSync", { value: stat });
+      syncBuiltinESMExports();
+    }
+    assert(hit);
+    assert.equal(tables(f.path), before);
+  }
+});
+
+test("strict entry is fixed and cannot be redirected through the legacy public method", (t) => {
+  const f = setup(t),
+    input = f.envelope();
+  guard(f).execute(input);
+  const reader = f.app.restoreOfflineCommitRecovery,
+    expected = strictRecover(f, input),
+    before = tables(f.path);
+  const d = Object.getOwnPropertyDescriptor(
+    RestoreOfflineCommitRecoveryReader.prototype,
+    "getInTransaction",
+  )!;
+  let hooks = 0;
+  Object.defineProperty(
+    RestoreOfflineCommitRecoveryReader.prototype,
+    "getInTransaction",
+    {
+      ...d,
+      value() {
+        hooks++;
+        throw Error("legacy hook");
+      },
+    },
+  );
+  try {
+    assert.deepEqual(strictRecover(f, input), expected);
+  } finally {
+    Object.defineProperty(
+      RestoreOfflineCommitRecoveryReader.prototype,
+      "getInTransaction",
+      d,
+    );
+  }
+  assert.equal(hooks, 0);
+  assert.equal(tables(f.path), before);
+});
+
+test("legacy recovery keeps intentional late read hooks and unrelated Store fault seams", (t) => {
+  const f = setup(t),
+    input = f.envelope();
+  guard(f).execute(input);
+  const before = tables(f.path),
+    offline = f.app.platform.offline,
+    original = offline.readInTransaction,
+    stat = fs.lstatSync;
+  let hooks = 0,
+    injected = false;
+  Object.defineProperty(fs, "lstatSync", {
+    configurable: true,
+    writable: true,
+    value: (...args: any[]) => {
+      if (!injected) {
+        injected = true;
+        Object.defineProperty(offline, "readInTransaction", {
+          configurable: true,
+          value: function () {
+            hooks++;
+            Reflect.deleteProperty(offline, "readInTransaction");
+            return original.call(offline);
+          },
+        });
+      }
+      return Reflect.apply(stat, fs, args);
+    },
+  });
+  syncBuiltinESMExports();
+  try {
+    assert.equal(
+      recover(f, input).status,
+      "retained-task-receipt-consistency-only",
+    );
+  } finally {
+    Reflect.deleteProperty(offline, "readInTransaction");
+    Object.defineProperty(fs, "lstatSync", { value: stat });
+    syncBuiltinESMExports();
+  }
+  assert.equal(hooks, 1);
+  assert.equal(tables(f.path), before);
+  const store = Object.getPrototypeOf((f.app.platform as any).store),
+    d = Object.getOwnPropertyDescriptor(store, "migrate")!;
+  Object.defineProperty(store, "migrate", {
+    ...d,
+    value() {
+      throw Error("unrelated migration fault");
+    },
+  });
+  try {
+    const reader = new RestoreOfflineCommitRecoveryReader(
+      f.app.database,
+      f.app.platform,
+      f.app.identity,
+    );
+    assert.equal(
+      f.app.database.transaction(() => reader.getInTransaction(f.actor, input))
+        .status,
+      "retained-task-receipt-consistency-only",
+    );
+    assert.throws(
+      () =>
+        f.app.database.transaction(() =>
+          reader.getCapturedCheckoutInTransaction(f.actor, input),
+        ),
+      refusal,
+    );
+  } finally {
+    Object.defineProperty(store, "migrate", d);
+  }
+  assert.equal(tables(f.path), before);
+});
