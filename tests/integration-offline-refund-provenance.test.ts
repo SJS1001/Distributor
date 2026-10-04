@@ -14,7 +14,7 @@ import { createBackup, restoreBackup } from "../src/server/recovery.ts";
 
 const table = "integration_offline_failed_refunds";
 // Captured from published bb0a2b2e before changing the schema, independently of
-// the current profile under test. Removing ONLY the v19 objects must match.
+// the current profile under test. Removing the v19 and v20 additions must match.
 const v18 = {
   enabled: "18310a051c7e1d3e278e11251cd1cdc417517148e61aa45a42d39fab96cd07b8",
   disabled: "66885390969e98b27ea19044f4e7b3cc399518fb50c9196962d2293f4569d942",
@@ -35,7 +35,12 @@ function rows(path: string) {
           "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name",
         )
         .all()
-        .filter((r) => r.name !== "platform_schema_version" && r.name !== table)
+        .filter(
+          (r) =>
+            r.name !== "platform_schema_version" &&
+            r.name !== table &&
+            r.name !== "integration_offline_original_cancellations",
+        )
         .map((r) => [
           String(r.name),
           db
@@ -50,6 +55,7 @@ function rows(path: string) {
 function previous(source: string, target: string, reports: boolean) {
   raw(source, (db) => db.prepare("VACUUM INTO ?").run(target));
   raw(target, (db) => {
+    db.exec("DROP TABLE integration_offline_original_cancellations");
     db.exec(`DROP TABLE ${table}`);
     const expected = reports ? v18.enabled : v18.disabled;
     assert.equal(schemaFingerprint(db), expected);

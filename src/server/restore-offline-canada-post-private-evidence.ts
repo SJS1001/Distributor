@@ -1,3 +1,5 @@
+import { CarrierBookings } from "./carrier-bookings.ts";
+import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
 import { types } from "node:util";
 import { canonical, digest, DomainError } from "./core.ts";
 import { Database } from "./database.ts";
@@ -130,6 +132,11 @@ type Internal = {
   envelope: OfflineTaskEnvelopeV1;
   input?: unknown;
   state: State;
+  reader: RestoreOfflineCanadaPostPrivateEvidence;
+  dispose: () => void;
+  owner?: CarrierBookings;
+  joined?: CanadaPostNativeJoin;
+  apply?: (actor: unknown) => CanadaPostPrivateApplication;
 };
 const captures = new WeakMap<object, Internal>();
 /** Identity-only internal bridge, never a payload getter or authority assertion. */
@@ -149,6 +156,32 @@ export function isInternalCanadaPostPrivateCapture(
     held.input === input
   );
 }
+/** Fixed private bridge: no bytes or facts are returned and no caller function runs. */
+export function isInternalCanadaPostOwnerCapture(
+  token: unknown,
+  owner: unknown,
+  envelope: unknown,
+  input: unknown,
+  joined: unknown,
+): boolean {
+  if (!token || typeof token !== "object") return false;
+  const held = captures.get(token);
+  return (
+    !!held &&
+    held.state === "joining" &&
+    held.owner === owner &&
+    held.envelope === envelope &&
+    held.input === input &&
+    held.joined === joined
+  );
+}
+export type CanadaPostPrivateApplication = Readonly<{
+  envelope: OfflineTaskEnvelopeV1;
+  joined: CanadaPostNativeJoin;
+  result: ReturnType<
+    CarrierBookings["applyOfflineCanadaPostMemberInTransaction"]
+  >;
+}>;
 export type CanadaPostPrivateHandle = Readonly<{
   complete(): Readonly<{
     status: "historical-byte-binding";
@@ -167,6 +200,8 @@ export type CanadaPostPrivateHandle = Readonly<{
  * real native join and one capture; no caller-supplied native capture is accepted. */
 export class RestoreOfflineCanadaPostPrivateEvidence {
   readonly #native: RestoreOfflineCanadaPostNativeJoin;
+  readonly #owner?: CarrierBookings;
+  readonly #phase: RestoreOfflineNativePhase;
   #reading = false;
   #reentered = false;
   constructor(
@@ -174,13 +209,47 @@ export class RestoreOfflineCanadaPostPrivateEvidence {
     identity: Identity,
     platform: Platform,
     fulfillment: Fulfillment,
+    carrier?: CarrierBookings,
   ) {
+    if (carrier) {
+      need(
+        !types.isProxy(carrier) &&
+          Object.getPrototypeOf(carrier) === CarrierBookings.prototype,
+      );
+      for (const [key, d] of Object.entries(
+        Object.getOwnPropertyDescriptors(CarrierBookings.prototype),
+      ))
+        if (typeof d.value === "function") need(!Object.hasOwn(carrier, key));
+      carrier.assertOfflineCanadaPostOwner(
+        database,
+        identity,
+        platform,
+        fulfillment,
+      );
+    }
+    this.#owner = carrier;
+    this.#phase = new RestoreOfflineNativePhase(database, platform);
     this.#native = new RestoreOfflineCanadaPostNativeJoin(
       database,
       identity,
       platform,
       fulfillment,
     );
+  }
+  /** Identity-only cleanup of this reader's handle; never invokes caller properties. */
+  discardApplicationCapture(handle: unknown) {
+    if (!handle || typeof handle !== "object") return;
+    const held = captures.get(handle);
+    if (held?.reader === this) held.dispose();
+  }
+  applyInTransaction(
+    handle: unknown,
+    actor: unknown,
+  ): CanadaPostPrivateApplication {
+    need(handle && typeof handle === "object");
+    const held = captures.get(handle);
+    need(held?.reader === this && held.owner === this.#owner && held.apply);
+    return held.apply(actor);
   }
   read(
     envelopeInput: unknown,
@@ -196,6 +265,8 @@ export class RestoreOfflineCanadaPostPrivateEvidence {
       if (held) {
         held.state = "disposed";
         held.input = undefined;
+        held.joined = undefined;
+        held.apply = undefined;
       }
       if (token) captures.delete(token);
       pending?.discard();
@@ -234,7 +305,66 @@ export class RestoreOfflineCanadaPostPrivateEvidence {
         { references: [item.reference], maxBytes: item.bytes },
       );
       need(!this.#reentered);
-      held = { native, envelope, state: "pending" };
+      held = {
+        native,
+        envelope,
+        state: "pending",
+        reader: this,
+        dispose,
+        owner: this.#owner,
+      };
+      const owner = this.#owner,
+        phase = this.#phase;
+      const consume = (actor: unknown, apply: boolean): any => {
+        try {
+          need(held?.state === "completed" && captured && token);
+          held.state = "joining";
+          const bytes = captured.get(item.reference);
+          need(bytes && bytes.length <= canadaPostPrivateEvidenceBytes);
+          const text = new TextDecoder("utf-8", {
+            fatal: true,
+            ignoreBOM: true,
+          }).decode(bytes);
+          const input = data(JSON.parse(text), true);
+          need(
+            jsonCanonical(input) === text &&
+              digest(canonical(input)) === envelope.task.payloadHash,
+          );
+          held.input = input;
+          const joined = native.joinCapturedInTransaction(
+            token,
+            actor,
+            envelope,
+            input,
+          );
+          need(held.state === "joining");
+          if (!apply) return joined;
+          need(
+            owner &&
+              !types.isProxy(owner) &&
+              Object.getPrototypeOf(owner) === CarrierBookings.prototype,
+          );
+          for (const [key, d] of Object.entries(
+            Object.getOwnPropertyDescriptors(CarrierBookings.prototype),
+          ))
+            if (typeof d.value === "function") need(!Object.hasOwn(owner, key));
+          phase.reviewInTransaction(envelope);
+          held.joined = joined;
+          const result = owner.applyOfflineCanadaPostMemberInTransaction(
+            token,
+            envelope,
+            input,
+            joined,
+          );
+          need(held.state === "joining");
+          return Object.freeze({ envelope, joined, result });
+        } catch {
+          fail();
+        } finally {
+          dispose();
+        }
+      };
+      held.apply = (actor) => consume(actor, true);
       token = Object.freeze({
         dispose,
         [Symbol.dispose]: dispose,
@@ -271,34 +401,7 @@ export class RestoreOfflineCanadaPostPrivateEvidence {
           }
         },
         reviewInTransaction(actor: unknown) {
-          try {
-            need(held?.state === "completed" && captured && token);
-            held.state = "joining";
-            const bytes = captured.get(item.reference);
-            need(bytes && bytes.length <= canadaPostPrivateEvidenceBytes);
-            const text = new TextDecoder("utf-8", {
-              fatal: true,
-              ignoreBOM: true,
-            }).decode(bytes);
-            const input = data(JSON.parse(text), true);
-            need(
-              jsonCanonical(input) === text &&
-                digest(canonical(input)) === envelope.task.payloadHash,
-            );
-            held.input = input;
-            const result = native.joinCapturedInTransaction(
-              token,
-              actor,
-              envelope,
-              input,
-            );
-            need(held.state === "joining");
-            return result;
-          } catch {
-            fail();
-          } finally {
-            dispose();
-          }
+          return consume(actor, false) as CanadaPostNativeJoin;
         },
       });
       captures.set(token, held);

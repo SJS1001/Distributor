@@ -1,3 +1,7 @@
+import { isInternalCanadaPostOwnerCapture } from "./restore-offline-canada-post-private-evidence.ts";
+import type { OfflineTaskEnvelopeV1 } from "./restore-offline-envelope.ts";
+import type { CanadaPostNativeJoin } from "./restore-offline-canada-post-native-join.ts";
+import { PlatformOfflineCarrierReviewReader } from "./platform-offline-carrier-review.ts";
 import {
   assertCarrierConfiguration,
   captureCarrierConfiguration,
@@ -283,6 +287,491 @@ export class CarrierBookings {
       },
     ];
   }
+  #offlineCanadaPost = false;
+  /** Static host wiring identity check. Private field defeats prototype copies. */
+  assertOfflineCanadaPostOwner(
+    database: unknown,
+    identity: unknown,
+    platform: unknown,
+    fulfillment: unknown,
+  ) {
+    check(
+      !this.#offlineCanadaPost &&
+        this.database === database &&
+        this.identity === identity &&
+        this.platform === platform &&
+        this.fulfillment === fulfillment,
+      "OFFLINE_CANADA_POST",
+      "The fixed native carrier owner does not match.",
+    );
+  }
+  /** Only the fixed single-read private capture can enter this native writer. */
+  applyOfflineCanadaPostMemberInTransaction(
+    token: unknown,
+    envelope: OfflineTaskEnvelopeV1,
+    input: any,
+    joined: CanadaPostNativeJoin,
+  ) {
+    check(
+      isInternalCanadaPostOwnerCapture(token, this, envelope, input, joined),
+      "OFFLINE_CANADA_POST",
+      "A current private native capture is required.",
+    );
+    this.database.requireTransaction();
+    check(
+      !this.#offlineCanadaPost,
+      "OFFLINE_CANADA_POST",
+      "Native import reentry refused.",
+    );
+    this.#offlineCanadaPost = true;
+    let bytes: Buffer | undefined,
+      qualified: CanadaPostShipmentObservation | undefined;
+    let retainedMembers: CanadaPostMember[] = [];
+    try {
+      const actor = this.principal(joined.actor as Actor);
+      permit(actor, ["finance"]);
+      check(
+        !actor.accountId && this.platform.rawRecoveryHoldInTransaction(),
+        "OFFLINE_CANADA_POST",
+        "A current scoped finance executor and raw hold are required.",
+      );
+      const comparison = joined.comparison;
+      check(
+        envelope.task.orgId === actor.orgId &&
+          comparison.orgId === actor.orgId &&
+          envelope.task.subjectId === comparison.bookingId &&
+          envelope.task.expectedRevision === 0 &&
+          envelope.task.priorClaim === null,
+        "OFFLINE_CANADA_POST",
+        "Original task identity changed.",
+      );
+      this.offlineCanadaPostScope();
+      const { group, members } = this.canadaPostGroup(
+        actor,
+        comparison.groupId,
+      );
+      retainedMembers = members;
+      const member = members.find((m) => m.booking_id === comparison.bookingId);
+      check(
+        member &&
+          group.state === "unknown" &&
+          members.every(
+            (m) => m.state === (m === member ? "unknown" : "created"),
+          ) &&
+          members.every((m) => m.token === null && m.started_at === null),
+        "OFFLINE_CANADA_POST",
+        "The original member state changed.",
+      );
+      this.assertOfflineCanadaPostNative(actor, group, members);
+      const captured = input.members.find(
+        (m: any) => m.bookingId === member.booking_id,
+      );
+      bytes = Buffer.from(captured.label.data, "base64");
+      const { details: _details, label: _label, ...observation } = captured;
+      qualified = validateCanadaPostCreation(
+        { ...observation, label: { mediaType: "application/pdf", bytes } },
+        group,
+        member,
+      );
+      check(
+        !this.store.get(
+          "SELECT 1 FROM integration_canada_post_members m JOIN integration_canada_post_groups g ON g.id=m.group_id WHERE m.org_id=? AND g.configuration_hash=? AND m.booking_id<>? AND (m.provider_shipment_id=? OR m.tracking=?) LIMIT 1",
+          actor.orgId,
+          group.configuration_hash,
+          member.booking_id,
+          qualified.shipmentId,
+          qualified.tracking,
+        ),
+        "OFFLINE_CANADA_POST",
+        "Provider references are already retained.",
+      );
+      // Ordinary/promoted booking references were checked conservatively by the
+      // fresh complete proposed-reference owner read in this very writer.
+      check(
+        isInternalCanadaPostOwnerCapture(token, this, envelope, input, joined),
+        "OFFLINE_CANADA_POST",
+        "Capture lifetime ended.",
+      );
+      this.platform.audit(
+        actor,
+        "carrier.canada-post.member.claimed",
+        group.id,
+        {
+          bookingId: member.booking_id,
+          reviewHash: member.review_hash,
+          send: false,
+        },
+      );
+      const changed = this.store.run(
+        "UPDATE integration_canada_post_members SET state='created',token=NULL,started_at=NULL,provider_shipment_id=?,tracking=?,label_bytes=?,label_hash=? WHERE group_id=? AND booking_id=? AND org_id=? AND state='unknown' AND active=1 AND token IS NULL AND started_at IS NULL AND provider_shipment_id IS NULL AND tracking IS NULL AND label_bytes IS NULL AND label_hash IS NULL",
+        qualified.shipmentId,
+        qualified.tracking,
+        qualified.label.bytes,
+        digest(qualified.label.bytes),
+        group.id,
+        member.booking_id,
+        actor.orgId,
+      );
+      check(
+        changed.changes === 1,
+        "OFFLINE_CANADA_POST",
+        "Member compare-and-swap failed.",
+      );
+      this.platform.event(
+        actor,
+        "carrier.canada-post.member.created",
+        group.id,
+        {
+          bookingId: member.booking_id,
+          reviewHash: member.review_hash,
+          shipmentId: qualified.shipmentId,
+        },
+      );
+      const states = this.store.all<{ state: string }>(
+        "SELECT state FROM integration_canada_post_members WHERE group_id=?",
+        group.id,
+      );
+      const state = states.every((m) => m.state === "created")
+        ? "closed"
+        : states.some((m) => m.state === "unknown")
+          ? "unknown"
+          : "creating";
+      check(
+        state === "closed" &&
+          this.store.run(
+            "UPDATE integration_canada_post_groups SET state=? WHERE id=? AND org_id=? AND state='unknown' AND token IS NULL AND started_at IS NULL AND observation IS NULL AND manifest_bytes IS NULL AND manifest_hash IS NULL",
+            state,
+            group.id,
+            actor.orgId,
+          ).changes === 1,
+        "OFFLINE_CANADA_POST",
+        "Group compare-and-swap failed.",
+      );
+      this.platform.audit(
+        actor,
+        "carrier.canada-post.member.created",
+        group.id,
+        {
+          bookingId: member.booking_id,
+          reviewHash: member.review_hash,
+          reconciled: true,
+          groupState: state,
+          labelHash: digest(qualified.label.bytes),
+        },
+      );
+      check(
+        isInternalCanadaPostOwnerCapture(token, this, envelope, input, joined),
+        "OFFLINE_CANADA_POST",
+        "Capture lifetime ended.",
+      );
+      // Exact expected row delta, including every retained sibling and booking.
+      const after = this.canadaPostGroup(actor, group.id);
+      try {
+        check(
+          canonical(after.group) ===
+            canonical({ ...input.native.groups[0], state }),
+          "OFFLINE_CANADA_POST",
+          "Unexpected group mutation.",
+        );
+        const descriptor = (v: Uint8Array | null) =>
+          v === null
+            ? null
+            : {
+                encoding: "base64",
+                bytes: v.byteLength,
+                sha256: digest(v),
+                data: Buffer.from(
+                  v.buffer,
+                  v.byteOffset,
+                  v.byteLength,
+                ).toString("base64"),
+              };
+        const expected = input.native.members.map((m: any) =>
+          m.booking_id === member.booking_id
+            ? {
+                ...m,
+                state: "created",
+                provider_shipment_id: qualified!.shipmentId,
+                tracking: qualified!.tracking,
+                label_bytes: captured.label,
+                label_hash: digest(qualified!.label.bytes),
+              }
+            : m,
+        );
+        check(
+          canonical(
+            after.members.map((m) => ({
+              ...m,
+              label_bytes: descriptor(m.label_bytes),
+            })),
+          ) === canonical(expected),
+          "OFFLINE_CANADA_POST",
+          "Unexpected member mutation.",
+        );
+        const bookings = after.members.map((m) =>
+          this.booking(actor, m.booking_id),
+        );
+        check(
+          canonical(bookings.sort((a, b) => a.sequence - b.sequence)) ===
+            canonical(input.native.bookingHistory),
+          "OFFLINE_CANADA_POST",
+          "Original pending bookings changed.",
+        );
+      } finally {
+        for (const m of after.members) m.label_bytes?.fill(0);
+      }
+      const result = this.offlineCanadaPostResult(
+        actor,
+        group.id,
+        member.booking_id,
+      );
+      check(
+        canonical(result.custody) ===
+          canonical(
+            input.native.members.map((m: any) => ({
+              bookingId: m.booking_id,
+              custodyHash: input.custody.find(
+                (c: any) =>
+                  c.shipment.id ===
+                  input.native.preparations.find(
+                    (p: any) => p.bookingId === m.booking_id,
+                  ).intent.shipmentId,
+              ).custodyHash,
+            })),
+          ),
+        "OFFLINE_CANADA_POST",
+        "Original custody changed.",
+      );
+      return result;
+    } finally {
+      bytes?.fill(0);
+      qualified?.label.bytes.fill(0);
+      for (const member of retainedMembers) member.label_bytes?.fill(0);
+      this.#offlineCanadaPost = false;
+    }
+  }
+  /** Bounded complete owning-table fingerprint, no foreign SQL or returned rows. */
+  private offlineCanadaPostScope() {
+    let rows = 0,
+      total = 0;
+    const values: unknown[] = [];
+    for (const [table, columns, order] of [
+      [
+        "integration_carrier_bookings",
+        "sequence id org_id shipment_id state review_hash intent token started_at reference tracking label_bytes label_type label_hash error created_at",
+        "sequence",
+      ],
+      [
+        "integration_canada_post_groups",
+        "id org_id warehouse_id configuration_hash provider_group_id review_hash state token started_at observation manifest_bytes manifest_hash created_at",
+        "id",
+      ],
+      [
+        "integration_canada_post_members",
+        "group_id booking_id org_id review_hash active state token started_at provider_shipment_id tracking label_bytes label_hash",
+        "group_id,booking_id",
+      ],
+    ]) {
+      const n = Number(
+        this.store.get(
+          `SELECT COUNT(*) AS n FROM (SELECT 1 FROM ${table} LIMIT 513)`,
+        )!.n,
+      );
+      check(
+        n <= 512 && (rows += n) <= 1024,
+        "OFFLINE_CANADA_POST",
+        "Retained carrier scope exceeds supported bounds.",
+      );
+      const cols = columns!.split(" "),
+        sizes = cols.map((c) => `COALESCE(length(CAST(${c} AS BLOB)),0)`);
+      const bad = cols
+        .map((c) =>
+          c.endsWith("_bytes")
+            ? `(typeof(${c}) NOT IN ('null','blob') OR length(${c})>1048576)`
+            : `(typeof(${c}) NOT IN ('null','integer','text') OR (typeof(${c})='integer' AND (${c}>9007199254740991 OR ${c} < -9007199254740991)) OR length(CAST(${c} AS BLOB))>65536 OR instr(CAST(${c} AS BLOB),x'00')>0)`,
+        )
+        .join(" OR ");
+      const meta = this.store.get(
+        `SELECT COALESCE(SUM(${sizes.join("+")}),0) AS bytes, COALESCE(SUM(CASE WHEN ${bad} THEN 1 ELSE 0 END),0) AS bad FROM ${table}`,
+      )!;
+      check(
+        meta.bad === 0 &&
+          Number.isSafeInteger(meta.bytes) &&
+          (total += Number(meta.bytes)) <= 16 * 1024 * 1024,
+        "OFFLINE_CANADA_POST",
+        "Retained carrier bytes exceed supported bounds.",
+      );
+      const textColumns = cols.filter((c) => !c.endsWith("_bytes"));
+      const records = this.store.all(
+        `SELECT *,${textColumns.map((c) => `hex(CAST(${c} AS BLOB)) AS __raw_${c}`).join(",")} FROM ${table} ORDER BY ${order}`,
+      );
+      try {
+        for (const row of records)
+          for (const c of textColumns) {
+            const v = row[c],
+              raw = row[`__raw_${c}`];
+            check(
+              (v === null
+                ? ""
+                : Buffer.from(String(v)).toString("hex").toUpperCase()) === raw,
+              "OFFLINE_CANADA_POST",
+              "Retained carrier encoding changed.",
+            );
+            delete row[`__raw_${c}`];
+          }
+        values.push(
+          records.map((row) =>
+            Object.fromEntries(
+              Object.entries(row).map(([k, v]) => [
+                k,
+                v instanceof Uint8Array
+                  ? { bytes: v.byteLength, hash: digest(v) }
+                  : v,
+              ]),
+            ),
+          ),
+        );
+      } finally {
+        for (const row of records)
+          for (const v of Object.values(row))
+            if (v instanceof Uint8Array) v.fill(0);
+      }
+    }
+    return digest(canonical(values));
+  }
+  private assertOfflineCanadaPostNative(
+    actor: Actor,
+    group: CanadaPostGroup,
+    members: CanadaPostMember[],
+  ) {
+    check(
+      this.platform.rawRecoveryHoldInTransaction() &&
+        group.token === null &&
+        group.started_at === null &&
+        group.observation === null &&
+        group.manifest_bytes === null &&
+        group.manifest_hash === null,
+      "OFFLINE_CANADA_POST",
+      "Raw isolation and untransmitted group required.",
+    );
+    for (const member of members) {
+      const booking = this.booking(actor, member.booking_id),
+        intent = this.intent(booking);
+      check(
+        booking.state === "pending" &&
+          booking.token === null &&
+          booking.started_at === null &&
+          booking.reference === null &&
+          booking.tracking === null &&
+          booking.label_bytes === null &&
+          booking.label_type === null &&
+          booking.label_hash === null &&
+          booking.error === null &&
+          !booking.shipment_id.startsWith("replacement:"),
+        "OFFLINE_CANADA_POST",
+        "Original ordinary pending booking required.",
+      );
+      const custody = this.fulfillment.reviewPackedCarrierCustodyInTransaction(
+        actor,
+        booking.shipment_id,
+      );
+      check(
+        canonical(custody.shipment) === canonical(intent.nativeSnapshot) &&
+          custody.shipment.state === "packed" &&
+          custody.shipment.mode === "carrier" &&
+          !this.identity.customer(actor, custody.shipment.account_id).held,
+        "OFFLINE_CANADA_POST",
+        "Original packed custody and finance status required.",
+      );
+      this.identity.providerAllowed(
+        actor,
+        custody.shipment.account_id,
+        "canada-post",
+      );
+    }
+  }
+  private offlineCanadaPostResult(
+    actor: Actor,
+    groupId: string,
+    bookingId: string,
+  ) {
+    actor = this.principal(actor);
+    permit(actor, ["finance"]);
+    check(
+      !actor.accountId && this.platform.rawRecoveryHoldInTransaction(),
+      "OFFLINE_CANADA_POST",
+      "Current recovery authority required.",
+    );
+    const scopeHash = this.offlineCanadaPostScope();
+    const { group, members } = this.canadaPostGroup(actor, groupId);
+    try {
+      check(
+        group.state === "closed" &&
+          members.some((m) => m.booking_id === bookingId) &&
+          members.every(
+            (m) =>
+              m.state === "created" &&
+              m.token === null &&
+              m.started_at === null &&
+              m.label_bytes &&
+              m.label_hash === digest(m.label_bytes),
+          ),
+        "OFFLINE_CANADA_POST",
+        "Current native member result differs.",
+      );
+      this.assertOfflineCanadaPostNative(actor, group, members);
+      const custody = members.map((m) => {
+        const intent = this.intent(this.booking(actor, m.booking_id));
+        return {
+          bookingId: m.booking_id,
+          custodyHash: this.fulfillment.reviewPackedCarrierCustodyInTransaction(
+            actor,
+            intent.shipmentId,
+          ).custodyHash,
+        };
+      });
+      const provenance = new PlatformOfflineCarrierReviewReader(
+        this.database,
+        this.identity,
+      );
+      const platform = members.map((m) => ({
+        bookingId: m.booking_id,
+        factsHash: provenance.getInTransaction(actor, groupId, m.booking_id)
+          .factsHash,
+      }));
+      return immutable({
+        version: 1 as const,
+        purpose: "canada-post-native-import-result-v1" as const,
+        orgId: actor.orgId,
+        groupId,
+        bookingId,
+        warehouseId: group.warehouse_id,
+        scopeHash,
+        custody,
+        platform,
+      });
+    } finally {
+      for (const m of members) m.label_bytes?.fill(0);
+    }
+  }
+  /** Fresh consistency result only; original receipt/hash remains caller-held. */
+  recoverOfflineCanadaPostMemberInTransaction(
+    actorInput: Actor,
+    groupId: string,
+    bookingId: string,
+  ) {
+    this.database.requireTransaction();
+    check(
+      typeof groupId === "string" &&
+        /^[A-Za-z0-9_-]{1,128}$/.test(groupId) &&
+        typeof bookingId === "string" &&
+        /^[A-Za-z0-9_-]{1,128}$/.test(bookingId),
+      "OFFLINE_CANADA_POST",
+      "Exact native identity required.",
+    );
+    return this.offlineCanadaPostResult(actorInput, groupId, bookingId);
+  }
+
   private principal(actor: Actor) {
     actor = this.identity.currentActor(actor);
     permit(actor, ["warehouse"]);

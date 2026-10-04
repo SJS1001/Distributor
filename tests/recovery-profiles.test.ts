@@ -525,7 +525,7 @@ test("authenticated altered version/profile receipts and legacy/foreign layouts 
 });
 
 for (const sourceVersion of [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 ])
   test(`authenticated version-${sourceVersion} archives require a separate upgrade procedure and never restore implicitly`, async (t) => {
     const f = fixture(t, { eventReports: false }),
@@ -575,10 +575,15 @@ for (const sourceVersion of [
                                       : sourceVersion === 17
                                         ? // Frozen schema17 published d6f8818.
                                           "338cd156fd11a564935dae8c1f7afb34ee0cbb2547f1f98a97e37c91fb020d1c"
-                                        : // Frozen schema18 published bb0a2b2e before this change.
-                                          "66885390969e98b27ea19044f4e7b3cc399518fb50c9196962d2293f4569d942";
+                                        : sourceVersion === 18
+                                          ? // Frozen schema18 published bb0a2b2e before this change.
+                                            "66885390969e98b27ea19044f4e7b3cc399518fb50c9196962d2293f4569d942"
+                                          : // Frozen schema19: independent literal, never current constructor output.
+                                            "787d1fd08ff0508d06f017ffbd449e610a295b81d24178d6969e5408602a02c5";
     try {
-      db.exec("DROP TABLE integration_offline_failed_refunds");
+      db.exec("DROP TABLE integration_offline_original_cancellations");
+      if (sourceVersion < 19)
+        db.exec("DROP TABLE integration_offline_failed_refunds");
       if (sourceVersion < 18)
         db.exec(
           "DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",

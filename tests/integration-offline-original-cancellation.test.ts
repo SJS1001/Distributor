@@ -388,6 +388,16 @@ for (const region of ["CA", "US"] as const)
     c.f.app.close();
     c.f.app = new Application(c.f.path, region, { eventReports: false });
     assert.deepEqual(recover(c, result.record).proof, result.proof);
+    assert.deepEqual(
+      c.f.app.database.transaction(() =>
+        owners(c).recoverRetainedInTransaction(
+          loc(c.f.actor),
+          loc(c.reviewer),
+          c.envelope,
+        ),
+      ).proof,
+      result.proof,
+    );
     assert.equal(snapshot(c), stable);
     assert.throws(() =>
       c.f.app.integration.costs.journals.prepareOriginalRetry(
@@ -672,6 +682,7 @@ for (const fault of [
   "cancellation observation",
   "state",
   "audit",
+  "provenance",
   "receipt",
   "second authority refresh",
 ])
@@ -702,6 +713,10 @@ for (const fault of [
           )) ||
         (fault === "audit" &&
           sql.startsWith("INSERT INTO platform_audit VALUES")) ||
+        (fault === "provenance" &&
+          sql.startsWith(
+            "INSERT INTO integration_offline_original_cancellations",
+          )) ||
         ((fault === "receipt" || fault === "second authority refresh") &&
           sql.startsWith("INSERT INTO platform_offline_receipts"));
       if (fail) {

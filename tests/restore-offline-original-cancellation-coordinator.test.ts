@@ -708,6 +708,43 @@ function cancelledProof(f: Ready) {
     rows[0]!.hash,
   );
 }
+for (const region of ["CA", "US"] as const)
+  for (const cleanupFailure of [false, true])
+    test(`coordinator retained restart recovery ${region}, cleanup loss ${cleanupFailure}`, (t) => {
+      const f = ready(t, region);
+      f.state.cleanupFailure = cleanupFailure;
+      assert.equal(
+        execute(f).status,
+        cleanupFailure ? "committed-recovery-required" : "committed",
+      );
+      const before = snapshot(f);
+      f.f.app.close();
+      f.f.app = new Application(f.f.path, region, { eventReports: false });
+      const a = f.f.app;
+      const coordinator = new RestoreOfflineOriginalCancellationCoordinator(
+        a.database,
+        a.identity,
+        a.integration.costs.journals,
+        a.platform,
+      );
+      a.database.transaction(() => {
+        const s = a.database.owned("integration");
+        const changes = s.get("SELECT total_changes() AS n")!.n;
+        const result = coordinator.recoverRetainedInTransaction(
+          { id: f.f.actor.id, orgId: f.f.actor.orgId },
+          { id: f.reviewer.id, orgId: f.reviewer.orgId },
+          f.envelope,
+        );
+        assert.equal(result.status, "native-owner-recovery-consistency-only");
+        assert.equal(result.record.journalId, f.journal.id);
+        assert.equal(result.record.binding, offlineTaskBinding(f.envelope));
+        assert.equal(result.resultHash, digest(canonical(result.record)));
+        assert(Object.isFrozen(result));
+        assert(Object.isFrozen(result.record));
+        assert.equal(s.get("SELECT total_changes() AS n")!.n, changes);
+      });
+      assert.equal(snapshot(f), before);
+    });
 for (const principalName of ["evidence", "cancellation"] as const)
   test(`previously revoked ${principalName} principal refuses fresh IAM`, (t) => {
     const f = ready(t),

@@ -1,3 +1,4 @@
+import { INTEGRATION_OFFLINE_ORIGINAL_SCHEMA } from "./integration-offline-original-schema.ts";
 import { INTEGRATION_OFFLINE_REFUND_SCHEMA } from "./integration-offline-refund-schema.ts";
 import { RESTORE_OFFLINE_SCHEMA } from "./restore-offline-schema.ts";
 import { RESTORE_ACTIVATION_SCHEMA } from "./restore-activation-schema.ts";
@@ -23,7 +24,7 @@ import { CANADA_POST_SCHEMA } from "./canada-post-schema.ts";
 import { QUICKBOOKS_REVOCATION_SCHEMA } from "./quickbooks-revocation-schema.ts";
 import { ACCOUNTING_CANCELLATION_SCHEMA } from "./accounting-cancellation-schema.ts";
 
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 export const SCHEMA_TABLE = "platform_schema_version";
 // This DDL is part of the frozen v1 schema identity. Changing it requires a new version.
 export const SCHEMA_DDL =
@@ -501,9 +502,46 @@ const profiles = baseline.schemas.map((profile) => {
                 : 0,
       ),
     ),
+    versionNineteenHash: fingerprint(
+      [
+        ...previous,
+        ...INTEGRATION_OFFLINE_REFUND_SCHEMA,
+        ...RESTORE_OFFLINE_SCHEMA,
+        ...INVENTORY_VALUATION_SCHEMA,
+        ...INVENTORY_QUANTITY_SCHEMA,
+        ...RESTORE_ACTIVATION_SCHEMA,
+        ...CANADA_POST_SCHEMA,
+        ...QUICKBOOKS_REVOCATION_SCHEMA,
+        ...ACCOUNTING_CANCELLATION_SCHEMA,
+        ...CLAIM_COVERAGE_SCHEMA,
+        ...SHIPMENT_COVERAGE_SCHEMA,
+        ...SUPPLIER_AVAILABILITY_SCHEMA,
+        ...COST_CORRECTION_SCHEMA.filter(
+          (o) => o.name !== "integration_cost_correction_once",
+        ),
+        ...COST_CORRECTION_CHAIN_SCHEMA,
+        ...COST_CORRECTION_OUTCOME_SCHEMA,
+        ...COST_CORRECTION_RETRY_SCHEMA,
+        ...ORGANIZATION_RESIDENCY_SCHEMA,
+        ...STOCK_JOURNAL_SCHEMA,
+        ...ORGANIZATION_AUTHORIZATION_SCHEMA,
+        ...ORGANIZATION_REVOCATION_SCHEMA,
+      ].sort((a, b) =>
+        a.type < b.type
+          ? -1
+          : a.type > b.type
+            ? 1
+            : a.name < b.name
+              ? -1
+              : a.name > b.name
+                ? 1
+                : 0,
+      ),
+    ),
     currentHash: fingerprint(
       [
         ...previous,
+        ...INTEGRATION_OFFLINE_ORIGINAL_SCHEMA,
         ...INTEGRATION_OFFLINE_REFUND_SCHEMA,
         ...RESTORE_OFFLINE_SCHEMA,
         ...INVENTORY_VALUATION_SCHEMA,
@@ -558,6 +596,9 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
       initializedAt: null,
     };
   const current = profiles.find((p) => p.currentHash === schemaHash);
+  const versionNineteen = profiles.find(
+    (p) => p.versionNineteenHash === schemaHash,
+  );
   const versionEighteen = profiles.find(
     (p) => p.versionEighteenHash === schemaHash,
   );
@@ -592,6 +633,7 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
   const versionThree = profiles.find((p) => p.versionThreeHash === schemaHash);
   const versionTwo = profiles.find((p) => p.versionTwoHash === schemaHash);
   const previous =
+    versionNineteen ??
     versionEighteen ??
     versionSeventeen ??
     versionSixteen ??
@@ -650,6 +692,74 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
     row.version ===
       (current
         ? SCHEMA_VERSION
+        : versionNineteen
+          ? 19
+          : versionEighteen
+            ? 18
+            : versionSeventeen
+              ? 17
+              : versionSixteen
+                ? 16
+                : versionFifteen
+                  ? 15
+                  : versionFourteen
+                    ? 14
+                    : versionThirteen
+                      ? 13
+                      : versionTwelve
+                        ? 12
+                        : versionEleven
+                          ? 11
+                          : versionTen
+                            ? 10
+                            : versionNine
+                              ? 9
+                              : versionEight
+                                ? 8
+                                : versionSeven
+                                  ? 7
+                                  : versionSix
+                                    ? 6
+                                    : versionFive
+                                      ? 5
+                                      : versionFour
+                                        ? 4
+                                        : versionThree
+                                          ? 3
+                                          : versionTwo
+                                            ? 2
+                                            : 1),
+    "SCHEMA_VERSION",
+    "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
+  );
+  check(
+    row.schema_hash === schemaHash &&
+      row.event_reports === Number((current ?? previous)!.eventReports),
+    "SCHEMA_DRIFT",
+    "Schema receipt does not match the exact stored profile.",
+  );
+  check(
+    (row.region === "CA" || row.region === "US") &&
+      (region === null || region === row.region),
+    "SCHEMA_REGION",
+    "Schema receipt and organization regions differ.",
+  );
+  check(
+    typeof row.initialized_at === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+        row.initialized_at,
+      ) &&
+      Number.isFinite(Date.parse(row.initialized_at)) &&
+      new Date(row.initialized_at).toISOString() === row.initialized_at,
+    "SCHEMA_VERSION",
+    "Schema receipt timestamp is invalid.",
+  );
+  return {
+    kind: current ? "current" : "previous",
+    version: current
+      ? SCHEMA_VERSION
+      : versionNineteen
+        ? 19
         : versionEighteen
           ? 18
           : versionSeventeen
@@ -684,71 +794,7 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
                                         ? 3
                                         : versionTwo
                                           ? 2
-                                          : 1),
-    "SCHEMA_VERSION",
-    "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
-  );
-  check(
-    row.schema_hash === schemaHash &&
-      row.event_reports === Number((current ?? previous)!.eventReports),
-    "SCHEMA_DRIFT",
-    "Schema receipt does not match the exact stored profile.",
-  );
-  check(
-    (row.region === "CA" || row.region === "US") &&
-      (region === null || region === row.region),
-    "SCHEMA_REGION",
-    "Schema receipt and organization regions differ.",
-  );
-  check(
-    typeof row.initialized_at === "string" &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
-        row.initialized_at,
-      ) &&
-      Number.isFinite(Date.parse(row.initialized_at)) &&
-      new Date(row.initialized_at).toISOString() === row.initialized_at,
-    "SCHEMA_VERSION",
-    "Schema receipt timestamp is invalid.",
-  );
-  return {
-    kind: current ? "current" : "previous",
-    version: current
-      ? SCHEMA_VERSION
-      : versionEighteen
-        ? 18
-        : versionSeventeen
-          ? 17
-          : versionSixteen
-            ? 16
-            : versionFifteen
-              ? 15
-              : versionFourteen
-                ? 14
-                : versionThirteen
-                  ? 13
-                  : versionTwelve
-                    ? 12
-                    : versionEleven
-                      ? 11
-                      : versionTen
-                        ? 10
-                        : versionNine
-                          ? 9
-                          : versionEight
-                            ? 8
-                            : versionSeven
-                              ? 7
-                              : versionSix
-                                ? 6
-                                : versionFive
-                                  ? 5
-                                  : versionFour
-                                    ? 4
-                                    : versionThree
-                                      ? 3
-                                      : versionTwo
-                                        ? 2
-                                        : 1,
+                                          : 1,
     schemaHash,
     eventReports: (current ?? previous)!.eventReports,
     region: row.region,

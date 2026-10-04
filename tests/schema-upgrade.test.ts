@@ -73,6 +73,104 @@ const versionSeventeen = {
     },
   ],
 };
+// Frozen literal public 30ebbf4 profile; never imported from current DDL.
+const versionEighteen = {
+  hashes: {
+    enabled: "18310a051c7e1d3e278e11251cd1cdc417517148e61aa45a42d39fab96cd07b8",
+    disabled:
+      "66885390969e98b27ea19044f4e7b3cc399518fb50c9196962d2293f4569d942",
+  },
+  additions: [
+    {
+      type: "table",
+      name: "platform_offline_generations",
+      tbl_name: "platform_offline_generations",
+      sql: "CREATE TABLE platform_offline_generations(instance_id TEXT PRIMARY KEY,created_revision INTEGER NOT NULL UNIQUE CHECK(created_revision>0),generation TEXT NOT NULL,generation_hash TEXT NOT NULL) STRICT",
+    },
+    {
+      type: "table",
+      name: "platform_offline_journal",
+      tbl_name: "platform_offline_journal",
+      sql: "CREATE TABLE platform_offline_journal(revision INTEGER PRIMARY KEY CHECK(revision>0),instance_id TEXT NOT NULL REFERENCES platform_offline_generations(instance_id),record TEXT NOT NULL,previous_hash TEXT NOT NULL,state_hash TEXT NOT NULL,hash TEXT NOT NULL) STRICT",
+    },
+    {
+      type: "table",
+      name: "platform_offline_head",
+      tbl_name: "platform_offline_head",
+      sql: "CREATE TABLE platform_offline_head(id INTEGER PRIMARY KEY CHECK(id=1),instance_id TEXT NOT NULL REFERENCES platform_offline_generations(instance_id),revision INTEGER NOT NULL REFERENCES platform_offline_journal(revision),state TEXT NOT NULL,state_hash TEXT NOT NULL,journal_hash TEXT NOT NULL) STRICT",
+    },
+    {
+      type: "table",
+      name: "platform_offline_receipts",
+      tbl_name: "platform_offline_receipts",
+      sql: "CREATE TABLE platform_offline_receipts(owner TEXT NOT NULL,org_id TEXT NOT NULL,task_name TEXT NOT NULL,request_id TEXT NOT NULL,binding TEXT NOT NULL UNIQUE,instance_id TEXT NOT NULL REFERENCES platform_offline_generations(instance_id),session_id TEXT NOT NULL,revision INTEGER NOT NULL UNIQUE REFERENCES platform_offline_journal(revision),record TEXT NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(owner,org_id,task_name,request_id)) STRICT",
+    },
+    {
+      type: "trigger",
+      name: "platform_offline_generations_no_update",
+      tbl_name: "platform_offline_generations",
+      sql: "CREATE TRIGGER platform_offline_generations_no_update BEFORE UPDATE ON platform_offline_generations BEGIN SELECT RAISE(ABORT,'Offline provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "platform_offline_generations_no_delete",
+      tbl_name: "platform_offline_generations",
+      sql: "CREATE TRIGGER platform_offline_generations_no_delete BEFORE DELETE ON platform_offline_generations BEGIN SELECT RAISE(ABORT,'Offline provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "platform_offline_journal_no_update",
+      tbl_name: "platform_offline_journal",
+      sql: "CREATE TRIGGER platform_offline_journal_no_update BEFORE UPDATE ON platform_offline_journal BEGIN SELECT RAISE(ABORT,'Offline provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "platform_offline_journal_no_delete",
+      tbl_name: "platform_offline_journal",
+      sql: "CREATE TRIGGER platform_offline_journal_no_delete BEFORE DELETE ON platform_offline_journal BEGIN SELECT RAISE(ABORT,'Offline provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "platform_offline_receipts_no_update",
+      tbl_name: "platform_offline_receipts",
+      sql: "CREATE TRIGGER platform_offline_receipts_no_update BEFORE UPDATE ON platform_offline_receipts BEGIN SELECT RAISE(ABORT,'Offline provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "platform_offline_receipts_no_delete",
+      tbl_name: "platform_offline_receipts",
+      sql: "CREATE TRIGGER platform_offline_receipts_no_delete BEFORE DELETE ON platform_offline_receipts BEGIN SELECT RAISE(ABORT,'Offline provenance is append-only'); END",
+    },
+  ],
+};
+// Frozen literal public 30ebbf4 profile; never imported from current DDL.
+const versionNineteen = {
+  hashes: {
+    enabled: "78ae9e9a3b784a506d5be099aeb9884e86c783c432944dc6a7e46b7c11ae0521",
+    disabled:
+      "787d1fd08ff0508d06f017ffbd449e610a295b81d24178d6969e5408602a02c5",
+  },
+  additions: [
+    {
+      type: "table",
+      name: "integration_offline_failed_refunds",
+      tbl_name: "integration_offline_failed_refunds",
+      sql: "CREATE TABLE integration_offline_failed_refunds(effect_id TEXT PRIMARY KEY REFERENCES integration_effects(id),org_id TEXT NOT NULL,request_id TEXT NOT NULL,binding TEXT NOT NULL UNIQUE,record TEXT NOT NULL CHECK(length(CAST(record AS BLOB)) BETWEEN 1 AND 65536),record_hash TEXT NOT NULL CHECK(length(record_hash)=64),UNIQUE(org_id,request_id)) STRICT",
+    },
+    {
+      type: "trigger",
+      name: "integration_offline_failed_refunds_no_update",
+      tbl_name: "integration_offline_failed_refunds",
+      sql: "CREATE TRIGGER integration_offline_failed_refunds_no_update BEFORE UPDATE ON integration_offline_failed_refunds BEGIN SELECT RAISE(ABORT,'Offline refund provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "integration_offline_failed_refunds_no_delete",
+      tbl_name: "integration_offline_failed_refunds",
+      sql: "CREATE TRIGGER integration_offline_failed_refunds_no_delete BEFORE DELETE ON integration_offline_failed_refunds BEGIN SELECT RAISE(ABORT,'Offline refund provenance is append-only'); END",
+    },
+  ],
+};
 const metadata = "platform_schema_version";
 // Independent historical DDL and literal fingerprints; do not derive this fixture
 // from the new schema inspector or current module constructors.
@@ -614,6 +712,76 @@ function frozenVersionSeventeen(
     db.exec("COMMIT");
   });
 }
+function frozenVersionEighteen(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionSeventeen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionEighteen.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      db.exec(object.sql);
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    for (const object of versionEighteen.additions.filter(
+      (o) => o.type !== "table",
+    ))
+      db.exec(object.sql);
+    db.prepare(
+      "UPDATE platform_schema_version SET version=18,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionEighteen.hashes.enabled
+        : versionEighteen.hashes.disabled,
+    );
+    db.exec("COMMIT");
+  });
+}
+function frozenVersionNineteen(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionEighteen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionNineteen.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      db.exec(object.sql);
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    for (const object of versionNineteen.additions.filter(
+      (o) => o.type !== "table",
+    ))
+      db.exec(object.sql);
+    db.prepare(
+      "UPDATE platform_schema_version SET version=19,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionNineteen.hashes.enabled
+        : versionNineteen.hashes.disabled,
+    );
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -664,7 +832,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE integration_offline_original_cancellations; DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -675,6 +843,7 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "integration_offline_original_cancellations",
     "integration_offline_failed_refunds",
     "platform_offline_head",
     "platform_offline_receipts",
@@ -710,6 +879,9 @@ function conservedUpgrade(
     "integration_cost_policies",
     "integration_cost_corrections",
   ]) {
+    if (sourceVersion >= 19 && name === "integration_offline_failed_refunds")
+      continue;
+    if (sourceVersion >= 18 && name.startsWith("platform_offline_")) continue;
     if (
       sourceVersion >= 17 &&
       ["platform_restore_releases", "inventory_quantity_corrections"].includes(
@@ -826,7 +998,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
 });
 
 for (const sourceVersion of [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
 ])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
@@ -1018,7 +1190,11 @@ for (const sourceVersion of [
                                       ? frozenVersionFifteen
                                       : sourceVersion === 16
                                         ? frozenVersionSixteen
-                                        : frozenVersionSeventeen)(
+                                        : sourceVersion === 17
+                                          ? frozenVersionSeventeen
+                                          : sourceVersion === 18
+                                            ? frozenVersionEighteen
+                                            : frozenVersionNineteen)(
           f.path,
           source,
           eventReports,
@@ -1064,7 +1240,11 @@ for (const sourceVersion of [
                                             ? versionFifteen.hashes
                                             : sourceVersion === 16
                                               ? versionSixteen.hashes
-                                              : versionSeventeen.hashes
+                                              : sourceVersion === 17
+                                                ? versionSeventeen.hashes
+                                                : sourceVersion === 18
+                                                  ? versionEighteen.hashes
+                                                  : versionNineteen.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -1098,7 +1278,11 @@ for (const sourceVersion of [
                                             ? versionFifteen.hashes
                                             : sourceVersion === 16
                                               ? versionSixteen.hashes
-                                              : versionSeventeen.hashes
+                                              : sourceVersion === 17
+                                                ? versionSeventeen.hashes
+                                                : sourceVersion === 18
+                                                  ? versionEighteen.hashes
+                                                  : versionNineteen.hashes
               ).disabled,
         );
         let constructors = 0;

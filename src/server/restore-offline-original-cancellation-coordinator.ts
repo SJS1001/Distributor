@@ -497,6 +497,19 @@ export class RestoreOfflineOriginalCancellationCoordinator {
     });
     return guard.execute(envelope);
   }
+  /** Read only recovery from durable Integration preimages; never replay a write. */
+  recoverRetainedInTransaction(
+    evidenceActor: unknown,
+    cancellationActor: unknown,
+    envelope: unknown,
+  ) {
+    this.owners();
+    return this.#operation.recoverRetainedInTransaction(
+      principal(evidenceActor),
+      principal(cancellationActor),
+      envelope,
+    );
+  }
   /** Read only, exact native/Platform receipt proof, never repeat an uncertain write. */
   recoverInTransaction(
     evidenceActor: unknown,
