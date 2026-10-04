@@ -171,6 +171,34 @@ const versionNineteen = {
     },
   ],
 };
+// Frozen exact published f1583c3 schema-20 identities, independent of v21 DDL.
+const versionTwenty = {
+  hashes: {
+    enabled: "7fd45cbd7a88edbdf10b3f2b1daa220706d9eb5af20f32cfad99291b5e0a3ed5",
+    disabled:
+      "f1f0d63fb11f4f56c4ec7941f234dadbabac18ff5e3686e5282cf6ed125b1162",
+  },
+  additions: [
+    {
+      type: "table",
+      name: "integration_offline_original_cancellations",
+      tbl_name: "integration_offline_original_cancellations",
+      sql: "CREATE TABLE integration_offline_original_cancellations(journal_id TEXT PRIMARY KEY REFERENCES integration_stock_journals(id),org_id TEXT NOT NULL,request_id TEXT NOT NULL,binding TEXT NOT NULL UNIQUE,envelope TEXT NOT NULL CHECK(length(CAST(envelope AS BLOB)) BETWEEN 1 AND 4194304),envelope_hash TEXT NOT NULL CHECK(length(envelope_hash)=64),record TEXT NOT NULL CHECK(length(CAST(record AS BLOB)) BETWEEN 1 AND 16384),record_hash TEXT NOT NULL CHECK(length(record_hash)=64),UNIQUE(org_id,request_id)) STRICT",
+    },
+    {
+      type: "trigger",
+      name: "integration_offline_original_cancellations_no_update",
+      tbl_name: "integration_offline_original_cancellations",
+      sql: "CREATE TRIGGER integration_offline_original_cancellations_no_update BEFORE UPDATE ON integration_offline_original_cancellations BEGIN SELECT RAISE(ABORT,'Offline original provenance is append-only'); END",
+    },
+    {
+      type: "trigger",
+      name: "integration_offline_original_cancellations_no_delete",
+      tbl_name: "integration_offline_original_cancellations",
+      sql: "CREATE TRIGGER integration_offline_original_cancellations_no_delete BEFORE DELETE ON integration_offline_original_cancellations BEGIN SELECT RAISE(ABORT,'Offline original provenance is append-only'); END",
+    },
+  ],
+};
 const metadata = "platform_schema_version";
 // Independent historical DDL and literal fingerprints; do not derive this fixture
 // from the new schema inspector or current module constructors.
@@ -782,6 +810,41 @@ function frozenVersionNineteen(
     db.exec("COMMIT");
   });
 }
+function frozenVersionTwenty(
+  source: string,
+  destination: string,
+  eventReports: boolean,
+  region: "CA" | "US",
+) {
+  frozenVersionNineteen(source, destination, eventReports, region);
+  const rows = snapshot(source);
+  raw(destination, (db) => {
+    db.exec("BEGIN; PRAGMA defer_foreign_keys=ON");
+    for (const object of versionTwenty.additions.filter(
+      (o) => o.type === "table",
+    )) {
+      db.exec(object.sql);
+      for (const record of rows[object.name]!) {
+        const columns = Object.keys(record);
+        db.prepare(
+          `INSERT INTO "${object.name}" (${columns.map((n) => `"${n}"`).join(",")}) VALUES(${columns.map(() => "?").join(",")})`,
+        ).run(...columns.map((n) => record[n]!));
+      }
+    }
+    for (const object of versionTwenty.additions.filter(
+      (o) => o.type !== "table",
+    ))
+      db.exec(object.sql);
+    db.prepare(
+      "UPDATE platform_schema_version SET version=20,schema_hash=?",
+    ).run(
+      eventReports
+        ? versionTwenty.hashes.enabled
+        : versionTwenty.hashes.disabled,
+    );
+    db.exec("COMMIT");
+  });
+}
 function directory(t: { after: (fn: () => void) => void }) {
   const path = mkdtempSync(join(tmpdir(), "distributor-schema-test-"));
   t.after(() => rmSync(path, { recursive: true, force: true }));
@@ -832,7 +895,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE integration_offline_original_cancellations; DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE integration_offline_canada_post_members; DROP TABLE integration_offline_original_cancellations; DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -843,6 +906,7 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "integration_offline_canada_post_members",
     "integration_offline_original_cancellations",
     "integration_offline_failed_refunds",
     "platform_offline_head",
@@ -879,6 +943,11 @@ function conservedUpgrade(
     "integration_cost_policies",
     "integration_cost_corrections",
   ]) {
+    if (
+      sourceVersion >= 20 &&
+      name === "integration_offline_original_cancellations"
+    )
+      continue;
     if (sourceVersion >= 19 && name === "integration_offline_failed_refunds")
       continue;
     if (sourceVersion >= 18 && name.startsWith("platform_offline_")) continue;
@@ -998,7 +1067,7 @@ test("blank initialization publishes one version receipt atomically; restart pre
 });
 
 for (const sourceVersion of [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 ])
   for (const region of ["CA", "US"] as const)
     for (const eventReports of [false, true])
@@ -1194,7 +1263,9 @@ for (const sourceVersion of [
                                           ? frozenVersionSeventeen
                                           : sourceVersion === 18
                                             ? frozenVersionEighteen
-                                            : frozenVersionNineteen)(
+                                            : sourceVersion === 19
+                                              ? frozenVersionNineteen
+                                              : frozenVersionTwenty)(
           f.path,
           source,
           eventReports,
@@ -1244,7 +1315,9 @@ for (const sourceVersion of [
                                                 ? versionSeventeen.hashes
                                                 : sourceVersion === 18
                                                   ? versionEighteen.hashes
-                                                  : versionNineteen.hashes
+                                                  : sourceVersion === 19
+                                                    ? versionNineteen.hashes
+                                                    : versionTwenty.hashes
               ).enabled
             : (sourceVersion === 1
                 ? versionOneHashes
@@ -1282,7 +1355,9 @@ for (const sourceVersion of [
                                                 ? versionSeventeen.hashes
                                                 : sourceVersion === 18
                                                   ? versionEighteen.hashes
-                                                  : versionNineteen.hashes
+                                                  : sourceVersion === 19
+                                                    ? versionNineteen.hashes
+                                                    : versionTwenty.hashes
               ).disabled,
         );
         let constructors = 0;
@@ -2241,3 +2316,64 @@ test("version-thirteen receipt lies and partial organization revocation storage 
     );
   }
 });
+
+// Authenticated synthetic old archive: restore must not implicitly migrate v20.
+import { createCipheriv } from "node:crypto";
+import { restoreBackup, createBackup } from "../src/server/recovery.ts";
+for (const region of ["CA", "US"] as const)
+  for (const eventReports of [false, true])
+    test(`${region} reports=${eventReports}: frozen v20 encrypted restore refuses implicit v21 upgrade unchanged`, async (t) => {
+      const f = fixture(
+          t,
+          { eventReports },
+          region,
+          region === "CA" ? "CAD" : "USD",
+        ),
+        dir = directory(t),
+        source = join(dir, "old20.db"),
+        target = join(dir, "restore.db"),
+        archive = join(dir, "old20.enc");
+      frozenVersionTwenty(f.path, source, eventReports, region);
+      const raw = readFileSync(source),
+        key = Buffer.alloc(32, 9),
+        iv = Buffer.alloc(12, 7);
+      const manifest = {
+        version: 1,
+        region,
+        completedAt: "2026-10-04T00:00:00.000Z",
+        snapshotHash: createHash("sha256").update(raw).digest("hex"),
+        schemaHash: eventReports
+          ? versionTwenty.hashes.enabled
+          : versionTwenty.hashes.disabled,
+        bytes: raw.length,
+        iv: iv.toString("hex"),
+      };
+      const header = Buffer.from(JSON.stringify(manifest)),
+        length = Buffer.alloc(4);
+      length.writeUInt32BE(header.length);
+      const prefix = Buffer.concat([Buffer.from("DISTBKP1"), length, header]),
+        cipher = createCipheriv("aes-256-gcm", key, iv);
+      cipher.setAAD(prefix);
+      const encrypted = Buffer.concat([
+        prefix,
+        cipher.update(raw),
+        cipher.final(),
+        cipher.getAuthTag(),
+      ]);
+      writeFileSync(archive, encrypted, { mode: 0o600 });
+      await assert.rejects(restoreBackup(archive, target, region, key), {
+        code: "RECOVERY_SCHEMA",
+      });
+      await assert.rejects(
+        createBackup(source, join(dir, "new.enc"), region, key),
+        { code: "RECOVERY_SCHEMA" },
+      );
+      assert.deepEqual(readFileSync(archive), encrypted);
+      assert.deepEqual(readFileSync(source), raw);
+      assert.equal(existsSync(target), false);
+      assert.equal(
+        readdirSync(dir).some((x) => x.startsWith(".recovery-")),
+        false,
+      );
+      key.fill(0);
+    });

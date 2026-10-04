@@ -1,3 +1,4 @@
+import { INTEGRATION_OFFLINE_CANADA_POST_DDL } from "./integration-offline-canada-post-schema.ts";
 import { INTEGRATION_OFFLINE_ORIGINAL_DDL } from "./integration-offline-original-schema.ts";
 import { INTEGRATION_OFFLINE_REFUND_DDL } from "./integration-offline-refund-schema.ts";
 import { RESTORE_OFFLINE_DDL } from "./restore-offline-schema.ts";
@@ -222,6 +223,7 @@ export async function upgradeSchema(
         copied.exec(RESTORE_OFFLINE_DDL);
         copied.exec(INTEGRATION_OFFLINE_REFUND_DDL);
         copied.exec(INTEGRATION_OFFLINE_ORIGINAL_DDL);
+        copied.exec(INTEGRATION_OFFLINE_CANADA_POST_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -254,6 +256,8 @@ export async function upgradeSchema(
         if (before.version! <= 18) copied.exec(INTEGRATION_OFFLINE_REFUND_DDL);
         if (before.version! <= 19)
           copied.exec(INTEGRATION_OFFLINE_ORIGINAL_DDL);
+        if (before.version! <= 20)
+          copied.exec(INTEGRATION_OFFLINE_CANADA_POST_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

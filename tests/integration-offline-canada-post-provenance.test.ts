@@ -613,94 +613,313 @@ async function ready(
     );
   return { ...f, importer, refresh, capture, apply, recover, snapshot };
 }
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { Store } from "../src/server/database.ts";
+import type { Row } from "../src/server/core.ts";
+import { createBackup, restoreBackup } from "../src/server/recovery.ts";
+const table = "integration_offline_canada_post_members";
+type Prepared = Awaited<ReturnType<typeof ready>>;
+function retained(f: Prepared, input: unknown = f.envelope) {
+  return f.app.database.transaction(() =>
+    f.importer.recoverRetainedInTransaction(actor(f), input),
+  );
+}
+// Synthetic corruption only: restore exact DDL so readers must detect the data defect.
+function tamper(f: Prepared, sql: string, ...args: SQLInputValue[]) {
+  const db = new DatabaseSync(f.path);
+  try {
+    const triggers = db
+      .prepare(
+        "SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND tbl_name=?",
+      )
+      .all(table);
+    db.exec(
+      "PRAGMA foreign_keys=OFF; PRAGMA ignore_check_constraints=ON; BEGIN",
+    );
+    for (const trigger of triggers) db.exec(`DROP TRIGGER "${trigger.name}"`);
+    db.prepare(sql).run(...args);
+    for (const trigger of triggers) db.exec(String(trigger.sql));
+    db.exec("COMMIT");
+  } finally {
+    db.close();
+  }
+}
+function rawSnapshot(f: Prepared) {
+  return canonical(
+    (["integration", "platform"] as const).map((owner) => {
+      const s = f.app.database.owned(owner);
+      return s
+        .all<{ name: string }>(
+          "SELECT name FROM sqlite_schema WHERE type='table' AND name LIKE ? ORDER BY name",
+          owner + "_%",
+        )
+        .map(({ name }) => [
+          name,
+          s.all(`SELECT * FROM ${name} ORDER BY rowid`),
+        ]);
+    }),
+  );
+}
+function store(f: Prepared) {
+  return f.app.database.owned("integration");
+}
 for (const currency of ["CAD", "USD"] as const)
   for (const reports of [false, true])
-    test(`native import ${currency} reports=${reports}: pending bookings, exact one receipt, read-only recovery`, async (t) => {
-      const f = await ready(t, currency, reports);
-      const store = f.app.database.owned("integration"),
-        before = store.all(
-          "SELECT * FROM integration_carrier_bookings ORDER BY sequence",
-        );
-      const businessBefore = business(f);
-      const receipt = f.apply();
-      frozen(receipt);
-      assert.equal(business(f), businessBefore);
-      assert.equal(receipt.status, "native-owner-application-only");
-      assert.deepEqual(
-        store.all(
-          "SELECT * FROM integration_carrier_bookings ORDER BY sequence",
-        ),
-        before,
-      );
-      const m = store.get(
-        "SELECT * FROM integration_canada_post_members WHERE booking_id=?",
-        f.bookingId,
-      )!;
-      assert.equal(m.state, "created");
-      assert.equal(m.token, null);
-      assert.equal(m.started_at, null);
-      assert.equal(m.provider_shipment_id, proposal(f).providerShipmentId);
-      assert.equal(m.tracking, proposal(f).tracking);
-      assert.equal(m.label_hash, digest(f.pdf));
-      assert.deepEqual(Buffer.from(m.label_bytes as Uint8Array), f.pdf);
-      assert.equal(
-        store.get(
-          "SELECT state FROM integration_canada_post_groups WHERE id=?",
-          f.groupId,
-        )!.state,
-        "closed",
-      );
-      const state = f.app.database.transaction(() =>
-        f.app.platform.offline.readInTransaction(),
-      )!;
-      assert.equal(
-        state.state.sessions
-          .at(-1)!
-          .history.filter((h) => h.kind === "record-task").length,
-        1,
-      );
-      assert.equal(
-        state.state.sessions.at(-1)!.history.at(-1)!.receipt!.binding,
-        offlineTaskBinding(f.envelope),
-      );
-      const changesBefore = changes(f),
-        recovered = f.recover(receipt);
-      frozen(recovered);
-      assert.equal(recovered.resultHash, receipt.resultHash);
-      assert.equal(changes(f), changesBefore);
-      assert.throws(() => f.apply());
-      assert.equal(changes(f), changesBefore);
-      const closed = f.app;
-      closed.close();
+    test(`${currency} reports=${reports}: exact original durable bytes, no private host/preimage on restart, zero writes`, async (t) => {
+      const f = await ready(t, currency, reports),
+        applied = f.apply();
+      const row = store(f).get(`SELECT * FROM ${table}`)!;
+      assert.equal(row.envelope, canonical(f.envelope));
+      assert.equal(row.envelope_hash, digest(canonical(f.envelope)));
+      assert.equal(row.record, canonical(applied.record));
+      assert.equal(row.record_hash, applied.resultHash);
+      assert.equal(row.booking_id, f.bookingId);
+      assert.equal(row.group_id, f.groupId);
+      assert.equal(row.org_id, f.actor.orgId);
+      assert.equal(row.request_id, f.envelope.requestId);
+      assert.equal(row.binding, offlineTaskBinding(f.envelope));
+      const snapshot = f.snapshot();
+      fs.rmSync(f.root, { recursive: true, force: true });
+      f.app.close();
       const app = new Application(f.path, undefined, { eventReports: reports });
       f.originalFixture.app = app;
-      const restarted = new IntegrationOfflineCanadaPostMember(
+      const importer = new IntegrationOfflineCanadaPostMember(
         app.database,
         app.identity,
         app.platform,
         app.fulfillment,
         app.carriers,
       );
-      const restartedResult = app.database.transaction(() =>
-        restarted.recoverInTransaction(
-          actor(f),
-          f.envelope,
-          structuredClone(receipt),
+      const before = app.database
+        .owned("integration")
+        .get("SELECT total_changes() AS n")!.n;
+      const recovered = app.database.transaction(() =>
+        importer.recoverRetainedInTransaction(actor(f), f.envelope),
+      );
+      frozen(recovered);
+      assert.deepEqual(recovered.record, applied.record);
+      assert.equal(recovered.resultHash, applied.resultHash);
+      assert.deepEqual(recovered.result, applied.record.result);
+      assert.equal(
+        app.database.owned("integration").get("SELECT total_changes() AS n")!.n,
+        before,
+      );
+      assert.equal(
+        app.database.transaction(() =>
+          canonical({
+            candidate: app.database.captureRestoreCandidateInTransaction(),
+            offline: app.platform.offline.readInTransaction(),
+          }),
         ),
+        snapshot,
       );
-      assert.equal(restartedResult.resultHash, receipt.resultHash);
-      const retainedResult = app.database.transaction(() =>
-        restarted.recoverRetainedInTransaction(actor(f), f.envelope),
-      );
-      assert.deepEqual(retainedResult, {
-        ...restartedResult,
-        record: receipt.record,
-      });
     });
-test("fake/disposed/foreign captures refused before actor proxy traversal", async (t) => {
+for (const mutation of ["UPDATE", "DELETE", "REPLACE"])
+  test(`native immutable ${mutation} across independent connections/reopen`, async (t) => {
+    const f = await ready(t);
+    f.apply();
+    const before = f.snapshot();
+    const sql =
+      mutation === "UPDATE"
+        ? `UPDATE ${table} SET record=record`
+        : mutation === "DELETE"
+          ? `DELETE FROM ${table}`
+          : `INSERT OR REPLACE INTO ${table} SELECT * FROM ${table}`;
+    const second = new Application(f.path, undefined, { eventReports: false });
+    try {
+      for (const app of [f.app, second])
+        assert.throws(
+          () =>
+            app.database.transaction(() =>
+              app.database.owned("integration").run(sql),
+            ),
+          /append-only/,
+        );
+    } finally {
+      second.close();
+    }
+    assert.equal(f.snapshot(), before);
+    assert.doesNotThrow(() => retained(f));
+  });
+test("native foreign owner writes and FK orphans refuse", async (t) => {
   const f = await ready(t);
+  f.apply();
+  const before = f.snapshot();
+  assert.throws(() =>
+    f.app.database.transaction(() =>
+      f.app.database.owned("platform").run(`DELETE FROM ${table}`),
+    ),
+  );
+  assert.throws(
+    () =>
+      f.app.database.transaction(() =>
+        store(f).run(
+          `INSERT INTO ${table} SELECT 'orphan',group_id,org_id,'other',?,envelope,envelope_hash,record,record_hash FROM ${table}`,
+          digest("other"),
+        ),
+      ),
+    /FOREIGN KEY/,
+  );
+  assert.equal(f.snapshot(), before);
+});
+for (const change of [
+  `DELETE FROM ${table}`,
+  ...["record_hash", "envelope_hash", "binding"].map(
+    (c) => `UPDATE ${table} SET ${c}='${"a".repeat(64)}'`,
+  ),
+  ...["org_id", "group_id", "booking_id", "request_id"].map(
+    (c) => `UPDATE ${table} SET ${c}='foreign'`,
+  ),
+  ...["record", "envelope"].flatMap((c) => [
+    `UPDATE ${table} SET ${c}='{}'`,
+    `UPDATE ${table} SET ${c}=${c}||' '`,
+  ]),
+])
+  test(`complete provenance refuses ${change}`, async (t) => {
+    const f = await ready(t),
+      r = f.apply();
+    tamper(f, change);
+    const before = rawSnapshot(f);
+    assert.throws(() => retained(f), { code: "OFFLINE_CANADA_POST_IMPORT" });
+    assert.throws(() => f.recover(r), { code: "OFFLINE_CANADA_POST_IMPORT" });
+    assert.equal(rawSnapshot(f), before);
+  });
+for (const [column, value] of [
+  ["record", "é".repeat(32769)],
+  ["envelope", "é".repeat(32769)],
+  ["record", '{"x":"a\0b"}'],
+  ["envelope", '{"x":"a\0b"}'],
+  ["record", '{"x":' + "[".repeat(1025) + "0" + "]".repeat(1025) + "}"],
+  ["envelope", '{"x":[' + "0,".repeat(8000) + "0]}"],
+] as const)
+  test(`bounded ${column} ${value.length} preflight before retained blobs materialize`, async (t) => {
+    const f = await ready(t);
+    f.apply();
+    tamper(f, `UPDATE ${table} SET ${column}=?`, value);
+    const original = Store.prototype.all;
+    let fetched = false;
+    Store.prototype.all = function <T extends Row = Row>(
+      sql: string,
+      ...args: SQLInputValue[]
+    ): T[] {
+      if (sql.includes("AS envelope_bytes")) fetched = true;
+      return original.call(this, sql, ...args) as T[];
+    };
+    try {
+      assert.throws(() => retained(f), { code: "OFFLINE_CANADA_POST_IMPORT" });
+    } finally {
+      Store.prototype.all = original;
+    }
+    assert.equal(fetched, false);
+  });
+for (const column of ["record", "envelope"])
+  test(`fatal UTF8 and canonical escaped surrogate refuse for ${column}`, async (t) => {
+    const f = await ready(t);
+    f.apply();
+    tamper(
+      f,
+      `UPDATE ${table} SET ${column}=CAST(x'7B2278223A22EDA080227D' AS TEXT)`,
+    );
+    assert.throws(() => retained(f), { code: "OFFLINE_CANADA_POST_IMPORT" });
+    tamper(f, `UPDATE ${table} SET ${column}=?`, '{"x":"\\ud800"}');
+    assert.throws(() => retained(f), { code: "OFFLINE_CANADA_POST_IMPORT" });
+  });
+test("reverse orphan Platform receipt refuses before a second native effect", async (t) => {
+  const f = await ready(t);
+  f.app.database.transaction(() => {
+    const r = f.app.platform.offline.readInTransaction()!;
+    f.app.platform.offline.transitionInTransaction(
+      r.state.generation,
+      r.anchor,
+      {
+        kind: "record-task",
+        receipt: {
+          owner: "integration",
+          orgId: f.actor.orgId,
+          taskName: canadaPostPrivateTask.name,
+          requestId: "orphan",
+          binding: digest("orphan"),
+          payloadHash: digest("payload"),
+          beforeCandidateHash: f.envelope.candidate.logicalHash,
+          resultHash: digest("missing"),
+        },
+      },
+      [],
+    );
+  });
+  f.refresh();
+  const before = f.snapshot();
+  assert.throws(() => f.apply(), { code: "OFFLINE_CANADA_POST_IMPORT" });
+  assert.equal(f.snapshot(), before);
+});
+test("provenance is inserted BEFORE sole Platform receipt; late receipt error rolls all effects back", async (t) => {
+  const f = await ready(t),
+    before = f.snapshot(),
+    h = f.capture();
+  let reached = false;
+  const original = f.app.platform.offline.transitionInTransaction.bind(
+    f.app.platform.offline,
+  );
+  t.mock.method(
+    Object.getPrototypeOf(f.app.platform.offline),
+    "transitionInTransaction",
+    (...args: Parameters<typeof original>) => {
+      if ((args[2] as { kind: string }).kind === "record-task") {
+        reached = true;
+        const rows = store(f).all(`SELECT * FROM ${table}`);
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0]!.envelope, canonical(f.envelope));
+        assert.equal(
+          f.app.platform.offline
+            .readInTransaction()!
+            .state.sessions.at(-1)!
+            .history.filter((x) => x.kind === "record-task").length,
+          0,
+        );
+        original(...args);
+        throw Error("synthetic late durable receipt failure");
+      }
+      return original(...args);
+    },
+  );
+  assert.throws(
+    () =>
+      f.app.database.transaction(() =>
+        f.importer.applyInTransaction(actor(f), h),
+      ),
+    /synthetic late durable receipt failure/,
+  );
+  t.mock.restoreAll();
+  assert(reached);
+  assert.equal(f.snapshot(), before);
+  assert.equal(store(f).get(`SELECT COUNT(*) AS n FROM ${table}`)!.n, 0);
+});
+for (const change of [
+  "active=0",
+  "role='support'",
+  "org_id='foreign'",
+  "account_id='foreign'",
+])
+  test(`retained recovery refreshes IAM: ${change}`, async (t) => {
+    const f = await ready(t);
+    f.apply();
+    const before = f.snapshot();
+    assert.throws(() =>
+      f.app.database.transaction(() => {
+        f.app.database
+          .owned("iam")
+          .run(`UPDATE iam_users SET ${change} WHERE id=?`, f.actor.id);
+        f.importer.recoverRetainedInTransaction(actor(f), f.envelope);
+      }),
+    );
+    assert.equal(f.snapshot(), before);
+  });
+test("no transaction, hostile inputs, and explicitly changed original all refuse without traps", async (t) => {
+  const f = await ready(t),
+    r = f.apply(),
+    before = f.snapshot();
   let trapped = false;
-  const hostile = new Proxy(
+  const p = new Proxy(
     {},
     {
       get() {
@@ -711,553 +930,150 @@ test("fake/disposed/foreign captures refused before actor proxy traversal", asyn
         trapped = true;
         throw Error("trap");
       },
-    },
-  );
-  const other = new IntegrationOfflineCanadaPostMember(
-    f.app.database,
-    f.app.identity,
-    f.app.platform,
-    f.app.fulfillment,
-    f.app.carriers,
-  );
-  const pending = f.importer.read(f.envelope, f.manifest),
-    disposed = f.capture();
-  disposed.dispose();
-  const valid = f.capture();
-  const snap = f.snapshot();
-  for (const value of [{}, hostile, disposed, pending])
-    assert.throws(() =>
-      f.app.database.transaction(() =>
-        f.importer.applyInTransaction(hostile, value),
-      ),
-    );
-  assert.throws(() =>
-    f.app.database.transaction(() => other.applyInTransaction(hostile, valid)),
-  );
-  valid.dispose();
-  pending.dispose();
-  assert.equal(trapped, false);
-  assert.equal(f.snapshot(), snap);
-});
-test("unknown objects and forged prototype owners cannot issue private owner captures", async (t) => {
-  const f = await ready(t);
-  let trap = false;
-  const proxy = new Proxy(f.app.carriers, {
-    get() {
-      trap = true;
-      throw Error("trap");
-    },
-  });
-  for (const owner of [
-    proxy,
-    Object.assign(
-      Object.create(Object.getPrototypeOf(f.app.carriers)),
-      f.app.carriers,
-    ),
-  ])
-    assert.throws(
-      () =>
-        new IntegrationOfflineCanadaPostMember(
-          f.app.database,
-          f.app.identity,
-          f.app.platform,
-          f.app.fulfillment,
-          owner,
-        ),
-    );
-  assert.equal(trap, false);
-  let get = false;
-  const h = f.capture();
-  assert.throws(() =>
-    f.app.database.transaction(() =>
-      f.importer.applyInTransaction(
-        {
-          get id() {
-            get = true;
-            return f.actor.id;
-          },
-          orgId: f.actor.orgId,
-        },
-        h,
-      ),
-    ),
-  );
-  assert.equal(get, false);
-});
-for (const fault of [
-  "audit",
-  "event",
-  "platform",
-  "candidate",
-  "dispose",
-  "reentry",
-] as const)
-  test(`late ${fault} failure escapes and rolls back ALL native writes`, async (t) => {
-    const f = await ready(t),
-      h = f.capture(),
-      snap = f.snapshot();
-    let reached = false;
-    if (fault === "audit" || fault === "event") {
-      const name = fault,
-        original = f.app.platform[name].bind(f.app.platform);
-      t.mock.method(
-        Object.getPrototypeOf(f.app.platform),
-        name,
-        (...args: any[]) => {
-          Reflect.apply(original, undefined, args);
-          if (args[1] === "carrier.canada-post.member.created") {
-            reached = true;
-            throw Error("synthetic late fault");
-          }
-        },
-      );
-    } else if (fault === "platform") {
-      const original = f.app.platform.offline.transitionInTransaction.bind(
-        f.app.platform.offline,
-      );
-      t.mock.method(
-        Object.getPrototypeOf(f.app.platform.offline),
-        "transitionInTransaction",
-        (...args: Parameters<typeof original>) => {
-          const r = original(...args);
-          if ((args[2] as { kind: string }).kind === "record-task") {
-            reached = true;
-            throw Error("synthetic late receipt");
-          }
-          return r;
-        },
-      );
-    } else if (fault === "candidate") {
-      const original = f.app.database.captureRestoreCandidateInTransaction.bind(
-        f.app.database,
-      );
-      t.mock.method(
-        Object.getPrototypeOf(f.app.database),
-        "captureRestoreCandidateInTransaction",
-        () => {
-          const r = original();
-          if (
-            f.app.database
-              .owned("integration")
-              .get(
-                "SELECT state FROM integration_canada_post_members WHERE booking_id=?",
-                f.bookingId,
-              )!.state === "created"
-          ) {
-            reached = true;
-            throw Error("synthetic late candidate");
-          }
-          return r;
-        },
-      );
-    } else {
-      const original = f.app.platform.audit.bind(f.app.platform);
-      t.mock.method(
-        Object.getPrototypeOf(f.app.platform),
-        "audit",
-        (...args: Parameters<typeof original>) => {
-          original(...args);
-          if (args[1] === "carrier.canada-post.member.created") {
-            reached = true;
-            if (fault === "dispose") h.dispose();
-            else
-              assert.throws(() => f.importer.applyInTransaction(actor(f), h));
-          }
-        },
-      );
-    }
-    assert.throws(() =>
-      f.app.database.transaction(() =>
-        f.importer.applyInTransaction(actor(f), h),
-      ),
-    );
-    t.mock.restoreAll();
-    assert.ok(reached, "the injected late failure must actually execute");
-    assert.equal(f.snapshot(), snap);
-    assert.throws(() => h.reviewInTransaction(actor(f)));
-  });
-for (const kind of [
-  "candidate",
-  "hold",
-  "claim",
-  "state",
-  "sibling",
-  "reference",
-  "site",
-  "finance",
-] as const)
-  test(`current ${kind} drift refuses without owner changes`, async (t) => {
-    const f = await ready(t),
-      h = f.capture();
-    if (kind === "candidate") f.envelope.candidate.logicalHash = "b".repeat(64); // capture already detached; mutate actual native candidate below
-    f.app.database.transaction(() => {
-      const integration = f.app.database.owned("integration"),
-        iam = f.app.database.owned("iam");
-      if (kind === "claim")
-        integration.run(
-          "UPDATE integration_canada_post_members SET token='claim',started_at=1 WHERE booking_id=?",
-          f.bookingId,
-        );
-      else if (kind === "state")
-        integration.run(
-          "UPDATE integration_canada_post_members SET state='creating' WHERE booking_id=?",
-          f.bookingId,
-        );
-      else if (kind === "sibling")
-        integration.run(
-          "UPDATE integration_canada_post_members SET tracking='7777777777777' WHERE booking_id=?",
-          f.createdId,
-        );
-      else if (kind === "reference")
-        integration.run(
-          "UPDATE integration_canada_post_members SET tracking=? WHERE booking_id=?",
-          proposal(f).tracking,
-          f.entries[2]!.bookingId,
-        );
-      else if (kind === "hold")
-        f.app.database
-          .owned("platform")
-          .run("UPDATE platform_recovery SET snapshot_hash=?", "b".repeat(64));
-      else if (kind === "finance")
-        iam.run(
-          "UPDATE iam_users SET role=? WHERE id=?",
-          "warehouse",
-          f.actor.id,
-        );
-      else if (kind === "site")
-        iam.run(
-          "UPDATE iam_users SET sites=? WHERE id=?",
-          JSON.stringify([f.w2]),
-          f.actor.id,
-        );
-      else
-        integration.run(
-          "UPDATE integration_canada_post_groups SET created_at='2026-10-02T00:00:00.000Z' WHERE id=?",
-          f.outside!.id,
-        );
-    });
-    const snap = f.snapshot();
-    assert.throws(() =>
-      f.app.database.transaction(() =>
-        f.importer.applyInTransaction(actor(f), h),
-      ),
-    );
-    assert.equal(f.snapshot(), snap);
-  });
-test("missing or changed independent original proof cannot be recovered or reconstructed", async (t) => {
-  const f = await ready(t),
-    r = f.apply(),
-    before = changes(f);
-  for (const v of [
-    undefined,
-    null,
-    {},
-    { ...r, resultHash: "a".repeat(64) },
-    { ...r, record: { ...r.record, inputHash: "a".repeat(64) } },
-  ])
-    assert.throws(() => f.recover(v));
-  const changed = structuredClone(f.envelope);
-  changed.evidence.qualificationHash = "b".repeat(64);
-  assert.throws(() =>
-    f.app.database.transaction(() =>
-      f.importer.recoverInTransaction(actor(f), changed, r),
-    ),
-  );
-  assert.equal(changes(f), before);
-  assert.equal(f.recover(r).resultHash, r.resultHash);
-});
-test("no outer writer and non-OPEN retained state refuse before mutation", async (t) => {
-  const f = await ready(t),
-    h = f.capture();
-  assert.throws(() => f.importer.applyInTransaction(actor(f), h));
-  h.dispose();
-  f.app.database.transaction(() => {
-    const s = f.app.platform.offline.readInTransaction()!;
-    f.app.platform.offline.transitionInTransaction(
-      s.state.generation,
-      s.anchor,
-      { kind: "drain" },
-      [],
-    );
-  });
-  f.refresh();
-  const snap = f.snapshot();
-  assert.throws(() => f.apply());
-  assert.equal(f.snapshot(), snap);
-});
-test("private file change after streaming before completion refuses and disposes", async (t) => {
-  const f = await ready(t),
-    h = f.importer.read(f.envelope, f.manifest),
-    snap = f.snapshot();
-  fs.appendFileSync(f.file, " ");
-  assert.throws(() => h.complete());
-  assert.throws(() =>
-    f.app.database.transaction(() =>
-      f.importer.applyInTransaction(actor(f), h),
-    ),
-  );
-  assert.equal(f.snapshot(), snap);
-});
-for (const failure of [false, true])
-  test(`owned private allocations erased and never reopened, failure=${failure}`, async (t) => {
-    const f = await ready(t),
-      allocations: Buffer[] = [],
-      decoded: Buffer[] = [],
-      copies: Buffer[] = [];
-    const alloc = Buffer.alloc,
-      from = Buffer.from;
-    t.mock.method(Buffer, "alloc", (...args: Parameters<typeof alloc>) => {
-      const b = alloc(...args);
-      allocations.push(b);
-      return b;
-    });
-    t.mock.method(Buffer, "from", (...args: unknown[]) => {
-      const b = Reflect.apply(from, Buffer, args) as Buffer;
-      if (args[1] === "base64") decoded.push(b);
-      if (args[0] instanceof Uint8Array && decoded.includes(args[0] as Buffer))
-        copies.push(b);
-      return b;
-    });
-    const h = f.capture();
-    fs.unlinkSync(f.file);
-    if (failure) {
-      const original = f.app.platform.audit.bind(f.app.platform);
-      t.mock.method(
-        Object.getPrototypeOf(f.app.platform),
-        "audit",
-        (...args: Parameters<typeof original>) => {
-          original(...args);
-          if (args[1] === "carrier.canada-post.member.created")
-            throw Error("erase on rollback");
-        },
-      );
-      assert.throws(() =>
-        f.app.database.transaction(() =>
-          f.importer.applyInTransaction(actor(f), h),
-        ),
-      );
-    } else {
-      const receipt = f.app.database.transaction(() =>
-        f.importer.applyInTransaction(actor(f), h),
-      );
-      assert.equal(f.recover(receipt).resultHash, receipt.resultHash);
-    }
-    assert.ok(
-      allocations.length > 0 && decoded.length > 0 && copies.length > 0,
-    );
-    for (const b of [...allocations, ...decoded, ...copies])
-      assert.ok(
-        b.every((v) => v === 0),
-        "every captured, decoded and validator-owned buffer is erased",
-      );
-    assert.throws(() => h.complete());
-    assert.throws(() =>
-      f.app.database.transaction(() =>
-        f.importer.applyInTransaction(actor(f), h),
-      ),
-    );
-  });
-test("scope bounds refuse before unbounded native row materialization", async (t) => {
-  const f = await ready(t),
-    h = f.capture();
-  f.app.database
-    .owned("integration")
-    .run(
-      "UPDATE integration_carrier_bookings SET intent=? WHERE id=?",
-      "x".repeat(65537),
-      f.entries[2]!.bookingId,
-    );
-  const before = changes(f);
-  assert.throws(() =>
-    f.app.database.transaction(() =>
-      f.importer.applyInTransaction(actor(f), h),
-    ),
-  );
-  assert.equal(changes(f), before);
-});
-test("exact original receipt refuses later sibling changes", async (t) => {
-  const f = await ready(t),
-    r = f.apply();
-  f.app.database
-    .owned("integration")
-    .run(
-      "UPDATE integration_canada_post_members SET tracking='7777777777777' WHERE booking_id=?",
-      f.createdId,
-    );
-  const before = changes(f);
-  assert.throws(() => f.recover(r));
-  assert.equal(changes(f), before);
-});
-test("later actor active revocation refuses exact historical recovery", async (t) => {
-  const f = await ready(t),
-    r = f.apply();
-  f.app.database
-    .owned("iam")
-    .run("UPDATE iam_users SET active=0 WHERE id=?", f.actor.id);
-  const before = changes(f);
-  assert.throws(() => f.recover(r));
-  assert.equal(changes(f), before);
-});
-test("both native role duties remain required; finance-only and warehouse-only do not gain a grant", async (t) => {
-  for (const role of ["finance", "warehouse"]) {
-    const f = await ready(t),
-      h = f.capture();
-    f.app.database
-      .owned("iam")
-      .run("UPDATE iam_users SET role=? WHERE id=?", role, f.actor.id);
-    const snap = f.snapshot();
-    assert.throws(() =>
-      f.app.database.transaction(() =>
-        f.importer.applyInTransaction(actor(f), h),
-      ),
-    );
-    assert.equal(f.snapshot(), snap);
-  }
-});
-test("same-read input remains detached and another capture cannot replay an already imported target", async (t) => {
-  const f = await ready(t),
-    one = f.capture(),
-    two = f.capture(),
-    originalEnvelope = structuredClone(f.envelope);
-  f.input.members[0].tracking = "0000000000000";
-  f.envelope.task.subjectId = "changed";
-  f.manifest.root = "/untrusted";
-  const receipt = f.app.database.transaction(() =>
-    f.importer.applyInTransaction(actor(f), one),
-  );
-  assert.equal(receipt.record.binding, offlineTaskBinding(originalEnvelope));
-  const before = changes(f);
-  assert.throws(() =>
-    f.app.database.transaction(() =>
-      f.importer.applyInTransaction(actor(f), two),
-    ),
-  );
-  assert.equal(changes(f), before);
-});
-function business(f: F) {
-  return canonical(
-    [
-      "billing",
-      "inventory",
-      "fulfillment",
-      "orders",
-      "procurement",
-      "warranty",
-      "iam",
-    ].map((owner) => {
-      const s = f.app.database.owned(
-        owner as import("../src/server/database.ts").Owner,
-      );
-      return s
-        .all<{ name: string }>(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ? ORDER BY name",
-          owner + "_%",
-        )
-        .map(({ name }) => [name, s.all(`SELECT * FROM ${name}`)]);
-    }),
-  );
-}
-for (const drift of ["platform", "password", "file"] as const)
-  test(`read-only exact recovery rejects ${drift} drift`, async (t) => {
-    const f = await ready(t),
-      r = f.apply();
-    if (drift === "platform")
-      f.app.platform.audit(
-        f.actor,
-        "carrier.canada-post.member.claimed",
-        f.groupId,
-        {
-          bookingId: f.bookingId,
-          reviewHash: f.entries[1]!.reviewHash,
-          send: false,
-        },
-      );
-    else if (drift === "password")
-      f.app.database
-        .owned("iam")
-        .run(
-          "INSERT INTO iam_user_security(user_id,password_change_required,revision,updated_at) VALUES(?,1,1,'2026-10-03T00:00:00.000Z') ON CONFLICT(user_id) DO UPDATE SET password_change_required=1",
-          f.actor.id,
-        );
-    else {
-      fs.renameSync(f.path, f.path + "-old");
-      fs.copyFileSync(f.path + "-old", f.path);
-      fs.chmodSync(f.path, 0o600);
-    }
-    const before = changes(f);
-    assert.throws(() => f.recover(r));
-    assert.equal(changes(f), before);
-  });
-test("fake independent proof proxies and accessors execute no traps", async (t) => {
-  const f = await ready(t),
-    r = f.apply();
-  let trap = false;
-  const proxy = new Proxy(r, {
-    get() {
-      trap = true;
-      throw Error("get");
-    },
-    getPrototypeOf() {
-      trap = true;
-      throw Error("proto");
-    },
-    ownKeys() {
-      trap = true;
-      throw Error("keys");
-    },
-  });
-  const revoked = Proxy.revocable({}, {});
-  revoked.revoke();
-  for (const v of [
-    proxy,
-    revoked.proxy,
-    {
-      get record() {
-        trap = true;
-        return r.record;
+      ownKeys() {
+        trapped = true;
+        throw Error("trap");
       },
     },
-  ])
-    assert.throws(() => f.recover(v));
-  assert.equal(trap, false);
-});
-test("late actual sibling corruption is detected by the exact original row comparison and rolled back", async (t) => {
-  const f = await ready(t),
-    h = f.capture(),
-    snap = f.snapshot();
-  let reached = false;
-  const original = f.app.platform.audit.bind(f.app.platform);
-  t.mock.method(
-    Object.getPrototypeOf(f.app.platform),
-    "audit",
-    (...args: Parameters<typeof original>) => {
-      original(...args);
-      if (args[1] === "carrier.canada-post.member.created") {
-        reached = true;
-        f.app.database
-          .owned("integration")
-          .run(
-            "UPDATE integration_canada_post_members SET tracking='7777777777777' WHERE booking_id=?",
-            f.createdId,
-          );
-      }
-    },
   );
   assert.throws(() =>
-    f.app.database.transaction(() =>
-      f.importer.applyInTransaction(actor(f), h),
-    ),
+    f.importer.recoverRetainedInTransaction(actor(f), f.envelope),
   );
-  assert.equal(reached, true);
-  t.mock.restoreAll();
-  assert.equal(f.snapshot(), snap);
+  for (const [a, e] of [
+    [p, f.envelope],
+    [actor(f), p],
+  ])
+    assert.throws(() =>
+      f.app.database.transaction(() =>
+        f.importer.recoverRetainedInTransaction(a, e),
+      ),
+    );
+  const changed = structuredClone(r);
+  changed.record.nativeJoinHash = digest("forged");
+  changed.resultHash = digest(canonical(changed.record));
+  assert.throws(() => f.recover(changed));
+  assert.equal(trapped, false);
+  assert.equal(f.snapshot(), before);
 });
-test("wrapper refusal without a writer consumes and erases its completed private capture", async (t) => {
+test("drained/closed original session retains exact read-only recovery", async (t) => {
   const f = await ready(t),
-    h = f.capture();
-  assert.throws(() => f.importer.applyInTransaction(actor(f), h));
-  assert.throws(
-    () => f.app.database.transaction(() => h.reviewInTransaction(actor(f))),
-    "a refused application must not leave a reusable completed private capture",
+    r = f.apply();
+  for (const kind of ["drain", "close"] as const)
+    f.app.database.transaction(() => {
+      const s = f.app.platform.offline.readInTransaction()!;
+      f.app.platform.offline.transitionInTransaction(
+        s.state.generation,
+        s.anchor,
+        { kind },
+        [],
+      );
+    });
+  const before = f.snapshot(),
+    n = changes(f);
+  assert.equal(retained(f).resultHash, r.resultHash);
+  assert.equal(changes(f), n);
+  assert.equal(f.snapshot(), before);
+});
+for (const region of ["CA", "US"] as const)
+  for (const reports of [false, true])
+    test(`${region} reports=${reports} schema21 encrypted backup retains empty native provenance`, async (t) => {
+      const f = fixture(
+          t,
+          { eventReports: reports },
+          region,
+          region === "CA" ? "CAD" : "USD",
+        ),
+        dir = fs.mkdtempSync(join(tmpdir(), "cp-provenance-backup-"));
+      t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+      fs.chmodSync(dir, 0o700);
+      const key = Buffer.alloc(32, 7),
+        file = join(dir, "copy.enc"),
+        target = join(dir, "restored.db");
+      const b = await createBackup(f.path, file, region, key);
+      assert(b);
+      await restoreBackup(file, target, region, key);
+      const app = new Application(target, region, { eventReports: reports });
+      try {
+        assert.equal(
+          app.database
+            .owned("integration")
+            .get(`SELECT COUNT(*) AS n FROM ${table}`)!.n,
+          0,
+        );
+      } finally {
+        app.close();
+        key.fill(0);
+      }
+    });
+for (const budget of ["rows", "aggregate"] as const)
+  test(`global ${budget} bound precedes blob materialization and orphan joins`, async (t) => {
+    const f = await ready(t);
+    f.apply();
+    // Distinct synthetic orphan identifiers exercise the global preflight, not a truncated page.
+    const n = budget === "rows" ? 1025 : 260,
+      payload = budget === "rows" ? "{}" : "é".repeat(32000);
+    tamper(
+      f,
+      `WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM n WHERE v<?) INSERT INTO ${table} SELECT 'orphan_'||v,group_id,org_id,'request_'||v,printf('%064x',v),envelope,envelope_hash,?,record_hash FROM n,${table}`,
+      n,
+      payload,
+    );
+    const all = Store.prototype.all;
+    let fetched = false;
+    Store.prototype.all = function <T extends Row = Row>(
+      sql: string,
+      ...args: SQLInputValue[]
+    ): T[] {
+      if (sql.includes("AS envelope_bytes")) fetched = true;
+      return all.call(this, sql, ...args) as T[];
+    };
+    try {
+      assert.throws(() => retained(f), { code: "OFFLINE_CANADA_POST_IMPORT" });
+    } finally {
+      Store.prototype.all = all;
+    }
+    assert.equal(fetched, false);
+  });
+test("late provenance insertion failure rolls back created member, audit, event and all receipt state", async (t) => {
+  const f = await ready(t),
+    before = f.snapshot(),
+    original = Store.prototype.run;
+  let reached = false;
+  t.mock.method(
+    Store.prototype,
+    "run",
+    function (this: Store, sql: string, ...args: SQLInputValue[]) {
+      if (sql.startsWith(`INSERT INTO ${table}(`)) {
+        reached = true;
+        assert.equal(
+          store(f).get(
+            "SELECT state FROM integration_canada_post_members WHERE booking_id=?",
+            f.bookingId,
+          )!.state,
+          "created",
+        );
+        throw Error("synthetic provenance storage fault");
+      }
+      return original.call(this, sql, ...args);
+    },
   );
+  assert.throws(() => f.apply(), /synthetic provenance storage fault/);
+  t.mock.restoreAll();
+  assert(reached);
+  assert.equal(f.snapshot(), before);
+});
+test("stored original actor and result preimage are immutable even when supplied alternate hash is internally consistent", async (t) => {
+  const f = await ready(t),
+    r = f.apply(),
+    before = f.snapshot();
+  for (const mutation of ["actor", "comparison", "result"]) {
+    const other = structuredClone(r);
+    if (mutation === "actor") other.record.actor.id = "other";
+    else if (mutation === "comparison")
+      other.record.comparisonHash = digest("other");
+    else other.record.result.scopeHash = digest("other");
+    other.resultHash = digest(canonical(other.record));
+    assert.throws(() => f.recover(other));
+  }
+  assert.equal(f.snapshot(), before);
 });

@@ -581,6 +581,7 @@ for (const sourceVersion of [
                                           : // Frozen schema19: independent literal, never current constructor output.
                                             "787d1fd08ff0508d06f017ffbd449e610a295b81d24178d6969e5408602a02c5";
     try {
+      db.exec("DROP TABLE integration_offline_canada_post_members");
       db.exec("DROP TABLE integration_offline_original_cancellations");
       if (sourceVersion < 19)
         db.exec("DROP TABLE integration_offline_failed_refunds");

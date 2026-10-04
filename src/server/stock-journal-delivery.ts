@@ -188,6 +188,81 @@ function offlineCancellationActor(value: Actor): Actor {
   return locator;
 }
 
+/** Exact retained identity, never a source-fencing or provider grant. */
+export type OfflineOriginalLeaseRetirementInput = {
+  journalId: string;
+  orgId: string;
+  leaseId: string;
+  leaseActor: string;
+  leaseStarted: number;
+  leaseMode: "write" | "lookup";
+  dispatched: number;
+  requestRef: string;
+  sourceId: string;
+  sourceHash: string;
+  attemptId: string;
+  reviewHash: string;
+  expectedFactsHash: string;
+};
+function offlineLeaseInput(value: OfflineOriginalLeaseRetirementInput) {
+  offlineOriginalCheck(
+    !types.isProxy(value) && value !== null && typeof value === "object",
+  );
+  offlineOriginalCheck(Object.getPrototypeOf(value) === Object.prototype);
+  const keys = [
+    "journalId",
+    "orgId",
+    "leaseId",
+    "leaseActor",
+    "leaseStarted",
+    "leaseMode",
+    "dispatched",
+    "requestRef",
+    "sourceId",
+    "sourceHash",
+    "attemptId",
+    "reviewHash",
+    "expectedFactsHash",
+  ] as const;
+  const own = Reflect.ownKeys(value);
+  offlineOriginalCheck(
+    own.length === keys.length &&
+      own.every(
+        (k) => typeof k === "string" && (keys as readonly string[]).includes(k),
+      ),
+  );
+  const ds = Object.getOwnPropertyDescriptors(value);
+  const result: Record<string, string | number> = {};
+  for (const key of keys) {
+    const d = ds[key];
+    offlineOriginalCheck(
+      d && d.enumerable && "value" in d && !types.isProxy(d.value),
+    );
+    const v: unknown = d.value;
+    if (key === "leaseStarted")
+      offlineOriginalCheck(
+        typeof v === "number" &&
+          Number.isSafeInteger(v) &&
+          v >= 0 &&
+          v <= Number.MAX_SAFE_INTEGER - leaseDuration,
+      );
+    else if (key === "dispatched") offlineOriginalCheck(v === 0 || v === 1);
+    else if (key === "leaseMode")
+      offlineOriginalCheck(v === "write" || v === "lookup");
+    else if (["sourceHash", "reviewHash", "expectedFactsHash"].includes(key))
+      offlineCancellationHash(v);
+    else if (key === "attemptId" && v === "") {
+      /* native first attempt */
+    } else if (key === "requestRef")
+      offlineOriginalCheck(
+        typeof v === "string" && v.length <= 200 && /^DJ-[a-f0-9]{18}$/.test(v),
+      );
+    else offlineOriginalId(v);
+    result[key] = v as string | number;
+  }
+  return result as OfflineOriginalLeaseRetirementInput;
+}
+
 export type JournalDeliveryInput = {
   sourceId: string;
   sourceHash: string;
@@ -942,12 +1017,139 @@ export class StockJournalDelivery {
       "unknown",
     );
   }
+  /** Read-only exact ORIGINAL running lease. Correction lineage remains unsupported. */
+  readOfflineLeaseRetirementInTransaction(actor: Actor, journalId: string) {
+    actor = offlineCancellationActor(actor);
+    offlineOriginalId(journalId);
+    const {
+      hash: _hash,
+      purpose: _purpose,
+      ...native
+    } = this.readOfflineOriginalFactsInTransaction(actor, journalId, "running");
+    const facts = {
+      ...native,
+      purpose: "distributor-stock-journal-offline-lease-review-v1" as const,
+    };
+    return offlineOriginalFreeze({ ...facts, hash: digest(canonical(facts)) });
+  }
+
+  /** Internal prerequisite only: caller must qualify stopped-source/candidate
+   * controls and current authority through COMMIT. All errors must escape the
+   * enclosing writer. This operation provides no transport or retry permission. */
+  retireOfflineOriginalLeaseInTransaction(
+    actor: Actor,
+    raw: OfflineOriginalLeaseRetirementInput,
+  ) {
+    const locator = offlineCancellationActor(actor),
+      input = offlineLeaseInput(raw);
+    this.database.requireTransaction();
+    actor = this.principal(locator);
+    const before = this.readOfflineLeaseRetirementInTransaction(
+      locator,
+      input.journalId,
+    );
+    const target = before.attempts.find((a) => a.row.id === input.journalId)!;
+    const row = target.row;
+    offlineOriginalCheck(
+      canonical(input) ===
+        canonical({
+          journalId: row.id,
+          orgId: row.org_id,
+          leaseId: row.lease_id,
+          leaseActor: row.lease_actor,
+          leaseStarted: row.lease_started,
+          leaseMode: row.lease_mode,
+          dispatched: row.dispatched,
+          requestRef: requestRef(row.id),
+          sourceId: row.source_id,
+          sourceHash: target.plan.input.sourceHash,
+          attemptId: row.attempt_id,
+          reviewHash: row.review_hash,
+          expectedFactsHash: before.hash,
+        }),
+    );
+    this.offlineOriginalNoDescendants(row.id);
+    offlineOriginalBound(
+      Number(
+        this.store.get(
+          "SELECT COUNT(*) AS n FROM integration_stock_journal_observations",
+        )!.n,
+      ) +
+        1 <=
+        offlineOriginalProfile.rowsPerTable,
+    );
+    const changed = this.store.run(
+      "UPDATE integration_stock_journals SET state='unknown',lease_id=NULL,lease_actor=NULL,lease_started=NULL,lease_mode=NULL WHERE org_id=? AND id=? AND state='running' AND lease_id=? AND lease_actor=? AND lease_started=? AND lease_mode=? AND dispatched=? AND review_hash=? AND external_id IS NULL",
+      row.org_id,
+      row.id,
+      input.leaseId,
+      input.leaseActor,
+      input.leaseStarted,
+      input.leaseMode,
+      input.dispatched,
+      input.reviewHash,
+    );
+    offlineOriginalCheck(changed.changes === 1);
+    // Native observation/audit path, never Platform.command or a provider call.
+    const body = {
+      outcome: "unknown",
+      cause: "restore-interrupted",
+      leaseId: input.leaseId,
+      requestRef: input.requestRef,
+    } as const;
+    const observation = { ...this.observe(actor, row as Journal, body), body };
+    this.principal(locator);
+    const after = this.readOfflineOriginalInTransaction(locator, row.id);
+    const {
+      hash: _beforeHash,
+      purpose: _beforePurpose,
+      ...expected
+    } = structuredClone(before);
+    const mutable = expected.attempts.find(
+      (a) => a.row.id === row.id,
+    )! as unknown as {
+      row: Journal;
+      history: Row[];
+      observations: ReturnType<StockJournalDelivery["observe"]>[];
+    };
+    mutable.row.state = "unknown";
+    mutable.row.lease_id = null;
+    mutable.row.lease_actor = null;
+    mutable.row.lease_started = null;
+    mutable.row.lease_mode = null;
+    mutable.observations.push(observation);
+    mutable.history.push({
+      journal_id: row.id,
+      org_id: row.org_id,
+      revision: observation.revision,
+      body: canonical(observation.body),
+      hash: observation.hash,
+      recorded_by: observation.recordedBy,
+      recorded_at: observation.recordedAt,
+    });
+    const { hash: _afterHash, purpose: _afterPurpose, ...actual } = after;
+    offlineOriginalCheck(canonical(expected) === canonical(actual));
+    const receipt = {
+      version: 1 as const,
+      purpose: "distributor-stock-journal-offline-lease-retirement-v1" as const,
+      beforeHash: before.hash,
+      observation,
+      after,
+    };
+    offlineOriginalBound(
+      Buffer.byteLength(canonical(receipt)) <=
+        offlineOriginalProfile.totalBytes,
+    );
+    return offlineOriginalFreeze(
+      structuredClone({ ...receipt, hash: digest(canonical(receipt)) }),
+    );
+  }
   // Fixed shared validator only; the public UNKNOWN reader keeps its original
   // purpose, fields, hash and refusals. No caller can choose this state profile.
   private readOfflineOriginalFactsInTransaction(
     actor: Actor,
     journalId: string,
-    state: "unknown" | "cancelled",
+    state: "unknown" | "cancelled" | "running",
   ) {
     this.database.requireTransaction();
     offlineOriginalId(journalId);
@@ -1203,6 +1405,7 @@ export class StockJournalDelivery {
                 "authority-changed",
                 "expired-lease",
                 "clock-rollback",
+                "restore-interrupted",
               ].includes(body.cause) &&
               typeof body.leaseId === "string" &&
               body.leaseId.length > 0 &&
@@ -1275,18 +1478,41 @@ export class StockJournalDelivery {
       // This first subtype supports unresolved leaf + final cancelled ancestors.
       // Other dates may remain ready/pending; posted/running competing histories
       // conservatively require a separately designed complete projection.
+      const runningTarget =
+        state === "running" && row.id === journalId && row.state === "running";
       offlineOriginalCheck(
-        ["ready", "rejected", "pending", "unknown", "cancelled"].includes(
-          row.state,
-        ),
+        runningTarget ||
+          ["ready", "rejected", "pending", "unknown", "cancelled"].includes(
+            row.state,
+          ),
       );
-      offlineOriginalCheck(
-        row.external_id === null &&
+      offlineOriginalCheck(row.external_id === null);
+      if (runningTarget) {
+        offlineOriginalId(row.lease_id);
+        offlineOriginalId(row.lease_actor);
+        offlineOriginalCheck(
+          Number.isSafeInteger(row.lease_started) &&
+            row.lease_started! >= 0 &&
+            row.lease_started! <= Number.MAX_SAFE_INTEGER - leaseDuration &&
+            (row.lease_mode === "write" || row.lease_mode === "lookup") &&
+            !outcomeLeases.has(row.lease_id) &&
+            this.store.get(
+              "SELECT COUNT(*) AS n FROM integration_stock_journals WHERE lease_id=?",
+              row.lease_id,
+            )!.n === 1,
+        );
+        if (row.lease_mode === "write")
+          offlineOriginalCheck(
+            history.length === 0 && permission.mode === "write",
+          );
+        else this.originalCancellationFacts(actor, row);
+      } else
+        offlineOriginalCheck(
           row.lease_id === null &&
-          row.lease_actor === null &&
-          row.lease_started === null &&
-          row.lease_mode === null,
-      );
+            row.lease_actor === null &&
+            row.lease_started === null &&
+            row.lease_mode === null,
+        );
       if (row.state === "unknown") this.originalCancellationFacts(actor, row);
       if (row.state === "cancelled") this.originalCancelledProof(actor, row);
       if (row.state === "pending")
@@ -3294,4 +3520,11 @@ export type OfflineOriginalCancellationProof = OfflineFrozen<
     proof: ReturnType<StockJournalDelivery["originalCancelledProof"]>;
     hash: string;
   }
+>;
+
+export type OfflineOriginalLeaseReview = ReturnType<
+  StockJournalDelivery["readOfflineLeaseRetirementInTransaction"]
+>;
+export type OfflineOriginalLeaseRetirementReceipt = ReturnType<
+  StockJournalDelivery["retireOfflineOriginalLeaseInTransaction"]
 >;

@@ -1,3 +1,4 @@
+import { INTEGRATION_OFFLINE_CANADA_POST_INITIALIZE_DDL } from "./integration-offline-canada-post-schema.ts";
 import { INTEGRATION_OFFLINE_ORIGINAL_INITIALIZE_DDL } from "./integration-offline-original-schema.ts";
 import { INTEGRATION_OFFLINE_REFUND_INITIALIZE_DDL } from "./integration-offline-refund-schema.ts";
 import { IntegrationOfflineRefundReview } from "./integration-offline-refund-review.ts";
@@ -169,6 +170,7 @@ export class Integration {
     this.store.migrate(ACCOUNTING_CANCELLATION_INITIALIZE_DDL);
     this.store.migrate(INTEGRATION_OFFLINE_REFUND_INITIALIZE_DDL);
     this.store.migrate(INTEGRATION_OFFLINE_ORIGINAL_INITIALIZE_DDL);
+    this.store.migrate(INTEGRATION_OFFLINE_CANADA_POST_INITIALIZE_DDL);
     this.checkouts = new IntegrationCheckouts(
       database,
       identity,
