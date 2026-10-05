@@ -3207,3 +3207,13 @@ TypeScript/build, two backend tests and eight public-browser scenarios pass.
 Runtime values remain outside Git/build assets; endpoint deliberately publishes
 them only when enabled. Preparing existing Toronto code-only deployment, same
 schema25; no CI/PR/merge. New pre-release encrypted backup initiated.
+
+2026-10-05T18:23Z — Public administrator pre-fill deployed from 31972f9 to
+existing Toronto pilot; image digest ca251b672287f8b8af4a40e1fbda405499f47d53dba0bf6afff63cea59a4c5fe.
+Live one-click admin login/logout and blank customer entrance pass at1440/390px.
+Encrypted pre-release backup downloaded and isolated restore passed. Credentials
+intentionally published by enabled runtime endpoint under explicit owner approval,
+never committed or embedded in assets. Initial browser harness logout/navigation
+race and wrong home-heading assumption retained; corrected final journeys pass.
+See docs/evidence/LIVE-PILOT-SIGN-IN-2026-10-05.md for exact source/evidence/limits.
+No CI/PR/merge. Existing untracked cache/Sites preserved.
