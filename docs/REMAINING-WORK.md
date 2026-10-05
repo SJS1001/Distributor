@@ -12,6 +12,8 @@ The latest source-bound focused receipt records 28 provider/gateway tests, one b
 
 ## Prioritized checklist
 
+The later customer-storefront discussion adds equipment images/carousel, administrator image and technical-document uploads, and conditional order approval for selected customers/products. These are explicit implementation gaps. See [requirements, proposed defaults and execution sequence](CUSTOMER-STOREFRONT.md) and the [Gree source collection](catalog/README.md). The research collection does not implement or deploy these features.
+
 Current customer-access review identified a concrete missing requirement beyond the earlier bounded baseline audit: **per-customer product purchasing approval**. Buyer login, own-account ordering and tier pricing exist, but approved buyers can currently purchase all active products. Add staff-managed product entitlements with an explicit default policy; enforce them in catalog visibility and backend cart, quote and order acceptance, including direct API requests, stale quotes and revocation. Verify cross-account isolation and approved/denied product cases. Do not describe account approval or price tiers as product authorization. See the [Gree pilot access findings](GREE-PILOT-SAMPLE.md).
 
 | Order | Work and existing task coverage | Status / responsible party | Completion evidence |

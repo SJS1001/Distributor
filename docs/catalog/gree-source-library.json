@@ -1,0 +1,967 @@
+{
+  "researchedOn": "2026-10-05",
+  "sourceIndex": "https://airtekhvac.com/R32Prudoctlist.json?v=1791218913",
+  "sourceIndexEntries": 212,
+  "status": "research only; not imported into application",
+  "rights": "No redistribution licence verified. Binary downloads are private review copies.",
+  "matching": "Seed SKUs are fictional product families, not manufacturer models. All model, capacity, voltage and revision matches require review.",
+  "families": [
+    {
+      "sampleSku": "SAMPLE-GREE-CHARMO",
+      "name": "Charmo",
+      "productPage": "https://greehvac.ca/heacool_services/charmo-r32/",
+      "resourceFolder": "Single Zone/Charmo",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/charmo-front-side-1.png",
+          "localFile": "charmo.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 55146,
+          "sha256": "3fd149dbf9d6bb1ef8b094f74ef51bc84f39f6cacf1d10c8d00f2fb13428a2ed",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "09+12,GWHXBDO.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDB0ckMG6S0SaUC2VMhs52oAVKJnkS5PNVlLmEDJq2Sjqw?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "0.57 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "24+30+36,GWATEZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBy7yho-jMoSL4X0U9urIIFAQRSYLu_-7rpWVk7ieGbfbc?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.18 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "24,GWHXFDO.EV000002.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDWETLXrRt5TIkrUewdwuxJAdezb8sjs_cmoRtd7UW8ocY?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.58 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18,GWHXDDO.EV000011.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBnTHklnSWvRLoIY78HgqGRAfLStlucwRWxYbrG8qznseE?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.79 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "30+36,GWHXHDO.EV000002.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAkeVTjRVZOSbDwggn0XDM9Afl-r1Srxa-GDUPCu0C_2dg?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.56 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "09+12,GWATCZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAJaTOvDL7MQaERqnx89v_rAbXDjxRiFNs6B8yMVEfCQL8?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "1.19 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18,GWATDZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBnDuQQl3hJR572qhhKXQEBAe7hgASr1KgYzX-Pbd_8RWA?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.10 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Inverter Charmo Series User Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQA-94npN5V9T78D6OFjEjmlAVZ3r8PjSvME0-bCVgAou7c?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "9.54 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Inverter Charmo Series Service Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQArvrUUtZobTqcByPRCvNeTAfCHxBFlwr5SmuU3TFQpjrM?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "21.76 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-09KBTU-115V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQB81xyjoJUIQZ6E63Gz4AUCAaU_hwYmyJKVELCWt_Cyp4A?download=1",
+          "publisherVersion": "9.0",
+          "publisherSize": "5.03 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-12KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQA3OunEmwdhSIzPyc1iv_R4ASlHOvCJ6osbXy1Lwqi8tuU?download=1",
+          "publisherVersion": "8.0",
+          "publisherSize": "5.31 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-09KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDzn_i6ZDTLSbxTgysBQZEDAeaFZsggOe--5Sa-vLvdl4U?download=1",
+          "publisherVersion": "9.0",
+          "publisherSize": "5.33 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-18KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQABddf5ttOGQqQRkUlsIognAUpnIlHy10eaoKQZ9JHaGXQ?download=1",
+          "publisherVersion": "9.0",
+          "publisherSize": "4.72 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-12KBTU-115V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCXhdVwruh3Sa5HPpL7YeN9ASkTJnarDla0x6UQ9KpJPUw?download=1",
+          "publisherVersion": "9.0",
+          "publisherSize": "5.52 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-24KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAqcHMw7lXbQb8S2POJ6mbjAdDtBfxjyHcClHzAmAGwaGQ?download=1",
+          "publisherVersion": "8.0",
+          "publisherSize": "6.16 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-30KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBOscrIKpaPQqQxlY2tSca5AY6mAxFeX5c-kMNuYa9j1mU?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "2.04 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Charmo-36KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBWunporFvDQoxFYMTO6AyXAYMpy29q0H_8wSVmdXtNpe8?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "2.56 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ]
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-PULAR",
+      "name": "Pular",
+      "productPage": "https://greehvac.ca/heacool_services/pular-r32/",
+      "resourceFolder": "Single Zone/Pular",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/pular-indoor-1.png",
+          "localFile": "pular.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 38234,
+          "sha256": "2a6da2cf0dacd4cdcf7074d2c0f51c453294e5b1a081a7191ea9be938acaa10c",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "18+24,GWHXFDO.EV000002.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDAG56r2ZW1T5wTUqd9jsfHAdkqjJqY8n8ECnSMuZz4DiA?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.58 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "9+12,GWHXDDO.EV000010.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBUMWcU3UmGTbrdXDJ4xdihATkio-lU4amp1LuP-HjN_ek?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.81 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18+24,GWAUDZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBPxeTq6lypSpT-p4NzpKfjAePC2xwt38hlCnogJtImyxo?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.12 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "9+12,GWAUCZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAQx13OKSz2TqXcp-eYn2rUAUyga595EEV5xzIeBX2qQwg?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.23 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular-09KBTU-115V-Submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDlsfAPtEGeR6MqCzqhwHSHAZu4Xd-j5F4yhIIkP-5ria0?download=1",
+          "publisherVersion": "8.0",
+          "publisherSize": "5.41 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular-09KBTU-230V-Submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQB7TLblBPy5Sbh2NBU4dN57AV2AlJfbKGvCTdcLN8RgQMA?download=1",
+          "publisherVersion": "10.0",
+          "publisherSize": "6.51 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular-12KBTU-115V-Submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCohfC6gR_oQYdt-nKA75enAQtYzlArV8j84GYoaD8GAv4?download=1",
+          "publisherVersion": "17.0",
+          "publisherSize": "7.80 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular-18KBTU-230V-Submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAvfvvQ2gzxSbdfyQETKS67ARKwjnrXcgb4adk_NnY6ixY?download=1",
+          "publisherVersion": "13.0",
+          "publisherSize": "5.82 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular-24KBTU-230V-Submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQD_XM8dSbyfTrZ4NJ-RwQA5AYLYUZmmZ6twFU4iCqVBsIU?download=1",
+          "publisherVersion": "9.0",
+          "publisherSize": "5.12 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular-12KBTU-230V-Submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDq2DRzdCqYT7be3G8DX3h4AddkLeCSjSdu6-bYT2HnrrY?download=1",
+          "publisherVersion": "12.0",
+          "publisherSize": "5.99 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "JF00305643, Export North American Inverter Pular Series Service Manual (R32)(WIFI), G.3.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDu64yy0KbXTql9Yph9WltKAbC3DFYWN6irAOv1BRYEghE?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "18.39 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Pular Series User Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDw_NFxSMNOT7_rSTf0L7GVAV7S9z4eKKrPbgYz4A9wolA?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "9.11 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ]
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-AIRY",
+      "name": "Airy",
+      "productPage": "https://greehvac.ca/heacool_services/airy-r32/",
+      "resourceFolder": "Single Zone/Airy",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/e615011bd55d05c654cbf1eee1dd9ec5.jpg",
+          "localFile": "airy.jpg",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 20160,
+          "sha256": "409d9674566cbfb53b52c7f6f0c75f3d887ccc37f7b0e143527b839ab1697aef",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "9+12,GWHXEDO.EV000010.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDXYARKnXevTIvObNCq0sR7ASNJ1iIPll2CulmA7EvYpJY?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.62 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18,GWHXFDO.EV000002.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCS27heIWzKS7fSRw-olgt_AWlkyTxXA5wNTH672KLDfjE?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.58 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18+24,GWAVEZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBeLp14uBByToTHVQ7ZDRK6ASvaZiF2jUKy3csd78bwIV8?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.46 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "24,GWHXHDO.EV000002.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDRwna6DI4pSrZT5Q7uODWOAWSyLmE9jd8XK20yCbjC6S4?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.56 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "9+12,GWAVDZI.EV000001.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDhTGiUdwU7Ta1MpR3i9by2AWSqLAlA9Yhc020NMGEnSJo?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.39 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Inverter Airy Series user manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAzFRVcaZZjSr14Nv5JDQUNAaAsZvucFZwBdaOwgIAotPA?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "11.29 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Inverter Airy Series Service Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDxrrBmxhsdRK5xELrvMrQ-AWX2li8n46mBxaZeTT5k-EQ?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "14.96 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Airy-12KBTU-230V-submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBNCO_ntCFLQLaktlOolqO-AXP4kjBpNidEFB4bqb_zXms?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "2.99 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Airy-18KBTU-230V-submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQC6KxV3dlmoTruNidN1l9ZhAdMedlK7Gy50T7wexSTFiDg?download=1",
+          "publisherVersion": "9.0",
+          "publisherSize": "5.17 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Airy-24KBTU-230V-submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQC2_uv3sSYqTKfvJ0z5ID0NAa06X3tSyihTWwJ91r0Yze4?download=1",
+          "publisherVersion": "8.0",
+          "publisherSize": "5.27 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Airy-09KBTU-230V-submittal.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQA19JGy0_sES6ByNjX28K9AAWT_nhww7XkdxMpnDu_FRfk?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "5.82 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ]
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-ZENO",
+      "name": "Zeno",
+      "productPage": "https://greehvac.ca/heacool_services/zeno-r32/",
+      "resourceFolder": "Single Zone/ZENO",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/charmo-front-side-1.png",
+          "localFile": "zeno.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 55146,
+          "sha256": "3fd149dbf9d6bb1ef8b094f74ef51bc84f39f6cacf1d10c8d00f2fb13428a2ed",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "ZENO Series Service Manual (R32)(WIFI).pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBDOe10C22IS6Zb3DzG5TAdAf8-08zU_HoR7jx2dqGO4s8?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "26.54 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "ZENO R32 New Refrigerant Household Service Manual.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCLLeoL1qPQQZonTxa97WgeAe-w4qIExt4qGopRMSj42aQ?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "39.57 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18,heat pump,GWHXDDO.EV000011.pdf",
+          "category": "Explode View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBFUxX_ZFxIS4dGv4AXlHIhAWNh3-1Gj49gJ-HedXCu4mk?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.79 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "9+12,GWCXBDO.EV000004.pdf",
+          "category": "Explode View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBG_JzJ6NIARJTOYMi4ezKFAQuAPjnFhxuLhkC1auhIGNo?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.66 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "9+12,heat pump220, GWHXBDO.EV000001.pdf",
+          "category": "Explode View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBrN2rmURaaQacj4QfvqvmRAS_rZ1IxzsGZJc61m3nlPuI?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.57 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18,GWAYDSI.EV000001.pdf",
+          "category": "Explode View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAoVsLl1qc9RbaTpnvNAJgxAUXU_myjLQZg9voIfzrk0GU?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.12 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "9+12,GWAYASI.EV000001.pdf",
+          "category": "Explode View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCr7xqXuxNpQbt9DVns7MZ0Adk3ytRx-fROhW7giNtRJ7w?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.13 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "18,cooling only,GWCXDDO.EV000012.pdf",
+          "category": "Explode View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQD_ZLzN8BvYTr8JcF_IbzneAaRn2qZIm2XPDvoJuGLjzBo?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.76 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "ZENO-Series-09KBTU-115V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDtaokU6WEnQpz-PiJh2Y40AQR11gg_Ejx74ho56a6dHU0?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "1.20 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "ZENO-Series-09KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAQtxkv5ZasS4vcUxuM_Dh_AdOjtFRg2i64LGn2WbZEIE4?download=1",
+          "publisherVersion": "8.0",
+          "publisherSize": "1.42 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "ZENO-Series-12KBTU-115V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCpUo5_nZgxRaiO5LnOukUtAV8VANnuqQYQYJ_x4xM1kqE?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "1.19 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "ZENO-Series-12KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBbU67q-JGRQYLE_3dbJUAXAbp5N-1vsbUIkT8EWwQFYio?download=1",
+          "publisherVersion": "7.0",
+          "publisherSize": "1.21 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "ZENO-Series-18KBTU-230V-Submittal-R32.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAcGqhk5ZpbQqJIlDjcl6IxATWXaprLXnKoFzvN9YXPA1I?download=1",
+          "publisherVersion": "8.0",
+          "publisherSize": "1.24 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ],
+      "imageNote": "Official Zeno page reuses the Charmo image URL. Verify before production use."
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-MULTI",
+      "name": "Multi-zone",
+      "productPage": "https://greehvac.ca/heacool_services/multi-zone-r32/",
+      "resourceFolder": "Multi Zone/Free Match ODU",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2025/03/multi-r32-right-e1741215275833.png",
+          "localFile": "multi.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 516412,
+          "sha256": "91f2c0aa0ea27b91ee1e8eb1c64a1e32a709cde673504a9a59d22aefb4c6f3ef",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "Multi Zone Free Match outdoor unit User Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCFJO3IwZfkR6BZPvDIVmu3AZuYjUt9zqXYt1AnuGtNFRE?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "15.74 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Multi Zone Free Match outdoor unit Service Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDsYS3L2li4So3zGicYt1twAV_mRoPocZhCmXGVrB43ajg?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "36.85 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(24)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCHMPMxFCxvR4QF74Fp6lh3AfqH-qOgUm5By4siV-umi58?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "1.15 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(18)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBI4peKiVQiQLKIoG3x1Sl2AeF1t6LLkHlH6zknIRWkovg?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "1.06 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(36)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDDPiIgvbAGTqTGeUW25zc8AXZUSPUor_Pr-570ZPMpqMQ?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "1.27 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(30)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBxjeRu7cwcSLrXKB7P8yWhAUtpPWqNkC4k6dFzPQl8OYw?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "1.24 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(42)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDA8OrxdgX1S4ZJo8ynn5Z-AWSBaAQxHG0MD51aC6jrH1Y?download=1",
+          "publisherVersion": "5.0",
+          "publisherSize": "1.12 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(60)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAWKaY7FGGJT742jhKs-zObAfjOipNwRqGABXH-eAJEp6E?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.23 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GWHD(48)ND6MO.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQB1z3tuiGdpQqhMg7Rxz_tIAdVU_GaDHBVkErgeV3qYBlI?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.25 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ]
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-FLEXX-ECO",
+      "name": "FLEXX Eco",
+      "productPage": "https://greehvac.ca/heacool_services/flexx-eco-r32/",
+      "resourceFolder": "Flexx/ECO",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/FLEXX-eco-1.png",
+          "localFile": "flexx-eco.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 64415,
+          "sha256": "0cb2cb7b0d0f2e686fc388886ccfff06d34374df6bb39d52190001bc22f15db0",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "48+60,GUD48W2NhGDU.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBsa9e8v1OcRJFIw0P-jlZfAdWpoHxWUDd5lRim4vPPcNo?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.78 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "36,GUD36W2NhGDU.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCyNMU8FEjbTIuf6BfaKyq5AbRGCIQcwlsa8gkMC1xgvCg?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.90 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "24+30,GUD30W2NhGDU.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQC8lXkRgQFYTKzvJGlfko8WAZiAf4Y0TUV9huz16W9sOgE?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.88 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "FLEXX ECO R32 High Efficiency Heat Pump Household Service Manual.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBovLXDoR-hQ5Mn8FxOT-F9AelTT2b_ImceRxj0lkhjpb8?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "34.01 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD60AH2-G-D(U) & GUD60W2-NhG-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAPvUera_3qQLgfM1g6aI13ARttZl8YPfmTHJZWDFrxaMA?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.18 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD36AH2-G-D(U) & GUD36W2-NhG-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBnxJWm-lmzTqVHs2wsha2cAbw3M-vta0i_UQOMRa0Txno?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.24 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD48AH2-G-D(U) & GUD48W2-NhG-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQD1nZv8tddMQaeXyDCxBcV_AebdlL1f6r4MVFrlXzQUWJs?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.19 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD30AH2-G-D(U) & GUD30W2-NhG-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCvFMHn-aBtQo-kedLZmHcOAWBGefexsZeLA2bmlJ55418?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.20 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD24AH2-G-D(U) & GUD24W2-NhG-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCRD6VkOeSpRKoCGozlZTDrAQ6UJTSgcv02vr_jM4SmXWE?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.87 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "FLEXX Eco Series User Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAXgUWRtlIiRo5EAk0VYeN5AaVN1HHp6XC7ng5ZKpCiY0Y?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "9.62 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ],
+      "imageNote": "Composite family image shows multiple configurations; does not describe the contents of a purchasable bundle."
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-FLEXX-ULTRA",
+      "name": "FLEXX Ultra",
+      "productPage": "https://greehvac.ca/heacool_services/flexx-ultra-r32/",
+      "resourceFolder": "Flexx/Ultra Heat",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/FLEXX-ultra-1.png",
+          "localFile": "flexx-ultra.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 98647,
+          "sha256": "93b3fbdc4f15ae3ad6fce4e183ad28bad6ee30e0034d6717cd65e181666aee39",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "24+36,GUD24W2NhEDU.EV000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDSm4ICAemISom8tCTLjZYTAQP8FSco2GopgBc1Do0idAc?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.80 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "48+60,GUD60W2NhEDU.EV000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQArWyeTHtFcTo4geDYzWZwlAQwwKb5fBV7wxVhxJKR6xRo?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.37 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Flexx Ultra Series Service Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQC2DTzJtUIuRbGmDagWnJt4AcEIWejXPkgSUi2d-jZAsRE?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "39.57 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD48AH2-G-D(U) & GUD48W2-NHE-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQA97cPbG_5rQ5zZCOSjvjnAAfGb0nuhi6KNW7-UJUuEYtc?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.07 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD36AH2-G-D(U) & GUD36W2-NHE-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQA7Gg4OMb0qSKwk8hgn_dTnAdHt0Cn8YqXcUZba6YlHkXQ?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.08 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD24AH2-G-D(U) & GUD24W2-NHE-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQArgTrGFmaTSLhpw9vJ7JfUAe_WpTIu6p9KyKTGFYs2KS0?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.00 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD60AH2-G-D(U) & GUD60W2-NHE-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCowqvqzb5ERbWUyBfEVQTGAfbho2xRcRO_6sZVMa5jpDI?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "1.08 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD18W2NhEDU.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQC161XHO1NaQYl0puuMN8moAadr4NmPsNRjtH0DBRyBms0?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.80 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Flexx Ultra Series User Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAUS3eLYBqgTpdOeuvNWUoOAVJXLtX6K-Xj4TGOKzUs4YQ?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "10.56 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD18AH2-E-D(U) & GUD18W2-NHE-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCBulkzAlrLQ7P9oKCMqNtEATux0EKLdmAmfdpmyzECZ3k?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.93 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GUD12AH2-E-D(U) & GUD12W2-NHE-D(U).pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAGrwKGJUpOTY0Mmfih-PhCAR-WwD9KzTbiFN0sVaYO444?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.92 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ],
+      "imageNote": "Composite family image shows multiple configurations; does not describe the contents of a purchasable bundle."
+    },
+    {
+      "sampleSku": "SAMPLE-GREE-CASSETTE",
+      "name": "Eight-way cassette (candidate only)",
+      "productPage": "https://greehvac.ca/heacool_services/8-way-cassette-indoor-unit-r32/",
+      "resourceFolder": "Multi Zone/8-way Cassette IDU",
+      "images": [
+        {
+          "sourceUrl": "https://greehvac.ca/wp-content/uploads/2024/03/cassette-a-1.png",
+          "localFile": "cassette.png",
+          "status": "downloaded; file signature verified",
+          "modelMatch": "unverified; representative image from family page",
+          "bytes": 184126,
+          "sha256": "71db540a9f3c43303b6971557792834be3f3deacd8e9b5e4aeb42d8651ee87e4",
+          "visualReview": "Equipment image visually inspected; family-page association only, not exact model verification."
+        }
+      ],
+      "documents": [
+        {
+          "title": "Free Match 8 way cassette unit User Manual R32.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCd43lhyhfQRKgQO5EPrRz4ASfYodo90uXmzeJhIP1whgw?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "37.63 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "Free Match 8 way cassette unit Service Manual (R32), A.6.pdf",
+          "category": "Manual",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAD7KNzeLzaTrfb02QFce-qAeQS1n69A36XgK-Xtibksaw?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "15.31 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GKH(18)EB-D6DNA1AI.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDqsUK9jRMCTaxyJGUIWY5OASk8kk4IgJgT3rcUYDX49J4?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "0.41 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GKH(09)EB-D6DNA1AI.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDKqheCPu-0SrYte88tbVThAYChoIahNmMrXm3lUYkBtBQ?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "0.35 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GKH(12)EB-D6DNA1AI.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBjsMHzf5kHT7YBrMJotdylAW05OQfY7RilBcvHN4AUsvw?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "0.44 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GKH(24)EC-D6DNA1AI.pdf",
+          "category": "Submittal",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQDG2JpcUgfuT67zVpox4iNoAWjx5COKL25h7Zwn9RtjFjk?download=1",
+          "publisherVersion": "2.0",
+          "publisherSize": "0.44 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GKH(9+12+18)EBD6DNA1AI.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBdhlybQsEcSK-IBCPuDF5rAeR0gBPzG76uJ4dOSImWgTU?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.55 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "30+36,TJLMGKH.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCmROYaPVTkT7Nl4ZRHGTH2ARaPAX7nAlAzyHRlf7dnmTU?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.57 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        },
+        {
+          "title": "GKH(24)ECD6DNA1AI.BZ000000.pdf",
+          "category": "Exploded View",
+          "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQCswZ8AjD3jQbESm9r2xYnSAbVlSK994ICMj_FCrO7F0J4?download=1",
+          "publisherVersion": "1.0",
+          "publisherSize": "0.70 MB",
+          "status": "link indexed; binary not downloaded or model-verified"
+        }
+      ],
+      "matchingNote": "Seed does not identify cassette model/refrigerant. R32 eight-way is a candidate, not an established match."
+    }
+  ],
+  "excluded": [
+    {
+      "title": "[Archive]Inverter Pular Series user mannul R32.pdf",
+      "category": "Manual",
+      "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQBeaOW0NFWtRL1NvXdrRFtbAdqYxZLcDjoDb9bKfcAICX0?download=1",
+      "publisherVersion": "1.0",
+      "publisherSize": "9.23 MB",
+      "status": "link indexed; binary not downloaded or model-verified",
+      "reason": "Publisher marks archived",
+      "family": "Pular"
+    },
+    {
+      "title": "[Archive]Inverter Pular Series Service Manual R32.pdf",
+      "category": "Manual",
+      "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQC3u8TfN_20TbAoIBRf2InCAV_NWbEDOQ8SnYdGWY29Fc8?download=1",
+      "publisherVersion": "1.0",
+      "publisherSize": "17.98 MB",
+      "status": "link indexed; binary not downloaded or model-verified",
+      "reason": "Publisher marks archived",
+      "family": "Pular"
+    },
+    {
+      "title": "T1R32 high-efficiency Cooling only household machine Service Manual.pdf",
+      "category": "Manual",
+      "sourceUrl": "https://airtekhvac.sharepoint.com/:b:/s/AirtekCanadaInc/IQAof2u40K_AQJGu_EselT3MAaXm8pnCcEbLFeQJkyZqoI0?download=1",
+      "publisherVersion": "1.0",
+      "publisherSize": "26.38 MB",
+      "status": "link indexed; binary not downloaded or model-verified",
+      "reason": "Cooling-only document; heat-pump match not established",
+      "family": "FLEXX Eco"
+    }
+  ],
+  "historicalDirectManuals": [
+    {
+      "sourceUrl": "https://greehvac.ca/wp-content/uploads/2025/03/Charmo-Series-Service-Manual-UL60335R32WIFI-A.6.pdf",
+      "localFile": "charmo-service-a6.pdf",
+      "status": "downloaded; file signature verified",
+      "revisionNote": "Separately published direct file; NOT verified equivalent to latest resource-index edition.",
+      "bytes": 22818935,
+      "sha256": "145e0f6e8ba6791330b8d5b32816017c0a64adbaee2a22b2bb85c5dfd23114b6",
+      "contentReview": "PDF text extraction succeeded; installation and maintenance sections found. Not a revision or model match approval."
+    },
+    {
+      "sourceUrl": "https://greehvac.ca/wp-content/uploads/2025/03/Inverter-Pular-Series-Service-Manual-R32WIFI-D.2.pdf",
+      "localFile": "pular-service-d2.pdf",
+      "status": "downloaded; file signature verified",
+      "revisionNote": "Separately published direct file; NOT verified equivalent to latest resource-index edition.",
+      "bytes": 18854511,
+      "sha256": "b8938bf51e576039d7f9c85e4ba44c88a592dc24638b4c0a8e86dbc221d36230",
+      "contentReview": "PDF text extraction succeeded; installation and maintenance sections found. Not a revision or model match approval."
+    },
+    {
+      "sourceUrl": "https://greehvac.ca/wp-content/uploads/2025/03/Multi-R32-user-manual.pdf",
+      "localFile": "multi-user.pdf",
+      "status": "downloaded; file signature verified",
+      "revisionNote": "Separately published direct file; NOT verified equivalent to latest resource-index edition.",
+      "bytes": 9130529,
+      "sha256": "248e5745d4927228d5c0a6719dbc57a992acd066c3dd1d58b7b80bb6efb684ea",
+      "contentReview": "PDF text extraction succeeded; installation and maintenance sections found. Not a revision or model match approval."
+    }
+  ],
+  "downloadLimitations": [
+    "First current SharePoint manual download (Charmo user manual) returned HTTP 403. Other current SharePoint files have not been downloaded or individually HTTP-verified. Published links retained; no authentication bypass attempted.",
+    "Direct historical PDFs must not replace current indexed manuals without model/revision review."
+  ]
+}
