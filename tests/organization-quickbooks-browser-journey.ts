@@ -2,7 +2,7 @@ import { navigateAccounting } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 
 async function login(page: Page, origin: string) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })

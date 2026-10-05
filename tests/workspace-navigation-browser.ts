@@ -21,7 +21,7 @@ test("browser: secondary pages load on demand and recover a failed download with
   });
   try {
     await http.listen({ host: "127.0.0.1", port: 3197 });
-    await page.goto(origin);
+    await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
     await page
       .getByLabel("Password", { exact: true })
@@ -90,7 +90,7 @@ test("browser: replacement warehouse shortcut selects the visible Shipments sub-
     });
     await http.listen({ host: "127.0.0.1", port: 3197 });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(origin);
+    await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
     await page
       .getByLabel("Password", { exact: true })
@@ -165,7 +165,7 @@ test("browser: Inventory sub-tabs retain recovery through pending and failed que
   let release = () => {};
   try {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(origin);
+    await page.goto(origin + "/#sign-in");
     await page
       .getByLabel("Email", { exact: true })
       .fill("arrival@example.test");
@@ -306,7 +306,7 @@ test("browser: addressable orders preserve filters, list place and history with 
   const http = await orderQueueBrowser((fn) => cleanup.push(fn));
   const origin = "http://127.0.0.1:3134";
   try {
-    await page.goto(origin + "/#page=Orders&section=orders-queue&orders=open");
+    await page.goto(origin + "/#sign-in");
     await page
       .getByLabel("Email", { exact: true })
       .fill("queue-buyer@example.test");
@@ -314,6 +314,8 @@ test("browser: addressable orders preserve filters, list place and history with 
       .getByLabel("Password", { exact: true })
       .fill("long-test-only-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await page.goto(origin + "/#page=Orders&section=orders-queue&orders=open");
     await expect(page.locator("#workspace-title")).toHaveText("Orders");
     const queue = page.getByRole("region", {
       name: "Order queue",
@@ -417,7 +419,7 @@ test("browser: stock intent clears hidden search and stock filters follow histor
   const http = await transferArrivalBrowser((fn) => cleanup.push(fn));
   const origin = "http://127.0.0.1:3161";
   try {
-    await page.goto(origin);
+    await page.goto(origin + "/#sign-in");
     await page
       .getByLabel("Email", { exact: true })
       .fill("arrival@example.test");

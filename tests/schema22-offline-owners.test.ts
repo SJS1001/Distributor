@@ -9,6 +9,8 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture } from "./fixtures.ts";
 const laterTables = [
+  "enrollment_applications",
+  "enrollment_limits",
   "orders_incoming_commitments",
   "orders_incoming_history",
   "inventory_incoming_holds",
@@ -95,7 +97,7 @@ for (const [region, currency] of [
       );
       assert.equal(receipt.sourceVersion, 21);
       assert.equal(receipt.version, SCHEMA_VERSION);
-      assert.equal(receipt.version, 23);
+      assert.equal(receipt.version, 24);
       assert.equal(inspectSchema(target).kind, "current");
       assert.equal(inspectSchema(target).initializedAt, old.initializedAt);
       assert.equal(business(target), before);

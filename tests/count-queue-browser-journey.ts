@@ -18,7 +18,7 @@ async function login(
   email = "count-queue@example.test",
   count = 20,
 ) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

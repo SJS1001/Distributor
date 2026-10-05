@@ -1,3 +1,11 @@
+import { installCanonicalOrigin } from "./canonical-origin.ts";
+import { enrollmentClientAddress } from "./enrollment-client-address.ts";
+import {
+  canadianProvinces,
+  type EnrollmentSubmission,
+  type EnrollmentDecision,
+  type EnrollmentInvitationAction,
+} from "../shared/enrollment.ts";
 import {
   countQueueStates,
   type CountQueueInput,
@@ -1630,6 +1638,10 @@ export function commands(
 }
 export type HttpOptions = {
   origin: string;
+  /** Trusted host selection; never populated from a request. */
+  enrollmentOrganizationId?: string;
+  enrollmentFlyProxy?: boolean;
+  canonicalHosts?: string[];
   secureCookies?: boolean;
   staticRoot?: string;
   logger?: boolean;
@@ -1661,6 +1673,9 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     },
   });
+  installCanonicalOrigin(http, origin, options.canonicalHosts ?? []);
+  // Fail startup for an explicitly configured invalid/non-Canadian target.
+  app.enrollment.config(options.enrollmentOrganizationId);
   await http.register(cookie);
   await http.register(helmet, {
     contentSecurityPolicy: {
@@ -1703,6 +1718,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
         "Request origin is not permitted.",
         403,
       );
+    const requestPath = request.url.split("?")[0];
+    if (request.method === "GET" && requestPath === "/api/enrollment/config")
+      return;
+    if (
+      request.method === "POST" &&
+      ["/api/enrollment/applications", "/api/enrollment/activate"].includes(
+        requestPath!,
+      )
+    ) {
+      app.enrollment.throttle(
+        requestPath === "/api/enrollment/applications" ? "apply" : "activate",
+        enrollmentClientAddress(
+          request.ip,
+          request.headers["fly-client-ip"],
+          options.enrollmentFlyProxy ?? false,
+        ),
+        options.enrollmentOrganizationId,
+      );
+      return;
+    }
     if (request.url === "/api/login") return;
     const session = app.identity.session(request.cookies.distributor_session);
     sessions.set(request, session);
@@ -1788,6 +1823,109 @@ export async function createHttp(app: Application, options: HttpOptions) {
     status: "ok",
     region: app.identity.region,
   }));
+  http.get("/api/enrollment/config", async () =>
+    app.enrollment.config(options.enrollmentOrganizationId),
+  );
+  const enrollmentString = (maximum: number, minimum = 1): Schema => ({
+    type: "string",
+    minLength: minimum,
+    maxLength: maximum,
+  });
+  http.post<{ Body: EnrollmentSubmission }>(
+    "/api/enrollment/applications",
+    {
+      bodyLimit: 8192,
+      schema: {
+        body: obj(
+          {
+            businessName: enrollmentString(160),
+            contactName: enrollmentString(160),
+            email: enrollmentString(254),
+            phone: enrollmentString(40),
+            province: choice(...canadianProvinces),
+            businessNumber: enrollmentString(80, 0),
+            notes: enrollmentString(1000, 0),
+            acknowledgment: { const: true },
+          },
+          ["businessNumber", "notes"],
+        ),
+      },
+    },
+    async (request, reply) => {
+      reply.code(202);
+      return app.enrollment.submit(
+        options.enrollmentOrganizationId,
+        request.body,
+      );
+    },
+  );
+  http.post<{ Body: { token: string; password: string } }>(
+    "/api/enrollment/activate",
+    {
+      bodyLimit: 2048,
+      schema: {
+        body: obj({
+          token: enrollmentString(128),
+          password: enrollmentString(256, 14),
+        }),
+      },
+    },
+    async (request) =>
+      app.enrollment.activate(
+        options.enrollmentOrganizationId,
+        request.body.token,
+        request.body.password,
+      ),
+  );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/enrollment/applications",
+    {
+      schema: { querystring: obj({ after: enrollmentString(64) }, ["after"]) },
+    },
+    async (request) =>
+      app.enrollment.queue(actor(request), request.query.after),
+  );
+  http.post<{ Params: { id: string }; Body: EnrollmentDecision }>(
+    "/api/enrollment/applications/:id/decision",
+    {
+      bodyLimit: 8192,
+      schema: {
+        params: obj({ id: enrollmentString(64) }),
+        body: obj(
+          {
+            decision: choice("approve", "reject"),
+            currentPassword: enrollmentString(256),
+            reason: enrollmentString(1000),
+            tier: enrollmentString(160),
+            creditLimit: num,
+          },
+          ["tier", "creditLimit"],
+        ),
+      },
+    },
+    async (request) =>
+      app.enrollment.decide(actor(request), request.params.id, request.body),
+  );
+  http.post<{ Params: { id: string }; Body: EnrollmentInvitationAction }>(
+    "/api/enrollment/applications/:id/invitation",
+    {
+      bodyLimit: 8192,
+      schema: {
+        params: obj({ id: enrollmentString(64) }),
+        body: obj({
+          action: choice("reissue", "revoke"),
+          currentPassword: enrollmentString(256),
+          reason: enrollmentString(1000),
+        }),
+      },
+    },
+    async (request) =>
+      app.enrollment.invitation(
+        actor(request),
+        request.params.id,
+        request.body,
+      ),
+  );
   http.post(
     "/api/login",
     {

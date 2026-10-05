@@ -57,7 +57,7 @@ async function facts(
   return r.json();
 }
 async function signIn(p: Page, origin = ca, email = "admin@example.test") {
-  await p.goto(origin);
+  await p.goto(origin + "/#sign-in");
   await p.getByLabel("Email", { exact: true }).fill(email);
   await p
     .getByLabel("Password", { exact: true })

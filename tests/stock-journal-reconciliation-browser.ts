@@ -14,7 +14,7 @@ const review = (page: Page) =>
   });
 const endpoint = "**/api/commands/accounting.cost.reconcile-journals";
 async function signIn(page: Page, port: number, admin = false) {
-  await page.goto(origin(port));
+  await page.goto(origin(port) + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill(admin ? "admin@example.test" : "finance@example.test");

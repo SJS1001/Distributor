@@ -9,7 +9,7 @@ const section = (page: Page, name: string) =>
 const history = (page: Page) =>
   page.getByRole("region", { name: "Stock movement history", exact: true });
 async function signIn(page: Page) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill("warehouse@example.test");

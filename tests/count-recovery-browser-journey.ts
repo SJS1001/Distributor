@@ -5,7 +5,7 @@ import { stockFactsDashboard } from "./stock-browser-facts.ts";
 import type { CountKind } from "../src/web/count-review.tsx";
 const origin = "http://127.0.0.1:3165";
 async function login(page: Page) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })

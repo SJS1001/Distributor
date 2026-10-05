@@ -19,7 +19,7 @@ const exact = (page: Page) =>
     exact: true,
   });
 async function signIn(page: Page, origin = ca, role = "admin") {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(`${role}@example.test`);
   await page
     .getByLabel("Password", { exact: true })

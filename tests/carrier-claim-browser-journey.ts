@@ -3,7 +3,7 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 const origin = "http://127.0.0.1:3121";
 const reason = "Synthetic stopped writer and carrier investigation";
 async function login(page: Page, email = "admin@example.test") {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

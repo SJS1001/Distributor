@@ -11,7 +11,7 @@ const recovery = (page: Page) =>
 const nav = (page: Page, name: string) =>
   navigateWorkspace(page, name, name === "Inventory" ? "Stock" : undefined);
 async function login(page: Page, email = "dispatch@example.test") {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

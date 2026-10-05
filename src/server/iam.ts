@@ -1152,20 +1152,108 @@ export class Identity {
         actor = this.customerActor(actor, ["commercial"]);
       },
       () => {
-        const accountId = id();
-        const org = this.organization(actor);
-        this.store.run(
-          "INSERT INTO iam_accounts(id,org_id,name,currency,tier,credit_limit) VALUES(?,?,?,?,?,?)",
-          accountId,
-          actor.orgId,
-          text(input.name, "account name"),
-          org.currency,
-          text(input.tier, "price tier"),
-          integer(input.creditLimit, "credit limit", 0, 1e12),
-        );
-        return { id: accountId };
+        return this.insertCustomer(actor, input);
       },
     );
+  }
+  private insertCustomer(
+    actor: Actor,
+    input: { name: string; tier: string; creditLimit: number },
+  ) {
+    const accountId = id();
+    const org = this.organization(actor);
+    this.store.run(
+      "INSERT INTO iam_accounts(id,org_id,name,currency,tier,credit_limit) VALUES(?,?,?,?,?,?)",
+      accountId,
+      actor.orgId,
+      text(input.name, "account name"),
+      org.currency,
+      text(input.tier, "price tier"),
+      integer(input.creditLimit, "credit limit", 0, 1e12),
+    );
+    return { id: accountId };
+  }
+  /** Enrollment composition only; all writes stay with Identity and join the
+   * caller's atomic invitation transaction. No public generic CRUD endpoint. */
+  enrollmentAuthority(actor: Actor, password?: string, throttle = true) {
+    const current =
+      password === undefined
+        ? this.currentActor(actor)
+        : this.reauthenticate(actor, password, true, throttle);
+    permit(current, []);
+    const security = this.security(current);
+    check(
+      !security.passwordChangeRequired && !this.mfaEnrollmentRequired(current),
+      "FORBIDDEN",
+      "Administrator security setup is incomplete.",
+      403,
+    );
+    return { actor: current, revision: security.revision };
+  }
+  enrollmentOrganization(orgId: string) {
+    const org = this.store.get(
+      "SELECT region,currency FROM iam_organizations WHERE id=?",
+      orgId,
+    );
+    check(
+      this.region === "CA" && org?.region === "CA" && org.currency === "CAD",
+      "ENROLLMENT_CONFIGURATION",
+      "Enrollment requires a configured Canadian CAD organization.",
+      503,
+    );
+  }
+  enrollmentEmailAvailable(email: string) {
+    return !this.store.get("SELECT id FROM iam_users WHERE email=?", email);
+  }
+  enrollmentCustomer(
+    actor: Actor,
+    input: { name: string; tier: string; creditLimit: number },
+  ) {
+    this.database.requireTransaction();
+    const current = this.enrollmentAuthority(actor).actor;
+    this.enrollmentOrganization(current.orgId);
+    const result = this.insertCustomer(current, input);
+    this.platform.audit(
+      current,
+      "enrollment.customer.create",
+      result.id,
+      input,
+    );
+    return result;
+  }
+  enrollmentBuyer(
+    actor: Actor,
+    sponsorRevision: number,
+    input: { email: string; name: string; password: string; accountId: string },
+  ) {
+    this.database.requireTransaction();
+    const current = this.enrollmentAuthority(actor);
+    check(
+      current.revision === sponsorRevision,
+      "FORBIDDEN",
+      "Approval authority changed.",
+      403,
+    );
+    this.enrollmentOrganization(current.actor.orgId);
+    const customer = this.customer(current.actor, input.accountId);
+    check(
+      !customer.held &&
+        customer.residency_mode === "strict" &&
+        customer.provider_exceptions === "[]",
+      "FORBIDDEN",
+      "Approved account terms changed.",
+      403,
+    );
+    const result = this.insertUser(current.actor, {
+      ...input,
+      role: "buyer",
+      sites: [],
+      requirePasswordChange: false,
+    });
+    this.platform.audit(current.actor, "enrollment.buyer.create", result.id, {
+      accountId: customer.id,
+    });
+    return result;
   }
   setHold(
     actor: Actor,
@@ -1355,39 +1443,53 @@ export class Identity {
           this.reauthenticate(actor, input.currentPassword, true);
       },
       () => {
-        this.grants(this.currentActor(actor), input);
-        this.validPassword(input.password);
-        check(
-          input.requirePasswordChange === undefined ||
-            typeof input.requirePasswordChange === "boolean",
-          "VALIDATION",
-          "requirePasswordChange must be a boolean.",
-          400,
-        );
-        const email = this.email(input.email);
-        const userId = id(),
-          salt = randomBytes(24).toString("hex");
-        this.store.run(
-          "INSERT INTO iam_users(id,org_id,email,name,account_id,role,sites,salt,password_hash) VALUES(?,?,?,?,?,?,?,?,?)",
-          userId,
-          actor.orgId,
-          email,
-          text(input.name, "name"),
-          input.role === "buyer" ? input.accountId! : null,
-          input.role,
-          JSON.stringify(input.sites),
-          salt,
-          passwordHash(input.password, salt),
-        );
-        this.store.run(
-          "INSERT INTO iam_user_security VALUES(?,?,?,?)",
-          userId,
-          1,
-          Number(input.requirePasswordChange ?? false),
-          now(),
-        );
-        return { id: userId };
+        return this.insertUser(actor, input);
       },
     );
+  }
+  private insertUser(
+    actor: Actor,
+    input: {
+      email: string;
+      name: string;
+      password: string;
+      role: Role;
+      accountId?: string;
+      sites: string[];
+      requirePasswordChange?: boolean;
+    },
+  ) {
+    this.grants(this.currentActor(actor), input);
+    this.validPassword(input.password);
+    check(
+      input.requirePasswordChange === undefined ||
+        typeof input.requirePasswordChange === "boolean",
+      "VALIDATION",
+      "requirePasswordChange must be a boolean.",
+      400,
+    );
+    const email = this.email(input.email);
+    const userId = id(),
+      salt = randomBytes(24).toString("hex");
+    this.store.run(
+      "INSERT INTO iam_users(id,org_id,email,name,account_id,role,sites,salt,password_hash) VALUES(?,?,?,?,?,?,?,?,?)",
+      userId,
+      actor.orgId,
+      email,
+      text(input.name, "name"),
+      input.role === "buyer" ? input.accountId! : null,
+      input.role,
+      JSON.stringify(input.sites),
+      salt,
+      passwordHash(input.password, salt),
+    );
+    this.store.run(
+      "INSERT INTO iam_user_security VALUES(?,?,?,?)",
+      userId,
+      1,
+      Number(input.requirePasswordChange ?? false),
+      now(),
+    );
+    return { id: userId };
   }
 }

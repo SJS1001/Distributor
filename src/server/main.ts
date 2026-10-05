@@ -25,6 +25,13 @@ check(
   "Non-loopback deployment requires HTTPS origin and secure cookies.",
   500,
 );
+check(
+  process.env.ENROLLMENT_FLY_CLIENT_IP !== "true" ||
+    (Boolean(process.env.FLY_APP_NAME) && host === "0.0.0.0"),
+  "CONFIG",
+  "Fly enrollment ingress requires the Fly runtime and an IPv4-only listener.",
+  500,
+);
 const app = createRuntimeApplication(
   process.env.DATABASE_PATH ?? "local-evidence/distributor.db",
   (process.env.DATA_REGION ?? "CA") as Region,
@@ -42,6 +49,14 @@ const organizationQuickbooksBrowser = configuredOrganizationQuickBooksBrowser(
 const http = await createHttp(app, {
   origin,
   secureCookies,
+  enrollmentOrganizationId: process.env.ENROLLMENT_ORGANIZATION_ID || undefined,
+  enrollmentFlyProxy:
+    process.env.ENROLLMENT_FLY_CLIENT_IP === "true" &&
+    Boolean(process.env.FLY_APP_NAME),
+  canonicalHosts: (process.env.PUBLIC_ORIGIN_ALIASES ?? "")
+    .split(",")
+    .map((host) => host.trim())
+    .filter(Boolean),
   providers: configuredProviders(app, process.env, {
     organizationAuthorizationConfigured: !!organizationQuickbooksBrowser,
   }),

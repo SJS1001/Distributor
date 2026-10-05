@@ -5,7 +5,7 @@ import {
 import { test, expect, type Page } from "@playwright/test";
 const endpoint = "/api/quickbooks/organization/revocation";
 async function login(page: Page, origin: string, email = "admin@example.test") {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

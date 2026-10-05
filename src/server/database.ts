@@ -18,6 +18,7 @@ import {
 } from "./restore-candidate-snapshot.ts";
 
 export type Owner =
+  | "enrollment"
   | "iam"
   | "catalog"
   | "inventory"

@@ -1,3 +1,5 @@
+import { EnrollmentReview } from "./enrollment-review.tsx";
+import { PublicSite, readPublicRoute } from "./public-site.tsx";
 import {
   authorizedPages,
   authorizeNavigation,
@@ -180,6 +182,36 @@ const money = (value: number, currency = "CAD") =>
 const purchaseLineName = (line: Item) =>
   `${line.product_sku} · ${line.product_name}${line.product_active === 0 ? " · retired from customer ordering" : ""}`;
 function App() {
+  const [publicRoute, setPublicRoute] = useState(() =>
+    readPublicRoute(window.location.hash),
+  );
+  const [activationToken, setActivationToken] = useState(() =>
+    window.location.hash.startsWith("#activate=")
+      ? window.location.hash.slice(10)
+      : "",
+  );
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [nativeDemo, setNativeDemo] = useState(false);
+  const [demoChecked, setDemoChecked] = useState(false);
+  useEffect(() => {
+    const changed = () => {
+      const next = readPublicRoute(window.location.hash);
+      if (window.location.hash.startsWith("#activate=")) {
+        setActivationToken(window.location.hash.slice(10));
+        window.history.replaceState(null, "", "#activate");
+      } else if (next !== "activate") setActivationToken("");
+      setPublicRoute(next);
+    };
+    if (window.location.hash.startsWith("#activate="))
+      window.history.replaceState(null, "", "#activate");
+    window.addEventListener("hashchange", changed);
+    window.addEventListener("popstate", changed);
+    return () => {
+      window.removeEventListener("hashchange", changed);
+      window.removeEventListener("popstate", changed);
+    };
+  }, []);
+
   const [actor, setActor] = useState<Item | null>(null),
     [data, setData] = useState<Item | null>(null),
     [route, setRoute] = useState<NavigationIntent>(() =>
@@ -191,6 +223,10 @@ function App() {
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({});
   const page = route.page;
+  useEffect(() => {
+    if (actor && data && publicRoute !== "activate")
+      document.title = `${page} · dstrbtr`;
+  }, [actor, data, page, publicRoute]);
   const traversal = useRef<(destination: NavigationIntent) => void>(() => {});
   const setPage = (destination: string) => {
     const next = { page: destination };
@@ -211,7 +247,7 @@ function App() {
     previousOrder.current = route.orderId;
   }, [route.orderId, page]);
   useEffect(() => {
-    if (!actor) return;
+    if (!actor || publicRoute === "activate") return;
     const locationChanged = () => {
       if (appliedHash.current === window.location.hash) return;
       appliedHash.current = window.location.hash;
@@ -234,7 +270,7 @@ function App() {
       window.removeEventListener("popstate", locationChanged);
       window.removeEventListener("hashchange", locationChanged);
     };
-  }, [actor?.orgId, actor?.id, actor?.role]);
+  }, [actor?.orgId, actor?.id, actor?.role, publicRoute]);
   const claimQueue = useClaimQueue(
     data?.claims,
     data?.claimNext,
@@ -658,7 +694,25 @@ function App() {
         setMfaEnrollmentRequired(s.mfaEnrollmentRequired);
         setActor(s.actor);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setSessionChecked(true));
+    const controller = new AbortController();
+    void fetch("/demo/api/status", {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then((response) => {
+        if (
+          response.ok &&
+          response.headers.get("X-Distributor-Demo") === "native"
+        )
+          setNativeDemo(true);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setDemoChecked(true);
+      });
+    return () => controller.abort();
   }, []);
   useEffect(() => {
     if (!actor || passwordChangeRequired || mfaEnrollmentRequired) return;
@@ -1521,98 +1575,122 @@ function App() {
       {label}
     </button>
   );
-  if (!actor)
+  const loginForm = (
+    <section className="login">
+      <div className="brand">
+        D<span>Distributor</span>
+      </div>
+      <h1>Sign in to your workspace</h1>
+      <p>Orders, warehouses and customer accounts in one place.</p>
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError("");
+          try {
+            const s = await request("/api/login", {
+              method: "POST",
+              body: JSON.stringify({
+                email,
+                password,
+                ...(mfaRequired ? { code: loginCode } : {}),
+              }),
+            });
+            setCsrf(s.csrf);
+            setPasswordChangeRequired(s.passwordChangeRequired);
+            setMfaEnrollmentRequired(s.mfaEnrollmentRequired);
+            setActor(s.actor);
+            setPassword("");
+            setLoginCode("");
+            setMfaRequired(false);
+          } catch (e) {
+            if ((e as Error).message.includes("(MFA_REQUIRED)"))
+              setMfaRequired(true);
+            else setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label>
+          Email
+          <input
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        {mfaRequired && (
+          <label>
+            Authenticator or recovery code
+            <input
+              autoComplete="one-time-code"
+              spellCheck={false}
+              value={loginCode}
+              onChange={(e) => setLoginCode(e.target.value)}
+              maxLength={64}
+              required
+              autoFocus
+            />
+          </label>
+        )}
+        {mfaRequired && (
+          <p>
+            Enter the six-digit code from your authenticator app, or an unused
+            saved recovery code.
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="notice">
+            {notice}
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+        <button disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      </form>
+    </section>
+  );
+  if (publicRoute === "activate")
     return (
-      <main className="login">
-        <div className="brand">
-          D<span>Distributor</span>
-        </div>
-        <h1>Sign in to your workspace</h1>
-        <p>Orders, warehouses and customer accounts in one place.</p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError("");
-            try {
-              const s = await request("/api/login", {
-                method: "POST",
-                body: JSON.stringify({
-                  email,
-                  password,
-                  ...(mfaRequired ? { code: loginCode } : {}),
-                }),
-              });
-              setCsrf(s.csrf);
-              setPasswordChangeRequired(s.passwordChangeRequired);
-              setMfaEnrollmentRequired(s.mfaEnrollmentRequired);
-              setActor(s.actor);
-              setPassword("");
-              setLoginCode("");
-              setMfaRequired(false);
-            } catch (e) {
-              if ((e as Error).message.includes("(MFA_REQUIRED)"))
-                setMfaRequired(true);
-              else setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            Email
-            <input
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          {mfaRequired && (
-            <label>
-              Authenticator or recovery code
-              <input
-                autoComplete="one-time-code"
-                spellCheck={false}
-                value={loginCode}
-                onChange={(e) => setLoginCode(e.target.value)}
-                maxLength={64}
-                required
-                autoFocus
-              />
-            </label>
-          )}
-          {mfaRequired && (
-            <p>
-              Enter the six-digit code from your authenticator app, or an unused
-              saved recovery code.
-            </p>
-          )}
-          {notice && (
-            <p role="status" className="notice">
-              {notice}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
-          <button disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-        </form>
-      </main>
+      <PublicSite
+        route={publicRoute}
+        activationToken={activationToken}
+        login={loginForm}
+      />
     );
+  if (!actor) {
+    if (!sessionChecked || !demoChecked)
+      return (
+        <main className="login">
+          <p role="status">Loading workspace…</p>
+        </main>
+      );
+    return nativeDemo ? (
+      loginForm
+    ) : (
+      <PublicSite
+        route={publicRoute}
+        activationToken={activationToken}
+        login={loginForm}
+      />
+    );
+  }
   if (passwordChangeRequired)
     return (
       <main className="login">
@@ -1787,7 +1865,7 @@ function App() {
         </header>
         <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
         <div className="qualification">
-          Development workspace · synthetic qualification pending · storage
+          Operational qualification pending · storage
           region {data.organization.region} · {currency}
         </div>
         {error && (
@@ -6671,191 +6749,203 @@ function App() {
           </section>
         )}
         {page === "Administration" && admin && (
-          <>
-            <section className="panel">
-              <h2>Staff and buyer access</h2>
-              {button("Create user", () =>
-                simple(
-                  "Create user",
-                  [
-                    { name: "name", label: "Name" },
-                    { name: "email", label: "Email" },
-                    {
-                      name: "password",
-                      label: "Initial password (14+ characters)",
-                      type: "password",
-                    },
-                    {
-                      name: "currentPassword",
-                      label: "Your current password",
-                      type: "password",
-                    },
-                    {
-                      name: "role",
-                      label: "Role",
-                      options: [
-                        "warehouse",
-                        "commercial",
-                        "finance",
-                        "warranty",
-                        "buyer",
-                        "support",
-                        "admin",
-                      ].map((v) => ({ value: v, label: v })),
-                    },
-                    {
-                      ...select(
-                        "accountId",
-                        "Buyer account (buyer role only)",
-                        data.accounts,
-                        (a) => a.name,
-                      ),
-                      optional: true,
-                    },
-                    {
-                      name: "sites",
-                      label: "Permitted warehouses",
-                      type: "multiselect",
-                      options: options(data.warehouses, (w) => w.name),
-                      optional: true,
-                      help: "Select each warehouse this user may operate.",
-                    },
+          <PageSections
+            label="Administration sections"
+            items={[
+              { id: "admin-access", label: "Staff and buyer access" },
+              { id: "admin-applications", label: "Trade applications" },
+            ]}
+          >
+            <PageSection id="admin-access">
+              <section className="panel">
+                <h2>Staff and buyer access</h2>
+                {button("Create user", () =>
+                  simple(
+                    "Create user",
+                    [
+                      { name: "name", label: "Name" },
+                      { name: "email", label: "Email" },
+                      {
+                        name: "password",
+                        label: "Initial password (14+ characters)",
+                        type: "password",
+                      },
+                      {
+                        name: "currentPassword",
+                        label: "Your current password",
+                        type: "password",
+                      },
+                      {
+                        name: "role",
+                        label: "Role",
+                        options: [
+                          "warehouse",
+                          "commercial",
+                          "finance",
+                          "warranty",
+                          "buyer",
+                          "support",
+                          "admin",
+                        ].map((v) => ({ value: v, label: v })),
+                      },
+                      {
+                        ...select(
+                          "accountId",
+                          "Buyer account (buyer role only)",
+                          data.accounts,
+                          (a) => a.name,
+                        ),
+                        optional: true,
+                      },
+                      {
+                        name: "sites",
+                        label: "Permitted warehouses",
+                        type: "multiselect",
+                        options: options(data.warehouses, (w) => w.name),
+                        optional: true,
+                        help: "Select each warehouse this user may operate.",
+                      },
+                    ],
+                    "user.create",
+                    (v) => ({
+                      ...v,
+                      ...(v.role !== "buyer" ? { accountId: undefined } : {}),
+                      requirePasswordChange: true,
+                      sites: v.sites ?? [],
+                    }),
+                  ),
+                )}
+                <p>
+                  New users must change their initial password. Access changes,
+                  resets and revocations end every session for the affected
+                  user.
+                </p>
+                {table(
+                  ["User", "Role / scope", "Status", "Sessions", "Actions"],
+                  extra.users ?? [],
+                  (u: Item) => [
+                    <span>
+                      {u.name}
+                      <br />
+                      {u.email}
+                    </span>,
+                    <span>
+                      {u.role}
+                      {u.accountId ? ` · ${accountName(u.accountId)}` : ""}
+                      <br />
+                      {u.sites.map(warehouseName).join(", ") ||
+                        (u.role === "admin"
+                          ? "All warehouses"
+                          : "No warehouse operations")}
+                    </span>,
+                    `${u.active ? "Active" : "Inactive"}${u.passwordChangeRequired ? " · Password change required" : ""} · v${u.revision}`,
+                    u.sessions,
+                    <div className="actions">
+                      {button(`Edit access: ${u.name}`, () =>
+                        simple(
+                          `Edit access: ${u.name}`,
+                          [
+                            { name: "name", label: "Name", value: u.name },
+                            { name: "email", label: "Email", value: u.email },
+                            {
+                              name: "role",
+                              label: "Role",
+                              value: u.role,
+                              options: [
+                                "warehouse",
+                                "commercial",
+                                "finance",
+                                "warranty",
+                                "buyer",
+                                "support",
+                                "admin",
+                              ].map((value) => ({ value, label: value })),
+                            },
+                            {
+                              ...select(
+                                "accountId",
+                                "Buyer account (buyer role only)",
+                                data.accounts,
+                                (a) => a.name,
+                                u.accountId ?? "",
+                              ),
+                              optional: true,
+                            },
+                            {
+                              name: "sites",
+                              label: "Permitted warehouses",
+                              type: "multiselect",
+                              options: options(data.warehouses, (w) => w.name),
+                              optional: true,
+                              value: u.sites,
+                            },
+                            {
+                              name: "active",
+                              label: "Active user",
+                              type: "checkbox",
+                              value: u.active,
+                            },
+                            {
+                              name: "currentPassword",
+                              label: "Your current password",
+                              type: "password",
+                            },
+                            reason,
+                          ],
+                          "user.update",
+                          (v) => ({
+                            ...v,
+                            accountId:
+                              v.role === "buyer" ? v.accountId : undefined,
+                            userId: u.id,
+                            revision: u.revision,
+                          }),
+                        ),
+                      )}
+                      {button(`Reset password: ${u.name}`, () =>
+                        simple(
+                          `Reset password: ${u.name}`,
+                          [
+                            {
+                              name: "password",
+                              label: "New initial password (14+ characters)",
+                              type: "password",
+                            },
+                            {
+                              name: "currentPassword",
+                              label: "Your current password",
+                              type: "password",
+                            },
+                            reason,
+                          ],
+                          "user.password.reset",
+                          (v) => ({ ...v, userId: u.id, revision: u.revision }),
+                        ),
+                      )}
+                      {button(`Revoke sessions: ${u.name}`, () =>
+                        simple(
+                          `Revoke sessions: ${u.name}`,
+                          [
+                            {
+                              name: "currentPassword",
+                              label: "Your current password",
+                              type: "password",
+                            },
+                            reason,
+                          ],
+                          "user.sessions.revoke",
+                          (v) => ({ ...v, userId: u.id, revision: u.revision }),
+                        ),
+                      )}
+                    </div>,
                   ],
-                  "user.create",
-                  (v) => ({
-                    ...v,
-                    ...(v.role !== "buyer" ? { accountId: undefined } : {}),
-                    requirePasswordChange: true,
-                    sites: v.sites ?? [],
-                  }),
-                ),
-              )}
-              <p>
-                New users must change their initial password. Access changes,
-                resets and revocations end every session for the affected user.
-              </p>
-              {table(
-                ["User", "Role / scope", "Status", "Sessions", "Actions"],
-                extra.users ?? [],
-                (u: Item) => [
-                  <span>
-                    {u.name}
-                    <br />
-                    {u.email}
-                  </span>,
-                  <span>
-                    {u.role}
-                    {u.accountId ? ` · ${accountName(u.accountId)}` : ""}
-                    <br />
-                    {u.sites.map(warehouseName).join(", ") ||
-                      (u.role === "admin"
-                        ? "All warehouses"
-                        : "No warehouse operations")}
-                  </span>,
-                  `${u.active ? "Active" : "Inactive"}${u.passwordChangeRequired ? " · Password change required" : ""} · v${u.revision}`,
-                  u.sessions,
-                  <div className="actions">
-                    {button(`Edit access: ${u.name}`, () =>
-                      simple(
-                        `Edit access: ${u.name}`,
-                        [
-                          { name: "name", label: "Name", value: u.name },
-                          { name: "email", label: "Email", value: u.email },
-                          {
-                            name: "role",
-                            label: "Role",
-                            value: u.role,
-                            options: [
-                              "warehouse",
-                              "commercial",
-                              "finance",
-                              "warranty",
-                              "buyer",
-                              "support",
-                              "admin",
-                            ].map((value) => ({ value, label: value })),
-                          },
-                          {
-                            ...select(
-                              "accountId",
-                              "Buyer account (buyer role only)",
-                              data.accounts,
-                              (a) => a.name,
-                              u.accountId ?? "",
-                            ),
-                            optional: true,
-                          },
-                          {
-                            name: "sites",
-                            label: "Permitted warehouses",
-                            type: "multiselect",
-                            options: options(data.warehouses, (w) => w.name),
-                            optional: true,
-                            value: u.sites,
-                          },
-                          {
-                            name: "active",
-                            label: "Active user",
-                            type: "checkbox",
-                            value: u.active,
-                          },
-                          {
-                            name: "currentPassword",
-                            label: "Your current password",
-                            type: "password",
-                          },
-                          reason,
-                        ],
-                        "user.update",
-                        (v) => ({
-                          ...v,
-                          accountId:
-                            v.role === "buyer" ? v.accountId : undefined,
-                          userId: u.id,
-                          revision: u.revision,
-                        }),
-                      ),
-                    )}
-                    {button(`Reset password: ${u.name}`, () =>
-                      simple(
-                        `Reset password: ${u.name}`,
-                        [
-                          {
-                            name: "password",
-                            label: "New initial password (14+ characters)",
-                            type: "password",
-                          },
-                          {
-                            name: "currentPassword",
-                            label: "Your current password",
-                            type: "password",
-                          },
-                          reason,
-                        ],
-                        "user.password.reset",
-                        (v) => ({ ...v, userId: u.id, revision: u.revision }),
-                      ),
-                    )}
-                    {button(`Revoke sessions: ${u.name}`, () =>
-                      simple(
-                        `Revoke sessions: ${u.name}`,
-                        [
-                          {
-                            name: "currentPassword",
-                            label: "Your current password",
-                            type: "password",
-                          },
-                          reason,
-                        ],
-                        "user.sessions.revoke",
-                        (v) => ({ ...v, userId: u.id, revision: u.revision }),
-                      ),
-                    )}
-                  </div>,
-                ],
-              )}
-            </section>
-          </>
+                )}
+              </section>
+            </PageSection>
+            <PageSection id="admin-applications">
+              <EnrollmentReview />
+            </PageSection>
+          </PageSections>
         )}
       </main>
       {purchaseEntryOpen && page === "Purchasing" && can("commercial") && (

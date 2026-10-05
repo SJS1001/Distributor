@@ -14,7 +14,7 @@ const review = (page: Page) =>
     exact: true,
   });
 async function signIn(page: Page, email = "admin@example.test") {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

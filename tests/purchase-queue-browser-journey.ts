@@ -10,7 +10,7 @@ async function nav(page: Page, name: string) {
   );
 }
 async function login(page: Page) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill("purchasing@example.test");

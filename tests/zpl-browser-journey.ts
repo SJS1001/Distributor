@@ -12,7 +12,7 @@ for (const output of ["zpl-8", "zpl-12"] as const) {
       downloads: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     page.on("download", (d) => downloads.push(d.suggestedFilename()));
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
     await page
       .getByLabel("Password", { exact: true })

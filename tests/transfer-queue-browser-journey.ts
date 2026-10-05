@@ -15,7 +15,7 @@ async function login(
   email = "transfer-queue@example.test",
   initialCount = 20,
 ) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

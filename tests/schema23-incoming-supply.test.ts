@@ -9,6 +9,8 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept } from "./fixtures.ts";
 const additions = [
+  "enrollment_applications",
+  "enrollment_limits",
   "orders_incoming_commitments",
   "orders_incoming_history",
   "inventory_incoming_holds",
@@ -48,7 +50,7 @@ function business(path: string) {
   );
 }
 for (const reports of [false, true])
-  test(`schema22 to23 keeps existing stock/order records and source; reports=${reports}`, async (t) => {
+  test(`schema22 to current keeps existing stock/order records and source; reports=${reports}`, async (t) => {
     const f = fixture(t, { eventReports: reports });
     accept(f, 2);
     const source = join(dirname(f.path), "source22.db"),
@@ -72,15 +74,19 @@ for (const reports of [false, true])
     );
     const receipt = await upgradeSchema(source, target, old.schemaHash, "CA");
     assert.equal(receipt.sourceVersion, 22);
-    assert.equal(receipt.version, 23);
-    assert.equal(SCHEMA_VERSION, 23);
+    assert.equal(receipt.version, 24);
+    assert.equal(SCHEMA_VERSION, 24);
     assert.deepEqual(readFileSync(source), sourceBytes);
     assert.equal(business(target), before);
     assert.equal(inspectSchema(target).kind, "current");
     const app = new Application(target, "CA", { eventReports: reports });
     try {
       for (const table of additions) {
-        const owner = table.startsWith("orders_") ? "orders" : "inventory";
+        const owner = table.startsWith("orders_")
+          ? "orders"
+          : table.startsWith("enrollment_")
+            ? "enrollment"
+            : "inventory";
         assert.equal(
           app.database.owned(owner).get(`SELECT COUNT(*) AS n FROM ${table}`)!
             .n,

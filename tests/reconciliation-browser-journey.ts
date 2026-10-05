@@ -9,7 +9,7 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })

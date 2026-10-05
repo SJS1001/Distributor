@@ -20,7 +20,7 @@ function invoices(page: Page) {
     });
 }
 async function login(page: Page) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill("invoice-finance@example.test");

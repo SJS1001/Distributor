@@ -3,7 +3,7 @@ import { navigateWorkspace } from "./workspace-navigation.ts";
 
 const origin = "http://127.0.0.1:3142";
 async function login(page: Page, existing = false) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   if (!existing) {
     await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
     await page

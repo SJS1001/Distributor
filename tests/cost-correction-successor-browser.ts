@@ -87,7 +87,7 @@ const saved = (page: Page) =>
     exact: true,
   });
 async function signIn(page: Page, port: number, finance = false) {
-  await page.goto(`http://127.0.0.1:${port}`);
+  await page.goto(`http://127.0.0.1:${port}` + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill(finance ? "finance@example.test" : "admin@example.test");
@@ -420,7 +420,7 @@ test("browser: subsequent correction coordinates competing tabs around one exact
   await signIn(page, 3306);
   await reviewSuccessor(page);
   const other = await context.newPage();
-  await other.goto("http://127.0.0.1:3306");
+  await other.goto("http://127.0.0.1:3306" + "/#sign-in");
   await signInAlready(other);
   await reviewSuccessor(other);
   let release!: () => void;

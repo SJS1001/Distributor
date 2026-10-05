@@ -3,7 +3,7 @@ import { navigateWorkspace } from "./workspace-navigation.ts";
 import { randomUUID } from "node:crypto";
 
 async function signIn(page: Page) {
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })

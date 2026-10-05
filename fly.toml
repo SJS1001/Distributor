@@ -1,0 +1,60 @@
+# Owner-approved Canadian pilot; keep exactly one Machine for this SQLite volume.
+app = "distributor-ca-sjs1001"
+primary_region = "yyz"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  app = "node --import tsx src/server/main.ts"
+
+[env]
+  NODE_ENV = "production"
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  DATABASE_PATH = "/data/distributor.db"
+  DATA_REGION = "CA"
+  PUBLIC_ORIGIN = "https://dstrbtr.ca"
+  PUBLIC_ORIGIN_ALIASES = "www.dstrbtr.ca,distributor-ca-sjs1001.fly.dev"
+  ENROLLMENT_ORGANIZATION_ID = "4a7d3b89-4d9b-45dc-8415-3ab2f556b528"
+  ENROLLMENT_FLY_CLIENT_IP = "true"
+  SECURE_COOKIES = "true"
+  EVENT_REPORTS = "enabled"
+  LOCAL_EVENT_REPORTS = "disabled"
+  PROVIDERS_ENABLED = "false"
+  QUICKBOOKS_BROWSER_AUTH_ENABLED = "false"
+  QUICKBOOKS_LEDGER_BROWSER_AUTH_ENABLED = "false"
+  CARRIERS_ENABLED = "false"
+  UPS_SANDBOX_ENABLED = "false"
+  FEDEX_SANDBOX_ENABLED = "false"
+  USPS_TEM_ENABLED = "false"
+  DHL_TEST_ENABLED = "false"
+  CANADA_POST_TEST_ENABLED = "false"
+
+[mounts]
+  source = "distributor_data"
+  destination = "/data"
+  initial_size = "3gb"
+  scheduled_snapshots = true
+  snapshot_retention = 5
+
+[http_service]
+  processes = ["app"]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "1gb"

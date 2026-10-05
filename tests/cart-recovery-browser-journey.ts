@@ -6,7 +6,7 @@ const quantityLabel = "EQ-1 · Synthetic equipment";
 const saveRoute = "**/api/commands/cart.save";
 const quoteRoute = "**/api/commands/cart.quote";
 async function login(page: Page, name: string) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill(

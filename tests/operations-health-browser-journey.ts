@@ -8,7 +8,7 @@ test("browser: phone operations health exposes full redacted queues and hold, cl
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("support@example.test");
   await page
     .getByLabel("Password", { exact: true })

@@ -14,7 +14,7 @@ const review = (page: Page) =>
   });
 const command = "**/api/commands/accounting.journal.prepare";
 async function signIn(page: Page, port: number) {
-  await page.goto(origin(port));
+  await page.goto(origin(port) + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })

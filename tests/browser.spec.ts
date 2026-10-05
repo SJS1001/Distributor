@@ -68,7 +68,7 @@ test("browser: checkout rechecks stale balance, refreshes expiry, cancels naviga
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const login = async (p: Page, email: string) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
       .getByLabel("Password", { exact: true })
@@ -245,7 +245,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
       page.getByRole("heading", { name: "Overview", exact: true }),
     ).toBeVisible();
   };
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await login(true);
   const cmd = async (name: string, payload: any) => {
     const csrf = (await (await page.request.get("/api/session")).json()).csrf;
@@ -524,7 +524,7 @@ test("browser: named carrier choices preserve legacy warning, retry once, reload
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill("named-carriers@example.test");
@@ -634,7 +634,7 @@ test("browser: refund notices page safely, retain personal reads after a lost re
   const errors: string[] = [];
   const login = async (p: Page, email: string, password: string) => {
     p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -865,7 +865,7 @@ test("browser: reviewed stock QR downloads retain one receipt after a lost respo
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -947,7 +947,7 @@ test("browser: audit history traverses older pages, retains retries and cancels 
   const errors: string[] = [];
   const login = async (p: Page, email: string, password: string) => {
     p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -1196,7 +1196,7 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -1407,7 +1407,7 @@ test("browser: opening dry runs reconcile independent totals and apply serial/bu
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -1598,7 +1598,7 @@ test("browser: partial transfer retries preserve transit stock and separate dama
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -1712,7 +1712,7 @@ test("browser: two site-limited operators dispatch and scan a serial without des
       page.getByRole("heading", { name: "Overview", exact: true }),
     ).toBeVisible();
   };
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await login("source@example.test");
   await nav(page, "Inventory", "Stock");
   const serial = page.getByRole("row").filter({ hasText: "S3" });
@@ -1787,7 +1787,7 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -2057,7 +2057,7 @@ test("browser: split packing retries once, void releases holds, and each handove
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -2243,7 +2243,7 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
     await destinationsHeld;
     await route.fulfill({ response });
   });
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -2414,7 +2414,7 @@ test("browser: warehouse count observation survives reload, administrator retry 
     ).toBeVisible();
     await nav(page, "Inventory");
   };
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await login(false);
   const lot = page.getByRole("row").filter({ hasText: "COUNT-1" });
   const findLot = async () => {
@@ -2581,7 +2581,7 @@ test("browser: supplier handover retries one physical removal, preserves purchas
     ).toBeVisible();
     await nav(page, "Purchasing", "Receipts & returns");
   };
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await login(true);
   const receipt = page
     .getByRole("row")
@@ -2655,7 +2655,7 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -2892,7 +2892,7 @@ test("browser: billing profiles, immutable PDF retries, credit downloads and agi
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -3054,7 +3054,7 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     secret: string,
     heading = "Overview",
   ) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(address);
     await p.getByLabel("Password", { exact: true }).fill(secret);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -3260,7 +3260,7 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await installScanHarness(page);
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -3496,7 +3496,7 @@ test("browser: camera fallback, Enter suffix and cancelled pending access preser
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await installScanHarness(page);
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -3591,7 +3591,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     heading = "Overview",
   ) => {
     p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(secret);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -4375,7 +4375,7 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -4653,7 +4653,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -4977,7 +4977,7 @@ test("browser: credited cash refund request and bank verification retry one rese
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -5194,7 +5194,7 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -5809,7 +5809,7 @@ test("browser: authenticator setup retries, required second factor, recovery reu
   page.on("pageerror", (e) => errors.push(e.message));
   await page.clock.install({ time: new Date() });
   const enterPassword = async (p: Page) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -6063,7 +6063,7 @@ test("browser: stock cost reviews survive lost replies and separate immutable do
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -6307,7 +6307,7 @@ test("browser: stock cost reviews survive lost replies and separate immutable do
   const buyerContext = await browser.newContext();
   const buyer = await buyerContext.newPage();
   try {
-    await buyer.goto("/");
+    await buyer.goto("/#sign-in");
     await buyer
       .getByLabel("Email", { exact: true })
       .fill("refund-buyer@example.test");
@@ -6342,7 +6342,7 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -6667,7 +6667,7 @@ test("browser: serial loss review and recovery retain history, retry once and re
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -6879,7 +6879,7 @@ test("browser: short picks retry once, retain paged history after failure, and i
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -7116,7 +7116,7 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -7445,7 +7445,7 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -7861,7 +7861,7 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -8152,7 +8152,7 @@ test("browser: shipment pages retain rows after failure and discard continuation
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -8469,7 +8469,7 @@ test("browser: event diagnostics preserve pages and exact reviewed retries witho
     password = "long-event-test-password",
   ) => {
     p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -8769,7 +8769,7 @@ test("browser: customers review immutable provider terms, stale consent stops, a
   const errors: string[] = [];
   const login = async (p: Page, email: string) => {
     p.on("pageerror", (e) => errors.push(e.message));
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
       .getByLabel("Password", { exact: true })
@@ -8972,7 +8972,7 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const login = async (p: Page, email: string) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
       .getByLabel("Password", { exact: true })
@@ -9326,7 +9326,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const login = async (email: string) => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page
       .getByLabel("Password", { exact: true })
@@ -9641,7 +9641,7 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const login = async (email: string) => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page
       .getByLabel("Password", { exact: true })
@@ -10025,7 +10025,7 @@ test("browser: phone checkout replacement reviews partial balance and retries a 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const login = async (p: Page, email: string) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
       .getByLabel("Password", { exact: true })
@@ -10230,7 +10230,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const login = async (p: Page, email: string) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
       .getByLabel("Password", { exact: true })
@@ -10548,7 +10548,7 @@ test("browser: phone checkout history pages frozen observations, preserves retri
     email: string,
     password = "long-test-only-password",
   ) => {
-    await p.goto("/");
+    await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -10851,7 +10851,7 @@ test("browser: cash refund pages and on-demand history retain failed pages and c
     if (/\/api\/billing\/refunds\/[^/]+\/observations/.test(r.url()))
       historyReads.push(r.url());
   });
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -11086,7 +11086,7 @@ test("browser: required role MFA blocks workspace, retries and cancels setup rea
   });
   await page.setViewportSize({ width: 390, height: 844 });
   const login = async () => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -11229,7 +11229,7 @@ test("browser: required MFA recovery renewal keeps the factor, cancels stale res
   page.on("pageerror", (e) => errors.push(e.message));
   await page.setViewportSize({ width: 390, height: 844 });
   const login = async (code?: string) => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -11533,7 +11533,7 @@ test("browser: required MFA authenticator replacement verifies both factors, can
   page.on("pageerror", (e) => errors.push(e.message));
   await page.setViewportSize({ width: 390, height: 844 });
   const login = async (code?: string) => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -11857,7 +11857,7 @@ test("browser: recorded payment pages preserve USD without dashboard invoices, r
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
   const login = async (email: string) => {
-    await page.goto(origin);
+    await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page
       .getByLabel("Password", { exact: true })
@@ -12029,7 +12029,7 @@ test("browser: invoice refund payment selection pages, retries and cancels befor
     errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -12239,7 +12239,7 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const login = async (email: string, password = "long-test-only-password") => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     const reply = page.waitForResponse(
@@ -12492,7 +12492,7 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -12846,7 +12846,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const login = async (email: string, password: string) => {
-    await page.goto("/");
+    await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();

@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:3144";
 async function signIn(page: Page, email: string) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

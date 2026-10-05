@@ -27,7 +27,7 @@ async function billing(p: Page) {
   await expect(panel(p)).toBeVisible();
 }
 async function signIn(p: Page, port: number, role = "admin") {
-  await p.goto(origin(port));
+  await p.goto(origin(port) + "/#sign-in");
   await p.getByLabel("Email", { exact: true }).fill(`${role}@example.test`);
   await p
     .getByLabel("Password", { exact: true })

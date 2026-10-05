@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3140",
   pattern = "**/api/catalog/customer-products/page?*";
 async function login(page: Page) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill("pricing-buyer@example.test");

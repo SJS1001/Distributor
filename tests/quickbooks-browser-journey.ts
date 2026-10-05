@@ -33,7 +33,7 @@ test("browser: QuickBooks authorization keeps Strict login cookies, cancels atte
       });
     },
   );
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })

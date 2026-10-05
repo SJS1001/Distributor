@@ -6,7 +6,7 @@ const panel = (p: Page) =>
 const review = (p: Page) =>
   panel(p).getByRole("region", { name: "Exact valuation review", exact: true });
 async function signIn(p: Page, email = "admin@example.test", server = origin) {
-  await p.goto(server);
+  await p.goto(server + "/#sign-in");
   await p.getByLabel("Email", { exact: true }).fill(email);
   await p
     .getByLabel("Password", { exact: true })

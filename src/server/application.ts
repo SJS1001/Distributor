@@ -1,3 +1,4 @@
+import { Enrollment } from "./enrollment.ts";
 import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
 import { PlatformOfflineCarrierReviewReader } from "./platform-offline-carrier-review.ts";
 import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
@@ -40,6 +41,7 @@ export class Application {
   restoreOfflineCommitRecovery!: RestoreOfflineCommitRecoveryReader;
   carrierOfflineMemberReview!: CarrierOfflineMemberReview;
   identity!: Identity;
+  enrollment!: Enrollment;
   catalog!: Catalog;
   inventory!: Inventory;
   labels!: StockLabels;
@@ -157,6 +159,11 @@ export class Application {
             security.mfaEncryptionKey,
             mfaRoles,
             security.startupMaintenance !== false,
+          );
+          this.enrollment = new Enrollment(
+            this.database,
+            this.identity,
+            this.platform,
           );
           this.platformOfflineRefundReview =
             new PlatformOfflineRefundReviewReader(this.database, this.identity);

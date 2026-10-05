@@ -8,7 +8,7 @@ async function purchasing(page: Page, section = "Receipts & returns") {
   ).toBeVisible();
 }
 async function login(page: Page, email = "admin@example.test") {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })

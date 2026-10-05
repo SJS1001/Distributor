@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 const origin = "http://127.0.0.1:3120";
 async function login(page: Page) {
-  await page.goto(origin);
+  await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
