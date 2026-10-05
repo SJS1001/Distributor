@@ -66,6 +66,25 @@ test("browser: secondary pages load on demand and recover a failed download with
       ).toBeVisible();
     }
     expect(new Set(chunks.map((url) => new URL(url).pathname)).size).toBe(4);
+    const breadcrumb = page.getByRole("navigation", {
+      name: "Workspace breadcrumb",
+      exact: true,
+    });
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+      "Reconciliation",
+    );
+    await breadcrumb
+      .getByRole("link", { name: "Workspace", exact: true })
+      .click();
+    await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await breadcrumb.getByRole("link", { name: "Home", exact: true }).click();
+    await expect(
+      page.getByRole("link", { name: "Staff workspace", exact: true }).first(),
+    ).toBeVisible();
+    await page
+      .getByRole("link", { name: "Staff workspace", exact: true })
+      .first()
+      .click();
     await navigateWorkspace(page, "Overview");
     await expect(page.locator("#workspace-title")).toHaveText("Overview");
   } finally {
@@ -111,6 +130,7 @@ test("browser: replacement warehouse shortcut selects the visible Shipments sub-
       })
       .getByRole("button", { name: "Returns", exact: true })
       .click();
+    await page.getByRole("tab", { name: "Replacements", exact: true }).click();
     await page
       .getByRole("region", { name: "Replacement history", exact: true })
       .getByRole("button", {
@@ -142,10 +162,21 @@ test("browser: replacement warehouse shortcut selects the visible Shipments sub-
       groups.getByLabel("Canada Post warehouse", { exact: true }),
     ).toHaveValue(f.w1);
     await expect(page.getByRole("tabpanel")).toHaveCount(1);
+    const breadcrumb = page.getByRole("navigation", {
+      name: "Workspace breadcrumb",
+      exact: true,
+    });
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+      "Shipments",
+    );
+    await breadcrumb.getByRole("link", { name: "Orders", exact: true }).click();
+    await expect(
+      page.getByRole("tab", { name: "Orders", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
     await page.getByRole("tab", { name: "Orders", exact: true }).click();
     await expect(groups).toBeHidden();
     await page.getByRole("tab", { name: "Shipments", exact: true }).click();
-    await expect(groups).toBeVisible();
+    await expect(groups).toBeHidden();
   } finally {
     await http.close();
     for (const fn of cleanup.reverse()) fn();
@@ -314,7 +345,7 @@ test("browser: addressable orders preserve filters, list place and history with 
       .getByLabel("Password", { exact: true })
       .fill("long-test-only-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await expect(page.locator("#workspace-title")).toHaveText("Shop");
     await page.goto(origin + "/#page=Orders&section=orders-queue&orders=open");
     await expect(page.locator("#workspace-title")).toHaveText("Orders");
     const queue = page.getByRole("region", {
@@ -370,9 +401,14 @@ test("browser: addressable orders preserve filters, list place and history with 
     await expect(detail).toBeVisible();
     await page.reload();
     await expect(detail).toContainText("Status: open");
-    await detail
-      .getByRole("button", { name: "Return to order queue", exact: true })
-      .click();
+    const breadcrumb = page.getByRole("navigation", {
+      name: "Workspace breadcrumb",
+      exact: true,
+    });
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+      "Order details",
+    );
+    await breadcrumb.getByRole("link", { name: "Orders", exact: true }).click();
     await expect(queue.getByLabel("Order state", { exact: true })).toHaveValue(
       "open",
     );
@@ -398,7 +434,7 @@ test("browser: addressable orders preserve filters, list place and history with 
       page.getByRole("region", { name: "Focused order detail", exact: true }),
     ).not.toContainText("Unrelated customer");
     await page.goto(origin + "/#page=Inventory&section=inventory-counts");
-    await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await expect(page.locator("#workspace-title")).toHaveText("Shop");
     await expect(
       page
         .getByRole("status")

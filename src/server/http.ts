@@ -1,3 +1,7 @@
+import {
+  recordNoteKinds,
+  type RecordNoteTarget,
+} from "../shared/record-notes.ts";
 import { installCatalogMedia } from "./catalog-media-http.ts";
 import { installScannerLinks } from "./scanner-link-http.ts";
 import type { ScannerLinkTransport } from "./scanner-link.ts";
@@ -119,6 +123,22 @@ export function commands(
     phone: str,
   });
   return {
+    "notes.add": {
+      schema: obj({
+        kind: choice(...recordNoteKinds),
+        recordId: { type: "string", minLength: 1, maxLength: 128 },
+        body: { type: "string", minLength: 1, maxLength: 4000 },
+      }),
+      run: (a, k, p) => app.notes.add(a, k, p),
+    },
+    "notes.verify": {
+      schema: obj({
+        kind: choice(...recordNoteKinds),
+        recordId: { type: "string", minLength: 1, maxLength: 128 },
+        noteId: { type: "string", minLength: 1, maxLength: 128 },
+      }),
+      run: (a, k, p) => app.notes.verify(a, k, p),
+    },
     "operations.reconciliation.prepare": {
       schema: obj({
         expectedHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
@@ -4436,6 +4456,29 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .header("x-document-sha256", file.hash)
         .header("Cache-Control", "no-store")
         .send(file.bytes);
+    },
+  );
+  http.get<{ Params: RecordNoteTarget; Querystring: { after?: string } }>(
+    "/api/notes/:kind/:recordId",
+    {
+      schema: {
+        params: obj({
+          kind: choice(...recordNoteKinds),
+          recordId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        querystring: obj(
+          { after: { type: "string", minLength: 1, maxLength: 128 } },
+          ["after"],
+        ),
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.notes.list(
+        actor(request),
+        request.params,
+        request.query.after,
+      );
     },
   );
   installCatalogMedia(http, app, actor);

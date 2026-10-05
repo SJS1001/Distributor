@@ -722,7 +722,13 @@ test("signed-in buyer and administrator can browse the library and return to the
     await page.locator(".gree-product-card").first().click();
     await page.reload();
     await expect(page.locator(".gree-detail")).toBeVisible();
-    await page.getByRole("link", { name: "My workspace", exact: true }).click();
+    await page
+      .getByRole("link", {
+        name: heading === "Shop" ? "My workspace" : "Staff workspace",
+        exact: true,
+      })
+      .first()
+      .click();
     await expect(page.locator("#workspace-title")).toHaveText(heading!);
     const signedOut = page.waitForResponse(
       (response) =>
@@ -734,4 +740,218 @@ test("signed-in buyer and administrator can browse the library and return to the
       page.getByRole("button", { name: "Sign out", exact: true }),
     ).toBeHidden();
   }
+});
+
+test("public navigation follows the actual customer or staff session and logout revokes account access", async ({
+  page,
+}, testInfo) => {
+  const navigation = page.getByRole("navigation", {
+    name: "Public navigation",
+  });
+  await page.goto("/#home");
+  await expect(
+    navigation.getByRole("link", { name: "My workspace", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    navigation.getByRole("link", { name: "Trade application" }),
+  ).toBeVisible();
+  await page.goto("/#products");
+  await expect(
+    page.getByRole("link", { name: "View account pricing" }),
+  ).toHaveCount(0);
+  await expect((await page.request.get("/api/dashboard")).status()).toBe(401);
+  for (const [email, password, heading, accountLabel] of [
+    [
+      "pilot-buyer@example.test",
+      "synthetic-buyer-password",
+      "Shop",
+      "My workspace",
+    ],
+    [
+      "admin@example.test",
+      "long-test-only-password",
+      "Overview",
+      "Staff workspace",
+    ],
+  ]) {
+    await page.goto("/#customer-sign-in");
+    await page.getByLabel("Email", { exact: true }).fill(email!);
+    await page.getByLabel("Password", { exact: true }).fill(password!);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.locator("#workspace-title")).toHaveText(heading!);
+    await page.getByRole("link", { name: /GREE product library/ }).click();
+    await page.getByRole("link", { name: "dstrbtr home", exact: true }).click();
+    await expect(page).toHaveURL(/#home$/);
+    await expect(page.locator(".public-hero")).toBeVisible();
+    await page.reload();
+    await expect(
+      navigation.getByRole("link", { name: accountLabel!, exact: true }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/#home$/);
+    await page.goto("/");
+    await expect(page.locator("#workspace-title")).toHaveText(heading!);
+    await page.getByRole("link", { name: /GREE product library/ }).click();
+    await page.getByRole("link", { name: "dstrbtr home", exact: true }).click();
+
+    await expect(
+      navigation.getByRole("link", { name: accountLabel!, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: /Customer sign in|Trade application|Apply for a trade account|Become a trade customer/,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      navigation.getByRole("button", { name: "Sign out", exact: true }),
+    ).toBeVisible();
+    if (heading === "Overview")
+      await expect(
+        page.getByRole("link", { name: "My workspace", exact: true }),
+      ).toHaveCount(0);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await expect(page.locator("body")).toHaveJSProperty("scrollWidth", width);
+      await page.screenshot({
+        path: testInfo.outputPath(`public-${heading}-${width}.png`),
+        fullPage: true,
+      });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await navigation
+      .getByRole("link", { name: "Products", exact: true })
+      .click();
+    await expect(
+      page.getByRole("link", { name: "View account pricing" }),
+    ).toHaveCount(heading === "Shop" ? 1 : 0);
+    await page.locator(".gree-product-card").first().click();
+    await expect(
+      page.getByRole("link", {
+        name: /Apply for a trade account|Sign in for pricing/,
+      }),
+    ).toHaveCount(0);
+    await page.reload();
+    await expect(
+      navigation.getByRole("link", { name: accountLabel!, exact: true }),
+    ).toBeVisible();
+    const signedOut = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/logout") && response.status() === 200,
+    );
+    await navigation
+      .getByRole("button", { name: "Sign out", exact: true })
+      .click();
+    await signedOut;
+    await expect(
+      navigation.getByRole("button", { name: "Sign out", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      navigation.getByRole("link", { name: "Customer sign in" }),
+    ).toBeVisible();
+    await expect(
+      navigation.getByRole("link", { name: accountLabel!, exact: true }),
+    ).toHaveCount(0);
+    await expect((await page.request.get("/api/session")).status()).toBe(401);
+    await expect((await page.request.get("/api/dashboard")).status()).toBe(401);
+    await page.reload();
+    await expect(
+      navigation.getByRole("link", { name: "Customer sign in" }),
+    ).toBeVisible();
+    await page.goto("/#products");
+    await expect(
+      page.getByRole("link", { name: "View account pricing" }),
+    ).toHaveCount(0);
+  }
+});
+
+test("public sign out retains a failed session for retry and disables duplicate submissions", async ({
+  page,
+}) => {
+  await page.goto("/#customer-sign-in");
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("pilot-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("synthetic-buyer-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#workspace-title")).toHaveText("Shop");
+  await page.getByRole("link", { name: /GREE product library/ }).click();
+  let requests = 0;
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/logout", async (route) => {
+    requests++;
+    if (requests === 1) return route.abort("failed");
+    await waiting;
+    await route.continue();
+  });
+  const navigation = page.getByRole("navigation", {
+    name: "Public navigation",
+  });
+  await navigation
+    .getByRole("button", { name: "Sign out", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "Sign out could not be confirmed. Please try again.",
+  );
+  await expect(
+    navigation.getByRole("link", { name: "My workspace", exact: true }),
+  ).toBeVisible();
+  expect((await page.request.get("/api/session")).status()).toBe(200);
+  await navigation
+    .getByRole("button", { name: "Sign out", exact: true })
+    .click();
+  await expect(
+    navigation.getByRole("button", { name: "Signing out…", exact: true }),
+  ).toBeDisabled();
+  expect(requests).toBe(2);
+  release();
+  await expect(
+    navigation.getByRole("link", { name: "Customer sign in" }),
+  ).toBeVisible();
+  expect((await page.request.get("/api/session")).status()).toBe(401);
+});
+
+test("public breadcrumbs provide a clear current page and product category return", async ({
+  page,
+}) => {
+  for (const [hash, title] of [
+    ["#products", "Products"],
+    ["#customer-sign-in", "Customer sign in"],
+    ["#admin-sign-in", "Administration sign in"],
+    ["#apply", "Trade application"],
+    ["#scanner", "Barcode scanner"],
+    ["#activate", "Activate account"],
+  ]) {
+    await page.goto(`/${hash}`);
+    const breadcrumb = page.getByRole("navigation", {
+      name: "Breadcrumb",
+      exact: true,
+    });
+    await expect(
+      breadcrumb.getByRole("link", { name: "Home", exact: true }),
+    ).toHaveAttribute("href", "#home");
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+      title!,
+    );
+  }
+  await page.goto("/#products?category=rtu");
+  await page.locator(".gree-product-card").first().click();
+  const breadcrumb = page.getByRole("navigation", {
+    name: "Breadcrumb",
+    exact: true,
+  });
+  await expect(
+    breadcrumb.getByRole("link", { name: "Home", exact: true }),
+  ).toBeVisible();
+  await expect(
+    breadcrumb.getByRole("link", { name: "Products", exact: true }),
+  ).toHaveAttribute("href", "#products");
+  await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
+    await page.getByRole("heading", { level: 1 }).innerText(),
+  );
+  await breadcrumb.locator('a[href="#products?category=rtu"]').click();
+  await expect(page.locator(".gree-product-card")).toHaveCount(2);
 });

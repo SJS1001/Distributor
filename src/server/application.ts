@@ -1,3 +1,4 @@
+import { RecordNotes } from "./record-notes.ts";
 import { Enrollment } from "./enrollment.ts";
 import { ScannerLinks } from "./scanner-link.ts";
 import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
@@ -45,6 +46,7 @@ export class Application {
   identity!: Identity;
   enrollment!: Enrollment;
   scannerLinks!: ScannerLinks;
+  notes!: RecordNotes;
   catalog!: Catalog;
   catalogMedia!: CatalogMedia;
   inventory!: Inventory;
@@ -269,6 +271,30 @@ export class Application {
             this.orders,
             this.billing,
             security.startupMaintenance !== false,
+          );
+          this.notes = new RecordNotes(
+            this.database,
+            this.identity,
+            this.platform,
+            (actor, target) => {
+              switch (target.kind) {
+                case "customer":
+                  this.identity.customer(actor, target.recordId);
+                  break;
+                case "product":
+                  this.catalog.product(actor, target.recordId);
+                  break;
+                case "order":
+                  this.orders.order(actor, target.recordId);
+                  break;
+                case "invoice":
+                  this.billing.invoice(actor, target.recordId);
+                  break;
+                case "shipment":
+                  this.fulfillment.shipment(actor, target.recordId);
+                  break;
+              }
+            },
           );
           this.warranty = new Warranty(
             this.database,

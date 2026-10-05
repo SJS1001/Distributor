@@ -1,3 +1,4 @@
+import { RECORD_NOTES_DDL } from "./record-notes-schema.ts";
 import { SCANNER_LINK_SCHEMA } from "./scanner-link-schema.ts";
 import { ORDER_PRICE_OVERRIDES_DDL } from "./order-price-overrides-schema.ts";
 import { PRICE_AUTHORITY_DDL } from "./catalog-price-authority-schema.ts";
@@ -257,6 +258,7 @@ export async function upgradeSchema(
             ";" +
             SCANNER_LINK_SCHEMA.map((o) => o.sql).join(";"),
         );
+        copied.exec(RECORD_NOTES_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -316,6 +318,7 @@ export async function upgradeSchema(
               ";" +
               SCANNER_LINK_SCHEMA.map((o) => o.sql).join(";"),
           );
+        if (before.version! <= 27) copied.exec(RECORD_NOTES_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

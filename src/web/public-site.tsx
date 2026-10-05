@@ -45,12 +45,24 @@ export function PublicSite({
   activationToken,
   login,
   workspaceHref,
+  sessionAudience,
+  signOut,
+  signOutPending = false,
+  signOutError,
 }: {
   route: PublicRoute;
   activationToken: string;
   login: ReactNode;
   workspaceHref?: string;
+  sessionAudience?: "customer" | "staff";
+  signOut?: () => void;
+  signOutPending?: boolean;
+  signOutError?: string;
 }) {
+  const signedIn = !!sessionAudience;
+  const customerSignedIn = sessionAudience === "customer";
+  const accountLabel = customerSignedIn ? "My workspace" : "Staff workspace";
+  const accountHref = workspaceHref || "#customer-sign-in";
   const requestedReference = readReference(window.location.hash);
   const applyHref = requestedReference
     ? referenceHref("#apply", requestedReference)
@@ -94,7 +106,7 @@ export function PublicSite({
       </a>
       <div className="public-utility">
         <span>Canadian HVAC trade supply</span>
-        <a href="#apply">Become a trade customer →</a>
+        {!signedIn && <a href="#apply">Become a trade customer →</a>}
       </div>
       <header className="public-header">
         <a href="#home" className="public-wordmark" aria-label="dstrbtr home">
@@ -107,15 +119,53 @@ export function PublicSite({
         </span>
         <nav aria-label="Public navigation">
           <a href="#products">Products</a>
-          <a href="#apply">Trade application</a>
-          {workspaceHref && <a href={workspaceHref}>My workspace</a>}
-          <a href="#customer-sign-in">
-            Customer sign in <span aria-hidden="true">↗</span>
-          </a>
-          <a href="#admin-sign-in">Administration</a>
+          {!signedIn && <a href="#apply">Trade application</a>}
+          {signedIn ? (
+            <>
+              <a href={accountHref}>{accountLabel}</a>
+              <button
+                className="public-sign-out"
+                onClick={signOut}
+                disabled={signOutPending}
+              >
+                {signOutPending ? "Signing out…" : "Sign out"}
+              </button>
+            </>
+          ) : (
+            <>
+              <a href="#customer-sign-in">
+                Customer sign in <span aria-hidden="true">↗</span>
+              </a>
+              <a href="#admin-sign-in">Administration</a>
+            </>
+          )}
         </nav>
       </header>
       <main className="public-main" id="public-content" tabIndex={-1}>
+        {signedIn && signOutError && (
+          <p role="alert" className="error">
+            {signOutError}
+          </p>
+        )}
+        {route !== "home" && route !== "product" && (
+          <nav className="public-breadcrumb" aria-label="Breadcrumb">
+            <a href="#home">Home</a>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">
+              {route === "products"
+                ? "Products"
+                : route === "scanner"
+                  ? "Barcode scanner"
+                  : route === "apply"
+                    ? "Trade application"
+                    : route === "activate"
+                      ? "Activate account"
+                      : route === "admin-sign-in"
+                        ? "Administration sign in"
+                        : "Customer sign in"}
+            </span>
+          </nav>
+        )}
         {route === "home" ? (
           <>
             <section className="public-hero">
@@ -135,8 +185,12 @@ export function PublicSite({
                   <a href="#products" className="public-primary">
                     Explore products <span aria-hidden="true">→</span>
                   </a>
-                  <a href="#customer-sign-in" className="public-apply-link">
-                    Customer sign in <span aria-hidden="true">↗</span>
+                  <a
+                    href={signedIn ? accountHref : "#customer-sign-in"}
+                    className="public-apply-link"
+                  >
+                    {signedIn ? accountLabel : "Customer sign in"}{" "}
+                    <span aria-hidden="true">↗</span>
                   </a>
                 </div>
                 <div className="public-hero-assurance">
@@ -217,45 +271,72 @@ export function PublicSite({
                 </h2>
               </div>
               <div className="public-access-paths">
-                <a
-                  className="public-access-link public-customer"
-                  href="#customer-sign-in"
-                >
-                  <span className="public-index">01 / EXISTING CUSTOMERS</span>
-                  <span className="public-access-title">
-                    Customer sign in <span aria-hidden="true">↗</span>
-                  </span>
-                  <span className="public-access-description">
-                    Open your catalog, account pricing and orders.
-                  </span>
-                </a>
-                <a className="public-access-link" href="#apply">
-                  <span className="public-index">02 / NEW TRADE CUSTOMERS</span>
-                  <span className="public-access-title">
-                    Apply for a trade account <span aria-hidden="true">↗</span>
-                  </span>
-                  <span className="public-access-description">
-                    Send your business details for review.
-                  </span>
-                </a>
-                <div className="public-staff-entrances">
-                  <a
-                    className="public-access-link public-admin"
-                    href="#admin-sign-in"
-                  >
-                    <span className="public-index">03 / DISTRIBUTOR STAFF</span>
-                    <span className="public-access-title">
-                      Administration entrance <span aria-hidden="true">↗</span>
-                    </span>
-                    <span className="public-access-description">
-                      Sign in to your staff workspace.
-                    </span>
-                  </a>
+                {sessionAudience === "staff" && (
                   <a className="public-scanner-link" href="#scanner">
                     Barcode scanner <span aria-hidden="true">↗</span>
                     <small>Open it here or send the link to your phone.</small>
                   </a>
-                </div>
+                )}
+
+                <a
+                  className="public-access-link public-customer"
+                  href={signedIn ? accountHref : "#customer-sign-in"}
+                >
+                  <span className="public-index">
+                    01 /{" "}
+                    {sessionAudience === "staff"
+                      ? "DISTRIBUTOR STAFF"
+                      : "EXISTING CUSTOMERS"}
+                  </span>
+                  <span className="public-access-title">
+                    {signedIn ? accountLabel : "Customer sign in"}{" "}
+                    <span aria-hidden="true">↗</span>
+                  </span>
+                  <span className="public-access-description">
+                    {sessionAudience === "staff"
+                      ? "Return to your administration workspace."
+                      : "Open your catalog, account pricing and orders."}
+                  </span>
+                </a>
+                {!signedIn && (
+                  <a className="public-access-link" href="#apply">
+                    <span className="public-index">
+                      02 / NEW TRADE CUSTOMERS
+                    </span>
+                    <span className="public-access-title">
+                      Apply for a trade account{" "}
+                      <span aria-hidden="true">↗</span>
+                    </span>
+                    <span className="public-access-description">
+                      Send your business details for review.
+                    </span>
+                  </a>
+                )}
+                {!signedIn && (
+                  <div className="public-staff-entrances">
+                    <a
+                      className="public-access-link public-admin"
+                      href="#admin-sign-in"
+                    >
+                      <span className="public-index">
+                        03 / DISTRIBUTOR STAFF
+                      </span>
+                      <span className="public-access-title">
+                        Administration entrance{" "}
+                        <span aria-hidden="true">↗</span>
+                      </span>
+                      <span className="public-access-description">
+                        Sign in to your staff workspace.
+                      </span>
+                    </a>
+                    <a className="public-scanner-link" href="#scanner">
+                      Barcode scanner <span aria-hidden="true">↗</span>
+                      <small>
+                        Open it here or send the link to your phone.
+                      </small>
+                    </a>
+                  </div>
+                )}
               </div>
             </section>
             <section className="public-trade-note">
@@ -274,14 +355,19 @@ export function PublicSite({
                   Your approved account gives you the equipment, pricing and
                   purchasing options available to your business.
                 </p>
-                <p>
-                  New to dstrbtr? Applications are reviewed before access is
-                  granted. If approved, an administrator provides a private
-                  invitation to activate your account.
-                </p>
-                <a href="#apply" className="public-text-link">
-                  Apply for a trade account <span aria-hidden="true">→</span>
-                </a>
+                {!signedIn && (
+                  <>
+                    <p>
+                      New to dstrbtr? Applications are reviewed before access is
+                      granted. If approved, an administrator provides a private
+                      invitation to activate your account.
+                    </p>
+                    <a href="#apply" className="public-text-link">
+                      Apply for a trade account{" "}
+                      <span aria-hidden="true">→</span>
+                    </a>
+                  </>
+                )}
               </div>
             </section>
           </>
@@ -295,7 +381,8 @@ export function PublicSite({
           >
             <GreeProductLibrary
               detail={route === "product"}
-              authenticated={!!workspaceHref}
+              authenticated={signedIn}
+              customerAuthenticated={customerSignedIn}
             />
           </Suspense>
         ) : route === "scanner" ? (
@@ -393,8 +480,9 @@ export function PublicSite({
           <br />
           Equipment information · Business purchasing by approved account
         </p>
-        <a href="#admin-sign-in">
-          Administration entrance <span aria-hidden="true">↗</span>
+        <a href={signedIn ? accountHref : "#admin-sign-in"}>
+          {signedIn ? accountLabel : "Administration entrance"}{" "}
+          <span aria-hidden="true">↗</span>
         </a>
       </footer>
     </div>

@@ -1,3 +1,5 @@
+import { WorkspaceBreadcrumbs } from "./workspace-breadcrumbs.tsx";
+import { RecordNotes } from "./record-notes.tsx";
 import { PriceOverridesEditor } from "./price-overrides.tsx";
 import { PriceApprovalPolicyEditor } from "./price-authority.tsx";
 import { readReference } from "./reference-context.ts";
@@ -199,6 +201,9 @@ function App() {
   const [publicRoute, setPublicRoute] = useState(() =>
     readPublicRoute(window.location.hash),
   );
+  const [publicHome, setPublicHome] = useState(
+    window.location.hash === "#home",
+  );
   const [activationToken, setActivationToken] = useState(() =>
     window.location.hash.startsWith("#activate=")
       ? window.location.hash.slice(10)
@@ -210,6 +215,7 @@ function App() {
   useEffect(() => {
     const changed = () => {
       const next = readPublicRoute(window.location.hash);
+      setPublicHome(window.location.hash === "#home");
       if (window.location.hash.startsWith("#activate=")) {
         setActivationToken(window.location.hash.slice(10));
         window.history.replaceState(null, "", "#activate");
@@ -241,11 +247,12 @@ function App() {
     if (
       actor &&
       data &&
+      !publicHome &&
       publicRoute !== "activate" &&
       !["scanner", "products", "product"].includes(publicRoute)
     )
       document.title = `${actor.role === "buyer" && page === "Overview" ? "Reports" : page} · dstrbtr`;
-  }, [actor, data, page, publicRoute]);
+  }, [actor, data, page, publicRoute, publicHome]);
   const traversal = useRef<(destination: NavigationIntent) => void>(() => {});
   const setPage = (destination: string) => {
     const next = { page: destination };
@@ -268,11 +275,13 @@ function App() {
   useEffect(() => {
     if (
       !actor ||
+      publicHome ||
       ["activate", "scanner", "products", "product"].includes(publicRoute)
     )
       return;
     const locationChanged = () => {
       if (
+        window.location.hash === "#home" ||
         ["scanner", "products", "product"].includes(
           readPublicRoute(window.location.hash),
         )
@@ -318,7 +327,7 @@ function App() {
       window.removeEventListener("popstate", locationChanged);
       window.removeEventListener("hashchange", locationChanged);
     };
-  }, [actor?.orgId, actor?.id, actor?.role, publicRoute]);
+  }, [actor?.orgId, actor?.id, actor?.role, publicRoute, publicHome]);
   const claimQueue = useClaimQueue(
     data?.claims,
     data?.claimNext,
@@ -885,7 +894,11 @@ function App() {
     setCsrf("");
     sessionStorage.clear();
   };
+  const [signOutPending, setSignOutPending] = useState(false);
   const signOut = () => {
+    if (signOutPending) return;
+    setSignOutPending(true);
+    setError("");
     stopApplicationRun();
     stopReceiptHistoryRead();
     setStockHistory(null);
@@ -930,8 +943,11 @@ function App() {
     canadaPostOpener.current = null;
     carrierOpener.current = null;
     void request("/api/logout", { method: "POST" })
-      .catch(() => {})
-      .finally(() => clearSession());
+      .then(() => clearSession())
+      .catch(() =>
+        setError("Sign out could not be confirmed. Please try again."),
+      )
+      .finally(() => setSignOutPending(false));
   };
   const run = async (
     work: (signal: AbortSignal) => Promise<unknown>,
@@ -1909,10 +1925,19 @@ function App() {
       </form>
     </section>
   );
-  if (["activate", "scanner", "products", "product"].includes(publicRoute))
+  if (
+    publicHome ||
+    ["activate", "scanner", "products", "product"].includes(publicRoute)
+  )
     return (
       <PublicSite
         route={publicRoute}
+        sessionAudience={
+          actor ? (actor.role === "buyer" ? "customer" : "staff") : undefined
+        }
+        signOut={signOut}
+        signOutPending={signOutPending}
+        signOutError={error}
         workspaceHref={
           actor
             ? navigationHash({
@@ -2092,6 +2117,12 @@ function App() {
         signOut={signOut}
       />
       <main id="workspace-content" className="workspace-main" tabIndex={-1}>
+        <WorkspaceBreadcrumbs
+          route={route}
+          pages={pages}
+          customer={!staff}
+          onNavigate={navigate}
+        />
         <header className="workspace-header">
           <div>
             <p className="eyebrow">
@@ -2381,6 +2412,14 @@ function App() {
                       <ReservationStatus reservation={o.reservation} />
                     </div>,
                     <div className="actions">
+                      {staff && (
+                        <RecordNotes
+                          kind="order"
+                          recordId={o.id}
+                          actorId={actor.id}
+                          recoveryScope={`${actor.orgId}:${actor.id}`}
+                        />
+                      )}
                       {can(
                         "commercial",
                         "buyer",
@@ -2958,6 +2997,14 @@ function App() {
                     ),
                     `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
                     <div className="actions">
+                      {staff && (
+                        <RecordNotes
+                          kind="shipment"
+                          recordId={s.id}
+                          actorId={actor.id}
+                          recoveryScope={`${actor.orgId}:${actor.id}`}
+                        />
+                      )}
                       {s.mode === "carrier" &&
                         ["packed", "shipped"].includes(s.state) &&
                         can("warehouse") && (
@@ -4431,6 +4478,14 @@ function App() {
                   </>,
                   money(i.balance, i.currency),
                   <div className="actions">
+                    {staff && (
+                      <RecordNotes
+                        kind="invoice"
+                        recordId={i.id}
+                        actorId={actor.id}
+                        recoveryScope={`${actor.orgId}:${actor.id}`}
+                      />
+                    )}
                     {can("finance") &&
                       i.balance > 0 &&
                       button("Record payment", () =>
@@ -6074,7 +6129,10 @@ function App() {
                         invoiceQueue.stop();
                         stockQueue.stop();
                         claimQueue.stop();
-                        setPage("Orders");
+                        navigate({
+                          page: "Orders",
+                          section: "orders-shipments",
+                        });
                         setCanadaPostWarehouse(warehouseId);
                         canadaPostOpener.current = null;
                         setCarrierReplacementId(null);
@@ -6302,6 +6360,14 @@ function App() {
                     )
                     .join("")}`,
                   <div className="actions">
+                    {staff && (
+                      <RecordNotes
+                        kind="customer"
+                        recordId={a.id}
+                        actorId={actor.id}
+                        recoveryScope={`${actor.orgId}:${actor.id}`}
+                      />
+                    )}
                     {can("finance") &&
                       button(a.held ? "Clear hold" : "Apply hold", () =>
                         simple(

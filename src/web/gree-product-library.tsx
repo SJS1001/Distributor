@@ -49,9 +49,11 @@ export function ProductImage({
 export function GreeProductLibrary({
   detail = false,
   authenticated = false,
+  customerAuthenticated = false,
 }: {
   detail?: boolean;
   authenticated?: boolean;
+  customerAuthenticated?: boolean;
 }) {
   const [hash, setHash] = useState(window.location.hash);
   useEffect(() => {
@@ -88,6 +90,7 @@ export function GreeProductLibrary({
         key={`${selected.id}:${hash}`}
         product={selected}
         authenticated={authenticated}
+        customerAuthenticated={customerAuthenticated}
       />
     ) : (
       <section className="gree-library">
@@ -117,9 +120,11 @@ export function GreeProductLibrary({
             technical documents.
           </p>
         </div>
-        <a className="public-primary" href="#customer-sign-in">
-          View account pricing ↗
-        </a>
+        {customerAuthenticated && (
+          <a className="public-primary" href="#page=Shop">
+            View account pricing ↗
+          </a>
+        )}
       </div>
       <div className="gree-library-tools">
         <label>
@@ -226,9 +231,11 @@ function DescriptionContent({ text }: { text: string }) {
 function GreeProductDetail({
   product,
   authenticated,
+  customerAuthenticated,
 }: {
   product: GreeProduct;
   authenticated: boolean;
+  customerAuthenticated: boolean;
 }) {
   const [imageIndex, setImageIndex] = useState(0);
   const [tab, setTab] = useState("overview");
@@ -253,7 +260,9 @@ function GreeProductDetail({
   ];
   return (
     <article className="gree-detail">
-      <div className="gree-breadcrumb">
+      <nav className="gree-breadcrumb" aria-label="Breadcrumb">
+        <a href="#home">Home</a>
+        <span aria-hidden="true">/</span>
         <a href="#products">Products</a>
         <span aria-hidden="true">/</span>
         <a
@@ -262,8 +271,8 @@ function GreeProductDetail({
           {product.category}
         </a>
         <span aria-hidden="true">/</span>
-        <span>{product.title}</span>
-      </div>
+        <span aria-current="page">{product.title}</span>
+      </nav>
       <div className="gree-detail-top">
         <div className="gree-gallery">
           <div className="gree-gallery-stage">
@@ -303,22 +312,30 @@ function GreeProductDetail({
             <a
               className="public-primary"
               href={referenceHref(
-                authenticated ? "#page=Shop" : "#customer-sign-in",
+                customerAuthenticated
+                  ? "#page=Shop"
+                  : authenticated
+                    ? "#page=Overview"
+                    : "#customer-sign-in",
                 { familyId: product.id, modelId: modelId || null },
               )}
             >
-              {authenticated
+              {customerAuthenticated
                 ? "View reviewed purchasing matches ↗"
-                : "Sign in for pricing & availability ↗"}
+                : authenticated
+                  ? "Open staff workspace ↗"
+                  : "Sign in for pricing & availability ↗"}
             </a>
-            <a
-              href={referenceHref("#apply", {
-                familyId: product.id,
-                modelId: modelId || null,
-              })}
-            >
-              Apply for a trade account →
-            </a>
+            {!authenticated && (
+              <a
+                href={referenceHref("#apply", {
+                  familyId: product.id,
+                  modelId: modelId || null,
+                })}
+              >
+                Apply for a trade account →
+              </a>
+            )}
           </div>
           <p className="gree-purchasing-note">
             Purchasing options depend on your approved trade account. Match the
@@ -504,11 +521,19 @@ function GreeProductDetail({
         <a
           className="public-primary"
           href={referenceHref(
-            authenticated ? "#page=Shop" : "#customer-sign-in",
+            customerAuthenticated
+              ? "#page=Shop"
+              : authenticated
+                ? "#page=Overview"
+                : "#customer-sign-in",
             { familyId: product.id, modelId: modelId || null },
           )}
         >
-          Open your trade account ↗
+          {authenticated
+            ? customerAuthenticated
+              ? "Open your trade account ↗"
+              : "Open staff workspace ↗"
+            : "Sign in to your trade account ↗"}
         </a>
       </div>
     </article>

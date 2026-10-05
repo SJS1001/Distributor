@@ -1320,3 +1320,46 @@
   overflow: hidden;
   white-space: nowrap;
 }
+
+.public-header nav .public-sign-out {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.public-breadcrumb {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 0;
+  background: transparent;
+  font-size: 13px;
+  width: auto;
+}
+.public-breadcrumb a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.public-header nav .public-sign-out:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.public-site .gree-breadcrumb {
+  flex-direction: row;
+  overflow: visible;
+  width: auto;
+  margin-top: 0;
+}

@@ -1,3 +1,4 @@
+import { RecordNotes } from "./record-notes.tsx";
 import { UnitCostEditor } from "./price-authority.tsx";
 import { ReferenceMappingEditor } from "./gree-reference-loader.tsx";
 import React, { useState } from "react";
@@ -456,6 +457,13 @@ export function CatalogResourceWorkspace({
 }) {
   return (
     <section className="panel catalog-product-manager">
+      <nav aria-label="Product breadcrumbs">
+        <button type="button" onClick={close}>
+          Catalog
+        </button>
+        <span aria-hidden="true"> / </span>
+        <span aria-current="page">{product.name}</span>
+      </nav>
       <div className="actions">
         <h2>
           {product.sku} · {product.name}
@@ -466,6 +474,7 @@ export function CatalogResourceWorkspace({
         label="Catalog product management"
         items={[
           { id: "catalog-details", label: "Details" },
+          { id: "catalog-notes", label: "Staff notes" },
           ...(canManageAvailability
             ? [
                 { id: "catalog-pricing", label: "Pricing" },
@@ -523,6 +532,14 @@ export function CatalogResourceWorkspace({
             />
           </PageSection>
         )}
+        <PageSection id="catalog-notes">
+          <RecordNotes
+            kind="product"
+            recordId={product.id}
+            recoveryScope={recoveryScope}
+            actorId={recoveryScope.split(":").at(-1)!}
+          />
+        </PageSection>
         <PageSection id="catalog-images">
           <ResourceCollection product={product} images />
         </PageSection>

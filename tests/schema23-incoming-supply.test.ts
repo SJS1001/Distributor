@@ -9,6 +9,8 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept } from "./fixtures.ts";
 const additions = [
+  "notes_verifications",
+  "notes_records",
   "orders_cart_shipping",
   "orders_shipping_snapshots",
   "billing_shipping_snapshots",
@@ -105,17 +107,19 @@ for (const reports of [false, true])
     const app = new Application(target, "CA", { eventReports: reports });
     try {
       for (const table of additions) {
-        const owner = table.startsWith("platform_")
-          ? "platform"
-          : table.startsWith("billing_")
-            ? "billing"
-            : table.startsWith("orders_")
-              ? "orders"
-              : table.startsWith("enrollment_")
-                ? "enrollment"
-                : table.startsWith("catalog_")
-                  ? "catalog"
-                  : "inventory";
+        const owner = table.startsWith("notes_")
+          ? "notes"
+          : table.startsWith("platform_")
+            ? "platform"
+            : table.startsWith("billing_")
+              ? "billing"
+              : table.startsWith("orders_")
+                ? "orders"
+                : table.startsWith("enrollment_")
+                  ? "enrollment"
+                  : table.startsWith("catalog_")
+                    ? "catalog"
+                    : "inventory";
         assert.equal(
           app.database.owned(owner).get(`SELECT COUNT(*) AS n FROM ${table}`)!
             .n,
