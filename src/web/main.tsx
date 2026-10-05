@@ -895,7 +895,11 @@ function App() {
     setData(null);
     setExtra({});
     setDialog(null);
-    setPage("Overview");
+    const currentHash = window.location.hash;
+    // Public routes own their equipment/filter context through session changes.
+    if (currentHash === "#home" || readPublicRoute(currentHash) !== "home")
+      setRoute({ page: "Overview" });
+    else setPage("Overview");
     setPasswordChangeRequired(false);
     setMfaEnrollmentRequired(false);
     setPassword("");

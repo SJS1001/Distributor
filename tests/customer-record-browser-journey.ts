@@ -278,3 +278,56 @@ test("uncertain contact save preserves exact retry after auth loss and company s
     page.getByRole("link", { name: "Synthetic buyer", exact: true }),
   ).toBeVisible();
 });
+
+test("customer purchasing checkboxes align beside labels on desktop and phone", async ({
+  page,
+}) => {
+  await login(page);
+  await open(page);
+  await page.getByRole("tab", { name: "Terms", exact: true }).click();
+  await page
+    .getByLabel("Catalog access", { exact: true })
+    .selectOption("selected");
+  const panel = page.locator(".customer-purchasing-rules");
+  await expect(
+    panel.locator(".policy-products .purchasing-check").first(),
+  ).toBeVisible();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await panel
+      .locator(".purchasing-check")
+      .first()
+      .evaluate((label) => {
+        const check = label.querySelector("input")!;
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        const labelRect = label.getBoundingClientRect(),
+          checkRect = check.getBoundingClientRect();
+        return {
+          display: getComputedStyle(label).display,
+          columns: getComputedStyle(label).gridTemplateColumns,
+          checkWidth: checkRect.width,
+          left: checkRect.left - labelRect.left,
+          height: labelRect.height,
+        };
+      });
+    expect(layout.display).toBe("grid");
+    expect(layout.columns.startsWith("24px ")).toBe(true);
+    expect(layout.checkWidth).toBe(24);
+    expect(layout.left).toBeLessThan(12);
+    expect(layout.height).toBeLessThan(width === 390 ? 100 : 50);
+    expect(
+      await panel
+        .locator(".policy-products")
+        .evaluate((el) => getComputedStyle(el).maxHeight),
+    ).toBe("256px");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await panel.screenshot({
+      path: `/tmp/distributor-customer-purchasing-${width}-aligned.png`,
+    });
+  }
+});

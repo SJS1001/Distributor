@@ -837,6 +837,8 @@ test("public navigation follows the actual customer or staff session and logout 
     await expect(
       navigation.getByRole("link", { name: accountLabel!, exact: true }),
     ).toBeVisible();
+    const productUrl = page.url();
+    const productName = await page.locator(".gree-detail h1").innerText();
     const signedOut = page.waitForResponse(
       (response) =>
         response.url().endsWith("/api/logout") && response.status() === 200,
@@ -854,9 +856,22 @@ test("public navigation follows the actual customer or staff session and logout 
     await expect(
       navigation.getByRole("link", { name: accountLabel!, exact: true }),
     ).toHaveCount(0);
+    await expect(page).toHaveURL(productUrl);
+    await expect(page.locator(".gree-detail h1")).toHaveText(productName);
+    await expect(
+      page.getByRole("link", { name: "Log in to see pricing", exact: true }),
+    ).toHaveCount(2);
+    await expect(
+      page.getByRole("link", { name: /View account pricing/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Product not found", exact: true }),
+    ).toHaveCount(0);
     await expect((await page.request.get("/api/session")).status()).toBe(401);
     await expect((await page.request.get("/api/dashboard")).status()).toBe(401);
     await page.reload();
+    await expect(page).toHaveURL(productUrl);
+    await expect(page.locator(".gree-detail h1")).toHaveText(productName);
     await expect(
       navigation.getByRole("link", { name: "Customer sign in" }),
     ).toBeVisible();

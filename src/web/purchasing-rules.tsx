@@ -6,6 +6,7 @@ import type {
   ProductPurchasingPolicy,
 } from "../shared/purchasing.ts";
 import type { CatalogProduct } from "../shared/catalog-lifecycle.ts";
+import "./purchasing-rules.css";
 
 function ProductChoices({
   selected,
@@ -24,7 +25,7 @@ function ProductChoices({
       <legend>Eligible products ({selected.length} selected)</legend>
       <div className="policy-products">
         {rows.items.map((p) => (
-          <label key={p.id}>
+          <label key={p.id} className="purchasing-check">
             <input
               type="checkbox"
               checked={selected.includes(p.id)}
@@ -134,7 +135,7 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
                 <option value="all">All active products</option>
               </select>
             </label>
-            <label>
+            <label className="purchasing-check">
               <input
                 type="checkbox"
                 checked={policy.requiresReview}
@@ -186,7 +187,7 @@ export function CustomerPurchasingRules({
 }) {
   const [id, setId] = useState(accounts[0]?.id ?? "");
   return (
-    <section className="panel">
+    <section className="panel customer-purchasing-rules">
       <h2>Customer purchasing rules</h2>
       {!selectedOnly && (
         <label>

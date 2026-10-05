@@ -1,0 +1,29 @@
+.customer-purchasing-rules .purchasing-check {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  text-align: left;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.customer-purchasing-rules .purchasing-check input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  justify-self: start;
+}
+.customer-purchasing-rules .policy-products {
+  display: grid;
+  gap: 0;
+  max-height: 256px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.customer-purchasing-rules .policy-products .purchasing-check {
+  margin: 0;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
