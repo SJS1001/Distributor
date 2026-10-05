@@ -7,6 +7,14 @@ export function seedCustomerPricing(f: ReturnType<typeof fixture>) {
     tier: "partner",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "explicit-purchasing-" + other, {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic test catalog access",
+  });
   f.app.catalog.setPrice(f.actor, "pricing-standard", {
     productId: f.product,
     tier: "standard",

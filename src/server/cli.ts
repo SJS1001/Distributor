@@ -43,10 +43,18 @@ try {
       name: "Toronto",
     }).id;
     app.inventory.createWarehouse(actor, "demo-w2", { name: "Ottawa" });
-    app.identity.createCustomer(actor, "demo-account", {
+    const demoCustomer = app.identity.createCustomer(actor, "demo-account", {
       name: "Synthetic buyer",
       tier: "standard",
       creditLimit: 1000000,
+    });
+    app.catalog.setPurchasingPolicy(actor, "demo-purchasing", {
+      accountId: demoCustomer.id,
+      mode: "all",
+      requiresReview: false,
+      productIds: [],
+      revision: 0,
+      reason: "Fictional demo approved catalog access",
     });
     const p = app.catalog.create(actor, "demo-product", {
         sku: "DEMO-EQ-1",

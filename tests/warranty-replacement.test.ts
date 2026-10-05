@@ -235,6 +235,14 @@ test("cancel releases reservation, retains evidence, allows a new serial or nati
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const foreign = { ...f, buyer: other };
   ship(f, accept(foreign, 2, "resale").id);
   const buyer = f.app.identity.createUser(f.actor, "original-buyer", {

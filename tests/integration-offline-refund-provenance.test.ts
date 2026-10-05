@@ -12,6 +12,21 @@ import { INTEGRATION_OFFLINE_REFUND_SCHEMA } from "../src/server/integration-off
 import { fixture } from "./fixtures.ts";
 import { createBackup, restoreBackup } from "../src/server/recovery.ts";
 
+const laterTables = [
+  "catalog_resource_history",
+  "catalog_resources",
+  "orders_review_quotes",
+  "orders_review_history",
+  "orders_review_requests",
+  "catalog_entitlements",
+  "catalog_account_policies",
+  "catalog_product_policies",
+  "enrollment_applications",
+  "enrollment_limits",
+  "orders_incoming_commitments",
+  "orders_incoming_history",
+  "inventory_incoming_holds",
+];
 const table = "integration_offline_failed_refunds";
 // Captured from published bb0a2b2e before changing the schema, independently of
 // the current profile under test. Removing all later additions must match.
@@ -38,6 +53,7 @@ function rows(path: string) {
         .filter(
           (r) =>
             r.name !== "platform_schema_version" &&
+            !laterTables.includes(String(r.name)) &&
             r.name !== table &&
             r.name !== "integration_offline_original_cancellations" &&
             r.name !== "integration_offline_canada_post_members" &&
@@ -58,6 +74,9 @@ function rows(path: string) {
 function previous(source: string, target: string, reports: boolean) {
   raw(source, (db) => db.prepare("VACUUM INTO ?").run(target));
   raw(target, (db) => {
+    db.exec(
+      "DROP TABLE catalog_resource_history; DROP TABLE catalog_resources; DROP TABLE orders_review_quotes; DROP TABLE orders_review_history; DROP TABLE orders_review_requests; DROP TABLE catalog_entitlements; DROP TABLE catalog_account_policies; DROP TABLE catalog_product_policies; DROP TABLE enrollment_applications; DROP TABLE enrollment_limits; DROP TABLE orders_incoming_commitments; DROP TABLE orders_incoming_history; DROP TABLE inventory_incoming_holds",
+    );
     db.exec(
       "DROP TABLE integration_offline_checkout_paid; DROP TABLE integration_offline_original_leases; DROP TABLE integration_offline_canada_post_members",
     );

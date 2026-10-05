@@ -91,17 +91,10 @@ test("overview does not expose unavailable finance, warehouse or order-entry con
   assert.match(buyer, /Track orders/);
 });
 
-test("grouped navigation preserves the supplied access list and active destination", () => {
+test("buyer navigation exposes four storefront destinations and the active page", () => {
   const html = renderToStaticMarkup(
     React.createElement(WorkspaceNavigation, {
-      pages: [
-        "Overview",
-        "Orders",
-        "Billing",
-        "Returns",
-        "Customers",
-        "Security",
-      ],
+      pages: ["Shop", "Orders", "Billing", "Account", "Returns"],
       page: "Orders",
       organization: "Synthetic organization",
       name: "Buyer",
@@ -115,11 +108,9 @@ test("grouped navigation preserves the supplied access list and active destinati
     html,
     />Inventory<|>Purchasing<|>Administration<|>Reconciliation<|>Operations health</,
   );
-  assert.match(
-    html,
-    /aria-current="true"[^]*?<span>Sales &amp; customers<\/span>/,
-  );
-  assert.doesNotMatch(html, />Orders<|>Customers<|>Catalog</);
+  assert.match(html, /aria-current="true"[^]*?<span>Orders<\/span>/);
+  assert.doesNotMatch(html, />Returns<|>Customers<|>Catalog</);
+  assert.match(html, />Shop<|>Invoices &amp; payments<|>Account</);
   assert.match(
     html,
     /aria-expanded="false" aria-controls="workspace-navigation"/,

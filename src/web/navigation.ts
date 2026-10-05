@@ -12,6 +12,8 @@ import {
 } from "../shared/invoice-queue.ts";
 import { stockQueueViews, type StockQueueView } from "../shared/stock-queue.ts";
 export const workspacePages = [
+  "Shop",
+  "Account",
   "Overview",
   "Orders",
   "Inventory",
@@ -41,7 +43,7 @@ export type NavigationIntent = {
   countState?: CountQueueState | "";
 };
 const sections: Record<string, string[]> = {
-  Orders: ["orders-queue", "orders-shipments"],
+  Orders: ["orders-queue", "orders-requests", "orders-shipments"],
   Inventory: [
     "inventory-stock",
     "inventory-serials",
@@ -144,8 +146,8 @@ export function authorizedPages(role: string) {
         ...(["admin", "finance"].includes(role) ? ["Reconciliation"] : []),
         ...(admin ? ["Imports", "Administration"] : []),
       ]
-    : ["Overview", "Orders", "Billing", "Returns", "Customers", "Security"];
+    : ["Shop", "Orders", "Billing", "Account", "Returns"];
 }
 export function authorizeNavigation(route: NavigationIntent, pages: string[]) {
-  return pages.includes(route.page) ? route : { page: "Overview" };
+  return pages.includes(route.page) ? route : { page: pages[0] ?? "Overview" };
 }

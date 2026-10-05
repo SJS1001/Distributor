@@ -9,6 +9,15 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept } from "./fixtures.ts";
 const additions = [
+  "catalog_resource_history",
+  "catalog_resources",
+  "orders_review_quotes",
+  "orders_review_history",
+  "orders_review_requests",
+  "catalog_entitlements",
+  "catalog_account_policies",
+  "catalog_product_policies",
+
   "enrollment_applications",
   "enrollment_limits",
   "orders_incoming_commitments",
@@ -74,8 +83,8 @@ for (const reports of [false, true])
     );
     const receipt = await upgradeSchema(source, target, old.schemaHash, "CA");
     assert.equal(receipt.sourceVersion, 22);
-    assert.equal(receipt.version, 24);
-    assert.equal(SCHEMA_VERSION, 24);
+    assert.equal(receipt.version, SCHEMA_VERSION);
+    assert.equal(SCHEMA_VERSION, 25);
     assert.deepEqual(readFileSync(source), sourceBytes);
     assert.equal(business(target), before);
     assert.equal(inspectSchema(target).kind, "current");
@@ -86,7 +95,9 @@ for (const reports of [false, true])
           ? "orders"
           : table.startsWith("enrollment_")
             ? "enrollment"
-            : "inventory";
+            : table.startsWith("catalog_")
+              ? "catalog"
+              : "inventory";
         assert.equal(
           app.database.owned(owner).get(`SELECT COUNT(*) AS n FROM ${table}`)!
             .n,

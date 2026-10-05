@@ -13,6 +13,7 @@ import { Database } from "./database.ts";
 import { Platform } from "./platform.ts";
 import { Identity, type Region } from "./iam.ts";
 import { Catalog } from "./catalog.ts";
+import { CatalogMedia } from "./catalog-media.ts";
 import { StockLabels } from "./stock-labels.ts";
 import { Inventory } from "./inventory.ts";
 import { Procurement } from "./procurement.ts";
@@ -43,6 +44,7 @@ export class Application {
   identity!: Identity;
   enrollment!: Enrollment;
   catalog!: Catalog;
+  catalogMedia!: CatalogMedia;
   inventory!: Inventory;
   labels!: StockLabels;
   procurement!: Procurement;
@@ -204,6 +206,12 @@ export class Application {
             this.database,
             this.platform,
             this.identity,
+          );
+          this.catalogMedia = new CatalogMedia(
+            this.database,
+            this.identity,
+            this.platform,
+            this.catalog,
           );
           this.inventory = new Inventory(
             this.database,

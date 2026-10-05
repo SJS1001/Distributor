@@ -1,3 +1,10 @@
+import { purchasingInitialize } from "./purchasing-schema.ts";
+import type {
+  PurchasingPolicy,
+  PurchasingPolicyInput,
+  ProductPurchasingPolicy,
+  ProductPurchasingPolicyInput,
+} from "../shared/purchasing.ts";
 import {
   canonical,
   check,
@@ -49,6 +56,7 @@ export class Catalog {
     private identity: Identity,
   ) {
     this.store = database.owned("catalog");
+    this.store.migrate(purchasingInitialize("catalog"));
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS catalog_products(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,sku TEXT NOT NULL,name TEXT NOT NULL,serialized INTEGER NOT NULL CHECK(serialized IN(0,1)),unit_price INTEGER NOT NULL CHECK(unit_price>=0),tax_bp INTEGER NOT NULL CHECK(tax_bp BETWEEN 0 AND 10000),currency TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,sku)) STRICT;
       CREATE TABLE IF NOT EXISTS catalog_prices(org_id TEXT NOT NULL,product_id TEXT NOT NULL,tier TEXT NOT NULL,unit_price INTEGER NOT NULL CHECK(unit_price>=0),PRIMARY KEY(org_id,product_id,tier)) STRICT;
@@ -75,6 +83,236 @@ export class Catalog {
       "buyer",
     ]);
   }
+  purchasingPolicy(actor: Actor, accountId: string): PurchasingPolicy {
+    actor = this.catalogActor(actor, ["commercial", "buyer"]);
+    this.identity.customer(actor, text(accountId, "Customer ID", 128));
+    const row = this.store.get<{
+      mode: PurchasingPolicy["mode"];
+      requires_review: number;
+      revision: number;
+    }>(
+      "SELECT mode,requires_review,revision FROM catalog_account_policies WHERE org_id=? AND account_id=?",
+      actor.orgId,
+      accountId,
+    );
+    return {
+      accountId,
+      mode: row?.mode ?? "none",
+      requiresReview: row?.requires_review === 1,
+      revision: row?.revision ?? 0,
+      productIds: this.store
+        .all<{ product_id: string }>(
+          "SELECT product_id FROM catalog_entitlements WHERE org_id=? AND account_id=? ORDER BY product_id",
+          actor.orgId,
+          accountId,
+        )
+        .map((p) => p.product_id),
+    };
+  }
+  setPurchasingPolicy(actor: Actor, key: string, input: PurchasingPolicyInput) {
+    return this.platform.command(
+      actor,
+      "catalog.purchasing.set",
+      key,
+      input,
+      () => {
+        actor = this.catalogActor(actor, ["commercial"]);
+        this.identity.customer(actor, input.accountId);
+      },
+      () => {
+        const before = this.purchasingPolicy(actor, input.accountId);
+        integer(input.revision, "Policy revision", 0, Number.MAX_SAFE_INTEGER);
+        check(
+          before.revision === input.revision,
+          "REVISION",
+          "Purchasing policy changed; refresh before saving.",
+        );
+        check(
+          ["none", "all", "selected"].includes(input.mode) &&
+            typeof input.requiresReview === "boolean",
+          "VALIDATION",
+          "Choose an access policy and review requirement.",
+          400,
+        );
+        check(
+          Array.isArray(input.productIds) &&
+            input.productIds.length <= 1000 &&
+            new Set(input.productIds).size === input.productIds.length &&
+            (input.mode === "selected" || input.productIds.length === 0),
+          "VALIDATION",
+          "Choose at most 1000 unique products for selected access.",
+          400,
+        );
+        input.productIds.forEach((p) =>
+          this.product(actor, text(p, "Product ID", 128)),
+        );
+        const reason = text(input.reason, "Policy change reason", 1000);
+        this.store.run(
+          "INSERT INTO catalog_account_policies VALUES(?,?,?,?,?) ON CONFLICT(org_id,account_id) DO UPDATE SET mode=excluded.mode,requires_review=excluded.requires_review,revision=excluded.revision",
+          actor.orgId,
+          input.accountId,
+          input.mode,
+          Number(input.requiresReview),
+          input.revision + 1,
+        );
+        this.store.run(
+          "DELETE FROM catalog_entitlements WHERE org_id=? AND account_id=?",
+          actor.orgId,
+          input.accountId,
+        );
+        for (const productId of input.productIds)
+          this.store.run(
+            "INSERT INTO catalog_entitlements VALUES(?,?,?)",
+            actor.orgId,
+            input.accountId,
+            productId,
+          );
+        const policy = this.purchasingPolicy(actor, input.accountId);
+        this.platform.audit(
+          actor,
+          "catalog.purchasing.changed",
+          input.accountId,
+          { before, policy, reason },
+        );
+        return policy;
+      },
+    );
+  }
+  productPurchasingPolicy(
+    actor: Actor,
+    productId: string,
+  ): ProductPurchasingPolicy {
+    actor = this.catalogActor(actor, ["commercial"]);
+    this.product(actor, productId);
+    return this.productPolicy(actor, productId);
+  }
+  private productPolicy(
+    actor: Actor,
+    productId: string,
+  ): ProductPurchasingPolicy {
+    const row = this.store.get<{ requires_review: number; revision: number }>(
+      "SELECT requires_review,revision FROM catalog_product_policies WHERE org_id=? AND product_id=?",
+      actor.orgId,
+      productId,
+    );
+    return {
+      productId,
+      requiresReview: row?.requires_review === 1,
+      revision: row?.revision ?? 0,
+    };
+  }
+  setProductPurchasingPolicy(
+    actor: Actor,
+    key: string,
+    input: ProductPurchasingPolicyInput,
+  ) {
+    return this.platform.command(
+      actor,
+      "catalog.product-purchasing.set",
+      key,
+      input,
+      () => {
+        actor = this.catalogActor(actor, ["commercial"]);
+        this.product(actor, input.productId);
+      },
+      () => {
+        const before = this.productPurchasingPolicy(actor, input.productId);
+        integer(input.revision, "Policy revision", 0, Number.MAX_SAFE_INTEGER);
+        check(
+          input.revision === before.revision,
+          "REVISION",
+          "Product purchasing policy changed; refresh before saving.",
+        );
+        check(
+          typeof input.requiresReview === "boolean",
+          "VALIDATION",
+          "Choose a review requirement.",
+          400,
+        );
+        const reason = text(input.reason, "Policy change reason", 1000);
+        this.store.run(
+          "INSERT INTO catalog_product_policies VALUES(?,?,?,?) ON CONFLICT(org_id,product_id) DO UPDATE SET requires_review=excluded.requires_review,revision=excluded.revision",
+          actor.orgId,
+          input.productId,
+          Number(input.requiresReview),
+          input.revision + 1,
+        );
+        const policy = this.productPurchasingPolicy(actor, input.productId);
+        this.platform.audit(
+          actor,
+          "catalog.product-purchasing.changed",
+          input.productId,
+          { before, policy, reason },
+        );
+        return policy;
+      },
+    );
+  }
+  private eligible(actor: Actor, accountId: string, productId: string) {
+    return !!this.store.get(
+      `SELECT 1 AS eligible FROM catalog_account_policies a WHERE a.org_id=? AND a.account_id=? AND (a.mode='all' OR (a.mode='selected' AND EXISTS(SELECT 1 FROM catalog_entitlements e WHERE e.org_id=a.org_id AND e.account_id=a.account_id AND e.product_id=?)))`,
+      actor.orgId,
+      accountId,
+      productId,
+    );
+  }
+  private entitlementPredicate() {
+    return `EXISTS(SELECT 1 FROM catalog_account_policies a WHERE a.org_id=p.org_id AND a.account_id=? AND (a.mode='all' OR (a.mode='selected' AND EXISTS(SELECT 1 FROM catalog_entitlements e WHERE e.org_id=a.org_id AND e.account_id=a.account_id AND e.product_id=p.id))))`;
+  }
+  authorizePurchase(actor: Actor, accountId: string, productId: string) {
+    actor = this.catalogActor(actor, ["commercial", "buyer"]);
+    this.identity.customer(actor, accountId);
+    check(
+      this.eligible(actor, accountId, productId),
+      "PRODUCT_ACCESS",
+      "This product is not available for this customer's purchasing account.",
+      403,
+    );
+    const product = this.product(actor, productId);
+    check(product.active === 1, "PRODUCT", "Product is inactive.");
+    return product;
+  }
+  purchasingSnapshot(actor: Actor, accountId: string, productIds: string[]) {
+    actor = this.catalogActor(actor, ["commercial", "buyer"]);
+    productIds.forEach((productId) =>
+      this.authorizePurchase(actor, accountId, productId),
+    );
+    return this.purchasingReviewSnapshot(actor, accountId, productIds);
+  }
+  purchasingReviewSnapshot(
+    actor: Actor,
+    accountId: string,
+    productIds: string[],
+  ) {
+    actor = this.catalogActor(actor, ["commercial", "buyer"]);
+    const customer = this.identity.customer(actor, accountId);
+    const policy = this.purchasingPolicy(actor, accountId);
+    const products = [...productIds]
+      .sort()
+      .map((productId) => this.productPolicy(actor, productId));
+    return {
+      requiresReview:
+        policy.requiresReview || products.some((p) => p.requiresReview),
+      reviewReason: [
+        policy.requiresReview
+          ? "Customer purchasing rule requires distributor approval."
+          : "",
+        products.some((p) => p.requiresReview)
+          ? "Product purchasing rule requires distributor approval."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      hash: digest(canonical({ policy, products, customer })),
+    };
+  }
+  authorizeResourceAccess(actor: Actor, productId: string): Product {
+    actor = this.catalogReader(actor);
+    const product = this.product(actor, productId);
+    if (actor.role === "buyer")
+      check(product.active === 1, "NOT_FOUND", "Product unavailable.", 404);
+    return product;
+  }
   product(actor: Actor, productId: string): Product {
     actor = this.catalogReader(actor);
     const row = this.store.get<Product>(
@@ -83,13 +321,23 @@ export class Catalog {
       productId,
     );
     check(row, "NOT_FOUND", "Product not found.", 404);
+    if (actor.role === "buyer") {
+      this.identity.customer(actor, actor.accountId!);
+      check(
+        this.eligible(actor, actor.accountId!, productId),
+        "PRODUCT_ACCESS",
+        "Product unavailable for your purchasing account.",
+        403,
+      );
+    }
     return row;
   }
   products(actor: Actor) {
     actor = this.catalogReader(actor);
     return this.store.all<Product>(
-      "SELECT * FROM catalog_products WHERE org_id=? AND active=1 ORDER BY sku",
+      `SELECT p.* FROM catalog_products p WHERE p.org_id=? AND p.active=1 ${actor.role === "buyer" ? "AND " + this.entitlementPredicate() : ""} ORDER BY p.sku`,
       actor.orgId,
+      ...(actor.role === "buyer" ? [actor.accountId] : []),
     );
   }
   private staffReader(actor: Actor) {
@@ -320,9 +568,10 @@ export class Catalog {
          COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
          FROM catalog_products p LEFT JOIN catalog_prices t
          ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
-         WHERE p.org_id=? AND p.active=1 ORDER BY p.sku,p.id`,
+         WHERE p.org_id=? AND p.active=1 AND ${this.entitlementPredicate()} ORDER BY p.sku,p.id`,
         customer.tier,
         actor.orgId,
+        accountId,
       );
       return products.map((product) => {
         check(
@@ -360,9 +609,10 @@ export class Catalog {
         after === undefined
           ? undefined
           : this.store.get<Product>(
-              "SELECT * FROM catalog_products WHERE org_id=? AND id=?",
+              `SELECT p.* FROM catalog_products p WHERE p.org_id=? AND p.id=? AND p.active=1 AND ${this.entitlementPredicate()}`,
               actor.orgId,
               text(after, "Catalog cursor", 128),
+              accountId,
             );
       check(
         after === undefined || cursor,
@@ -373,11 +623,12 @@ export class Catalog {
       const rows = this.store.all<Omit<CustomerProduct, "unit_tax">>(
         `SELECT p.id,p.sku,p.name,p.serialized,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
          FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
-         WHERE p.org_id=? AND p.active=1 AND (?='' OR instr(lower(p.sku),lower(?))>0 OR instr(lower(p.name),lower(?))>0)
+         WHERE p.org_id=? AND p.active=1 AND ${this.entitlementPredicate()} AND (?='' OR instr(lower(p.sku),lower(?))>0 OR instr(lower(p.name),lower(?))>0)
          ${cursor ? "AND (p.sku>? OR (p.sku=? AND p.id>?))" : ""}
          ORDER BY p.sku,p.id LIMIT 21`,
         customer.tier,
         actor.orgId,
+        accountId,
         search,
         search,
         search,
@@ -419,6 +670,13 @@ export class Catalog {
     );
     ids.forEach((value) => text(value, "Product ID", 128));
     if (!ids.length) return [];
+    for (const productId of ids)
+      check(
+        this.eligible(actor, accountId, productId),
+        "PRODUCT_ACCESS",
+        "Saved product is no longer available to this account; remove it from the cart.",
+        403,
+      );
     const rows = this.store.all<Omit<SelectedCustomerProduct, "unit_tax">>(
       `SELECT p.id,p.sku,p.name,p.serialized,p.active,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
        FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
@@ -461,6 +719,7 @@ export class Catalog {
     actor = this.catalogReader(actor);
     const product = this.product(actor, productId),
       customer = this.identity.customer(actor, accountId);
+    this.authorizePurchase(actor, accountId, productId);
     check(
       product.currency === customer.currency,
       "CURRENCY",

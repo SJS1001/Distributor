@@ -150,7 +150,9 @@ test("public site: replacement activation link replaces the in-memory token whil
   await page
     .getByLabel("Confirm password", { exact: true })
     .fill("synthetic-new-invitation-password");
-  await page.getByRole("button", { name: "Activate account", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Activate account", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Your account is activated." }),
   ).toBeVisible();

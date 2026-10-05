@@ -243,6 +243,14 @@ test("buyer cart/order scope follows persisted account despite forged role and r
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const otherCart = f.app.orders.saveCart(f.actor, "other-cart", {
     accountId: other,
     warehouseId: f.w2,

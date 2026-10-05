@@ -582,6 +582,9 @@ for (const sourceVersion of [
                                             "787d1fd08ff0508d06f017ffbd449e610a295b81d24178d6969e5408602a02c5";
     try {
       db.exec(
+        "DROP TABLE catalog_resource_history; DROP TABLE catalog_resources; DROP TABLE orders_review_quotes; DROP TABLE orders_review_history; DROP TABLE orders_review_requests; DROP TABLE catalog_entitlements; DROP TABLE catalog_account_policies; DROP TABLE catalog_product_policies; DROP TABLE enrollment_applications; DROP TABLE enrollment_limits; DROP TABLE orders_incoming_commitments; DROP TABLE orders_incoming_history; DROP TABLE inventory_incoming_holds",
+      );
+      db.exec(
         "DROP TABLE integration_offline_checkout_paid; DROP TABLE integration_offline_original_leases; DROP TABLE integration_offline_canada_post_members",
       );
       db.exec("DROP TABLE integration_offline_original_cancellations");

@@ -1,3 +1,4 @@
+import { installCatalogMedia } from "./catalog-media-http.ts";
 import { installCanonicalOrigin } from "./canonical-origin.ts";
 import { enrollmentClientAddress } from "./enrollment-client-address.ts";
 import {
@@ -1321,6 +1322,54 @@ export function commands(
       schema: obj({ cartId: str, revision: num }),
       run: (a, k, p) => app.orders.quote(a, k, p),
     },
+    "catalog.purchasing.set": {
+      schema: obj({
+        accountId: str,
+        mode: choice("none", "all", "selected"),
+        requiresReview: bool,
+        productIds: arr(str),
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setPurchasingPolicy(a, k, p),
+    },
+    "catalog.product-purchasing.set": {
+      schema: obj({
+        productId: str,
+        requiresReview: bool,
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setProductPurchasingPolicy(a, k, p),
+    },
+    "order.review.decide": {
+      schema: obj(
+        {
+          requestId: str,
+          revision: num,
+          expectedHash: str,
+          action: choice("approve", "decline", "request_information"),
+          message: str,
+          staffNote: { type: "string", maxLength: 2000 },
+        },
+        ["staffNote"],
+      ),
+      run: (a, k, p) => app.orders.decideReview(a, k, p),
+    },
+    "order.review.withdraw": {
+      schema: obj({ requestId: str, revision: num }),
+      run: (a, k, p) => app.orders.withdrawReview(a, k, p),
+    },
+    "order.review.resubmit": {
+      schema: obj({
+        requestId: str,
+        revision: num,
+        quoteId: str,
+        allowBackorder: bool,
+        message: str,
+      }),
+      run: (a, k, p) => app.orders.resubmitReview(a, k, p),
+    },
     "order.accept": {
       schema: obj({ quoteId: str, allowBackorder: bool }),
       run: (a, k, p) => app.orders.accept(a, k, p),
@@ -2038,6 +2087,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
     );
   }
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
+  http.get<{ Params: { accountId: string } }>(
+    "/api/catalog/purchasing/:accountId",
+    { schema: { params: obj({ accountId: str }) } },
+    async (r) => app.catalog.purchasingPolicy(actor(r), r.params.accountId),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/purchasing",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.catalog.productPurchasingPolicy(actor(r), r.params.id),
+  );
+  http.get<{ Querystring: { after?: string } }>(
+    "/api/order-requests",
+    { schema: { querystring: obj({ after: str }, ["after"]) } },
+    async (r) => app.orders.reviewRequests(actor(r), r.query.after),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/order-requests/:id",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.orders.reviewRequest(actor(r), r.params.id),
+  );
   http.get("/api/dashboard", async (request) => app.dashboard(actor(request)));
   http.get<{ Querystring: { after?: string; q?: string; state?: string } }>(
     "/api/catalog/products/page",
@@ -4117,6 +4186,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .send(file.bytes);
     },
   );
+  installCatalogMedia(http, app, actor);
   const evidenceParams = obj({ claimId: str, evidenceId: str });
   http.get<{ Params: { claimId: string }; Querystring: { after?: string } }>(
     "/api/warranty/claims/:claimId/evidence",

@@ -62,6 +62,9 @@ export const workspaceGroups = [
   },
 ];
 export const pageDescriptions: Record<string, string> = {
+  Shop: "Browse your approved products, account prices and product resources.",
+  Account:
+    "Your commercial account, residency preferences and sign-in security.",
   Overview: "A clear view of orders, availability and outstanding balances.",
   Orders: "Prepare orders, manage reservations and follow fulfillment.",
   Customers: "Manage customer accounts, terms and service access.",
@@ -128,7 +131,15 @@ export function WorkspaceNavigation({
         aria-label="Workspace"
         className={expanded ? "is-expanded" : ""}
       >
-        {workspaceGroups.map((group) => {
+        {(role === "buyer"
+          ? pages
+              .filter((p) => p !== "Returns")
+              .map((p) => ({
+                name: p === "Billing" ? "Invoices & payments" : p,
+                pages: [p],
+              }))
+          : workspaceGroups
+        ).map((group) => {
           const visible = group.pages.filter((p) => pages.includes(p));
           return (
             visible.length > 0 && (
@@ -182,6 +193,7 @@ export function WorkspaceTabs({
   page: string;
   navigate: (page: string) => void;
 }) {
+  if (pages.includes("Shop")) return null;
   const group = workspaceGroups.find((item) => item.pages.includes(page));
   if (!group) return null;
   const visible = group.pages.filter((item) => pages.includes(item));

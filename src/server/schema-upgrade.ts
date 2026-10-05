@@ -1,3 +1,5 @@
+import { PURCHASING_DDL } from "./purchasing-schema.ts";
+import { CATALOG_MEDIA_DDL } from "./catalog-media-schema.ts";
 import { ENROLLMENT_DDL } from "./enrollment-schema.ts";
 import { INCOMING_SUPPLY_DDL } from "./incoming-supply-schema.ts";
 import { INTEGRATION_OFFLINE_CHECKOUT_PAID_DDL } from "./integration-offline-checkout-paid-schema.ts";
@@ -232,6 +234,8 @@ export async function upgradeSchema(
         copied.exec(INTEGRATION_OFFLINE_CHECKOUT_PAID_DDL);
         copied.exec(INCOMING_SUPPLY_DDL);
         copied.exec(ENROLLMENT_DDL);
+        copied.exec(PURCHASING_DDL);
+        copied.exec(CATALOG_MEDIA_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -272,6 +276,10 @@ export async function upgradeSchema(
         }
         if (before.version! <= 22) copied.exec(INCOMING_SUPPLY_DDL);
         if (before.version! <= 23) copied.exec(ENROLLMENT_DDL);
+        if (before.version! <= 24) {
+          copied.exec(PURCHASING_DDL);
+          copied.exec(CATALOG_MEDIA_DDL);
+        }
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

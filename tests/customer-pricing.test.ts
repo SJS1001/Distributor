@@ -184,7 +184,7 @@ for (const region of ["CA", "US"] as const)
     assert.deepEqual(facts(f), before);
   });
 
-test("customer pricing keeps zero overrides, base fallback and exact accepted quote after price drift/restart", (t) => {
+test("customer pricing keeps zero overrides and base fallback, and requires a renewed quote after price drift/restart", (t) => {
   const f = fixture(t),
     p = seedCustomerPricing(f);
   const free = f.app.catalog.create(f.actor, "free-product", {
@@ -235,15 +235,29 @@ test("customer pricing keeps zero overrides, base fallback and exact accepted qu
       .find((r) => r.id === f.product)!.unit_price,
     9100,
   );
+  const before = facts(f);
+  assert.throws(
+    () =>
+      f.app.orders.accept(p.buyer, "stale-pricing-accept", {
+        quoteId: quote.id,
+        allowBackorder: false,
+      }),
+    { code: "PRICE_CHANGED" },
+  );
+  assert.deepEqual(facts(f), before);
+  const renewed = f.app.orders.quote(p.buyer, "renewed-pricing-quote", {
+    cartId: cart.id,
+    revision: cart.revision,
+  });
   const accepted = f.app.orders.accept(p.buyer, "pricing-accept", {
-    quoteId: quote.id,
+    quoteId: renewed.id,
     allowBackorder: false,
   });
   const order = f.app.orders.order(p.buyer, accepted.id);
   const lines = f.app.orders.lines(p.buyer, accepted.id);
-  assert.equal(order.total, 18530);
-  assert.equal(lines[0]!.unit_price, 8199);
-  assert.equal(lines[0]!.unit_tax, 1066);
+  assert.equal(order.total, 20566);
+  assert.equal(lines[0]!.unit_price, 9100);
+  assert.equal(lines[0]!.unit_tax, 1183);
   assert.equal(f.app.inventory.availability(f.actor, f.product, f.w1), 1);
 });
 

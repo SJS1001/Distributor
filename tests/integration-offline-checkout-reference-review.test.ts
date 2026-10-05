@@ -394,6 +394,14 @@ test("actual other-customer session collision previously outside selected histor
       creditLimit: 1000000,
     }).id,
     other = { ...f, buyer };
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: buyer,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const invoiceId = ship(other, accept(other, 1, "other-order").id).invoiceId;
   chooseProviders(other, f.actor, "other-choice", {
     accountId: buyer,
@@ -435,6 +443,14 @@ test("complete real sibling renewal chain and reconcile observations are covered
       creditLimit: 1000000,
     }).id,
     other = { ...f, buyer };
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: buyer,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const invoiceId = ship(other, accept(other, 1, "other-order").id).invoiceId;
   chooseProviders(other, f.actor, "other-choice", {
     accountId: buyer,
@@ -639,6 +655,14 @@ test("unrelated terminal-current native session is explicitly unsupported rather
       creditLimit: 1000000,
     }).id,
     other = { ...f, buyer };
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: buyer,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const invoiceId = ship(
     other,
     accept(other, 1, "terminal-order").id,
@@ -740,6 +764,14 @@ test("complete observations beyond normal page size are native-validated, includ
       creditLimit: 1000000,
     }).id,
     other = { ...f, buyer };
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: buyer,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const invoiceId = ship(other, accept(other, 1, "history-order").id).invoiceId;
   chooseProviders(other, f.actor, "history-choice", {
     accountId: buyer,

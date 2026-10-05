@@ -1531,6 +1531,18 @@ for (const reference of ["payment", "session"] as const)
           creditLimit: 1000000,
         },
       ).id;
+      f.app.catalog.setPurchasingPolicy(
+        f.actor,
+        "synthetic-extra-account-access",
+        {
+          accountId: otherBuyer,
+          mode: "all",
+          requiresReview: false,
+          productIds: [],
+          revision: 0,
+          reason: "Explicit synthetic account access for this test.",
+        },
+      );
       const other = { ...f, buyer: otherBuyer },
         invoiceId = ship(
           other,

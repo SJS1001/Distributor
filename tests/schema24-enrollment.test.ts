@@ -20,7 +20,7 @@ function raw<T>(path: string, fn: (db: DatabaseSync) => T) {
 // Frozen complete DDL from actual archived sourceCommit, not current DDL with
 // new objects subtracted. Both optional reporting shapes are independently pinned.
 for (const profile of frozen.profiles)
-  test(`frozen schema23 upgrades additively to24; reports=${profile.eventReports}`, async (t) => {
+  test(`frozen schema23 upgrades additively to current; reports=${profile.eventReports}`, async (t) => {
     const dir = mkdtempSync(join(tmpdir(), "distributor-schema24-"));
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     const source = join(dir, "source23.db"),
@@ -72,8 +72,8 @@ for (const profile of frozen.profiles)
     assert.deepEqual(readFileSync(source), bytes);
     const receipt = await upgradeSchema(source, target, profile.hash, "CA");
     assert.equal(receipt.sourceVersion, 23);
-    assert.equal(receipt.version, 24);
-    assert.equal(SCHEMA_VERSION, 24);
+    assert.equal(receipt.version, SCHEMA_VERSION);
+    assert.equal(SCHEMA_VERSION, 25);
     assert.equal(inspectSchema(target).kind, "current");
     assert.equal(
       inspectSchema(target).initializedAt,

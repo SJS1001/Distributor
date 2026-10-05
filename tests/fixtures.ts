@@ -114,6 +114,14 @@ export function fixture(
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  app.catalog.setPurchasingPolicy(actor, "fixture-purchasing", {
+    accountId: buyer,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic fixture catalog access",
+  });
   const product = app.catalog.create(actor, "sku", {
     sku: "EQ-1",
     name: "Synthetic equipment",

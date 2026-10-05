@@ -287,6 +287,14 @@ test("real buyer account changes scope sold serials, claims and cached submissio
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   ship(f, accept({ ...f, buyer: other }, 1, "other-order").id);
   const u = f.app.warranty
     .soldUnits(f.actor)

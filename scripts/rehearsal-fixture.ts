@@ -191,6 +191,19 @@ export function seedRehearsal(
       });
       return { email, password };
     });
+  for (const accountId of customers)
+    app.catalog.setPurchasingPolicy(
+      actor,
+      `rehearsal-purchasing-${accountId}`,
+      {
+        accountId,
+        mode: "all",
+        requiresReview: false,
+        productIds: [],
+        revision: 0,
+        reason: "Synthetic rehearsal approved catalog access",
+      },
+    );
   const pending = acceptOrder(
     app,
     actor,

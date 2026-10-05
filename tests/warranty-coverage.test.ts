@@ -157,6 +157,14 @@ test("provisional policy changes affect current-sale preview while retained clai
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   ship(f, accept({ ...f, buyer: other }, 1, "resale").id);
   const buyer = warrantyUser(f, "buyer");
   assert.throws(() => f.app.warranty.coverage(buyer, unitId, f.buyer), {

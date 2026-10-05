@@ -48,10 +48,10 @@ test("workspace locations retain allowlisted task intent without draft or creden
     undefined,
   );
 });
-test("destination permissions fall back to Overview and safe filters isolate organization/user", () => {
+test("destination permissions fall back to the role home and safe filters isolate organization/user", () => {
   assert.deepEqual(
     authorizeNavigation({ page: "Inventory" }, authorizedPages("buyer")),
-    { page: "Overview" },
+    { page: "Shop" },
   );
   assert.equal(
     authorizeNavigation({ page: "Billing" }, authorizedPages("buyer")).page,

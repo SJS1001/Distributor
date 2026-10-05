@@ -178,3 +178,7 @@ compare and review it, then activate during maintenance. Do not use the simple
 code-only command to bypass that procedure. Explicit `app` process configuration
 ensures a maintenance command is replaced on deployment. No CI, release Machine,
 remote builder, scheduled worker or scale-out is configured.
+
+## Storefront upgrade, 2026-10-05
+
+Schema 25 and the four storefront features are now active on the same Toronto Machine. The [storefront release receipt](evidence/LIVE-STOREFRONT-2026-10-05.md) records the exact image, encrypted archive restore, source-preserving clone checks, sample access grants, live verification and retained schema-24 rollback pair. Earlier schema-23/24 receipts above remain historical; use the current image/schema pair when operating the pilot.

@@ -1,3 +1,13 @@
+import { purchasingInitialize } from "./purchasing-schema.ts";
+import type {
+  OrderRequest,
+  OrderRequestPage,
+  OrderAcceptResult,
+  OrderRequestDecisionInput,
+  OrderRequestWithdrawInput,
+  OrderRequestResubmitInput,
+  OrderRequestStatus,
+} from "../shared/purchasing.ts";
 import type { IncomingSupplyReview } from "../shared/incoming-supply.ts";
 import { incomingSupplyInitialize } from "./incoming-supply-schema.ts";
 import { Procurement } from "./procurement.ts";
@@ -31,6 +41,8 @@ import {
 import type { OrderSalesEvidence } from "./sales-evidence.ts";
 import {
   account,
+  canonical,
+  digest,
   check,
   id,
   integer,
@@ -104,6 +116,7 @@ export class Orders {
     private procurement: Procurement,
   ) {
     this.store = database.owned("orders");
+    this.store.migrate(purchasingInitialize("orders"));
     this.store.migrate(incomingSupplyInitialize("orders"));
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS orders_carts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,lines TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,account_id,warehouse_id)) STRICT;
@@ -488,7 +501,7 @@ export class Orders {
         );
         const seen = new Set();
         for (const l of input.lines) {
-          this.catalog.product(actor, l.productId);
+          this.catalog.authorizePurchase(actor, input.accountId, l.productId);
           check(
             !seen.has(l.productId),
             "VALIDATION",
@@ -535,7 +548,7 @@ export class Orders {
       "cart.quote",
       key,
       input,
-      () => {
+      (cached) => {
         actor = this.amendmentActor(actor, true);
         const c = this.store.get(
           "SELECT * FROM orders_carts WHERE org_id=? AND id=?",
@@ -544,6 +557,14 @@ export class Orders {
         );
         check(c, "NOT_FOUND", "Cart not found.", 404);
         this.identity.customer(actor, String(c.account_id));
+        const lines =
+          cached?.lines ?? (JSON.parse(String(c.lines)) as CartLine[]);
+        for (const line of lines)
+          this.catalog.authorizePurchase(
+            actor,
+            String(c.account_id),
+            line.productId,
+          );
       },
       () => {
         const cart = this.store.get(
@@ -597,7 +618,11 @@ export class Orders {
           total,
           Date.now() + 15 * 60000,
           null,
-          "unit-tax-v1",
+          this.catalog.purchasingSnapshot(
+            actor,
+            customer.id,
+            lines.map((l) => l.productId),
+          ).hash,
         );
         return {
           id: quoteId,
@@ -605,6 +630,11 @@ export class Orders {
           currency: customer.currency,
           lines,
           expiresAt: Date.now() + 15 * 60000,
+          requiresReview: this.catalog.purchasingSnapshot(
+            actor,
+            customer.id,
+            lines.map((l) => l.productId),
+          ).requiresReview,
         };
       },
     );
@@ -613,7 +643,7 @@ export class Orders {
     actor: Actor,
     key: string,
     input: { quoteId: string; allowBackorder: boolean },
-  ) {
+  ): OrderAcceptResult {
     return this.platform.command(
       actor,
       "order.accept",
@@ -621,95 +651,514 @@ export class Orders {
       input,
       () => {
         actor = this.amendmentActor(actor, true);
-        const q = this.store.get(
-          "SELECT * FROM orders_quotes WHERE org_id=? AND id=?",
-          actor.orgId,
-          input.quoteId,
-        );
-        check(q, "NOT_FOUND", "Quote not found.", 404);
-        this.identity.customer(actor, String(q.account_id));
+        this.reviewQuote(actor, input.quoteId);
       },
       () => {
-        const q = this.store.get(
-          "SELECT * FROM orders_quotes WHERE org_id=? AND id=?",
+        const q = this.reviewQuote(actor, input.quoteId);
+        if (q.order_id)
+          return {
+            id: String(q.order_id),
+            status: "accepted",
+            orderId: String(q.order_id),
+          };
+        const linked = this.store.get<{ request_id: string }>(
+          "SELECT request_id FROM orders_review_quotes WHERE org_id=? AND quote_id=?",
           actor.orgId,
           input.quoteId,
-        )!;
-        if (q.order_id) return { id: String(q.order_id) };
-        check(
-          Number(q.expires_at) > Date.now(),
-          "QUOTE_EXPIRED",
-          "Quote expired; request a new quote.",
         );
-        check(
-          typeof input.allowBackorder === "boolean",
-          "VALIDATION",
-          "Backorder choice is required.",
-          400,
-        );
-        const orderId = id(),
-          lines = JSON.parse(String(q.lines)) as CommercialLine[];
-        for (const line of lines)
+        if (linked) {
+          const request = this.reviewRequestCurrent(actor, linked.request_id);
           check(
-            this.catalog.product(actor, line.productId).active,
-            "PRODUCT",
-            "Product is inactive; request a new quote after catalog review.",
+            request.status === "awaiting_approval" &&
+              request.quoteId === input.quoteId &&
+              request.allowBackorder === input.allowBackorder,
+            "REQUEST_STATE",
+            "This quote belongs to an existing request; open the request to continue.",
           );
-        this.billing.commitExposure(
-          actor,
-          String(q.account_id),
-          orderId,
-          Number(q.total),
-        );
+          return {
+            id: request.id,
+            status: "awaiting_approval",
+            requestId: request.id,
+          };
+        }
+        const policy = this.validateAcceptance(actor, q, input.allowBackorder);
+        if (!policy.requiresReview)
+          return this.acceptQuote(actor, q, input.allowBackorder);
+        const requestId = id(),
+          timestamp = now();
         this.store.run(
-          "INSERT INTO orders_orders(id,org_id,account_id,warehouse_id,currency,total,created_at) VALUES(?,?,?,?,?,?,?)",
-          orderId,
+          "INSERT INTO orders_review_requests VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          requestId,
           actor.orgId,
           String(q.account_id),
           String(q.warehouse_id),
-          String(q.currency),
-          Number(q.total),
-          now(),
-        );
-        for (const l of lines) {
-          const allocated = this.inventory.reserve(
-            actor,
-            orderId,
-            l.productId,
-            String(q.warehouse_id),
-            l.quantity,
-          );
-          check(
-            input.allowBackorder || allocated === l.quantity,
-            "STOCK",
-            "Insufficient stock; approve backorder or change quantities.",
-          );
-          this.store.run(
-            "INSERT INTO orders_lines(id,org_id,order_id,product_id,description,quantity,allocated,unit_price,unit_tax) VALUES(?,?,?,?,?,?,?,?,?)",
-            id(),
-            actor.orgId,
-            orderId,
-            l.productId,
-            l.description,
-            l.quantity,
-            allocated,
-            l.unitPrice,
-            l.unitTax,
-          );
-        }
-        this.store.run(
-          "UPDATE orders_quotes SET order_id=? WHERE id=?",
-          orderId,
           input.quoteId,
+          1,
+          "awaiting_approval",
+          String(q.lines),
+          Number(q.total),
+          String(q.currency),
+          Number(input.allowBackorder),
+          Number(q.expires_at),
+          policy.hash,
+          policy.reviewReason,
+          "",
+          null,
+          timestamp,
+          timestamp,
         );
-        this.platform.event(actor, "orders.accepted", orderId, {
-          accountId: q.account_id,
-          total: q.total,
-          currency: q.currency,
-        });
-        return { id: orderId };
+        this.store.run(
+          "INSERT INTO orders_review_quotes VALUES(?,?,?)",
+          actor.orgId,
+          input.quoteId,
+          requestId,
+        );
+        this.recordReview(actor, requestId, "submit", "", "");
+        return { id: requestId, status: "awaiting_approval", requestId };
       },
     );
+  }
+  private reviewQuote(actor: Actor, quoteId: string) {
+    const q = this.store.get(
+      "SELECT * FROM orders_quotes WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(quoteId, "Quote ID", 128),
+    );
+    check(q, "NOT_FOUND", "Quote not found.", 404);
+    this.identity.customer(actor, String(q.account_id));
+    return q;
+  }
+  private validateAcceptance(
+    actor: Actor,
+    q: import("./core.ts").Row,
+    allowBackorder: boolean,
+  ) {
+    check(
+      Number(q.expires_at) > Date.now(),
+      "QUOTE_EXPIRED",
+      "Quote expired; obtain and accept a new quote before resubmitting.",
+    );
+    check(
+      typeof allowBackorder === "boolean",
+      "VALIDATION",
+      "Backorder choice is required.",
+      400,
+    );
+    const customer = this.identity.customer(actor, String(q.account_id));
+    check(!customer.held, "CREDIT_HOLD", "Account is on hold.");
+    this.inventory.warehouse(actor, String(q.warehouse_id));
+    const lines = JSON.parse(String(q.lines)) as CommercialLine[];
+    const policy = this.catalog.purchasingSnapshot(
+      actor,
+      customer.id,
+      lines.map((l) => l.productId),
+    );
+    check(
+      policy.hash === q.policy_version,
+      "POLICY_CHANGED",
+      "Customer terms or purchasing rules changed; obtain and accept a new quote.",
+    );
+    for (const line of lines) {
+      const current = this.catalog.price(actor, line.productId, customer.id);
+      check(
+        current.unitPrice === line.unitPrice &&
+          tax(current.unitPrice, current.product.tax_bp) === line.unitTax &&
+          current.product.currency === q.currency,
+        "PRICE_CHANGED",
+        "Price or tax changed; obtain and accept a new quote.",
+      );
+    }
+    return policy;
+  }
+  private acceptQuote(
+    actor: Actor,
+    q: import("./core.ts").Row,
+    allowBackorder: boolean,
+    approval?: { requestId: string; revision: number; expectedHash: string },
+  ): OrderAcceptResult {
+    this.database.requireTransaction();
+    const policy = this.validateAcceptance(actor, q, allowBackorder);
+    if (policy.requiresReview || approval) {
+      permit(actor, ["commercial"]);
+      check(
+        approval,
+        "REVIEW_REQUIRED",
+        "This purchase requires distributor approval.",
+      );
+      const request = this.reviewRequestCurrent(actor, approval.requestId);
+      check(
+        request.status === "awaiting_approval" &&
+          request.revision === approval.revision &&
+          request.expectedHash === approval.expectedHash &&
+          request.quoteId === q.id &&
+          request.allowBackorder === allowBackorder,
+        "REVIEW_CHANGED",
+        "The reviewed request changed; reopen it before approving.",
+      );
+    }
+    check(!q.order_id, "REQUEST_STATE", "Quote is already accepted.");
+    const orderId = id(),
+      lines = JSON.parse(String(q.lines)) as CommercialLine[];
+    this.billing.commitExposure(
+      actor,
+      String(q.account_id),
+      orderId,
+      Number(q.total),
+    );
+    this.store.run(
+      "INSERT INTO orders_orders(id,org_id,account_id,warehouse_id,currency,total,created_at) VALUES(?,?,?,?,?,?,?)",
+      orderId,
+      actor.orgId,
+      String(q.account_id),
+      String(q.warehouse_id),
+      String(q.currency),
+      Number(q.total),
+      now(),
+    );
+    for (const l of lines) {
+      const allocated = this.inventory.reserve(
+        actor,
+        orderId,
+        l.productId,
+        String(q.warehouse_id),
+        l.quantity,
+      );
+      check(
+        allowBackorder || allocated === l.quantity,
+        "STOCK",
+        "Insufficient stock; approve backorder or change quantities.",
+      );
+      this.store.run(
+        "INSERT INTO orders_lines(id,org_id,order_id,product_id,description,quantity,allocated,unit_price,unit_tax) VALUES(?,?,?,?,?,?,?,?,?)",
+        id(),
+        actor.orgId,
+        orderId,
+        l.productId,
+        l.description,
+        l.quantity,
+        allocated,
+        l.unitPrice,
+        l.unitTax,
+      );
+    }
+    this.store.run(
+      "UPDATE orders_quotes SET order_id=? WHERE id=?",
+      orderId,
+      String(q.id),
+    );
+    this.platform.event(actor, "orders.accepted", orderId, {
+      accountId: q.account_id,
+      total: q.total,
+      currency: q.currency,
+    });
+    return { id: orderId, status: "accepted", orderId };
+  }
+  reviewRequests(actor: Actor, after?: string): OrderRequestPage {
+    return this.database.transaction(() => {
+      actor = this.amendmentActor(actor, true);
+      const params: SQLInputValue[] = [actor.orgId];
+      let where = "org_id=?";
+      if (actor.role === "buyer") {
+        this.identity.customer(actor, actor.accountId!);
+        where += " AND account_id=?";
+        params.push(actor.accountId);
+      }
+      if (after !== undefined) {
+        const cursor = this.reviewRequestCurrent(actor, after);
+        where += " AND (created_at<? OR (created_at=? AND id<?))";
+        params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+      }
+      const rows = this.store.all<{ id: string }>(
+        `SELECT id FROM orders_review_requests WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 21`,
+        ...params,
+      );
+      return {
+        items: rows
+          .slice(0, 20)
+          .map((r) => this.reviewRequestCurrent(actor, r.id)),
+        next: rows.length > 20 ? rows[19]!.id : null,
+      };
+    });
+  }
+  reviewRequest(actor: Actor, requestId: string): OrderRequest {
+    return this.database.transaction(() =>
+      this.reviewRequestCurrent(actor, requestId),
+    );
+  }
+  private reviewRequestCurrent(actor: Actor, requestId: string): OrderRequest {
+    actor = this.amendmentActor(actor, true);
+    const r = this.requestRow(actor, requestId);
+    // A withdrawn entitlement must still permit reading and withdrawing the retained request.
+    const policy = this.catalog.purchasingReviewSnapshot(
+      actor,
+      String(r.account_id),
+      (JSON.parse(String(r.lines)) as CommercialLine[]).map((l) => l.productId),
+    );
+    const history = this.store
+      .all<{
+        revision: number;
+        action: string;
+        message: string;
+        staff_note: string;
+        actor_id: string;
+        created_at: string;
+      }>(
+        "SELECT revision,action,message,staff_note,actor_id,created_at FROM orders_review_history WHERE org_id=? AND request_id=? ORDER BY revision DESC",
+        actor.orgId,
+        requestId,
+      )
+      .map((h) => ({
+        revision: h.revision,
+        action: h.action,
+        message: h.message,
+        actorId: h.actor_id,
+        createdAt: h.created_at,
+        ...(actor.role === "buyer" ? {} : { staffNote: h.staff_note }),
+      }));
+    return {
+      id: String(r.id),
+      accountId: String(r.account_id),
+      warehouseId: String(r.warehouse_id),
+      quoteId: String(r.quote_id),
+      revision: Number(r.revision),
+      status: String(r.status) as OrderRequestStatus,
+      lines: JSON.parse(String(r.lines)),
+      total: Number(r.total),
+      currency: String(r.currency),
+      allowBackorder: r.allow_backorder === 1,
+      expiresAt: Number(r.expires_at),
+      reviewReason: String(r.review_reason),
+      message: String(r.message),
+      orderId: r.order_id === null ? null : String(r.order_id),
+      createdAt: String(r.created_at),
+      updatedAt: String(r.updated_at),
+      expectedHash: digest(canonical({ r, policy })),
+      history,
+    };
+  }
+  private requestRow(actor: Actor, requestId: string) {
+    const r = this.store.get(
+      "SELECT * FROM orders_review_requests WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(requestId, "Request ID", 128),
+    );
+    check(r, "NOT_FOUND", "Order request not found.", 404);
+    this.identity.customer(actor, String(r.account_id));
+    return r;
+  }
+  private recordReview(
+    actor: Actor,
+    requestId: string,
+    action: string,
+    message: string,
+    staffNote: string,
+  ) {
+    const r = this.requestRow(actor, requestId);
+    this.store.run(
+      "INSERT INTO orders_review_history VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      actor.orgId,
+      requestId,
+      Number(r.revision),
+      action,
+      message,
+      staffNote,
+      actor.id,
+      now(),
+      String(r.quote_id),
+      String(r.lines),
+      Number(r.total),
+      String(r.currency),
+      Number(r.allow_backorder),
+      Number(r.expires_at),
+      String(r.policy_hash),
+      String(r.review_reason),
+    );
+    this.platform.audit(actor, "order.request." + action, requestId, {
+      revision: r.revision,
+    });
+  }
+  decideReview(actor: Actor, key: string, input: OrderRequestDecisionInput) {
+    return this.platform.command(
+      actor,
+      "order.request.decide",
+      key,
+      input,
+      () => {
+        actor = this.amendmentActor(actor, true);
+        permit(actor, ["commercial"]);
+        this.requestRow(actor, input.requestId);
+      },
+      () => {
+        const request = this.reviewRequestCurrent(actor, input.requestId);
+        integer(input.revision, "Request revision", 1, Number.MAX_SAFE_INTEGER);
+        check(
+          request.status === "awaiting_approval" &&
+            request.revision === input.revision &&
+            request.expectedHash === input.expectedHash,
+          "REVIEW_CHANGED",
+          "Request or policy changed; reopen the current review.",
+        );
+        check(
+          ["approve", "decline", "request_information"].includes(input.action),
+          "VALIDATION",
+          "Choose a review decision.",
+          400,
+        );
+        const message = text(
+          input.message,
+          "Buyer-visible decision message",
+          1000,
+        );
+        const staffNote =
+          input.staffNote === undefined || input.staffNote === ""
+            ? ""
+            : text(input.staffNote, "Staff note", 2000);
+        let orderId: string | null = null;
+        if (input.action === "approve") {
+          const result = this.acceptQuote(
+            actor,
+            this.reviewQuote(actor, request.quoteId),
+            request.allowBackorder,
+            input,
+          );
+          check(
+            result.status === "accepted",
+            "REQUEST_STATE",
+            "Approval did not accept an order.",
+          );
+          orderId = result.orderId;
+        }
+        const status =
+          input.action === "approve"
+            ? "accepted"
+            : input.action === "decline"
+              ? "declined"
+              : "information_needed";
+        this.store.run(
+          "UPDATE orders_review_requests SET status=?,revision=revision+1,message=?,order_id=?,updated_at=? WHERE org_id=? AND id=?",
+          status,
+          message,
+          orderId,
+          now(),
+          actor.orgId,
+          request.id,
+        );
+        this.recordReview(actor, request.id, input.action, message, staffNote);
+        return this.reviewRequestCurrent(actor, request.id);
+      },
+    );
+  }
+  private reviewReceipt(actor: Actor, request: OrderRequest): OrderRequest {
+    // Saved command receipts must follow the caller's current role too.
+    if (actor.role !== "buyer") return request;
+    return {
+      ...request,
+      history: request.history.map(
+        ({ staffNote: _staffNote, ...entry }) => entry,
+      ),
+    };
+  }
+  withdrawReview(actor: Actor, key: string, input: OrderRequestWithdrawInput) {
+    const result = this.platform.command(
+      actor,
+      "order.request.withdraw",
+      key,
+      input,
+      () => {
+        actor = this.amendmentActor(actor, true);
+        this.requestRow(actor, input.requestId);
+      },
+      () => {
+        const r = this.requestRow(actor, input.requestId);
+        check(
+          ["awaiting_approval", "information_needed"].includes(
+            String(r.status),
+          ) && r.revision === input.revision,
+          "REVISION",
+          "Request changed or cannot be withdrawn.",
+        );
+        this.store.run(
+          "UPDATE orders_review_requests SET status='withdrawn',revision=revision+1,updated_at=? WHERE org_id=? AND id=?",
+          now(),
+          actor.orgId,
+          input.requestId,
+        );
+        this.recordReview(actor, input.requestId, "withdraw", "Withdrawn", "");
+        return this.reviewRequestCurrent(actor, input.requestId);
+      },
+    );
+    return this.reviewReceipt(actor, result);
+  }
+  resubmitReview(actor: Actor, key: string, input: OrderRequestResubmitInput) {
+    const result = this.platform.command(
+      actor,
+      "order.request.resubmit",
+      key,
+      input,
+      () => {
+        actor = this.amendmentActor(actor, true);
+        this.requestRow(actor, input.requestId);
+        this.reviewQuote(actor, input.quoteId);
+      },
+      () => {
+        const r = this.requestRow(actor, input.requestId),
+          q = this.reviewQuote(actor, input.quoteId);
+        check(
+          [
+            "information_needed",
+            "withdrawn",
+            "declined",
+            "awaiting_approval",
+          ].includes(String(r.status)) && r.revision === input.revision,
+          "REVISION",
+          "Request changed or cannot be resubmitted.",
+        );
+        check(
+          q.account_id === r.account_id &&
+            q.warehouse_id === r.warehouse_id &&
+            !q.order_id,
+          "REQUEST_SCOPE",
+          "Choose an unaccepted quote for the same customer and warehouse.",
+        );
+        const linked = this.store.get<{ request_id: string }>(
+          "SELECT request_id FROM orders_review_quotes WHERE org_id=? AND quote_id=?",
+          actor.orgId,
+          input.quoteId,
+        );
+        check(
+          !linked || linked.request_id === input.requestId,
+          "REQUEST_STATE",
+          "Quote belongs to another request.",
+        );
+        const policy = this.validateAcceptance(actor, q, input.allowBackorder),
+          message = text(input.message, "Resubmission message", 1000);
+        this.store.run(
+          "UPDATE orders_review_requests SET status='awaiting_approval',quote_id=?,revision=revision+1,lines=?,total=?,currency=?,allow_backorder=?,expires_at=?,policy_hash=?,review_reason=?,message=?,updated_at=? WHERE org_id=? AND id=?",
+          input.quoteId,
+          String(q.lines),
+          Number(q.total),
+          String(q.currency),
+          Number(input.allowBackorder),
+          Number(q.expires_at),
+          policy.hash,
+          policy.reviewReason ||
+            "Renewed submission of a request already in distributor review.",
+          message,
+          now(),
+          actor.orgId,
+          input.requestId,
+        );
+        this.store.run(
+          "INSERT INTO orders_review_quotes VALUES(?,?,?) ON CONFLICT(org_id,quote_id) DO NOTHING",
+          actor.orgId,
+          input.quoteId,
+          input.requestId,
+        );
+        this.recordReview(actor, input.requestId, "resubmit", message, "");
+        return this.reviewRequestCurrent(actor, input.requestId);
+      },
+    );
+    return this.reviewReceipt(actor, result);
   }
   private incomingRows(
     actor: Actor,
@@ -1673,6 +2122,16 @@ export class Orders {
           total = integer(order.total + amount, "amended order total", 0, 1e12);
         let allocatedDelta = 0;
         if (delta > 0) {
+          const policy = this.catalog.purchasingSnapshot(
+            actor,
+            order.account_id,
+            [line.product_id],
+          );
+          check(
+            !policy.requiresReview,
+            "REVIEW_REQUIRED",
+            "Additional quantity requires a new reviewed purchase request.",
+          );
           this.assertReservationCurrent(actor, order.id);
           check(
             this.catalog.product(actor, line.product_id).active,

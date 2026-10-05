@@ -46,11 +46,20 @@ function facts(f: Fixture) {
   });
 }
 function customer(f: Fixture, key: string) {
-  return f.app.identity.createCustomer(f.actor, key, {
+  const accountId = f.app.identity.createCustomer(f.actor, key, {
     name: key,
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, `synthetic-access-${key}`, {
+    accountId: accountId,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
+  return accountId;
 }
 for (const region of ["CA", "US"] as const)
   test(`${region} sold serial pages skip foreign-account batches, conserve facts and restart without omissions`, (t) => {

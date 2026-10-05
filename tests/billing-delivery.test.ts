@@ -874,6 +874,8 @@ test("HTTP portal requires current buyer session, exact JSON/key/origin/CSRF and
 });
 
 test("inbox pages retain complete publication history beyond 200 records while new insertions and tied timestamps cannot skip earlier pages", async (t) => {
+  // Compare business effects at one reporting instant, independent of test duration.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const f = fixture(t),
     p = await published(f),
     delivery = f.app.billing.delivery;
@@ -970,6 +972,7 @@ test("inbox pages retain complete publication history beyond 200 records while n
 });
 
 test("paged personal PDF history survives withdrawal, bounds previews and rechecks access for every cursor", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const f = fixture(t),
     p = await published(f),
     delivery = f.app.billing.delivery;

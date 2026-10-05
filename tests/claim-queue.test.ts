@@ -158,6 +158,14 @@ test("buyers cannot traverse another account and fresh identity, role, password 
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "explicit-purchasing-" + other, {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic test catalog access",
+  });
   const foreign = seedClaimQueue(f, 2, "other-account", f.w1, other);
   const buyer = warrantyUser(f, "buyer");
   assert.equal(f.app.warranty.claimPage(buyer).items.length, 20);

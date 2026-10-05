@@ -1,3 +1,7 @@
+import { Storefront } from "./storefront.tsx";
+import { CustomerPurchasingRules } from "./purchasing-rules.tsx";
+import { OrderRequests } from "./order-requests.tsx";
+import type { OrderRequest } from "../shared/purchasing.ts";
 import { EnrollmentReview } from "./enrollment-review.tsx";
 import { PublicSite, readPublicRoute } from "./public-site.tsx";
 import {
@@ -57,6 +61,7 @@ import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
 import type {
+  CustomerProduct,
   CustomerProductPage,
   OrderEntry,
 } from "../shared/customer-products.ts";
@@ -259,9 +264,12 @@ function App() {
       readNavigation(window.location.hash),
       authorizedPages(actor.role),
     );
-    if (safe.page !== readNavigation(window.location.hash).page)
+    if (
+      safe.page !== readNavigation(window.location.hash).page &&
+      window.location.hash.includes("page=")
+    )
       setNotice(
-        "That destination is unavailable for your account. Overview is shown.",
+        "That destination is unavailable for your account. Your workspace home is shown.",
       );
     setRoute(safe);
     appliedHash.current = navigationHash(safe);
@@ -851,7 +859,11 @@ function App() {
       if ((result as Item)?.skipRefresh) return result;
       if (refreshAfter) await refresh(controller.signal);
       if (!current()) return abandoned;
-      setNotice(successMessage);
+      setNotice(
+        (result as Item)?.status === "awaiting_approval"
+          ? "Awaiting distributor approval. No stock is reserved and no payment is taken. View the request in Orders → Approval requests."
+          : successMessage,
+      );
       return result;
     } catch (e) {
       if (!current()) return abandoned;
@@ -1321,7 +1333,11 @@ function App() {
       })
       .catch(() => {});
   };
-  const reviewCart = async (cart: Item, current: () => boolean) => {
+  const reviewCart = async (
+    cart: Item,
+    current: () => boolean,
+    resubmission?: OrderRequest,
+  ) => {
     if (!current()) return { keepDialog: true, skipRefresh: true };
     const quote = await command("cart.quote", {
       cartId: cart.id,
@@ -1337,13 +1353,29 @@ function App() {
           type: "checkbox",
           value: false,
         },
+        ...(resubmission
+          ? [
+              {
+                name: "message",
+                label: "Message to distributor",
+                type: "textarea" as const,
+              },
+            ]
+          : []),
       ],
       (v) =>
-        command("order.accept", {
+        command(resubmission ? "order.review.resubmit" : "order.accept", {
           quoteId: quote.id,
           allowBackorder: !!v.allowBackorder,
+          ...(resubmission
+            ? {
+                requestId: resubmission.id,
+                revision: resubmission.revision,
+                message: v.message,
+              }
+            : {}),
         }),
-      `${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit`).join("\n")}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes.`,
+      `${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit`).join("\n")}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes. Orders requiring verification await distributor approval without reserving stock or taking payment.`,
     );
     return { keepDialog: true };
   };
@@ -1352,6 +1384,7 @@ function App() {
     warehouseId: string,
     catalogPage: CustomerProductPage,
     entry: OrderEntry,
+    resubmission?: OrderRequest,
   ) => {
     const editorVersion = cartEditorEpoch.current;
     const current = () => cartEditorEpoch.current === editorVersion;
@@ -1468,15 +1501,19 @@ function App() {
         }
         // Quote retries reuse the observed saved revision rather than writing
         // again. A new native quote still refuses another session's newer cart.
-        return reviewCart(savedCart!, current);
+        return reviewCart(savedCart!, current, resubmission);
       },
-      "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If saving or quoting loses its response, retry to recover the saved attempt. If another session changes this cart, cancel and reopen it to review the latest quantities.",
+      (resubmission
+        ? "These request quantities will replace the saved draft for this customer and warehouse when you continue. "
+        : "") +
+        "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If saving or quoting loses its response, retry to recover the saved attempt. If another session changes this cart, cancel and reopen it to review the latest quantities.",
     );
   };
   const placeOrder = (
     accountId?: string,
     warehouseId?: string,
-    _existing?: Item[],
+    requestedLines?: { productId: string; quantity: number }[],
+    resubmission?: OrderRequest,
   ) =>
     open(
       "Prepare an order",
@@ -1505,7 +1542,48 @@ function App() {
             request<OrderEntry>(
               `/api/carts/selection?accountId=${encodeURIComponent(v.accountId)}&warehouseId=${encodeURIComponent(v.warehouseId)}`,
               { signal: controller.signal },
-            ),
+            ).catch(async (error: unknown): Promise<OrderEntry> => {
+              if (
+                !(error instanceof RequestError) ||
+                error.code !== "PRODUCT_ACCESS"
+              )
+                throw error;
+              // The native projection refuses revoked products. Recover only the
+              // actor-scoped saved IDs/revision, without disclosing their metadata.
+              const carts = await request<NonNullable<OrderEntry["cart"]>[]>(
+                "/api/carts",
+                { signal: controller.signal },
+              );
+              const cart =
+                carts.find(
+                  (c) =>
+                    c.account_id === v.accountId &&
+                    c.warehouse_id === v.warehouseId,
+                ) ?? null;
+              const eligible = await request<CustomerProduct[]>(
+                `/api/catalog/customer-products?accountId=${encodeURIComponent(v.accountId)}`,
+                { signal: controller.signal },
+              );
+              return {
+                cart,
+                products: (cart?.lines ?? []).map((line) => {
+                  const product = eligible.find((p) => p.id === line.productId);
+                  return product
+                    ? { ...product, active: 1 }
+                    : {
+                        id: line.productId,
+                        sku: "Unavailable item",
+                        name: "Product access is no longer available",
+                        serialized: 0,
+                        unit_price: 0,
+                        unit_tax: 0,
+                        tax_bp: 0,
+                        currency: data!.organization.currency,
+                        active: 0,
+                      };
+                }),
+              };
+            }),
             request<CustomerProductPage>(
               `/api/catalog/customer-products/page?accountId=${encodeURIComponent(v.accountId)}`,
               { signal: controller.signal },
@@ -1514,8 +1592,53 @@ function App() {
           if (
             !controller.signal.aborted &&
             orderEntryRead.current === controller
-          )
-            editCart(v.accountId, v.warehouseId, products, entry);
+          ) {
+            if (requestedLines) {
+              const previous = entry.cart;
+              const lines = resubmission
+                ? requestedLines
+                : [...(previous?.lines ?? [])];
+              if (!resubmission)
+                for (const line of requestedLines)
+                  if (!lines.some((l) => l.productId === line.productId))
+                    lines.push(line);
+              // Resolve every selected product at current customer prices, including
+              // request items outside the first catalog page. Never seed stale prices.
+              const eligible = await request<CustomerProduct[]>(
+                `/api/catalog/customer-products?accountId=${encodeURIComponent(v.accountId)}`,
+                { signal: controller.signal },
+              );
+              if (
+                controller.signal.aborted ||
+                orderEntryRead.current !== controller
+              )
+                return { keepDialog: true, skipRefresh: true };
+              entry.products = lines.map((line) => {
+                const product = eligible.find((p) => p.id === line.productId);
+                return product
+                  ? { ...product, active: 1 }
+                  : {
+                      id: line.productId,
+                      sku: "Unavailable item",
+                      name: "Product access is no longer available",
+                      serialized: 0,
+                      unit_price: 0,
+                      unit_tax: 0,
+                      tax_bp: 0,
+                      currency: data!.organization.currency,
+                      active: 0,
+                    };
+              });
+              entry.cart = {
+                id: previous?.id ?? "",
+                account_id: v.accountId,
+                warehouse_id: v.warehouseId,
+                revision: previous?.revision ?? 0,
+                lines,
+              };
+            }
+            editCart(v.accountId, v.warehouseId, products, entry, resubmission);
+          }
           return { keepDialog: true, skipRefresh: true };
         } catch (error) {
           if (
@@ -1803,7 +1926,7 @@ function App() {
     const safe = authorizeNavigation(intent, pages);
     if (safe.page !== intent.page)
       setNotice(
-        "That destination is unavailable for your account. Overview is shown.",
+        "That destination is unavailable for your account. Your workspace home is shown.",
       );
     window.history.replaceState(null, "", navigationHash(safe));
     navigate(safe, false);
@@ -1847,7 +1970,7 @@ function App() {
                 : "Customer portal"}
             </p>
             <h1 id="workspace-title" tabIndex={-1}>
-              {page}
+              {!staff && page === "Billing" ? "Invoices & payments" : page}
             </h1>
             <p className="page-description">{pageDescriptions[page]}</p>
           </div>
@@ -1865,8 +1988,8 @@ function App() {
         </header>
         <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
         <div className="qualification">
-          Operational qualification pending · storage
-          region {data.organization.region} · {currency}
+          Operational qualification pending · storage region{" "}
+          {data.organization.region} · {currency}
         </div>
         {error && (
           <p role="alert" className="error">
@@ -1914,6 +2037,24 @@ function App() {
             }
           />
         )}
+        {page === "Shop" &&
+          !staff &&
+          (data.accounts[0] ? (
+            <Storefront
+              key={`${actor.id}:${extra.cartRefresh}`}
+              accountId={data.accounts[0].id}
+              accountName={data.accounts[0].name}
+              prepare={(product) =>
+                placeOrder(data.accounts[0].id, undefined, [
+                  { productId: product.id, quantity: 1 },
+                ])
+              }
+            />
+          ) : (
+            <p>
+              Your commercial account is unavailable. Contact your distributor.
+            </p>
+          ))}
         {page === "Overview" && (
           <Overview
             canReceive={can("warehouse")}
@@ -1947,6 +2088,7 @@ function App() {
             }
             items={[
               { id: "orders-queue", label: "Orders" },
+              { id: "orders-requests", label: "Approval requests" },
               { id: "orders-shipments", label: "Shipments" },
             ]}
           >
@@ -2498,6 +2640,26 @@ function App() {
                   />
                 )}
               </div>
+            </PageSection>
+            <PageSection id="orders-requests">
+              <OrderRequests
+                buyer={!staff}
+                canReview={can("commercial")}
+                resubmit={(value) =>
+                  placeOrder(
+                    value.accountId,
+                    value.warehouseId,
+                    value.lines.map((l) => ({
+                      productId: l.productId,
+                      quantity: l.quantity,
+                    })),
+                    value,
+                  )
+                }
+                order={(orderId) =>
+                  navigate({ page: "Orders", section: "orders-queue", orderId })
+                }
+              />
             </PageSection>
             <PageSection id="orders-shipments">
               <section aria-label="Shipment history">
@@ -5765,8 +5927,16 @@ function App() {
             )}
           </>
         )}
-        {page === "Customers" && (
+        {(page === "Customers" || (page === "Account" && !staff)) && (
           <>
+            {staff && can("commercial") && (
+              <CustomerPurchasingRules accounts={data.accounts} />
+            )}
+            {!staff && (
+              <button onClick={() => navigate({ page: "Returns" })}>
+                Returns and warranty requests
+              </button>
+            )}
             <p>
               Each processor exception allows processing outside the application
               storage region. Review the applicable terms before accepting.
@@ -6715,7 +6885,7 @@ function App() {
             ))}
           </>
         )}
-        {page === "Security" && (
+        {(page === "Security" || (page === "Account" && !staff)) && (
           <section className="panel">
             <h2>Your sign-in security</h2>
             <p>

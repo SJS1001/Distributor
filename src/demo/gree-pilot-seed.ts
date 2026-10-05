@@ -88,6 +88,77 @@ export const greeSampleProducts = [
   },
 ] as const;
 
+/** Official family pages verified in docs/catalog/gree-source-library.json.
+ * These references are not exact-model manuals or redistributed binaries.
+ */
+export const greeFamilyReferencePages = [
+  "charmo-r32",
+  "pular-r32",
+  "airy-r32",
+  "zeno-r32",
+  "multi-zone-r32",
+  "flexx-eco-r32",
+  "flexx-ultra-r32",
+  "8-way-cassette-indoor-unit-r32",
+] as const;
+
+/** Explicit optional step after seedGreePilot on an offline pilot copy. */
+export async function seedGreeFamilyReferences(
+  app: Application,
+  actor: Actor,
+  products: readonly string[] | { productIds: readonly string[] },
+) {
+  const productIds = "productIds" in products ? products.productIds : products;
+  actor = app.identity.currentActor(actor);
+  permit(actor, []);
+  check(
+    app.identity.region === "CA" &&
+      productIds.length === greeSampleProducts.length &&
+      productIds.every(
+        (id, index) =>
+          app.catalog.product(actor, id).sku === greeSampleProducts[index]!.sku,
+      ),
+    "SAMPLE_PRODUCTS",
+    "Family references require the matching fictional Canadian pilot products.",
+  );
+  const resources = [];
+  for (const [index, page] of greeFamilyReferencePages.entries()) {
+    const sample = greeSampleProducts[index]!;
+    const productId = productIds[index]!;
+    const key = `gree-family-reference-v1-${sample.sku}`;
+    const draft = await app.catalogMedia.upload(
+      actor,
+      `${key}-upload`,
+      productId,
+      {
+        kind: "literature",
+        title: `${sample.name.split(" · ")[0]} manufacturer family reference`,
+        models:
+          "Family reference only; fictional sample SKU, exact model/capacity/voltage not verified.",
+        revision: "Family page researched 2026-10-05",
+        source:
+          "Public Gree Canada family page; docs/catalog/gree-source-library.json. Manuals and images remain on the publisher site; no binary redistribution.",
+        externalUrl: `https://greehvac.ca/heacool_services/${page}/`,
+      },
+    );
+    resources.push(
+      await app.catalogMedia.publish(
+        actor,
+        `${key}-publish`,
+        productId,
+        draft.id,
+        {
+          expectedVersion: draft.version,
+          permissionAffirmed: true,
+          permissionBasis:
+            "Public manufacturer family-page link only; no image or manual binary redistribution. Exact model applicability requires review.",
+        },
+      ),
+    );
+  }
+  return resources;
+}
+
 export function seedGreePilot(
   app: Application,
   actor: Actor,
@@ -131,6 +202,15 @@ export function seedGreePilot(
         creditLimit: 10000000,
       }).id,
   );
+  for (const accountId of customers)
+    app.catalog.setPurchasingPolicy(actor, key(`purchasing-${accountId}`), {
+      accountId,
+      mode: "all",
+      requiresReview: false,
+      productIds: [],
+      revision: 0,
+      reason: "Owner-authorized fictional Gree sample catalog access",
+    });
   const supplierId = app.procurement.supplier(actor, key("supplier"), {
     name: "Training HVAC Supply · FICTIONAL SAMPLE",
   }).id;

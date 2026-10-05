@@ -1,10 +1,12 @@
 # Customer storefront and product resources
 
-Owner requirements captured 2026-10-05. A customer is a contractor purchasing from the distributor; the customer experience should be a storefront with its own orders and payments. This document records authorized product direction and proposed implementation choices. It does not claim implementation or acceptance.
+Owner requirements captured 2026-10-05. A customer is a contractor purchasing from the distributor; the customer experience should be a storefront with its own orders and payments. This document records authorized direction and the subsequent implementation and Canadian pilot activation. See the [live release receipt](evidence/LIVE-STOREFRONT-2026-10-05.md); release checks do not establish product acceptance.
 
 ## Current implementation boundary
 
-At local source checkpoint `0f41a55`, buyer identity, own-account order entry, tier pricing, invoices and payment-related views exist. Buyers share the application shell. `src/server/catalog.ts` owns products and tier prices but has no product-media collection; `src/web/catalog-maintenance.tsx` has no equipment-image/manual upload controls. `src/server/orders.ts` accepts valid quotes into orders and commits exposure/reservations without a conditional distributor review state. Account enrollment approval is separate from product eligibility and order approval.
+Historical checkpoint `0f41a55` lacked product media, customer purchasing restrictions and conditional order review. The current local increment adds staff account/product purchasing policies, default-deny buyer entitlement, native order-review requests and decisions, catalog image/document management, and the buyer storefront. Enrollment approval, product eligibility and order review remain separate controls. These changes are active in the Canadian pilot on schema 25.
+
+Catalog resources use bounded SQLite BLOB storage, generated IDs, fresh account/tenant/eligibility checks and immutable history. Images normalize to PNG; PDFs are reconstructed as raster-only documents in a bounded child process. Draft publication requires an explicit permission basis. Metadata edits return published resources to draft; retirement preserves history. HTTPS document links never trigger a server fetch. See [resource limits and operating policy](CATALOG-RESOURCES.md).
 
 ## Requested experience
 
@@ -18,7 +20,7 @@ At local source checkpoint `0f41a55`, buyer identity, own-account order entry, t
 
 ## Product resource management
 
-Proposed staff catalog tabs: **Details · Images · Documents · Purchasing rules**. Customer product tabs: **Overview · Specifications · Documents**. The customer's main navigation should include **Shop · Orders · Invoices & payments · Account**. Preserve the owner's category/page-tab approach; do not add another “on this page” button strip.
+The local staff catalog includes image/document management and purchasing controls; the buyer workspace includes Shop and scoped commercial activity. The requested product organization remains **Overview · Specifications · Documents**, with **Shop · Orders · Invoices & payments · Account** navigation. Preserve the owner's category/page-tab approach; do not add another “on this page” button strip. Source presence does not establish every requested detail or device acceptance.
 
 Images need a primary image, optional gallery order, meaningful alternative text and a preview. Documents need a readable title, category, language, applicable manufacturer model(s), refrigerant/voltage where relevant, revision and source. Keep image/literature selection explicit: a family montage must not imply that every pictured component is included in a purchase.
 
@@ -26,7 +28,7 @@ Recommended initial management flow: choose product → upload or add an officia
 
 Implementation should remain Catalog-owned. Authenticate every upload/list/download and derive organization scope from the current actor. Buyer access must recheck product eligibility; possession of an attachment ID is insufficient. Use generated storage identities, never user filenames as paths. Initially allow bounded JPEG/PNG/WebP images and PDFs, validate actual content, normalize images, and serve document downloads with safe content headers. Reject executable/HTML/SVG content. Treat vendor-supplied names/metadata as untrusted text. If links are supported, allow HTTPS and prevent server-side fetching of arbitrary destinations; imports should be an explicit trusted-source operation.
 
-For this single-Machine Canadian pilot, use storage in the approved Canadian boundary, with quotas and a backup/restore plan covering both metadata and files. Choose database BLOBs or volume-backed files based on bounded sizes and atomicity; no storage choice or schema migration has been implemented in this research pass. Actual manuals can exceed the existing warranty-evidence upload limit, so do not reuse that limit or module blindly. Safely admit only verified content; include a malware inspection/quarantine policy before publishing arbitrary documents.
+The local implementation chooses SQLite BLOBs for coherent metadata/content snapshots, with 8 MiB image and 16 MiB PDF bounds, dimensional/work limits and organization/product quotas. A closed-copy test covers retained metadata/history/bytes, not production backup recovery. Canadian storage residency follows the qualified database host. PDF reconstruction strips original active objects but loses searchable/accessible text; native renderer containment and actual deployment capacity still require operating qualification.
 
 ## Eligibility and order-review rules
 
@@ -45,7 +47,7 @@ Persist the submitted revision, requested lines, terms, review reason and author
 
 ## Bounded implementation sequence and evidence
 
-All implementation rows below remain **not started in this pass**; the asset research is complete to the limitations in its manifest.
+The following sequence now has local source implementation and focused verification; final source-bound evidence is recorded separately. Historical research and launch receipts remain valid only for their recorded versions.
 
 1. Catalog entitlement and review-policy data/commands with explicit migration policy. Verify account isolation, stale quotes, revocation and API bypass cases.
 2. Native request/review/accept workflow. Verify duplicate and competing approvals, no pre-acceptance inventory/financial side effects, expiry/repricing and authorized transitions.
@@ -53,4 +55,6 @@ All implementation rows below remain **not started in this pass**; the asset res
 4. Buyer storefront and product pages, images/carousel and scoped orders/payments navigation. Provide keyboard controls, no automatic carousel rotation, touch targets, reduced-motion behavior and small-screen layouts. Check actual iPhone Safari before claiming device support.
 5. Import only model-matched and permitted Gree resources into the catalog; preserve provenance and document revisions. Take a qualified backup and follow the schema migration/deployment runbook before any live activation.
 
-The current research collected eight family image entries and 92 technical document links. See [library and download limitations](catalog/README.md). No storefront, upload endpoint, purchasing restriction or order-review workflow has been deployed by this increment. No product gate is verified.
+The resource service/HTTP checks passed 9/9; the family-reference helper and existing business-seed checks bring that bounded run to 11/11. These tests cover malformed/oversized uploads, draft/publish/edit/retire, idempotency, account isolation, fresh entitlement revocation, safe delivery, PDF active-object removal and a coherent SQLite copy. They do not establish universal workflow, actual iPhone Safari, live backup recovery or host containment qualification.
+
+The research collected eight family image entries and 92 technical document links. See [library and download limitations](catalog/README.md). The optional Gree helper publishes only eight official manufacturer family-page references, clearly labelled as unverified for exact model/capacity/voltage. No Gree binary is automatically imported or redistributed. Model/revision matching and redistribution rights remain gaps. The four-feature increment is deployed; no product gate is verified.

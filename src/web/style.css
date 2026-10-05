@@ -1851,3 +1851,204 @@ th[scope="row"] {
   font-weight: 700;
   text-decoration: underline;
 }
+
+/* Customer catalog and shared product resource workspaces. */
+.shop-search {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.shop-search label:first-child {
+  flex: 1 1 280px;
+}
+.shop-search label {
+  margin: 0;
+}
+.shop-search button {
+  min-height: 44px;
+}
+.shop-grid,
+.request-cards,
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 1.25rem;
+  margin: 1rem 0;
+}
+.shop-card {
+  border: 1px solid #d9e3de;
+  border-radius: 14px;
+  overflow: hidden;
+  background: white;
+}
+.shop-card-body {
+  padding: 1.2rem;
+}
+.shop-card h3 {
+  margin: 0.5rem 0;
+}
+.shop-card small {
+  color: #50615a;
+}
+.shop-card button {
+  width: 100%;
+  min-height: 44px;
+}
+.product-image {
+  display: block;
+  width: 100%;
+  height: 240px;
+  object-fit: contain;
+  background: #f4f7f5;
+}
+.product-placeholder {
+  min-height: 240px;
+  background: #edf3ef;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  color: #52685e;
+}
+.product-placeholder svg {
+  width: 150px;
+  height: 110px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.product-placeholder small {
+  font-size: 0.75rem;
+}
+.shop-featured {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 2rem;
+  align-items: center;
+  border-radius: 16px;
+  padding: 2rem;
+  background: #e6f0e9;
+  color: #203e32;
+}
+.shop-featured h2 {
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+}
+.shop-featured .product-image,
+.shop-featured .product-placeholder {
+  border-radius: 12px;
+  min-height: 280px;
+  height: 280px;
+}
+.shop-featured .actions {
+  margin-top: 1rem;
+  align-items: center;
+}
+.product-detail-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin: 1.5rem 0;
+}
+.product-detail-top .product-image,
+.product-detail-top .product-placeholder {
+  height: 330px;
+}
+.shop-price {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.product-detail dl,
+.resource-editor dl {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 2fr;
+  gap: 0.5rem;
+}
+.resource-list {
+  list-style: none;
+  padding: 0;
+}
+.resource-list li {
+  border-bottom: 1px solid #dbe5de;
+  padding: 1rem 0;
+}
+.resource-list p {
+  margin: 0.5rem 0;
+}
+.resource-editor {
+  padding: 1rem;
+  border: 1px solid #dbe5de;
+  border-radius: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.resource-editor details {
+  margin: 1rem 0;
+}
+.resource-editor .product-image,
+.resource-editor .product-placeholder {
+  height: 180px;
+  min-height: 180px;
+}
+.resource-editor form {
+  margin-top: 1rem;
+}
+.resource-editor fieldset,
+.policy-products {
+  min-width: 0;
+}
+.policy-products {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 340px;
+  overflow: auto;
+}
+.policy-products label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem;
+  margin: 0;
+}
+.policy-products input[type="checkbox"] {
+  width: auto;
+  flex: none;
+}
+@media (max-width: 700px) {
+  .shop-featured,
+  .product-detail-top {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .shop-featured .product-image,
+  .shop-featured .product-placeholder {
+    height: 200px;
+    min-height: 200px;
+  }
+  .product-detail-top {
+    padding: 0;
+  }
+  .product-detail-top .product-image,
+  .product-detail-top .product-placeholder {
+    height: 240px;
+  }
+  .shop-search {
+    align-items: stretch;
+  }
+  .shop-search label,
+  .shop-search button {
+    width: 100%;
+  }
+  .product-detail button,
+  .resource-editor button {
+    min-height: 44px;
+  }
+  .resource-editor input,
+  .resource-editor textarea {
+    max-width: 100%;
+  }
+}

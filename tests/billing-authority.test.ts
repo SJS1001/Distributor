@@ -376,6 +376,14 @@ test("current buyer billing collections and detail stay within their assigned ac
       creditLimit: 1000000,
     },
   ).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "explicit-purchasing-" + second, {
+    accountId: second,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic test catalog access",
+  });
   const other = ship(
     { ...f, buyer: second },
     accept({ ...f, buyer: second }, 1, "other-order").id,

@@ -488,3 +488,26 @@ export async function downloadCanadaPostManifest(
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+
+/** Retain a resource mutation key across lost responses, just like native commands. */
+export async function resourceMutation(
+  path: string,
+  method: "POST" | "PATCH",
+  payload: unknown,
+) {
+  const body = JSON.stringify(payload);
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`${method}:${path}:${body}`),
+  );
+  const storageKey = `distributor-resource:${Array.from(new Uint8Array(hash), (value) => value.toString(16).padStart(2, "0")).join("")}`;
+  const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
+  sessionStorage.setItem(storageKey, key);
+  const result = await request(path, {
+    method,
+    body,
+    headers: { "idempotency-key": key },
+  });
+  sessionStorage.removeItem(storageKey);
+  return result;
+}

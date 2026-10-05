@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { CatalogResourceWorkspace } from "./catalog-resources.tsx";
 import { usePages } from "./billing-inbox.tsx";
 import type {
   CatalogProduct,
@@ -20,7 +21,11 @@ function Products({
   search,
   state,
   ...actions
-}: Actions & { search: string; state: string }) {
+}: Actions & {
+  search: string;
+  state: string;
+  manage: (product: CatalogProduct) => void;
+}) {
   const rows = usePages<CatalogProduct>(
     `/api/catalog/products/page?state=${state}&q=${encodeURIComponent(search)}`,
   );
@@ -69,6 +74,12 @@ function Products({
                     <div className="actions">
                       <button
                         disabled={actions.busy}
+                        onClick={() => actions.manage(p)}
+                      >
+                        Manage {p.sku}
+                      </button>
+                      <button
+                        disabled={actions.busy}
                         onClick={() => actions.price(p)}
                       >
                         Tier price
@@ -112,6 +123,7 @@ function Products({
   );
 }
 export function CatalogMaintenance(actions: Actions) {
+  const [product, setProduct] = useState<CatalogProduct | null>(null);
   const [search, setSearch] = useState("");
   const [state, setState] = useState("active");
   const [selection, setSelection] = useState({
@@ -121,6 +133,13 @@ export function CatalogMaintenance(actions: Actions) {
   });
   return (
     <>
+      {product && (
+        <CatalogResourceWorkspace
+          key={product.id}
+          product={product}
+          close={() => setProduct(null)}
+        />
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -156,6 +175,7 @@ export function CatalogMaintenance(actions: Actions) {
         search={selection.search}
         state={selection.state}
         {...actions}
+        manage={setProduct}
       />
     </>
   );

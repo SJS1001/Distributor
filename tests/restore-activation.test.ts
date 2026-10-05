@@ -545,6 +545,9 @@ for (const reports of [false, true])
     const old = new DatabaseSync(source);
     try {
       old.exec(
+        "DROP TABLE catalog_resource_history; DROP TABLE catalog_resources; DROP TABLE orders_review_quotes; DROP TABLE orders_review_history; DROP TABLE orders_review_requests; DROP TABLE catalog_entitlements; DROP TABLE catalog_account_policies; DROP TABLE catalog_product_policies; DROP TABLE enrollment_applications; DROP TABLE enrollment_limits; DROP TABLE orders_incoming_commitments; DROP TABLE orders_incoming_history; DROP TABLE inventory_incoming_holds",
+      );
+      old.exec(
         "DROP TABLE integration_offline_checkout_paid; DROP TABLE integration_offline_original_leases; DROP TABLE integration_offline_canada_post_members; DROP TABLE integration_offline_original_cancellations; DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations",
       );
       old.exec("DROP TABLE platform_restore_releases");

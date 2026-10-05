@@ -42,6 +42,15 @@ export async function seedNativeDemo(
       creditLimit: 100000000,
     },
   ).id;
+  for (const accountId of [customer, otherCustomer])
+    app.catalog.setPurchasingPolicy(actor, `demo-purchasing-${accountId}`, {
+      accountId,
+      mode: "all",
+      requiresReview: false,
+      productIds: [],
+      revision: 0,
+      reason: "Fictional demo approved catalog access",
+    });
   const demoProviders = ["stripe", "quickbooks", ...carrierNames] as const;
   const disclosures = demoProviders.map((provider) => {
     const disclosure = app.identity.residency.publish(

@@ -175,6 +175,14 @@ test("buyer pricing uses persisted account even with forged role/account, and fo
     tier: "other-tier",
     creditLimit: 100000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "explicit-purchasing-" + other, {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic test catalog access",
+  });
   f.app.catalog.setPrice(f.actor, "standard", {
     productId: f.product,
     tier: "standard",

@@ -376,6 +376,14 @@ test("replacement lineage retains the sale policy while a later ordinary resale 
     tier: "standard",
     creditLimit: 1000000,
   }).id;
+  f.app.catalog.setPurchasingPolicy(f.actor, "synthetic-extra-account-access", {
+    accountId: other,
+    mode: "all",
+    requiresReview: false,
+    productIds: [],
+    revision: 0,
+    reason: "Explicit synthetic account access for this test.",
+  });
   const sale = ship(f, accept({ ...f, buyer: other }, 1, "resale").id);
   const coverage = f.app.warranty.coverage(f.actor, unitId, other);
   assert.equal(coverage.source, "shipment_policy");
