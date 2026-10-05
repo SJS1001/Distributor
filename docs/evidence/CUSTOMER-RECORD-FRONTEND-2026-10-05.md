@@ -1,6 +1,6 @@
 # Customer record frontend — focused workstation receipt
 
-2026-10-05, local macOS workstation, synthetic temporary fixture databases, built production React assets served by real native HTTP application. Source candidate was integrated by parent as `11aabaf` during verification; subsequent lane edits only corrected browser login helpers and refreshed screenshot assertions. No live customer data or provider operations were used.
+2026-10-05, local macOS workstation, synthetic temporary fixture databases, built production React assets served by real native HTTP application. Verification used the uncommitted integrated candidate based on `11aabaf`; the final source and corrected browser helpers were committed as `8e2e219`. Lane edits after the source freeze only corrected browser login helpers and refreshed screenshot assertions. No live customer data or provider operations were used.
 
 ## Changed frontend and tests
 
