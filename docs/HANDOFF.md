@@ -3217,3 +3217,20 @@ never committed or embedded in assets. Initial browser harness logout/navigation
 race and wrong home-heading assumption retained; corrected final journeys pass.
 See docs/evidence/LIVE-PILOT-SIGN-IN-2026-10-05.md for exact source/evidence/limits.
 No CI/PR/merge. Existing untracked cache/Sites preserved.
+
+
+2026-10-05 — Customer pre-fill/scanner follow-up implemented locally. Owner
+requested customer pre-fill as well as existing admin pre-fill and a scanner
+entrance beneath Administration with phone sharing. Added independently gated
+customer config, public scanner/QR/copy/device mail/SMS sharing and bundled camera
+fallback for browsers without native BarcodeDetector. Internal automatic message
+delivery has no provider and is explicitly still outstanding. Physical iPhone
+untested. Encrypted pre-release schema25 archive downloaded/restored in isolation,
+snapshot 0f8f646c745cff5e3d5554369fd97d2569b21dd1f406109a92a6e16ddde5e7e4.
+Created separate Public sample customer buyer through authorized live native
+command on existing approved fictional account; original buyer revision/password
+unchanged, new buyer authentication passed. Customer runtime config staged for
+next deployment. Initial stale portal-link count and decoder minified exception
+name failures retained; repaired using stable decoder getKind, blank-frame QR
+check passes. Signed-in scanner routing guard added during self-review; final
+browser regression in progress. No CI/PR/merge or new cloud lane.

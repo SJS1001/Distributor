@@ -38,6 +38,23 @@ test("pilot administrator prefill signs in without typing; customer entrance sta
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
+  await navigateWorkspace(page, "Administration", "Staff and buyer access");
+  await page
+    .getByRole("link", { name: "Barcode scanner — open or send to a phone" })
+    .click();
+  await expect(page).toHaveURL(/#scanner$/);
+  await expect(
+    page.getByRole("heading", { name: "Barcode scanner.", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page).toHaveURL(/#scanner$/);
+  await expect(
+    page.getByRole("heading", { name: "Barcode scanner.", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Open staff workspace" }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
 });
 
@@ -150,7 +167,7 @@ test("public entrances are distinct, fit desktop and phone, and keep legacy sign
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     const paths = page.locator(".public-access-paths");
-    await expect(paths.getByRole("link")).toHaveCount(3);
+    await expect(paths.getByRole("link")).toHaveCount(4);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", width);
     for (const [href, heading] of [
       ["#customer-sign-in", "Customer sign in."],
@@ -478,4 +495,121 @@ test("public site: actual isolated submission, administrator approval, activatio
   } finally {
     await adminContext.close();
   }
+});
+
+test("customer prefill opens the buyer storefront without typing and preserves role boundaries", async ({
+  page,
+}) => {
+  await page.route("**/api/pilot-sign-in?audience=customer", (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        email: "pilot-buyer@example.test",
+        password: "synthetic-buyer-password",
+      },
+    }),
+  );
+  await page.goto("/#customer-sign-in");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue(
+    "synthetic-buyer-password",
+  );
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toBeVisible();
+  const session = await (await page.request.get("/api/session")).json();
+  expect(session.actor.role).toBe("buyer");
+  expect((await page.request.get("/api/users")).status()).toBe(403);
+});
+
+test("scanner entrance fits a phone and shares only the public scanner address", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("link", { name: /Barcode scanner/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Barcode scanner." }),
+  ).toBeVisible();
+  await expect(
+    page.getByAltText("QR code linking to the dstrbtr barcode scanner"),
+  ).toBeVisible();
+  for (const name of ["Email link", "Text link"]) {
+    const href = await page
+      .getByRole("link", { name, exact: true })
+      .getAttribute("href");
+    expect(decodeURIComponent(href!)).toContain(
+      "http://127.0.0.1:3125/#scanner",
+    );
+    expect(href).not.toContain("password");
+  }
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
+  await expect(
+    page.getByText("Add to Home Screen", { exact: false }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Barcode or serial number", { exact: true })
+    .fill("GREE-SAMPLE-001");
+  await expect(
+    page.getByLabel("Barcode or serial number", { exact: true }),
+  ).toHaveValue("GREE-SAMPLE-001");
+});
+
+test("bundled camera decoder reads a real QR frame without native BarcodeDetector and stops capture", async ({
+  page,
+}) => {
+  const { default: QRCode } = await import("qrcode");
+  const dataUrl = await QRCode.toDataURL("GREE-SAMPLE-CAMERA-001", {
+    width: 640,
+    margin: 4,
+  });
+  await page.addInitScript(
+    ({ dataUrl }) => {
+      Object.defineProperty(window, "BarcodeDetector", { value: undefined });
+      Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+        value: async () => {
+          const image = new Image();
+          image.src = dataUrl;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = 640;
+          canvas.height = 640;
+          let frames = 0;
+          const draw = () => {
+            const context = canvas.getContext("2d")!;
+            context.fillStyle = "white";
+            context.fillRect(0, 0, 640, 640);
+            if (++frames > 8) context.drawImage(image, 0, 0);
+          };
+          draw();
+          const stream = canvas.captureStream(10);
+          const timer = setInterval(draw, 100);
+          (window as any).scannerStopped = false;
+          for (const track of stream.getTracks()) {
+            const stop = track.stop.bind(track);
+            track.stop = () => {
+              stop();
+              clearInterval(timer);
+              (window as any).scannerStopped = true;
+            };
+          }
+          return stream;
+        },
+      });
+    },
+    { dataUrl },
+  );
+  await page.goto("/#scanner");
+  await page.getByRole("button", { name: "Scan with camera" }).click();
+  await expect(
+    page.getByText("Detected: GREE-SAMPLE-CAMERA-001"),
+  ).toBeVisible();
+  expect(await page.evaluate(() => (window as any).scannerStopped)).toBe(true);
+  await expect(
+    page.getByLabel("Barcode or serial number", { exact: true }),
+  ).toHaveValue("");
+  await page.getByRole("button", { name: "Use detected value" }).click();
+  await expect(
+    page.getByLabel("Barcode or serial number", { exact: true }),
+  ).toHaveValue("GREE-SAMPLE-CAMERA-001");
 });

@@ -598,3 +598,67 @@
   overflow-wrap: anywhere;
   max-width: 340px;
 }
+
+.public-staff-entrances {
+  display: flex;
+  flex-direction: column;
+}
+.public-staff-entrances .public-access-link {
+  flex: 1;
+}
+.public-site .public-scanner-link {
+  display: block;
+  padding: 18px 28px;
+  border: 1px solid #bbc0bc;
+  border-top: 0;
+  text-decoration: none;
+  font-weight: 600;
+  background: #f3f0e7;
+}
+.public-scanner-link > span {
+  float: right;
+}
+.public-scanner-link small {
+  display: block;
+  font-weight: 400;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.scanner-reader {
+  margin: 24px 0;
+}
+.scanner-reader input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.scanner-reader video {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+.scanner-share img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.scanner-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.scanner-share-actions a,
+.scanner-share-actions button {
+  padding: 12px 16px;
+  border: 1px solid #bbc0bc;
+  border-radius: 4px;
+  font: inherit;
+  background: #f3f0e7;
+  color: var(--public-ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.scanner-link-address {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}

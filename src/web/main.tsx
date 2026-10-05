@@ -230,7 +230,12 @@ function App() {
     [extra, setExtra] = useState<Item>({});
   const page = route.page;
   useEffect(() => {
-    if (actor && data && publicRoute !== "activate")
+    if (
+      actor &&
+      data &&
+      publicRoute !== "activate" &&
+      publicRoute !== "scanner"
+    )
       document.title = `${page} · dstrbtr`;
   }, [actor, data, page, publicRoute]);
   const traversal = useRef<(destination: NavigationIntent) => void>(() => {});
@@ -253,8 +258,10 @@ function App() {
     previousOrder.current = route.orderId;
   }, [route.orderId, page]);
   useEffect(() => {
-    if (!actor || publicRoute === "activate") return;
+    if (!actor || publicRoute === "activate" || publicRoute === "scanner")
+      return;
     const locationChanged = () => {
+      if (readPublicRoute(window.location.hash) === "scanner") return;
       if (appliedHash.current === window.location.hash) return;
       appliedHash.current = window.location.hash;
       traversal.current(readNavigation(window.location.hash));
@@ -472,13 +479,22 @@ function App() {
   const [pilotPrefilled, setPilotPrefilled] = useState(false);
   const loginEdited = useRef(false);
   useEffect(() => {
-    if (actor || nativeDemo || publicRoute !== "admin-sign-in") return;
+    if (
+      actor ||
+      nativeDemo ||
+      !["admin-sign-in", "customer-sign-in"].includes(publicRoute)
+    )
+      return;
     let cancelled = false;
     let prefilled: { email: string; password: string } | undefined;
     loginEdited.current = false;
     void request<
       { enabled: false } | { enabled: true; email: string; password: string }
-    >("/api/pilot-sign-in")
+    >(
+      publicRoute === "customer-sign-in"
+        ? "/api/pilot-sign-in?audience=customer"
+        : "/api/pilot-sign-in",
+    )
       .then((config) => {
         if (cancelled || loginEdited.current || !config.enabled) return;
         prefilled = config;
@@ -1740,7 +1756,7 @@ function App() {
       )}
       <p>
         {pilotPrefilled
-          ? "Test administrator details are filled in. Click Sign in to explore the sample pilot."
+          ? `Test ${publicRoute === "customer-sign-in" ? "customer" : "administrator"} details are filled in. Click Sign in to explore the sample pilot.`
           : "Enter the email and password for your account."}
       </p>
       <form
@@ -1835,7 +1851,7 @@ function App() {
       </form>
     </section>
   );
-  if (publicRoute === "activate")
+  if (publicRoute === "activate" || publicRoute === "scanner")
     return (
       <PublicSite
         route={publicRoute}
@@ -6983,6 +6999,11 @@ function App() {
             <PageSection id="admin-access">
               <section className="panel">
                 <h2>Staff and buyer access</h2>
+                <p>
+                  <a href="#scanner">
+                    Barcode scanner — open or send to a phone
+                  </a>
+                </p>
                 {button("Create user", () =>
                   simple(
                     "Create user",

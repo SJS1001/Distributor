@@ -214,3 +214,25 @@ Before adding real data, disable `PUBLIC_PILOT_ADMIN_SIGN_IN` and redeploy/resta
 remove both credential configuration values, rotate the now-public administrator
 password, and revoke existing sessions using the native security controls. Merely
 hiding the UI is insufficient. No real-data readiness is asserted by this option.
+
+
+## Temporary public customer pre-fill and phone scanner — 2026-10-05
+
+The owner also requested customer pre-fill. Enable independently with
+`PUBLIC_PILOT_CUSTOMER_SIGN_IN=true`, `PUBLIC_PILOT_CUSTOMER_EMAIL` and
+`PUBLIC_PILOT_CUSTOMER_PASSWORD`. `GET /api/pilot-sign-in?audience=customer`
+deliberately publishes those values with no-store; the default/admin audience
+retains its existing administrator configuration. Both options default disabled.
+Legacy sign-in remains manual.
+
+The Canadian sample pilot uses a separate Public sample customer buyer on the
+existing fictional approved customer account. The earlier buyer's changed password
+and revision were preserved. Customer access uses normal authentication and
+account/product purchasing permissions; it has no staff permissions. Before real
+data, disable both public pre-fill flags, remove all four credential values,
+rotate both published passwords and revoke their sessions.
+
+`/#scanner` is a public camera reader with QR/copy/device-sharing links, also
+linked beneath Administration. Email/SMS buttons open local composers, not an
+internal delivery service. Physical iPhone behavior remains to be qualified; see
+[scanning](SCANNING.md). No additional server or schema change is needed.

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { request } from "./api.ts";
 import "./public-site.css";
+import { ScannerPage } from "./scanner-page.tsx";
 
 export type PublicRoute =
+  | "scanner"
   | "home"
   | "sign-in"
   | "customer-sign-in"
@@ -11,6 +13,7 @@ export type PublicRoute =
   | "activate";
 export function readPublicRoute(hash: string): PublicRoute {
   if (hash.startsWith("#activate=") || hash === "#activate") return "activate";
+  if (hash === "#scanner") return "scanner";
   if (hash === "#apply") return "apply";
   if (hash === "#admin-sign-in") return "admin-sign-in";
   if (hash === "#customer-sign-in") return "customer-sign-in";
@@ -158,7 +161,7 @@ export function PublicSite({
     document.title =
       route === "home"
         ? "dstrbtr · Canadian HVAC trade"
-        : `${route === "apply" ? "Apply for a trade account" : route === "activate" ? "Activate your account" : route === "admin-sign-in" ? "Administration sign in" : "Customer sign in"} · dstrbtr`;
+        : `${route === "scanner" ? "Barcode scanner" : route === "apply" ? "Apply for a trade account" : route === "activate" ? "Activate your account" : route === "admin-sign-in" ? "Administration sign in" : "Customer sign in"} · dstrbtr`;
     document.querySelector<HTMLElement>(".public-main")?.focus();
     window.scrollTo(0, 0);
   }, [route]);
@@ -249,18 +252,24 @@ export function PublicSite({
                     Send your business details for review.
                   </span>
                 </a>
-                <a
-                  className="public-access-link public-admin"
-                  href="#admin-sign-in"
-                >
-                  <span className="public-index">03 / DISTRIBUTOR STAFF</span>
-                  <span className="public-access-title">
-                    Administration entrance <span aria-hidden="true">↗</span>
-                  </span>
-                  <span className="public-access-description">
-                    Sign in to your staff workspace.
-                  </span>
-                </a>
+                <div className="public-staff-entrances">
+                  <a
+                    className="public-access-link public-admin"
+                    href="#admin-sign-in"
+                  >
+                    <span className="public-index">03 / DISTRIBUTOR STAFF</span>
+                    <span className="public-access-title">
+                      Administration entrance <span aria-hidden="true">↗</span>
+                    </span>
+                    <span className="public-access-description">
+                      Sign in to your staff workspace.
+                    </span>
+                  </a>
+                  <a className="public-scanner-link" href="#scanner">
+                    Barcode scanner <span aria-hidden="true">↗</span>
+                    <small>Open it here or send the link to your phone.</small>
+                  </a>
+                </div>
               </div>
             </section>
             <section className="public-trade-note">
@@ -289,6 +298,8 @@ export function PublicSite({
               </div>
             </section>
           </>
+        ) : route === "scanner" ? (
+          <ScannerPage />
         ) : signIn ? (
           <div className="public-form-layout">
             <div>

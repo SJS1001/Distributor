@@ -65,3 +65,71 @@ test("public pilot config defaults off; enabled credentials use normal authentic
     }
   }
 });
+
+test("customer pilot enablement is independent and authenticates only as the assigned buyer", async (t) => {
+  const f = fixture(t);
+  const buyer = {
+    email: "pilot-buyer@example.test",
+    password: "synthetic-buyer-password",
+  };
+  f.app.identity.createUser(f.actor, "pilot-buyer", {
+    ...buyer,
+    name: "Sample buyer",
+    role: "buyer",
+    accountId: f.buyer,
+    sites: [],
+    requirePasswordChange: false,
+  });
+  assert.equal(
+    configuredPilotSignIn({ PUBLIC_PILOT_ADMIN_SIGN_IN: "true" }, "CUSTOMER"),
+    undefined,
+  );
+  assert.throws(() =>
+    configuredPilotSignIn(
+      { PUBLIC_PILOT_CUSTOMER_SIGN_IN: "true" },
+      "CUSTOMER",
+    ),
+  );
+  assert.deepEqual(
+    configuredPilotSignIn(
+      {
+        PUBLIC_PILOT_CUSTOMER_SIGN_IN: "true",
+        PUBLIC_PILOT_CUSTOMER_EMAIL: buyer.email,
+        PUBLIC_PILOT_CUSTOMER_PASSWORD: buyer.password,
+      },
+      "CUSTOMER",
+    ),
+    buyer,
+  );
+  const http = await createHttp(f.app, {
+    origin: "http://localhost",
+    publicPilotCustomerSignIn: buyer,
+  });
+  t.after(() => http.close());
+  assert.deepEqual((await http.inject({ url: "/api/pilot-sign-in" })).json(), {
+    enabled: false,
+  });
+  assert.deepEqual(
+    (await http.inject({ url: "/api/pilot-sign-in?audience=unknown" })).json(),
+    { enabled: false },
+  );
+  const config = await http.inject({
+    url: "/api/pilot-sign-in?audience=customer",
+  });
+  assert.deepEqual(config.json(), { enabled: true, ...buyer });
+  assert.equal(config.headers["cache-control"], "no-store");
+  const login = await http.inject({
+    method: "POST",
+    url: "/api/login",
+    headers: { origin: "http://localhost" },
+    payload: buyer,
+  });
+  assert.equal(login.statusCode, 200);
+  assert.equal(login.json().actor.role, "buyer");
+  assert.equal(login.json().actor.accountId, f.buyer);
+  const cookie = login.cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  assert.equal(
+    (await http.inject({ url: "/api/users", headers: { cookie } })).statusCode,
+    403,
+  );
+});

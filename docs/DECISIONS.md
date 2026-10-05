@@ -96,3 +96,17 @@ that this installation does not yet hold real information. Apply this as an
 explicit, default-disabled runtime setting only. Do not change the administrator
 password or silently provision a different database/account. Revisit and remove
 public access before real data, as documented in [Fly configuration](FLY-CANADA.md).
+
+
+## Public customer shortcut and scanner entrance — 2026-10-05
+
+Owner corrected the earlier admin-only pre-fill: also fill the customer entrance,
+and place a shareable phone scanner beneath Administration. Use an independent,
+default-disabled customer runtime setting and a sample buyer on the existing
+fictional approved account; preserve the original customer's changed password.
+Ordinary role/account/product authorization continues to apply.
+
+The available phone-sharing implementation is QR, clipboard and device email/SMS
+composers/native sharing. Internal automated email/text delivery has no connected
+provider and is still outstanding. Do not describe composer links as server-sent
+messages or delivery proof. Physical iPhone Safari verification is also pending.

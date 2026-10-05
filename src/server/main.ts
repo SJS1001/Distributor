@@ -50,6 +50,7 @@ const organizationQuickbooksBrowser = configuredOrganizationQuickBooksBrowser(
 const http = await createHttp(app, {
   origin,
   publicPilotSignIn: configuredPilotSignIn(),
+  publicPilotCustomerSignIn: configuredPilotSignIn(process.env, "CUSTOMER"),
   secureCookies,
   enrollmentOrganizationId: process.env.ENROLLMENT_ORGANIZATION_ID || undefined,
   enrollmentFlyProxy:

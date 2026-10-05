@@ -93,3 +93,17 @@ Actual installed files were read and copied unchanged before runtime classificat
 | fsevents 2.3.3, optional on macOS | MIT, Copyright 2010–2020 Philipp Dunkel, Ben Noordhuis, Elan Shankar, Paul Miller | [MIT text](licenses/runtime/fsevents-MIT.txt) |
 
 The installed @esbuild/darwin-arm64 0.28.2 package metadata declares MIT; no separate LICENSE file was present in that installed platform package. esbuild's executable and applicable optional platform package are required at runtime. Native platform/source provenance, complete transitive dependency notices and redistribution qualification remain open; the inventory does not select a product license or authorize publishing/deploying binaries. The [runtime runbook](RUNTIME.md) describes the isolated workstation installation check.
+
+
+## Browser camera decoding — 2026-10-05
+
+Added exact @zxing/browser 0.2.1 (MIT), resolving @zxing/library 0.23.0
+(Apache-2.0 with additional BSD notices), @zxing/text-encoding 0.9.0
+(Unlicense OR Apache-2.0, including WHATWG references), and ts-custom-error 3.3.1
+(MIT). Actual installed license files were read and retained verbatim in
+[the browser-served scanner notices](../src/web/scanner-notices.txt). The scanner
+page exposes this bundled notice asset. The lockfile records exact resolutions
+and integrity. This is an addition to the historical inventories above.
+
+The decoder is lazy-loaded only on camera use, with frames kept in the browser.
+The implementation uses the upstream [BrowserMultiFormatReader API](https://github.com/zxing-js/browser/blob/master/README.md). No package source was copied or modified; no uploaded image or external decoding service is involved.

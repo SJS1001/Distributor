@@ -11,6 +11,68 @@ const detectorClass = () =>
   (window as unknown as { BarcodeDetector?: DetectorConstructor })
     .BarcodeDetector;
 
+async function createDetector(
+  Native: DetectorConstructor | undefined,
+): Promise<Detector> {
+  const formats = [
+    "code_128",
+    "code_39",
+    "qr_code",
+    "data_matrix",
+    "ean_13",
+    "ean_8",
+    "upc_a",
+    "upc_e",
+  ];
+  if (Native) {
+    try {
+      const supported = await Native.getSupportedFormats();
+      const selected = formats.filter((format) => supported.includes(format));
+      if (selected.length) return new Native({ formats: selected });
+    } catch {
+      /* Use the bundled decoder when the native API is unavailable. */
+    }
+  }
+  const { BrowserMultiFormatReader, BarcodeFormat } =
+    await import("@zxing/browser");
+  const reader = new BrowserMultiFormatReader();
+  reader.possibleFormats = [
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.CODE_39,
+    BarcodeFormat.QR_CODE,
+    BarcodeFormat.DATA_MATRIX,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.EAN_8,
+    BarcodeFormat.UPC_A,
+    BarcodeFormat.UPC_E,
+  ];
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Camera image processing unavailable");
+  return {
+    async detect(video) {
+      if (!video.videoWidth || !video.videoHeight) return [];
+      const scale = Math.min(1, 1280 / video.videoWidth);
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      try {
+        return [{ rawValue: reader.decodeFromCanvas(canvas).getText() }];
+      } catch (error) {
+        if (
+          [
+            "NotFoundException",
+            "ChecksumException",
+            "FormatException",
+          ].includes((error as { getKind?: () => string }).getKind?.() ?? "")
+        )
+          return [];
+        throw error;
+      }
+    },
+  };
+}
+
 export function ScanInput({
   name,
   label,
@@ -68,11 +130,7 @@ export function ScanInput({
     stop();
     setCandidate("");
     const DetectorClass = detectorClass();
-    if (
-      !window.isSecureContext ||
-      !navigator.mediaDevices?.getUserMedia ||
-      !DetectorClass
-    ) {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setStatus(
         "Camera scanning is unavailable in this browser. Type the value or use a hardware scanner.",
       );
@@ -82,20 +140,8 @@ export function ScanInput({
     setActive(true);
     setStatus("Waiting for camera access…");
     try {
-      const supported = await DetectorClass.getSupportedFormats();
+      const detector = await createDetector(DetectorClass);
       if (generation.current !== token) return;
-      const formats = [
-        "code_128",
-        "code_39",
-        "qr_code",
-        "data_matrix",
-        "ean_13",
-        "ean_8",
-        "upc_a",
-        "upc_e",
-      ].filter((f) => supported.includes(f));
-      if (!formats.length) throw new Error("Unsupported formats");
-      const detector = new DetectorClass({ formats });
       const capture = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
         audio: false,
