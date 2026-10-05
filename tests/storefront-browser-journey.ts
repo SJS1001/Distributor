@@ -2,7 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { createCanvas } from "@napi-rs/canvas";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 async function login(page: Page, buyer: boolean) {
-  await page.goto("/#sign-in");
+  // Choosing the other entrance must not change the account's authenticated role.
+  await page.goto(buyer ? "/#admin-sign-in" : "/#customer-sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill(buyer ? "shop-buyer@example.test" : "admin@example.test");
@@ -43,7 +44,8 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   });
   await page.getByRole("button", { name: "Next featured product" }).click();
   await page.getByLabel("Search products").fill("EQ-1");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByLabel("Search products").press("Enter");
+  await expect(page.getByLabel("Search products")).toBeFocused();
   await page
     .getByRole("button", { name: "View Synthetic equipment", exact: true })
     .click();

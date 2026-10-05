@@ -107,6 +107,59 @@ export function WorkspaceNavigation({
     if (group && pages.includes(page))
       rememberedPages.current[group.name] = page;
   }, [page, pages]);
+  if (role === "buyer")
+    return (
+      <header className="customer-header">
+        <div className="customer-masthead">
+          <button
+            className="customer-wordmark"
+            onClick={() => navigate("Shop")}
+            aria-label="dstrbtr. — Shop"
+          >
+            dstrbtr<span>.</span>
+          </button>
+          <span className="customer-trade-label">Your trade counter</span>
+          <div className="customer-identity">
+            <strong>{name}</strong>
+            <span>{organization}</span>
+          </div>
+          <button className="customer-signout" onClick={signOut}>
+            Sign out
+          </button>
+          <button
+            className="customer-menu-toggle"
+            aria-expanded={expanded}
+            aria-controls="customer-navigation"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? "Close menu" : "Menu"}
+          </button>
+        </div>
+        <nav
+          id="customer-navigation"
+          className={expanded ? "is-expanded" : ""}
+          aria-label="Workspace"
+        >
+          {pages
+            .filter((destination) => destination !== "Returns")
+            .map((destination) => (
+              <button
+                key={destination}
+                aria-current={page === destination ? "page" : undefined}
+                onClick={() => {
+                  if (destination !== page) navigate(destination);
+                  setExpanded(false);
+                  document.getElementById("workspace-title")?.focus();
+                }}
+              >
+                {destination === "Billing"
+                  ? "Invoices & payments"
+                  : destination}
+              </button>
+            ))}
+        </nav>
+      </header>
+    );
   return (
     <aside className="workspace-sidebar">
       <div className="sidebar-heading">

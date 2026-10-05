@@ -24,7 +24,7 @@ test("public site: mobile application, approval boundary and sign-in navigation"
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Built for the work ahead." }),
+    page.getByRole("heading", { name: "HVAC supply for the Canadian trade." }),
   ).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
   await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
@@ -58,15 +58,47 @@ test("public site: mobile application, approval boundary and sign-in navigation"
     page.getByText("Purchasing access is not yet approved.", { exact: false }),
   ).toBeVisible();
   await page
-    .getByRole("link", { name: "Sign in", exact: false })
+    .getByRole("link", { name: /sign in/i })
     .first()
     .click();
   await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
   await page.goBack();
   await expect(
-    page.getByRole("heading", { name: "Apply for a trade account" }),
+    page.getByRole("heading", { name: "Apply for a trade account." }),
   ).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("public entrances are distinct, fit desktop and phone, and keep legacy sign in", async ({
+  page,
+}) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const paths = page.locator(".public-access-paths");
+    await expect(paths.getByRole("link")).toHaveCount(3);
+    await expect(page.locator("body")).toHaveJSProperty("scrollWidth", width);
+    for (const [href, heading] of [
+      ["#customer-sign-in", "Customer sign in."],
+      ["#admin-sign-in", "Administration sign in."],
+    ]) {
+      await paths.locator(`a[href="${href}"]`).click();
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+        heading!,
+      );
+      await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+      await expect(page.locator("body")).toHaveJSProperty("scrollWidth", width);
+      await page
+        .getByRole("link", { name: "Back to the entrance", exact: false })
+        .click();
+    }
+    await paths.locator('a[href="#apply"]').click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Apply for a trade account.",
+    );
+  }
+  await page.goto("/#sign-in");
+  await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
 });
 
 test("public site: activation clears fragment and keeps token/password out of browser storage", async ({
@@ -347,9 +379,9 @@ test("public site: actual isolated submission, administrator approval, activatio
     const session = await (await loginResponse).json();
     expect(session.actor.role).toBe("buyer");
     await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
+      page.getByRole("heading", { name: "Shop", exact: true }),
     ).toBeVisible();
-    await expect(page).toHaveTitle("Overview · dstrbtr");
+    await expect(page).toHaveTitle("Shop · dstrbtr");
     expect(
       (await page.request.get("/api/enrollment/applications")).status(),
     ).toBe(403);

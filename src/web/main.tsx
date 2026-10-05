@@ -129,6 +129,7 @@ import type {
   CatalogLifecyclePage,
 } from "../shared/catalog-lifecycle.ts";
 import "./style.css";
+import "./customer-workspace.css";
 const OperationsHealthPanel = deferredPage("Operations health", async () => {
   const module = await import("./operations-health.tsx");
   return { default: module.OperationsHealthPanel };
@@ -1703,8 +1704,12 @@ function App() {
       <div className="brand">
         D<span>Distributor</span>
       </div>
-      <h1>Sign in to your workspace</h1>
-      <p>Orders, warehouses and customer accounts in one place.</p>
+      {nativeDemo ? (
+        <h1>Sign in to your workspace</h1>
+      ) : (
+        <h2>Account credentials</h2>
+      )}
+      <p>Enter the email and password for your account.</p>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -1939,7 +1944,7 @@ function App() {
   };
 
   return (
-    <div className="shell">
+    <div className={staff ? "shell" : "shell customer-shell"}>
       <a
         className="skip-link"
         href="#workspace-content"
@@ -1967,12 +1972,18 @@ function App() {
               {staff
                 ? workspaceGroups.find((group) => group.pages.includes(page))
                     ?.name
-                : "Customer portal"}
+                : (data.accounts[0]?.name ?? "Customer portal")}
             </p>
             <h1 id="workspace-title" tabIndex={-1}>
               {!staff && page === "Billing" ? "Invoices & payments" : page}
             </h1>
-            <p className="page-description">{pageDescriptions[page]}</p>
+            <p className="page-description">
+              {!staff && page === "Orders"
+                ? "Your orders, approval requests and deliveries."
+                : !staff && page === "Billing"
+                  ? "Your invoices, payment records and outstanding balances."
+                  : pageDescriptions[page]}
+            </p>
           </div>
           <button
             className="secondary"
@@ -1988,7 +1999,9 @@ function App() {
         </header>
         <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
         <div className="qualification">
-          Operational qualification pending · storage region{" "}
+          {staff
+            ? "Operational qualification pending · storage region "
+            : "Pilot workspace · "}
           {data.organization.region} · {currency}
         </div>
         {error && (

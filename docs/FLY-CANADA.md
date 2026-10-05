@@ -26,8 +26,10 @@ than writing the database to the ephemeral root filesystem. Source and installed
 dependencies remain root-owned. Existing restored files must already be readable
 and writable by uid 1000; startup deliberately does not recursively rewrite them.
 
-The public website starts at `/`. Sign in at `/#sign-in`; contractors apply at
-`/#apply`. Administrators review applications under System & controls →
+The public website starts at `/`. Customers sign in at `/#customer-sign-in`; staff
+use `/#admin-sign-in`; contractors apply at `/#apply`. The legacy `/#sign-in` link
+still works. These entrances do not set roles: the server-authenticated account
+determines access. Administrators review applications under System & controls →
 Administration → Trade applications. Approved buyers activate with a private
 24-hour invitation. Read [enrollment](ENROLLMENT.md) for review, explicit terms,
 revocation and manual invitation delivery. Automated email delivery and email
@@ -121,7 +123,8 @@ provider, finance, device, security or product-gate acceptance.
 ## Live domain and access
 
 - Website: https://dstrbtr.ca/
-- Login: https://dstrbtr.ca/#sign-in
+- Customer login: https://dstrbtr.ca/#customer-sign-in
+- Administration login: https://dstrbtr.ca/#admin-sign-in
 - Contractor application: https://dstrbtr.ca/#apply
 
 GoDaddy apex A `66.241.125.254` and AAAA `2a09:8280:1::1a8:520e:0` point to Fly.

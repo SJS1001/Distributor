@@ -2,13 +2,136 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { request } from "./api.ts";
 import "./public-site.css";
 
-export type PublicRoute = "home" | "sign-in" | "apply" | "activate";
+export type PublicRoute =
+  | "home"
+  | "sign-in"
+  | "customer-sign-in"
+  | "admin-sign-in"
+  | "apply"
+  | "activate";
 export function readPublicRoute(hash: string): PublicRoute {
   if (hash.startsWith("#activate=") || hash === "#activate") return "activate";
   if (hash === "#apply") return "apply";
+  if (hash === "#admin-sign-in") return "admin-sign-in";
+  if (hash === "#customer-sign-in") return "customer-sign-in";
   if (hash === "#sign-in") return "sign-in";
   return "home";
 }
+
+function EquipmentDrawing() {
+  return (
+    <figure className="public-equipment">
+      <div className="public-drawing-label">
+        <span>HEATING / COOLING</span>
+        <span>TRADE SUPPLY</span>
+      </div>
+      <svg
+        viewBox="0 0 560 410"
+        role="img"
+        aria-label="Original illustration of an outdoor heat pump and an indoor wall unit"
+      >
+        <defs>
+          <pattern
+            id="public-grille"
+            width="7"
+            height="7"
+            patternUnits="userSpaceOnUse"
+          >
+            <path d="M0 0V7" stroke="#8695a0" strokeWidth="1" />
+          </pattern>
+          <radialGradient id="public-fan">
+            <stop stopColor="#293f51" />
+            <stop offset="1" stopColor="#112635" />
+          </radialGradient>
+        </defs>
+        <path
+          d="M20 357H540M50 40V380M510 40V380"
+          stroke="#c5c6bf"
+          strokeWidth="1"
+          strokeDasharray="3 7"
+        />
+        <path
+          d="M89 76L421 59L468 84L135 103Z"
+          fill="#ecebe4"
+          stroke="#657481"
+        />
+        <path
+          d="M89 76V132Q89 147 109 149L420 133V59"
+          fill="#f9f8f1"
+          stroke="#657481"
+        />
+        <path d="M420 59L468 84V139L420 133Z" fill="#c4ccc9" stroke="#657481" />
+        <path
+          d="M112 129L399 115M112 136L399 122"
+          stroke="#617787"
+          strokeWidth="3"
+        />
+        <path d="M127 96L180 93" stroke="#a34f2b" strokeWidth="3" />
+        <path
+          d="M388 133V165Q388 178 406 183L452 201"
+          fill="none"
+          stroke="#a34f2b"
+          strokeWidth="3"
+        />
+        <path
+          d="M103 206L357 179L439 211L184 243Z"
+          fill="#e8e8e1"
+          stroke="#536b7b"
+        />
+        <path d="M103 206V337L357 318V179Z" fill="#f9f8f1" stroke="#536b7b" />
+        <path
+          d="M357 179L439 211V349L357 318Z"
+          fill="url(#public-grille)"
+          stroke="#536b7b"
+        />
+        <path
+          d="M103 337L184 373L439 349L357 318Z"
+          fill="#a8b6bc"
+          stroke="#536b7b"
+        />
+        <path
+          d="M126 342V357L157 370V351M376 349V365L409 362V352"
+          fill="#172f43"
+        />
+        <circle
+          cx="225"
+          cy="261"
+          r="62"
+          fill="url(#public-fan)"
+          stroke="#697f8a"
+          strokeWidth="5"
+        />
+        <g fill="#81949d" stroke="#142d40" strokeWidth="2">
+          <path d="M225 261C184 250 167 232 185 217C209 208 229 231 225 261Z" />
+          <path d="M225 261C234 220 252 203 268 222C278 246 254 266 225 261Z" />
+          <path d="M225 261C266 271 283 289 265 305C241 314 220 291 225 261Z" />
+          <path d="M225 261C215 302 197 319 181 300C172 276 196 256 225 261Z" />
+        </g>
+        <g fill="none" stroke="#abb9bf" opacity=".65">
+          <circle cx="225" cy="261" r="52" />
+          <circle cx="225" cy="261" r="42" />
+          <circle cx="225" cy="261" r="31" />
+          <path d="M164 261H286M225 200V322" />
+        </g>
+        <circle cx="225" cy="261" r="11" fill="#e6e9e3" />
+        <path
+          d="M119 225L147 222M119 233L147 230"
+          stroke="#a34f2b"
+          strokeWidth="3"
+        />
+        <path
+          d="M37 188H81M37 184V192M81 184V192M478 226V329M474 226H482M474 329H482"
+          stroke="#a34f2b"
+        />
+      </svg>
+      <figcaption>
+        <span>Equipment for the work ahead.</span>
+        <span>Illustration / not a product specification</span>
+      </figcaption>
+    </figure>
+  );
+}
+
 export function PublicSite({
   route,
   activationToken,
@@ -34,11 +157,15 @@ export function PublicSite({
   useEffect(() => {
     document.title =
       route === "home"
-        ? "dstrbtr · Canadian trade accounts"
-        : `${route === "apply" ? "Apply for a trade account" : route === "activate" ? "Activate your account" : "Sign in"} · dstrbtr`;
+        ? "dstrbtr · Canadian HVAC trade"
+        : `${route === "apply" ? "Apply for a trade account" : route === "activate" ? "Activate your account" : route === "admin-sign-in" ? "Administration sign in" : "Customer sign in"} · dstrbtr`;
     document.querySelector<HTMLElement>(".public-main")?.focus();
     window.scrollTo(0, 0);
   }, [route]);
+  const signIn =
+    route === "sign-in" ||
+    route === "customer-sign-in" ||
+    route === "admin-sign-in";
   return (
     <div className="public-site">
       <a
@@ -55,11 +182,12 @@ export function PublicSite({
         <a href="#home" className="public-wordmark" aria-label="dstrbtr home">
           dstrbtr<span className="public-brand-dot">.</span>
         </a>
+        <span className="public-header-descriptor">HVAC / CANADIAN TRADE</span>
         <nav aria-label="Public navigation">
-          <a href="#apply">Trade accounts</a>
-          <a href="#sign-in" className="public-signin">
-            Sign in <span aria-hidden="true">↗</span>
+          <a href="#customer-sign-in">
+            Customer sign in <span aria-hidden="true">↗</span>
           </a>
+          <a href="#admin-sign-in">Administration</a>
         </nav>
       </header>
       <main className="public-main" id="public-content" tabIndex={-1}>
@@ -67,173 +195,126 @@ export function PublicSite({
           <>
             <section className="public-hero">
               <div className="public-hero-copy">
-                <p className="public-eyebrow">
-                  <span aria-hidden="true" /> Canadian trade pilot
-                </p>
-                <h1>
-                  Built for the
-                  <br />
-                  work ahead.
-                </h1>
+                <p className="public-eyebrow">FOR CANADIAN HVAC CONTRACTORS</p>
+                <h1>HVAC supply for the Canadian trade.</h1>
                 <p className="public-lead">
-                  A dedicated ordering workspace for contractors. Bring your
-                  business, get your trade account reviewed, and purchase
-                  through one connected portal.
+                  Equipment, account pricing and order details. A dedicated
+                  workspace for your next installation, service call or
+                  replacement.
                 </p>
-                <div className="public-actions">
-                  <a className="public-primary" href="#apply">
-                    Apply for a trade account <span aria-hidden="true">↗</span>
+                <div
+                  className="public-hero-actions"
+                  aria-label="Customer access"
+                >
+                  <a href="#customer-sign-in" className="public-primary">
+                    Customer sign in <span aria-hidden="true">↗</span>
                   </a>
-                  <a className="public-text-link" href="#sign-in">
-                    Already approved? Sign in
+                  <a href="#apply" className="public-apply-link">
+                    Apply for a trade account <span aria-hidden="true">↗</span>
                   </a>
                 </div>
                 <p className="public-caption">
-                  Business accounts · Canada · Approval required
+                  Business purchasing · Approved trade accounts
                 </p>
               </div>
-              <div
-                className="public-system"
-                role="img"
-                aria-label="A diagram connecting your trade account to ordering, fulfillment and billing"
-              >
-                <div className="public-system-top">
-                  <span>THE TRADE WORKSPACE</span>
-                  <span aria-hidden="true">CA / 01</span>
-                </div>
-                <div className="public-crate">
-                  <span className="public-crate-mark">d.</span>
-                  <span>YOUR BUSINESS</span>
-                  <span className="public-crate-tag">TRADE ACCOUNT</span>
-                </div>
-                <div className="public-flow-line" aria-hidden="true" />
-                <div className="public-flow-nodes">
-                  <div>
-                    <span>01</span>Order
-                  </div>
-                  <div>
-                    <span>02</span>Track
-                  </div>
-                  <div>
-                    <span>03</span>Invoice
-                  </div>
-                </div>
-                <div className="public-system-bottom">
-                  A clear path from account to order.
-                  <span aria-hidden="true">↗</span>
-                </div>
-              </div>
-            </section>
-            <section className="public-intro">
-              <p className="public-eyebrow">LESS ADMIN. MORE VISIBILITY.</p>
-              <h2>
-                Your purchasing,
-                <br />
-                with the details in reach.
-              </h2>
-              <p>
-                Approved buyers can browse their available catalog and account
-                pricing, submit orders, follow fulfillment, and review invoices
-                in the same workspace. Availability and terms are specific to
-                your account.
-              </p>
+              <EquipmentDrawing />
             </section>
             <section
-              className="public-capabilities"
-              aria-label="Account workspace capabilities"
+              className="public-access"
+              aria-labelledby="public-access-title"
             >
-              {[
-                [
-                  "01",
-                  "Account pricing",
-                  "See the catalog and pricing available to your approved business account.",
-                ],
-                [
-                  "02",
-                  "Order visibility",
-                  "Keep order details and fulfillment progress together, from submission onward.",
-                ],
-                [
-                  "03",
-                  "Billing records",
-                  "Review your invoices, credits and account balances in one place.",
-                ],
-              ].map(([number, title, text]) => (
-                <article key={number}>
-                  <span className="public-index">{number}</span>
-                  <h3>{title}</h3>
-                  <p>{text}</p>
-                </article>
-              ))}
+              <div className="public-access-heading">
+                <p className="public-eyebrow">YOUR WAY IN</p>
+                <h2 id="public-access-title">Start here.</h2>
+              </div>
+              <div className="public-access-paths">
+                <a
+                  className="public-access-link public-customer"
+                  href="#customer-sign-in"
+                >
+                  <span className="public-index">01 / EXISTING CUSTOMERS</span>
+                  <span className="public-access-title">
+                    Customer sign in <span aria-hidden="true">↗</span>
+                  </span>
+                  <span className="public-access-description">
+                    Open your catalog, account pricing and orders.
+                  </span>
+                </a>
+                <a className="public-access-link" href="#apply">
+                  <span className="public-index">02 / NEW TRADE CUSTOMERS</span>
+                  <span className="public-access-title">
+                    Apply for a trade account <span aria-hidden="true">↗</span>
+                  </span>
+                  <span className="public-access-description">
+                    Send your business details for review.
+                  </span>
+                </a>
+                <a
+                  className="public-access-link public-admin"
+                  href="#admin-sign-in"
+                >
+                  <span className="public-index">03 / DISTRIBUTOR STAFF</span>
+                  <span className="public-access-title">
+                    Administration entrance <span aria-hidden="true">↗</span>
+                  </span>
+                  <span className="public-access-description">
+                    Sign in to your staff workspace.
+                  </span>
+                </a>
+              </div>
             </section>
-            <section className="public-process">
+            <section className="public-trade-note">
               <div>
-                <p className="public-eyebrow">
-                  A TRADE ACCOUNT, NOT AN INSTANT SIGNUP
-                </p>
+                <p className="public-eyebrow">ACCOUNT ACCESS</p>
                 <h2>
-                  Apply. Review.
+                  Your business.
                   <br />
-                  Get to work.
+                  Your purchasing terms.
                 </h2>
-                <p>
-                  We review business applications before granting purchasing
-                  access. Submitting an application does not create an account
-                  or approve credit.
-                </p>
               </div>
-              <ol>
-                <li>
-                  <span>01</span>
-                  <div>
-                    <h3>Tell us about your business</h3>
-                    <p>
-                      Share your business and contact details through the
-                      application form.
-                    </p>
-                  </div>
-                </li>
-                <li>
-                  <span>02</span>
-                  <div>
-                    <h3>Your application is reviewed</h3>
-                    <p>
-                      An administrator reviews eligibility and sets your account
-                      terms.
-                    </p>
-                  </div>
-                </li>
-                <li>
-                  <span>03</span>
-                  <div>
-                    <h3>Activate with a private invitation</h3>
-                    <p>
-                      If approved, receive a one-time invitation, choose a
-                      password, then sign in.
-                    </p>
-                  </div>
-                </li>
-              </ol>
-            </section>
-            <section className="public-final-cta">
               <div>
-                <p className="public-eyebrow">FOR YOUR NEXT ORDER</p>
-                <h2>Start with your business.</h2>
+                <p>
+                  Your approved account determines the equipment, pricing and
+                  purchasing options available to you. Sign in to view product
+                  details, supporting documents and your order history.
+                </p>
+                <p>
+                  New to dstrbtr? Applications are reviewed before access is
+                  granted. If approved, an administrator provides a private
+                  invitation to activate your account.
+                </p>
+                <a href="#apply" className="public-text-link">
+                  Apply for a trade account <span aria-hidden="true">→</span>
+                </a>
               </div>
-              <a className="public-primary" href="#apply">
-                Apply for a trade account <span aria-hidden="true">↗</span>
-              </a>
             </section>
           </>
-        ) : route === "sign-in" ? (
+        ) : signIn ? (
           <div className="public-form-layout">
             <div>
-              <p className="public-eyebrow">YOUR TRADE WORKSPACE</p>
-              <h1>Welcome back.</h1>
-              <p>
-                Sign in with your approved business account. Applying for the
-                first time? <a href="#apply">Start an application.</a>
+              <p className="public-eyebrow">
+                {route === "admin-sign-in"
+                  ? "DISTRIBUTOR STAFF"
+                  : "APPROVED TRADE CUSTOMERS"}
               </p>
+              <h1>
+                {route === "admin-sign-in"
+                  ? "Administration sign in."
+                  : "Customer sign in."}
+              </h1>
+              <p>
+                {route === "admin-sign-in" ? (
+                  "Use your staff credentials to open your administration workspace. Your account determines your access."
+                ) : (
+                  <>
+                    Sign in with your approved business account. Applying for
+                    the first time? <a href="#apply">Start an application.</a>
+                  </>
+                )}
+              </p>
+              <a className="public-text-link" href="#home">
+                ← Back to the entrance
+              </a>
             </div>
             <div className="public-form-card">{login}</div>
           </div>
@@ -241,11 +322,7 @@ export function PublicSite({
           <div className="public-form-layout">
             <div>
               <p className="public-eyebrow">CANADIAN BUSINESS ACCOUNTS</p>
-              <h1>
-                Work starts
-                <br />
-                here.
-              </h1>
+              <h1>Apply for a trade account.</h1>
               <p>
                 Tell us about your business. We will review your application
                 before any purchasing access is granted.
@@ -260,7 +337,7 @@ export function PublicSite({
               </div>
             </div>
             <div className="public-form-card">
-              <h2>Apply for a trade account</h2>
+              <h2>Business details</h2>
               {config?.enabled ? (
                 <ApplicationForm />
               ) : (
@@ -278,11 +355,7 @@ export function PublicSite({
           <div className="public-form-layout">
             <div>
               <p className="public-eyebrow">YOUR PRIVATE INVITATION</p>
-              <h1>
-                Make it
-                <br />
-                yours.
-              </h1>
+              <h1>Activate your trade account.</h1>
               <p>
                 Choose a password to activate your approved buyer account. Your
                 invitation is single-use and expires.
@@ -298,9 +371,9 @@ export function PublicSite({
         <a className="public-wordmark" href="#home">
           dstrbtr<span className="public-brand-dot">.</span>
         </a>
-        <p>Canadian trade pilot · Business purchasing by approved account</p>
-        <a href="#sign-in">
-          Account sign in <span aria-hidden="true">↗</span>
+        <p>Canadian HVAC trade · Business purchasing by approved account</p>
+        <a href="#admin-sign-in">
+          Administration entrance <span aria-hidden="true">↗</span>
         </a>
       </footer>
     </div>

@@ -1,0 +1,214 @@
+.customer-shell {
+  --ink: #18333e;
+  --muted: #5c6d73;
+  --accent: #a45d38;
+  --border: #d8ddd9;
+  display: block;
+  background: #f7f5ef;
+  color: var(--ink);
+  min-height: 100vh;
+}
+.customer-header {
+  display: block;
+  margin: 0;
+  background: #18333e;
+  color: #fff;
+  padding: 0 max(24px, calc((100vw - 1280px) / 2));
+}
+.customer-masthead {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 92px;
+  border-bottom: 1px solid #ffffff26;
+}
+.customer-shell .customer-wordmark {
+  background: none;
+  border: 0;
+  color: #fff;
+  padding: 0;
+  font-size: 34px;
+  letter-spacing: -1.8px;
+  font-weight: 800;
+}
+.customer-wordmark span {
+  color: #e5ab80;
+}
+.customer-trade-label {
+  color: #d4dfdf;
+  font-size: 13px;
+  border-left: 1px solid #ffffff40;
+  padding-left: 24px;
+}
+.customer-identity {
+  margin-left: auto;
+  display: grid;
+  text-align: right;
+  font-size: 13px;
+  min-width: 0;
+}
+.customer-identity strong,
+.customer-identity span {
+  overflow-wrap: anywhere;
+}
+.customer-identity span {
+  color: #d4dfdf;
+  font-size: 12px;
+}
+.customer-shell .customer-signout,
+.customer-shell .customer-menu-toggle {
+  background: transparent;
+  color: #fff;
+  border: 1px solid #75888e;
+  border-radius: 3px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.customer-menu-toggle {
+  display: none;
+}
+.customer-header nav {
+  flex-direction: row;
+  gap: 32px;
+}
+.customer-header nav button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  min-height: 58px;
+  padding: 16px 0 13px;
+  color: #d4dfdf;
+  background: transparent;
+}
+.customer-header nav button[aria-current] {
+  border-bottom-color: #e5ab80;
+  background: transparent;
+  color: #fff;
+}
+.customer-header nav button:hover {
+  color: #fff;
+  background: #ffffff0d;
+}
+.customer-shell main.workspace-main {
+  width: 100%;
+  max-width: 1328px;
+  margin: 0 auto;
+  padding: 36px 24px 64px;
+}
+.customer-shell .workspace-header {
+  margin-bottom: 18px;
+}
+.customer-shell .workspace-header h1 {
+  font-size: clamp(30px, 3vw, 42px);
+  letter-spacing: -1.2px;
+  color: var(--ink);
+}
+.customer-shell .workspace-header .eyebrow {
+  color: #76543f;
+}
+.customer-shell .workspace-header .page-description {
+  color: #5c6d73;
+}
+.customer-shell .qualification {
+  color: #5c6d73;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #d8ddd9;
+  border-radius: 0;
+  padding: 0 0 14px;
+  margin-bottom: 24px;
+  font-size: 12px;
+}
+.customer-shell button {
+  min-height: 44px;
+  border-radius: 3px;
+}
+.customer-shell
+  .workspace-main
+  button:not(.secondary):not(.record-link):not([role="tab"]):not(
+    .storefront button
+  ) {
+  background-color: var(--ink);
+  border-color: var(--ink);
+  color: white;
+}
+.customer-shell .workspace-main button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border-color: #aab6b9;
+}
+.customer-shell input,
+.customer-shell select,
+.customer-shell textarea {
+  border-radius: 3px;
+  min-height: 44px;
+}
+.customer-shell :focus-visible {
+  outline: 3px solid #a45d38;
+  outline-offset: 3px;
+}
+.customer-header :focus-visible {
+  outline-color: #f2c49f;
+}
+@media (max-width: 760px) {
+  .customer-header {
+    padding: 0 20px;
+  }
+  .customer-masthead {
+    gap: 12px;
+    min-height: 76px;
+    flex-wrap: wrap;
+    padding: 12px 0;
+  }
+  .customer-shell .customer-wordmark {
+    font-size: 30px;
+  }
+  .customer-trade-label {
+    display: none;
+  }
+  .customer-identity {
+    width: calc(100% - 105px);
+    margin: 0;
+    order: 4;
+    text-align: left;
+  }
+  .customer-shell .customer-signout {
+    order: 5;
+    margin-left: auto;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .customer-menu-toggle {
+    display: block;
+    margin-left: auto;
+  }
+  .customer-header nav {
+    display: none;
+    padding: 8px 0;
+    gap: 0;
+    flex-wrap: wrap;
+  }
+  .customer-header nav.is-expanded {
+    display: flex;
+  }
+  .customer-header nav button {
+    width: 50%;
+    text-align: left;
+    padding: 12px;
+    min-height: 48px;
+  }
+  .customer-shell main.workspace-main {
+    padding: 26px 20px 40px;
+  }
+  .customer-shell .workspace-header {
+    gap: 12px;
+  }
+  .customer-shell .workspace-header > button {
+    margin-top: 22px;
+  }
+  .customer-shell input,
+  .customer-shell select,
+  .customer-shell textarea {
+    font-size: 16px;
+  }
+}
