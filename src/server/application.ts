@@ -204,6 +204,7 @@ export class Application {
             this.catalog,
             this.identity,
             security.startupMaintenance !== false,
+            (actor, unitId) => this.orders.inspectIncoming(actor, unitId),
           );
           this.labels = new StockLabels(
             this.database,
@@ -218,6 +219,7 @@ export class Application {
             this.catalog,
             this.inventory,
             this.identity,
+            (actor, input) => this.orders.receiveIncoming(actor, input),
           );
           this.billing = new Billing(
             this.database,
@@ -235,6 +237,7 @@ export class Application {
             this.catalog,
             this.inventory,
             this.billing,
+            this.procurement,
           );
           this.fulfillment = new Fulfillment(
             this.database,
@@ -406,6 +409,21 @@ export class Application {
         ? { items: [], next: null }
         : this.inventory.stockPage(actor);
     return {
+      analytics: {
+        orders: this.orders.operationalAnalytics(actor),
+        invoices: canReadInvoices
+          ? this.billing.operationalAnalytics(actor)
+          : null,
+        stock:
+          actor.role === "buyer"
+            ? null
+            : this.inventory.operationalAnalytics(actor),
+        countsAwaitingReview: ["admin", "warehouse", "support"].includes(
+          actor.role,
+        )
+          ? this.inventory.countsAwaitingReview(actor)
+          : null,
+      },
       organization: this.identity.organization(actor),
       recoveryHold: this.platform.recoveryHold(),
       accounts: this.identity.customers(actor).map((customer) => ({

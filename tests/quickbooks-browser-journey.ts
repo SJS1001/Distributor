@@ -1,3 +1,4 @@
+import { navigateAccounting } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 
 test("browser: QuickBooks authorization keeps Strict login cookies, cancels attempts, handles denial and recovers a lost completion response without retrying code", async ({
@@ -42,7 +43,7 @@ test("browser: QuickBooks authorization keeps Strict login cookies, cancels atte
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   const billing = async () => {
-    await page.getByRole("button", { name: "Billing", exact: true }).click();
+    await navigateAccounting(page, "QuickBooks connections");
     await expect(
       page.getByRole("region", { name: "QuickBooks connection", exact: true }),
     ).toContainText("Sandbox company 1234");

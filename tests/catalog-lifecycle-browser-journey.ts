@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3141";
 async function login(page: Page) {
@@ -12,10 +13,7 @@ async function login(page: Page) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Workspace" })
-    .getByRole("button", { name: "Catalog", exact: true })
-    .click();
+  await navigateWorkspace(page, "Catalog");
   await expect(
     page.getByRole("button", { name: "Retire LIFE-00", exact: true }),
   ).toBeVisible();
@@ -202,10 +200,7 @@ test("browser: retirement refuses an obsolete review and navigation cancels aban
     .getByRole("button", { name: "Retire LIFE-40", exact: true })
     .click();
   await reachedPromise;
-  await page
-    .getByRole("navigation", { name: "Workspace" })
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
   release();
   await expect(
     page.getByRole("heading", { name: "Inventory", exact: true }),

@@ -1,11 +1,13 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3136",
   pattern = "**/api/billing/invoices/page?*";
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(
+    page,
+    name,
+    name === "Billing" ? "Invoices" : undefined,
+  );
 }
 function invoices(page: Page) {
   return page
@@ -41,7 +43,7 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
   await nav(page, "Overview");
   await expect(
     page
-      .locator(".metrics section")
+      .locator(".overview-metrics .metric-card")
       .filter({ has: page.getByText("Invoice balance", { exact: true }) }),
   ).toContainText("1,808.00");
   await nav(page, "Billing");
@@ -84,7 +86,9 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
   await queue
     .getByRole("button", { name: "Load more invoices", exact: true })
     .press("Enter");
-  await expect(queue.getByRole("status")).toHaveText("46 invoices loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "46 invoices loaded · All results shown",
+  );
   await expect(
     queue.getByRole("heading", { name: "Invoice queue", exact: true }),
   ).toBeFocused();
@@ -127,7 +131,9 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
   await queue
     .getByRole("button", { name: "Retry invoice queue", exact: true })
     .click();
-  await expect(queue.getByRole("status")).toHaveText("15 invoices loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "15 invoices loaded · All results shown",
+  );
   const credit = invoices(page)
     .getByRole("row")
     .filter({
@@ -149,14 +155,18 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
   await queue
     .getByLabel("Invoice balance", { exact: true })
     .selectOption("unpaid");
-  await expect(queue.getByRole("status")).toHaveText("16 invoices loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "16 invoices loaded · All results shown",
+  );
   await expect(
     invoices(page).getByText("SYNTHETIC-invoice-queue-044", { exact: true }),
   ).toHaveCount(0);
   await queue
     .getByLabel("Invoice balance", { exact: true })
     .selectOption("settled");
-  await expect(queue.getByRole("status")).toHaveText("15 invoices loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "15 invoices loaded · All results shown",
+  );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(queue.getByRole("status")).toHaveText("20 invoices loaded");
   await expect(
@@ -191,7 +201,9 @@ test("browser: invoice queue ignores superseded filters, abandoned navigation, r
   await queue
     .getByLabel("Invoice balance", { exact: true })
     .selectOption("unpaid");
-  await expect(queue.getByRole("status")).toHaveText("16 invoices loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "16 invoices loaded · All results shown",
+  );
   release();
   await expect(
     queue.getByLabel("Invoice balance", { exact: true }),

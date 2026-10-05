@@ -1,3 +1,7 @@
+import {
+  navigateWorkspace,
+  navigateAccounting,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page, type Request } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -20,11 +24,20 @@ async function login(page: Page) {
     }),
   ).toBeVisible();
 }
-async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+async function nav(page: Page, name: string, section?: string) {
+  await navigateWorkspace(
+    page,
+    name,
+    section ??
+      (
+        {
+          Billing: "Invoices",
+          Inventory: "Stock",
+          Orders: "Orders",
+          Purchasing: "Purchase orders",
+        } as Record<string, string>
+      )[name],
+  );
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
 }
 
@@ -350,6 +363,7 @@ test.describe("file delivery abandonment", () => {
             }),
           ).toBeVisible();
         } else {
+          await navigateAccounting(page, "Inventory costs");
           const panel = page.getByRole("region", {
             name: "Stock cost accounting handoffs",
             exact: true,
@@ -487,7 +501,11 @@ test.describe("late fulfillment reads", () => {
         page,
       }) => {
         await login(page);
-        await nav(page, "Orders");
+        await nav(
+          page,
+          "Orders",
+          action === "View delivery history" ? "Shipments" : "Orders",
+        );
         await expect(
           page.getByRole("button", { name: action, exact: true }).first(),
         ).toBeVisible();
@@ -558,7 +576,11 @@ test.describe("active fulfillment read retry", () => {
       page,
     }) => {
       await login(page);
-      await nav(page, "Orders");
+      await nav(
+        page,
+        "Orders",
+        action === "View delivery history" ? "Shipments" : "Orders",
+      );
       const path =
         action === "Pick / pack"
           ? "**/api/orders/*/picks"
@@ -610,7 +632,11 @@ test.describe("read-only fulfillment history closure", () => {
       page,
     }) => {
       await login(page);
-      await nav(page, "Orders");
+      await nav(
+        page,
+        "Orders",
+        action === "View delivery history" ? "Shipments" : "Orders",
+      );
       const before = await (await page.request.get("/api/dashboard")).json();
       const opener = page
         .getByRole("button", { name: action, exact: true })

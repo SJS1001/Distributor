@@ -97,7 +97,7 @@ export function TransferQueue({
   };
   return (
     <section aria-label="Transfer queue">
-      <h2 ref={heading} tabIndex={-1}>
+      <h2 id="inventory-transfers" ref={heading} tabIndex={-1}>
         Transfers
       </h2>
       <label htmlFor={stateId}>Transfer state</label>

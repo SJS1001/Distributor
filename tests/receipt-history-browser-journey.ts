@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { randomUUID } from "node:crypto";
 
 async function signIn(page: Page) {
@@ -13,10 +14,11 @@ async function signIn(page: Page) {
   ).toBeVisible();
 }
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(
+    page,
+    name,
+    name === "Purchasing" ? "Receipt drafts" : undefined,
+  );
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
 }
 async function draftFixture(page: Page) {

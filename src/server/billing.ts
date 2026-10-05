@@ -1,3 +1,4 @@
+import { analyticsPeriod } from "../shared/operational-analytics.ts";
 import type { SQLInputValue } from "node:sqlite";
 import type { BillingSalesEvidence } from "./sales-evidence.ts";
 import {
@@ -637,6 +638,86 @@ export class Billing {
         settled: Number(row.settled),
         credit: Number(row.credit),
         due: Number(row.due),
+      };
+    });
+  }
+  operationalAnalytics(actor: Actor, asOf = new Date().toISOString()) {
+    return this.database.transaction(() => {
+      actor = this.current(actor, [
+        "finance",
+        "commercial",
+        "buyer",
+        "warranty",
+        "support",
+      ]);
+      const period = analyticsPeriod(asOf);
+      const balances = this.store.all<{
+        currency: string;
+        due: number;
+        unpaid: number;
+      }>(
+        `${this.invoiceBalances()} SELECT currency,COALESCE(SUM(MAX(0,balance)),0) AS due,SUM(balance>0) AS unpaid FROM balances GROUP BY currency ORDER BY currency`,
+        actor.orgId,
+        actor.role === "buyer" ? 1 : 0,
+        actor.accountId,
+      );
+      const rows = this.store.all<{
+        date: string;
+        currency: string;
+        amount: number;
+      }>(
+        `SELECT substr(created_at,1,10) AS date,currency,SUM(total) AS amount FROM billing_invoices WHERE org_id=? AND (?=0 OR account_id=?) AND created_at>=? AND created_at<? GROUP BY date,currency`,
+        actor.orgId,
+        actor.role === "buyer" ? 1 : 0,
+        actor.accountId,
+        period.previousStart,
+        period.endExclusive,
+      );
+      const aging = this.documents.aging(actor);
+      const buckets = [
+        "notDue",
+        "days1to30",
+        "days31to60",
+        "days61to90",
+        "daysOver90",
+        "unknownDue",
+      ] as const;
+      const currencies = [
+        ...new Set([
+          ...balances.map((row) => row.currency),
+          ...rows.map((row) => row.currency),
+          ...aging.accounts.flatMap((row) =>
+            row.invoices.map((invoice) => invoice.currency),
+          ),
+        ]),
+      ].sort();
+      return {
+        period,
+        balances,
+        agingAsOf: aging.observedAt,
+        agingBasis: aging.dateBasis,
+        aging: currencies.map((currency) => ({
+          currency,
+          buckets: buckets.map((bucket) => ({
+            bucket,
+            amount: aging.accounts
+              .flatMap((account) => account.invoices)
+              .filter(
+                (invoice) =>
+                  invoice.currency === currency && invoice.bucket === bucket,
+              )
+              .reduce((sum, invoice) => sum + Math.max(0, invoice.balance), 0),
+          })),
+        })),
+        history: currencies.map((currency) => ({
+          currency,
+          days: period.days.map((date) => ({
+            date,
+            amount:
+              rows.find((row) => row.date === date && row.currency === currency)
+                ?.amount ?? 0,
+          })),
+        })),
       };
     });
   }

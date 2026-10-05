@@ -18,6 +18,7 @@ export function ScanInput({
   multiline,
   optional,
   disabled,
+  describedBy,
 }: {
   name: string;
   label: string;
@@ -25,6 +26,7 @@ export function ScanInput({
   multiline: boolean;
   optional: boolean;
   disabled: boolean;
+  describedBy?: string;
 }) {
   const [entered, setEntered] = useState(value),
     [active, setActive] = useState(false),
@@ -177,7 +179,9 @@ export function ScanInput({
     field.current?.focus();
   };
   const shared = {
+    id: `field-${name}`,
     name,
+    "aria-describedby": describedBy,
     "aria-labelledby": `field-label-${name}`,
     required: !optional,
     disabled,

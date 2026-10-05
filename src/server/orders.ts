@@ -1,3 +1,23 @@
+import type { IncomingSupplyReview } from "../shared/incoming-supply.ts";
+import { incomingSupplyInitialize } from "./incoming-supply-schema.ts";
+import { Procurement } from "./procurement.ts";
+type IncomingRow = {
+  id: string;
+  org_id: string;
+  order_id: string;
+  line_id: string;
+  po_id: string;
+  purchase_line_id: string;
+  quantity: number;
+  held: number;
+  converted: number;
+  released: number;
+  priority: number;
+  reason: string;
+  actor_id: string;
+  created_at: string;
+};
+import { analyticsPeriod } from "../shared/operational-analytics.ts";
 import type {
   OrderEntry,
   CartLine,
@@ -81,8 +101,10 @@ export class Orders {
     private catalog: Catalog,
     private inventory: Inventory,
     private billing: Billing,
+    private procurement: Procurement,
   ) {
     this.store = database.owned("orders");
+    this.store.migrate(incomingSupplyInitialize("orders"));
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS orders_carts(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,lines TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(org_id,account_id,warehouse_id)) STRICT;
     CREATE TABLE IF NOT EXISTS orders_quotes(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,cart_revision INTEGER NOT NULL,lines TEXT NOT NULL,currency TEXT NOT NULL,total INTEGER NOT NULL,expires_at INTEGER NOT NULL,order_id TEXT,policy_version TEXT NOT NULL) STRICT;
@@ -152,7 +174,12 @@ export class Orders {
       )
       .map((order) => this.orderView(actor, order));
   }
-  orderPage(actor: Actor, after?: string, state?: OrderQueueState) {
+  orderPage(
+    actor: Actor,
+    after?: string,
+    state?: OrderQueueState,
+    reservation?: "overdue",
+  ) {
     return this.database.transaction(() => {
       actor = this.orderReader(actor);
       check(
@@ -180,6 +207,16 @@ export class Orders {
         scope.where += " AND state=?";
         scope.params.push(state);
       }
+      check(
+        reservation === undefined || reservation === "overdue",
+        "VALIDATION",
+        "Choose a supported reservation filter.",
+        400,
+      );
+      if (reservation === "overdue") {
+        scope.where += ` AND state='open' AND ${this.overdueReservationPredicate()}`;
+        scope.params.push(Date.now());
+      }
       if (cursor) {
         scope.where += " AND (created_at<? OR (created_at=? AND id<?))";
         scope.params.push(cursor.created_at, cursor.created_at, cursor.id);
@@ -204,6 +241,50 @@ export class Orders {
       )!;
       return { total: counts.total, open: counts.open };
     });
+  }
+  detail(actor: Actor, orderId: string) {
+    return this.database.transaction(() => {
+      actor = this.orderReader(actor);
+      return this.orderView(
+        actor,
+        this.order(actor, text(orderId, "Order ID", 128)),
+      );
+    });
+  }
+  operationalAnalytics(actor: Actor, asOf = new Date().toISOString()) {
+    return this.database.transaction(() => {
+      actor = this.orderReader(actor);
+      const scope = this.orderScope(actor),
+        period = analyticsPeriod(asOf);
+      const states = this.store.all<{ state: string; count: number }>(
+        `SELECT state,COUNT(*) AS count FROM orders_orders WHERE ${scope.where} GROUP BY state ORDER BY state`,
+        ...scope.params,
+      );
+      const overdue = this.store.get<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM orders_orders WHERE ${scope.where} AND state='open' AND ${this.overdueReservationPredicate()}`,
+        ...scope.params,
+        Date.parse(asOf),
+      )!.count;
+      const rows = this.store.all<{ date: string; count: number }>(
+        `SELECT substr(created_at,1,10) AS date,COUNT(*) AS count FROM orders_orders WHERE ${scope.where} AND created_at>=? AND created_at<? GROUP BY date`,
+        ...scope.params,
+        period.previousStart,
+        period.endExclusive,
+      );
+      return {
+        period,
+        states,
+        overdueReservations: overdue,
+        history: period.days.map((date) => ({
+          date,
+          count: rows.find((row) => row.date === date)?.count ?? 0,
+        })),
+      };
+    });
+  }
+  private overdueReservationPredicate() {
+    return `(EXISTS(SELECT 1 FROM orders_reservation_deadlines d WHERE d.org_id=orders_orders.org_id AND d.order_id=orders_orders.id AND d.expires_at<=?) OR
+      (SELECT h.action FROM orders_reservation_history h WHERE h.org_id=orders_orders.org_id AND h.order_id=orders_orders.id ORDER BY h.revision DESC LIMIT 1)='expire')`;
   }
   private orderReader(actor: Actor) {
     actor = this.identity.currentActor(actor);
@@ -630,6 +711,541 @@ export class Orders {
       },
     );
   }
+  private incomingRows(
+    actor: Actor,
+    orderId?: string,
+    purchaseLineId?: string,
+  ) {
+    return this.store.all<IncomingRow>(
+      `SELECT * FROM orders_incoming_commitments WHERE org_id=? ${orderId ? "AND order_id=?" : ""} ${purchaseLineId ? "AND purchase_line_id=?" : ""} ORDER BY priority,created_at,rowid`,
+      actor.orgId,
+      ...(orderId ? [orderId] : []),
+      ...(purchaseLineId ? [purchaseLineId] : []),
+    );
+  }
+  private incomingOpen(actor: Actor, lineId: string) {
+    return this.store.get<{ quantity: number }>(
+      "SELECT COALESCE(SUM(quantity-converted-released),0) AS quantity FROM orders_incoming_commitments WHERE org_id=? AND line_id=?",
+      actor.orgId,
+      lineId,
+    )!.quantity;
+  }
+  incomingSupply(actor: Actor, orderId: string): IncomingSupplyReview {
+    return this.database.transaction(() => {
+      actor = this.orderReader(actor);
+      const order = this.order(actor, orderId),
+        rows = this.incomingRows(actor, order.id),
+        lines = this.lines(actor, order.id);
+      const candidates = ["admin", "commercial"].includes(actor.role)
+        ? this.procurement
+            .incomingSupply(
+              actor,
+              order.warehouse_id,
+              lines.map((l) => l.product_id),
+            )
+            .map((l) => ({
+              ...l,
+              availableQuantity:
+                l.remainingQuantity -
+                this.incomingRows(actor, undefined, l.purchaseLineId).reduce(
+                  (sum, c) =>
+                    sum + c.quantity - c.held - c.converted - c.released,
+                  0,
+                ),
+            }))
+        : [];
+      return {
+        orderId: order.id,
+        revision: order.revision,
+        state: order.state,
+        lines: lines.map((l) => {
+          const commitments = rows.filter((r) => r.line_id === l.id),
+            incoming = commitments.reduce(
+              (sum, c) => sum + c.quantity - c.held - c.converted - c.released,
+              0,
+            ),
+            held = commitments.reduce((sum, c) => sum + c.held, 0),
+            outstanding = l.quantity - l.shipped - l.canceled;
+          return {
+            lineId: l.id,
+            productId: l.product_id,
+            description: l.description,
+            outstanding,
+            allocated: l.allocated,
+            incoming,
+            held,
+            uncovered: outstanding - l.allocated - incoming - held,
+          };
+        }),
+        commitments: rows.map((c) => ({
+          id: c.id,
+          lineId: c.line_id,
+          poId: c.po_id,
+          purchaseLineId: c.purchase_line_id,
+          quantity: c.quantity,
+          pendingQuantity: c.quantity - c.held - c.converted - c.released,
+          heldQuantity: c.held,
+          convertedQuantity: c.converted,
+          releasedQuantity: c.released,
+          priority: c.priority,
+          reason: c.reason,
+          createdAt: c.created_at,
+        })),
+        candidates,
+      };
+    });
+  }
+  private incomingRecord(
+    actor: Actor,
+    c: IncomingRow,
+    action: string,
+    quantity: number,
+    reference: string,
+    reason: string,
+  ) {
+    this.store.run(
+      "INSERT INTO orders_incoming_history VALUES(?,?,?,?,?,?,?,?,?)",
+      id(),
+      actor.orgId,
+      c.id,
+      action,
+      quantity,
+      reference,
+      reason,
+      actor.id,
+      now(),
+    );
+    this.platform.event(actor, "orders.incoming." + action, c.order_id, {
+      commitmentId: c.id,
+      quantity,
+      reference,
+      reason,
+    });
+  }
+  private incomingWritable(actor: Actor, orderId: string, revision: number) {
+    const order = this.order(actor, orderId);
+    integer(revision, "Order revision", 1, Number.MAX_SAFE_INTEGER);
+    check(
+      order.state === "open" && order.revision === revision,
+      "REVISION",
+      "Order changed or is closed; refresh incoming supply.",
+    );
+    return order;
+  }
+  commitIncoming(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      lineId: string;
+      revision: number;
+      poId: string;
+      purchaseLineId: string;
+      quantity: number;
+      priority: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.incoming.commit",
+      key,
+      input,
+      () => {
+        actor = this.reservationActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.incomingWritable(
+            actor,
+            input.orderId,
+            input.revision,
+          ),
+          line = this.lines(actor, order.id).find((l) => l.id === input.lineId),
+          quantity = integer(input.quantity, "Incoming quantity", 1, 100000),
+          priority = integer(input.priority, "Incoming priority", 1, 999),
+          reason = text(input.reason, "Incoming commitment reason", 1000);
+        check(line, "NOT_FOUND", "Order line not found.", 404);
+        this.assertReservationCurrent(actor, order.id);
+        check(
+          !this.identity.customer(actor, order.account_id).held,
+          "CREDIT_HOLD",
+          "Account is on hold.",
+        );
+        check(
+          quantity <=
+            line.quantity -
+              line.shipped -
+              line.canceled -
+              line.allocated -
+              this.incomingOpen(actor, line.id),
+          "INCOMING_DEMAND",
+          "Incoming quantity exceeds uncovered customer demand.",
+        );
+        const supply = this.procurement
+          .incomingSupply(actor, order.warehouse_id, [line.product_id])
+          .find(
+            (l) =>
+              l.poId === input.poId &&
+              l.purchaseLineId === input.purchaseLineId,
+          );
+        check(
+          supply,
+          "INCOMING_SUPPLY",
+          "Choose an open purchase line for this product and warehouse.",
+        );
+        const pending = this.incomingRows(
+          actor,
+          undefined,
+          supply.purchaseLineId,
+        ).reduce(
+          (sum, c) => sum + c.quantity - c.held - c.converted - c.released,
+          0,
+        );
+        check(
+          quantity <= supply.remainingQuantity - pending,
+          "INCOMING_CAPACITY",
+          "Other customer commitments already use that incoming supply. Refresh availability.",
+        );
+        const commitmentId = id();
+        this.store.run(
+          "INSERT INTO orders_incoming_commitments(id,org_id,order_id,line_id,po_id,purchase_line_id,quantity,priority,reason,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+          commitmentId,
+          actor.orgId,
+          order.id,
+          line.id,
+          supply.poId,
+          supply.purchaseLineId,
+          quantity,
+          priority,
+          reason,
+          actor.id,
+          now(),
+        );
+        const c = this.incomingRows(actor, order.id).find(
+          (r) => r.id === commitmentId,
+        )!;
+        this.incomingRecord(
+          actor,
+          c,
+          "committed",
+          quantity,
+          supply.poId,
+          reason,
+        );
+        this.refresh(actor, order.id);
+        return {
+          id: commitmentId,
+          orderId: order.id,
+          revision: order.revision + 1,
+        };
+      },
+    );
+  }
+  private releaseIncomingQuantity(
+    actor: Actor,
+    c: IncomingRow,
+    quantity: number,
+    reason: string,
+    reference: string,
+  ) {
+    integer(quantity, "Incoming release quantity", 1, 100000);
+    check(
+      quantity <= c.quantity - c.converted - c.released,
+      "INCOMING_QUANTITY",
+      "Release exceeds this commitment's pending and held quantity.",
+    );
+    let releaseHeld = Math.max(
+      0,
+      quantity - (c.quantity - c.held - c.converted - c.released),
+    );
+    const held = releaseHeld;
+    for (const h of this.inventory.incomingHolds(actor, c.id)) {
+      if (!releaseHeld) break;
+      const q = Math.min(releaseHeld, h.quantity - h.settled);
+      this.inventory.settleIncomingHold(actor, h.id, q, false);
+      releaseHeld -= q;
+    }
+    check(!releaseHeld, "INCOMING_STOCK", "Incoming hold quantities differ.");
+    this.store.run(
+      "UPDATE orders_incoming_commitments SET released=released+?,held=held-? WHERE org_id=? AND id=?",
+      quantity,
+      held,
+      actor.orgId,
+      c.id,
+    );
+    this.incomingRecord(actor, c, "released", quantity, reference, reason);
+  }
+  releaseIncoming(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      commitmentId: string;
+      revision: number;
+      quantity: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.incoming.release",
+      key,
+      input,
+      () => {
+        actor = this.reservationActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.incomingWritable(
+            actor,
+            input.orderId,
+            input.revision,
+          ),
+          c = this.incomingRows(actor, order.id).find(
+            (r) => r.id === input.commitmentId,
+          );
+        check(c, "NOT_FOUND", "Incoming commitment not found.", 404);
+        this.releaseIncomingQuantity(
+          actor,
+          c,
+          input.quantity,
+          text(input.reason, "Release reason", 1000),
+          order.id,
+        );
+        this.refresh(actor, order.id);
+        return { id: c.id, orderId: order.id, revision: order.revision + 1 };
+      },
+    );
+  }
+  prioritizeIncoming(
+    actor: Actor,
+    key: string,
+    input: {
+      orderId: string;
+      commitmentId: string;
+      revision: number;
+      priority: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.incoming.priority",
+      key,
+      input,
+      () => {
+        actor = this.reservationActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.incomingWritable(
+            actor,
+            input.orderId,
+            input.revision,
+          ),
+          c = this.incomingRows(actor, order.id).find(
+            (r) => r.id === input.commitmentId,
+          ),
+          priority = integer(input.priority, "Incoming priority", 1, 999),
+          reason = text(input.reason, "Priority reason", 1000);
+        check(c, "NOT_FOUND", "Incoming commitment not found.", 404);
+        check(
+          c.quantity > c.held + c.converted + c.released,
+          "INCOMING_QUANTITY",
+          "Only pending incoming supply can be reprioritized.",
+        );
+        this.store.run(
+          "UPDATE orders_incoming_commitments SET priority=? WHERE org_id=? AND id=?",
+          priority,
+          actor.orgId,
+          c.id,
+        );
+        this.incomingRecord(actor, c, "priority", 0, String(priority), reason);
+        this.refresh(actor, order.id);
+        return { id: c.id, orderId: order.id, revision: order.revision + 1 };
+      },
+    );
+  }
+  /** Owning receipt task; Procurement calls inside the same stock receipt transaction. */
+  receiveIncoming(
+    actor: Actor,
+    input: {
+      poId: string;
+      purchaseLineId: string;
+      receiptId: string;
+      unitIds: string[];
+      quantity: number;
+    },
+  ) {
+    this.database.requireTransaction();
+    actor = this.orderReader(actor);
+    permit(actor, ["warehouse"]);
+    let remaining = input.quantity;
+    for (const c of this.incomingRows(actor, undefined, input.purchaseLineId)) {
+      const pending = c.quantity - c.held - c.converted - c.released;
+      if (!pending || !remaining) continue;
+      check(
+        c.po_id === input.poId,
+        "INCOMING_SUPPLY",
+        "Incoming purchase identity differs.",
+      );
+      const order = this.order(actor, c.order_id),
+        line = this.lines(actor, order.id).find((l) => l.id === c.line_id)!;
+      const quantity = Math.min(pending, remaining);
+      this.inventory.holdIncoming(actor, {
+        commitmentId: c.id,
+        orderId: order.id,
+        productId: line.product_id,
+        warehouseId: order.warehouse_id,
+        unitIds: input.unitIds,
+        quantity,
+      });
+      this.store.run(
+        "UPDATE orders_incoming_commitments SET held=held+? WHERE org_id=? AND id=?",
+        quantity,
+        actor.orgId,
+        c.id,
+      );
+      this.incomingRecord(
+        actor,
+        c,
+        "arrived",
+        quantity,
+        input.receiptId,
+        "Received against the customer's incoming commitment.",
+      );
+      remaining -= quantity;
+      this.settleIncomingCommitment(actor, { ...c, held: c.held + quantity });
+      this.refresh(actor, order.id);
+    }
+  }
+  private settleIncomingCommitment(actor: Actor, c: IncomingRow) {
+    const order = this.order(actor, c.order_id),
+      blocked =
+        order.state !== "open" ||
+        this.reservationStatus(actor, order.id).overdue ||
+        this.identity.customer(actor, order.account_id).held;
+    let converted = 0,
+      released = 0;
+    for (const h of this.inventory.incomingHolds(actor, c.id)) {
+      const u = this.inventory.unit(actor, h.unit_id),
+        q = h.quantity - h.settled;
+      if (u.condition === "damaged") {
+        this.inventory.settleIncomingHold(actor, h.id, q, false);
+        released += q;
+        this.incomingRecord(
+          actor,
+          c,
+          "inspection-released",
+          q,
+          u.id,
+          "Failed inspection released the customer earmark; demand needs replacement supply.",
+        );
+      } else if (u.condition === "usable" && !blocked) {
+        this.inventory.settleIncomingHold(actor, h.id, q, true);
+        converted += q;
+        this.incomingRecord(
+          actor,
+          c,
+          "reserved",
+          q,
+          u.id,
+          "Inspected usable arrival converted to a physical reservation.",
+        );
+      }
+    }
+    if (converted || released)
+      this.store.run(
+        "UPDATE orders_incoming_commitments SET held=held-?,converted=converted+?,released=released+? WHERE org_id=? AND id=?",
+        converted + released,
+        converted,
+        released,
+        actor.orgId,
+        c.id,
+      );
+    if (converted)
+      this.store.run(
+        "UPDATE orders_lines SET allocated=allocated+? WHERE org_id=? AND id=?",
+        converted,
+        actor.orgId,
+        c.line_id,
+      );
+    return converted + released;
+  }
+  inspectIncoming(actor: Actor, unitId: string) {
+    this.database.requireTransaction();
+    actor = this.orderReader(actor);
+    permit(actor, ["warehouse"]);
+    const commitments = new Set(
+      this.inventory
+        .incomingHolds(actor, undefined, unitId)
+        .map((h) => h.commitment_id),
+    );
+    for (const c of this.incomingRows(actor).filter((c) =>
+      commitments.has(c.id),
+    )) {
+      if (this.settleIncomingCommitment(actor, c))
+        this.refresh(actor, c.order_id);
+    }
+  }
+  reconcileIncoming(
+    actor: Actor,
+    key: string,
+    input: { orderId: string; revision: number; reason: string },
+  ) {
+    return this.platform.command(
+      actor,
+      "order.incoming.reconcile",
+      key,
+      input,
+      () => {
+        actor = this.reservationActor(actor, true);
+        this.order(actor, input.orderId);
+      },
+      () => {
+        const order = this.incomingWritable(
+          actor,
+          input.orderId,
+          input.revision,
+        );
+        const reason = text(input.reason, "Reconciliation reason", 1000);
+        for (const c of this.incomingRows(actor, order.id))
+          this.settleIncomingCommitment(actor, c);
+        this.platform.audit(
+          actor,
+          "order.incoming.reconcile.reason",
+          order.id,
+          { reason },
+        );
+        this.refresh(actor, order.id);
+        return { id: order.id, revision: order.revision + 1 };
+      },
+    );
+  }
+  private trimIncoming(
+    actor: Actor,
+    lineId: string,
+    capacity: number,
+    reason: string,
+  ) {
+    const rows = this.store.all<IncomingRow>(
+      "SELECT * FROM orders_incoming_commitments WHERE org_id=? AND line_id=? ORDER BY priority DESC,created_at DESC,rowid DESC",
+      actor.orgId,
+      lineId,
+    );
+    let excess = Math.max(
+      0,
+      rows.reduce((sum, c) => sum + c.quantity - c.converted - c.released, 0) -
+        capacity,
+    );
+    for (const c of rows) {
+      const quantity = Math.min(excess, c.quantity - c.converted - c.released);
+      if (quantity)
+        this.releaseIncomingQuantity(actor, c, quantity, reason, lineId);
+      excess -= quantity;
+    }
+  }
   allocate(
     actor: Actor,
     key: string,
@@ -664,7 +1280,11 @@ export class Orders {
             order.id,
             l.product_id,
             order.warehouse_id,
-            l.quantity - l.shipped - l.canceled - l.allocated,
+            l.quantity -
+              l.shipped -
+              l.canceled -
+              l.allocated -
+              this.incomingOpen(actor, l.id),
           );
           this.store.run(
             "UPDATE orders_lines SET allocated=allocated+? WHERE id=?",
@@ -1114,6 +1734,16 @@ export class Orders {
           actor.orgId,
           order.id,
         );
+        this.trimIncoming(
+          actor,
+          line.id,
+          quantity -
+            line.shipped -
+            line.canceled -
+            line.allocated -
+            allocatedDelta,
+          "Order quantity reduced: " + reason,
+        );
         this.refresh(actor, order.id);
         const amendmentId = id(),
           revision = order.revision + 1;
@@ -1211,6 +1841,17 @@ export class Orders {
           qty,
           release,
           line.id,
+        );
+        this.trimIncoming(
+          actor,
+          line.id,
+          line.quantity -
+            line.shipped -
+            line.canceled -
+            qty -
+            line.allocated +
+            release,
+          "Order cancellation: " + input.reason,
         );
         this.refresh(actor, order.id);
         this.platform.audit(actor, "order.cancel.reason", order.id, {

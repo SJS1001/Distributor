@@ -1,3 +1,4 @@
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:3144";
@@ -15,10 +16,7 @@ async function signIn(page: Page, email: string) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
   return csrf;
 }
 const dialog = (page: Page) =>
@@ -58,6 +56,7 @@ test("browser: phone bin relocation refuses wrong serial then recovers an identi
   const before = (await stock(page)).find((u) => u.serial === "S1")!;
   const row = page.getByRole("row").filter({ hasText: "S1 · stock" });
   const opener = row.getByRole("button", { name: "Move to bin", exact: true });
+  await openStockActions(row);
   await opener.click();
   await fill(page, "A-1", "RACK-PHONE", "S2");
   await dialog(page)
@@ -103,7 +102,9 @@ test("browser: phone bin relocation refuses wrong serial then recovers an identi
     bin: "RACK-PHONE",
     revision: before.revision + 1,
   });
-  await expect(row).toContainText("Toronto / RACK-PHONE");
+  await expect(row.getByRole("cell").nth(1)).toHaveText(
+    "TorontoBin RACK-PHONE",
+  );
   await expect(opener).toBeFocused();
   expect(
     await page.evaluate(
@@ -118,6 +119,7 @@ test("browser: bin review rejects changed stock, cancellation conserves facts an
   const csrf = await signIn(page, "admin@example.test");
   const before = (await stock(page)).find((u) => u.serial === "S2")!;
   const row = page.getByRole("row").filter({ hasText: "S2 · stock" });
+  await openStockActions(row);
   await row.getByRole("button", { name: "Move to bin", exact: true }).click();
   await fill(page, "A-1", "STALE-BIN", "S2");
   const response = await page.request.post(
@@ -152,6 +154,7 @@ test("browser: bin review rejects changed stock, cancellation conserves facts an
     name: "Move to bin",
     exact: true,
   });
+  await openStockActions(bulkRow);
   await move.click();
   await expect(dialog(page)).toContainText("Move all 6 units");
   await expect(
@@ -162,6 +165,7 @@ test("browser: bin review rejects changed stock, cancellation conserves facts an
     .click();
   await expect(move).toBeFocused();
   expect((await stock(page)).find((u) => u.id === lot.id)).toEqual(lot);
+  await openStockActions(bulkRow);
   await move.click();
   await fill(page, "RECEIVING", "QUARANTINE-PHONE");
   await dialog(page)
@@ -174,7 +178,11 @@ test("browser: bin review rejects changed stock, cancellation conserves facts an
     revision: lot.revision + 1,
   });
   await expect(bulkRow).toContainText("quarantine");
-  await expect(bulkRow).toContainText("6 / 0 / 0");
+  await expect(bulkRow.locator(".stock-quantities > span")).toHaveText([
+    "6Book",
+    "0Reserved",
+    "0Available",
+  ]);
 });
 
 test("browser: phone partial bulk putaway leaves four units and recovers the same two-unit move after reload and sign-out following a lost response", async ({
@@ -184,6 +192,9 @@ test("browser: phone partial bulk putaway leaves four units and recovers the sam
   await signIn(page, "warehouse@example.test");
   const lot = (await stock(page)).find((u) => u.serial === null)!;
   expect(lot.quantity).toBe(6);
+  await openStockActions(
+    page.getByRole("row").filter({ hasText: "BIN-MOVE-BULK" }),
+  );
   await page
     .getByRole("row")
     .filter({ hasText: "BIN-MOVE-BULK" })
@@ -223,10 +234,7 @@ test("browser: phone partial bulk putaway leaves four units and recovers the sam
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   await page.reload();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
   await expect(
     page.getByRole("button", { name: "Review retained bin move", exact: true }),
   ).toBeVisible();
@@ -271,8 +279,11 @@ test("browser: phone partial bulk putaway leaves four units and recovers the sam
     moved.warehouse_id,
   ]).toEqual([2, 125, "quarantine", "PARTIAL-PHONE", 0, lot.warehouse_id]);
   await expect(
-    page.getByRole("row").filter({ hasText: "PARTIAL-PHONE" }),
-  ).toContainText("2 / 0 / 0");
+    page
+      .getByRole("row")
+      .filter({ hasText: "PARTIAL-PHONE" })
+      .locator(".stock-quantities > span"),
+  ).toHaveText(["2Book", "0Reserved", "0Available"]);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -288,10 +299,10 @@ test("browser: bin move locks competing tabs and recovers one retained command f
   const before = (await stock(page)).find((u) => u.serial === "S1")!;
   const other = await context.newPage();
   await other.goto(origin);
-  await other
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(other, "Inventory", "Stock");
+  await openStockActions(
+    other.getByRole("row").filter({ hasText: "S2 · stock" }),
+  );
   await other
     .getByRole("row")
     .filter({ hasText: "S2 · stock" })
@@ -319,6 +330,9 @@ test("browser: bin move locks competing tabs and recovers one retained command f
     result = await response.json();
     await route.abort("failed");
   });
+  await openStockActions(
+    page.getByRole("row").filter({ hasText: "S1 · stock" }),
+  );
   await page
     .getByRole("row")
     .filter({ hasText: "S1 · stock" })
@@ -390,15 +404,15 @@ test("browser: malformed bin recovery and storage failures block transport and p
   });
   await page.evaluate((key) => localStorage.setItem(key, "{damaged"), key);
   await page.reload();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
   await expect(
     page
       .getByRole("region", { name: "Bin move recovery", exact: true })
       .getByRole("alert"),
   ).toContainText("Reconcile the previous attempt");
+  await openStockActions(
+    page.getByRole("row").filter({ hasText: "S1 · stock" }),
+  );
   await page
     .getByRole("row")
     .filter({ hasText: "S1 · stock" })
@@ -416,10 +430,10 @@ test("browser: malformed bin recovery and storage failures block transport and p
   // Test-only repair after proving no transport; real operators must reconcile.
   await page.evaluate((key) => localStorage.removeItem(key), key);
   await page.reload();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
+  await openStockActions(
+    page.getByRole("row").filter({ hasText: "S1 · stock" }),
+  );
   await page
     .getByRole("row")
     .filter({ hasText: "S1 · stock" })
@@ -470,6 +484,9 @@ test("browser: malformed committed bin reply retains original details across nav
       await route.fulfill({ response });
     }
   });
+  await openStockActions(
+    page.getByRole("row").filter({ hasText: "S2 · stock" }),
+  );
   await page
     .getByRole("row")
     .filter({ hasText: "S2 · stock" })
@@ -487,15 +504,9 @@ test("browser: malformed committed bin reply retains original details across nav
   await dialog(page)
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   await expect(dialog(page)).toHaveCount(0);
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
   await page
     .getByRole("button", { name: "Review retained bin move", exact: true })
     .click();

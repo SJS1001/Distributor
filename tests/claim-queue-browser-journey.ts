@@ -1,11 +1,9 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3130";
 const pattern = "**/api/warranty/claims/page?*";
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(page, name, name === "Orders" ? "Orders" : undefined);
 }
 async function login(page: Page, email = "admin@example.test") {
   await page.goto(origin);

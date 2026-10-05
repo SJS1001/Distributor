@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 // Synthetic approved sources and local-only preparations; no provider transport.
 import { test, expect, type Page } from "@playwright/test";
 const origin = (port: number) => `http://127.0.0.1:${port}`;
@@ -22,10 +26,7 @@ async function signIn(page: Page, port: number) {
   await billing(page);
 }
 async function billing(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(page, "Stock journals");
   await expect(panel(page)).toBeVisible();
 }
 async function source(page: Page, port: number, leg = "original") {
@@ -531,10 +532,7 @@ test("journal preparation browser: navigation cancels delayed source read withou
     .getByRole("button", { name: "Load approved journal source", exact: true })
     .click();
   await seen;
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   release();
   await done;
   await expect(

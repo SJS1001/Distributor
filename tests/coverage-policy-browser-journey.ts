@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3129";
 async function login(page: Page, email: string) {
@@ -14,10 +15,7 @@ async function login(page: Page, email: string) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Returns", exact: true })
-    .click();
+  await navigateWorkspace(page, "Returns");
   return csrf;
 }
 test("browser: warranty policy review on a phone fences stale claim dates and retains snapshots across lost replies and later changes", async ({

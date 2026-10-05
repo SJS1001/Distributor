@@ -19,7 +19,9 @@ export function SerialCustody({
     );
   return (
     <section aria-label="Serial custody reviews">
-      <h2>Serial custody reviews</h2>
+      <h2 id="inventory-serials" tabIndex={-1}>
+        Serial custody reviews
+      </h2>
       <p>
         Missing observations preserve expected book stock until administrator
         review. Approved losses retain the serial identity with zero book

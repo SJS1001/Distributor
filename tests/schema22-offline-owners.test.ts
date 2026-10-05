@@ -8,6 +8,11 @@ import { canonical } from "../src/server/core.ts";
 import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture } from "./fixtures.ts";
+const laterTables = [
+  "orders_incoming_commitments",
+  "orders_incoming_history",
+  "inventory_incoming_holds",
+];
 const tables = [
   "integration_offline_checkout_paid",
   "integration_offline_original_leases",
@@ -37,7 +42,8 @@ function business(path: string) {
           .filter(
             (r) =>
               r.name !== "platform_schema_version" &&
-              !tables.includes(r.name as (typeof tables)[number]),
+              !tables.includes(r.name as (typeof tables)[number]) &&
+              !laterTables.includes(String(r.name)),
           )
           .map((r) => [
             String(r.name),
@@ -63,7 +69,8 @@ for (const [region, currency] of [
         target = join(dirname(f.path), "upgraded22.db");
       raw(f.path, (db) => db.prepare("VACUUM INTO ?").run(source));
       raw(source, (db) => {
-        for (const table of tables) db.exec(`DROP TABLE ${table}`);
+        for (const table of [...tables, ...laterTables])
+          db.exec(`DROP TABLE ${table}`);
         const hash = reports ? v21.enabled : v21.disabled;
         assert.equal(schemaFingerprint(db), hash);
         db.prepare(
@@ -88,7 +95,7 @@ for (const [region, currency] of [
       );
       assert.equal(receipt.sourceVersion, 21);
       assert.equal(receipt.version, SCHEMA_VERSION);
-      assert.equal(receipt.version, 22);
+      assert.equal(receipt.version, 23);
       assert.equal(inspectSchema(target).kind, "current");
       assert.equal(inspectSchema(target).initializedAt, old.initializedAt);
       assert.equal(business(target), before);

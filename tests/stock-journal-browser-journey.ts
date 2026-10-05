@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page, type Browser } from "@playwright/test";
 const origin = "http://127.0.0.1:3168",
   historyOrigin = "http://127.0.0.1:3169";
@@ -38,10 +42,7 @@ async function signIn(page: Page, role = "finance", url = origin) {
   await billing(page);
 }
 async function billing(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(page, "Stock journals");
   await expect(panel(page)).toBeVisible();
 }
 async function retained(page: Page) {
@@ -520,10 +521,7 @@ test("browser: abandoned journal reads do not reopen closed or navigated reviews
     .getByRole("button", { name: /^Review journal/ })
     .click();
   await expect.poll(() => reached).toBeTruthy();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   release();
   await page.unrouteAll({ behavior: "wait" });
   await billing(page);
@@ -633,10 +631,7 @@ test("browser: navigation during journal decision retains exact recovery after n
     .click();
   await expect.poll(() => reached).toBeTruthy();
   const stored = await retained(page);
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   release();
   await expect(panel(page)).toHaveCount(0);
   await billing(page);

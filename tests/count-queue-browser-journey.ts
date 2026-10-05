@@ -1,15 +1,17 @@
 import { test, expect, type Page } from "@playwright/test";
 import { countQueueStates } from "../src/shared/count-queue.ts";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3164",
   pattern = "**/api/counts/page?*";
 function queue(page: Page) {
   return page.getByRole("region", { name: "Count queue", exact: true });
 }
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(
+    page,
+    name,
+    name === "Inventory" ? "Cycle counts" : undefined,
+  );
 }
 async function login(
   page: Page,

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ScanInput } from "./scan-input.tsx";
 type Item = Record<string, any>;
 export type Field = {
@@ -43,6 +43,19 @@ export function Modal({
   submit: (values: Item) => Promise<void>;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const validationRef = useRef<HTMLDivElement>(null);
+  const focusValidation = useRef(false);
+  const [invalidFields, setInvalidFields] = useState<
+    { id: string; label: string; message: string }[]
+  >([]);
+  useEffect(() => {
+    if (focusValidation.current && invalidFields.length)
+      validationRef.current?.focus();
+    focusValidation.current = false;
+  }, [invalidFields]);
+  useEffect(() => {
+    setInvalidFields([]);
+  }, [dialog.title]);
   const closeRef = useRef(close);
   const busyRef = useRef(busy);
   // A suspended render must not replace the visible dialog's keyboard actions.
@@ -58,8 +71,12 @@ export function Modal({
         element.querySelectorAll<HTMLElement>(
           "input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled),a[href]",
         ),
+      ).filter(
+        (item) =>
+          !item.closest("[hidden], [inert]") &&
+          item.getClientRects().length > 0,
       );
-    focusables()[0]?.focus();
+    (focusables()[0] ?? element).focus();
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) {
         event.preventDefault();
@@ -69,6 +86,11 @@ export function Modal({
         const items = focusables(),
           first = items[0],
           last = items.at(-1);
+        if (!items.length) {
+          event.preventDefault();
+          element.focus();
+          return;
+        }
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last?.focus();
@@ -84,6 +106,11 @@ export function Modal({
       if (previous?.isConnected) previous.focus();
     };
   }, [dialog.title]);
+  useEffect(() => {
+    const element = ref.current;
+    if (busy && element && !element.contains(document.activeElement))
+      element.focus();
+  }, [busy]);
   useEffect(() => {
     // Disabling the submit button can move focus outside the dialog. Restore
     // it after a rejected command so keyboard recovery remains available.
@@ -101,6 +128,8 @@ export function Modal({
         ref={ref}
         className="modal"
         role="dialog"
+        tabIndex={-1}
+        aria-busy={busy}
         aria-modal="true"
         aria-labelledby="dialog-title"
       >
@@ -113,10 +142,81 @@ export function Modal({
             {error}
           </p>
         )}
+        {invalidFields.length > 0 && (
+          <div
+            className="error validation-summary"
+            ref={validationRef}
+            tabIndex={-1}
+            role="alert"
+            aria-label="Check these fields"
+          >
+            <strong>Check these fields before continuing</strong>
+            <ul>
+              {invalidFields.map((field) => (
+                <li key={field.id}>
+                  <a
+                    href={`#${field.id}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      document.getElementById(field.id)?.focus();
+                    }}
+                  >
+                    {field.label}: {field.message}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <p>
+              Your entries are still here. Correct the fields, then continue.
+            </p>
+          </div>
+        )}
         <form
+          noValidate
           key={dialog.title}
+          onInput={(event) => {
+            const field = event.target;
+            if (
+              field instanceof HTMLInputElement ||
+              field instanceof HTMLSelectElement ||
+              field instanceof HTMLTextAreaElement
+            ) {
+              if (field.validity.valid) {
+                field.removeAttribute("aria-invalid");
+                setInvalidFields((current) =>
+                  current.filter((item) => item.id !== field.id),
+                );
+              }
+            }
+          }}
           onSubmit={(e) => {
             e.preventDefault();
+            const invalid = Array.from(
+              e.currentTarget.querySelectorAll<
+                HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+              >("input,select,textarea"),
+            )
+              .filter((field) => field.willValidate && !field.validity.valid)
+              .map((field, index) => {
+                if (!field.id) field.id = `dialog-invalid-${index}`;
+                field.setAttribute("aria-invalid", "true");
+                const label =
+                  field.getAttribute("aria-label") ??
+                  document.getElementById(
+                    field.getAttribute("aria-labelledby") ?? "",
+                  )?.textContent ??
+                  field.labels?.[0]?.textContent ??
+                  field.name ??
+                  "Field";
+                return {
+                  id: field.id,
+                  label: label.trim(),
+                  message: field.validationMessage,
+                };
+              });
+            focusValidation.current = invalid.length > 0;
+            setInvalidFields(invalid);
+            if (invalid.length) return;
             const form = new FormData(e.currentTarget),
               values: Item = {};
             for (const f of dialog.fields)
@@ -140,17 +240,28 @@ export function Modal({
             >
               {f.type === "checkbox" ? (
                 <input
+                  id={`field-${f.name}`}
                   name={f.name}
+                  aria-describedby={f.help ? `field-help-${f.name}` : undefined}
                   aria-labelledby={`field-label-${f.name}`}
                   type="checkbox"
                   defaultChecked={Boolean(f.value)}
                 />
               ) : null}
               <span id={`field-label-${f.name}`}>{f.label}</span>
+              {!f.content && f.type !== "checkbox" && (
+                <small className="field-requirement">
+                  {f.optional ? "Optional" : "Required"}
+                </small>
+              )}
               {f.content ??
                 (f.type === "checkbox" ? null : f.options ? (
                   <select
+                    id={`field-${f.name}`}
                     name={f.name}
+                    aria-describedby={
+                      f.help ? `field-help-${f.name}` : undefined
+                    }
                     aria-labelledby={`field-label-${f.name}`}
                     multiple={f.type === "multiselect"}
                     required={!f.optional}
@@ -174,6 +285,7 @@ export function Modal({
                 ) : f.scan ? (
                   <ScanInput
                     name={f.name}
+                    describedBy={f.help ? `field-help-${f.name}` : undefined}
                     label={f.label}
                     value={String(f.value ?? "")}
                     multiline={f.scan === "lines"}
@@ -182,7 +294,11 @@ export function Modal({
                   />
                 ) : f.type === "textarea" ? (
                   <textarea
+                    id={`field-${f.name}`}
                     name={f.name}
+                    aria-describedby={
+                      f.help ? `field-help-${f.name}` : undefined
+                    }
                     aria-labelledby={`field-label-${f.name}`}
                     required={!f.optional}
                     maxLength={f.maxLength}
@@ -190,17 +306,22 @@ export function Modal({
                   />
                 ) : (
                   <input
+                    id={`field-${f.name}`}
                     name={f.name}
+                    aria-describedby={
+                      f.help ? `field-help-${f.name}` : undefined
+                    }
                     aria-labelledby={`field-label-${f.name}`}
                     type={f.type ?? "text"}
                     required={!f.optional}
+                    maxLength={f.maxLength}
                     min={f.type === "number" ? (f.min ?? 0) : undefined}
                     max={f.max}
                     step={f.type === "number" ? 1 : undefined}
                     defaultValue={String(f.value ?? "")}
                   />
                 ))}{" "}
-              {f.help && <small>{f.help}</small>}
+              {f.help && <small id={`field-help-${f.name}`}>{f.help}</small>}
             </div>
           ))}
           <div className="actions">

@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork, spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fixture, accept, ship } from "./fixtures.ts";
@@ -772,6 +773,7 @@ function worker(
             ...process.env,
             DATABASE_PATH: path,
             DATA_REGION: "CA",
+            EVENT_REPORTS: "enabled",
             LOCAL_EVENT_REPORTS: "enabled",
             ...overrides,
           },
@@ -787,6 +789,34 @@ function worker(
     },
   );
 }
+test("foreground worker refuses uninitialized files without creating application data", async (t) => {
+  const f = fixture(t);
+  for (const kind of ["zero-byte", "empty-sqlite", "unrelated-sqlite"]) {
+    await t.test(kind, async () => {
+      const path = join(dirname(f.path), `${kind}.db`);
+      writeFileSync(path, "");
+      if (kind !== "zero-byte") {
+        const db = new DatabaseSync(path);
+        try {
+          db.exec(
+            kind === "empty-sqlite"
+              ? "VACUUM"
+              : "CREATE TABLE unrelated(id INTEGER)",
+          );
+        } finally {
+          db.close();
+        }
+      }
+      const before = readFileSync(path);
+      const result = await worker(path);
+      assert.equal(result.code, 1, result.out);
+      assert.equal(result.out, "");
+      assert.deepEqual(readFileSync(path), before);
+      for (const suffix of ["-wal", "-shm", "-journal"])
+        assert.equal(existsSync(path + suffix), false);
+    });
+  }
+});
 test("foreground worker fails closed while disabled, validates path/region/arguments and processes one bounded batch without provider setup", async (t) => {
   const f = fixture(t),
     missing = join(dirname(f.path), "never-created.db");

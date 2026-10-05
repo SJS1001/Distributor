@@ -386,140 +386,170 @@ export function PurchaseEntry({
   };
   const edit = (
     <>
-      <SupplierPicker selected={supplier} choose={setSupplier} />
-      <label>
-        Warehouse
-        <select
-          aria-label="Warehouse"
-          required
-          value={warehouseId}
-          onChange={(e) => setWarehouseId(e.target.value)}
-        >
-          <option value="" disabled>
-            Select…
-          </option>
-          {warehouses.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
+      <fieldset className="form-group">
+        <legend>1. Supplier and receiving warehouse</legend>
+        <p className="form-help">
+          Required selections. Stock is received separately after this purchase
+          order is created.
+        </p>
+        <SupplierPicker selected={supplier} choose={setSupplier} />
+        <label>
+          Warehouse <span className="field-requirement">Required</span>
+          <select
+            id="purchase-warehouse"
+            aria-label="Warehouse"
+            required
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+          >
+            <option value="" disabled>
+              Select…
             </option>
-          ))}
-        </select>
-      </label>
-      <p>
-        Enter purchase costs in {currency} cents. Selling prices are not
-        purchase costs. Up to 100 different products; receipts are recorded
-        separately.
-      </p>
-      <label>
-        Purchase product search
-        <input
-          ref={searchInput}
-          value={search}
-          maxLength={120}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              setSelection({
-                search: search.trim(),
-                after: null,
-                epoch: selection.epoch + 1,
-              });
-            }
-          }}
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </fieldset>
+      <fieldset className="form-group">
+        <legend>2. Products and original purchase costs</legend>
+        <p id="purchase-cost-help" className="form-help">
+          Enter purchase costs in {currency} cents. Selling prices are not
+          purchase costs. Up to 100 different products; receipts are recorded
+          separately.
+        </p>
+        <label>
+          Purchase product search
+          <input
+            ref={searchInput}
+            value={search}
+            maxLength={120}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                setSelection({
+                  search: search.trim(),
+                  after: null,
+                  epoch: selection.epoch + 1,
+                });
+              }
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() =>
+            setSelection({
+              search: search.trim(),
+              after: null,
+              epoch: selection.epoch + 1,
+            })
+          }
+        >
+          Search purchase products
+        </button>
+        <ProductPage
+          key={selection.epoch}
+          search={selection.search}
+          after={selection.after}
+          selected={new Set(lines.map((line) => line.product.id))}
+          disabled={busy}
+          add={(product) =>
+            setLines((current) =>
+              current.some((line) => line.product.id === product.id) ||
+              current.length >= 100
+                ? current
+                : [...current, { product, quantity: "1", unitCost: "" }],
+            )
+          }
+          next={(after) =>
+            setSelection({ ...selection, after, epoch: selection.epoch + 1 })
+          }
         />
-      </label>
-      <button
-        type="button"
-        onClick={() =>
-          setSelection({
-            search: search.trim(),
-            after: null,
-            epoch: selection.epoch + 1,
-          })
-        }
-      >
-        Search purchase products
-      </button>
-      <ProductPage
-        key={selection.epoch}
-        search={selection.search}
-        after={selection.after}
-        selected={new Set(lines.map((line) => line.product.id))}
-        disabled={busy}
-        add={(product) =>
-          setLines((current) =>
-            current.some((line) => line.product.id === product.id) ||
-            current.length >= 100
-              ? current
-              : [...current, { product, quantity: "1", unitCost: "" }],
-          )
-        }
-        next={(after) =>
-          setSelection({ ...selection, after, epoch: selection.epoch + 1 })
-        }
-      />
-      <section aria-label="Selected purchase lines">
-        <h3>{lines.length} selected purchase lines</h3>
-        {lines.map((line) => (
-          <fieldset key={line.product.id}>
-            <legend>
-              {line.product.sku} · {line.product.name}
-            </legend>
-            <label>
-              Units for {line.product.sku}
-              <input
-                type="number"
-                required
-                min={1}
-                max={100000}
-                step={1}
-                value={line.quantity}
-                onChange={(e) =>
+        <section aria-label="Selected purchase lines">
+          <h3>{lines.length} selected purchase lines</h3>
+          {!lines.length && (
+            <p>
+              Add at least one product. Each line needs units and an explicit
+              cost; zero is allowed for cost.
+            </p>
+          )}
+          {lines.map((line) => (
+            <fieldset key={line.product.id}>
+              <legend>
+                {line.product.sku} · {line.product.name}
+              </legend>
+              <label>
+                Units for {line.product.sku}
+                <span className="field-requirement">
+                  Required · 1–100,000 whole units
+                </span>
+                <input
+                  aria-label={`Units for ${line.product.sku}`}
+                  id={`purchase-units-${line.product.id}`}
+                  inputMode="numeric"
+                  type="number"
+                  required
+                  min={1}
+                  max={100000}
+                  step={1}
+                  value={line.quantity}
+                  onChange={(e) =>
+                    setLines((current) =>
+                      current.map((r) =>
+                        r.product.id === line.product.id
+                          ? { ...r, quantity: e.target.value }
+                          : r,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Unit cost in cents for {line.product.sku}
+                <span className="field-requirement">
+                  Required · {currency} cents · zero allowed
+                </span>
+                <input
+                  aria-label={`Unit cost in cents for ${line.product.sku}`}
+                  id={`purchase-cost-${line.product.id}`}
+                  aria-describedby="purchase-cost-help"
+                  inputMode="numeric"
+                  type="number"
+                  required
+                  min={0}
+                  max={1e9}
+                  step={1}
+                  value={line.unitCost}
+                  onChange={(e) =>
+                    setLines((current) =>
+                      current.map((r) =>
+                        r.product.id === line.product.id
+                          ? { ...r, unitCost: e.target.value }
+                          : r,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
                   setLines((current) =>
-                    current.map((r) =>
-                      r.product.id === line.product.id
-                        ? { ...r, quantity: e.target.value }
-                        : r,
-                    ),
-                  )
-                }
-              />
-            </label>
-            <label>
-              Unit cost in cents for {line.product.sku}
-              <input
-                type="number"
-                required
-                min={0}
-                max={1e9}
-                step={1}
-                value={line.unitCost}
-                onChange={(e) =>
-                  setLines((current) =>
-                    current.map((r) =>
-                      r.product.id === line.product.id
-                        ? { ...r, unitCost: e.target.value }
-                        : r,
-                    ),
-                  )
-                }
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                setLines((current) =>
-                  current.filter((r) => r.product.id !== line.product.id),
-                );
-                searchInput.current?.focus();
-              }}
-            >
-              Remove {line.product.sku}
-            </button>
-          </fieldset>
-        ))}
-      </section>
+                    current.filter((r) => r.product.id !== line.product.id),
+                  );
+                  searchInput.current?.focus();
+                }}
+              >
+                Remove {line.product.sku}
+              </button>
+            </fieldset>
+          ))}
+        </section>
+      </fieldset>
     </>
   );
   const summary = review && (
@@ -528,13 +558,46 @@ export function PurchaseEntry({
         Supplier: {review.supplier.name} · Warehouse: {review.warehouse.name}
       </p>
       <section aria-label="Reviewed purchase lines">
-        {review.lines.map((line) => (
-          <p key={line.product.id}>
-            {line.product.sku} · {line.product.name} · {line.quantity} units ×{" "}
-            {amount(BigInt(line.unitCost), review.currency)} ={" "}
-            {amount(lineCost(line), review.currency)}
-          </p>
-        ))}
+        <div
+          className="table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label="Purchase costs; scroll to see all columns"
+        >
+          <table>
+            <caption>Original purchase costs in {review.currency}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Product</th>
+                <th scope="col" className="quantity">
+                  Units
+                </th>
+                <th scope="col" className="amount">
+                  Unit cost
+                </th>
+                <th scope="col" className="amount">
+                  Line cost
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {review.lines.map((line) => (
+                <tr key={line.product.id}>
+                  <th scope="row">
+                    {line.product.sku} · {line.product.name}
+                  </th>
+                  <td className="quantity">{line.quantity} units</td>
+                  <td className="amount">
+                    {amount(BigInt(line.unitCost), review.currency)}
+                  </td>
+                  <td className="amount">
+                    {amount(lineCost(line), review.currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       <p>
         Purchase total:{" "}

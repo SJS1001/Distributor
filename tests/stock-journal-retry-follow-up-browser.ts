@@ -1,3 +1,4 @@
+import { navigateAccounting } from "./workspace-navigation.ts";
 // Synthetic browser/HTTP retry chains. No receiver I/O or actual finance evidence.
 import { test, expect, type Page } from "@playwright/test";
 const origin = (n = 0) => `http://127.0.0.1:${3209 + n}`;
@@ -17,10 +18,7 @@ const fixed = (p: Page) =>
     exact: true,
   });
 async function billing(p: Page) {
-  await p
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(p, "Stock journals");
   await expect(queue(p)).toBeVisible();
 }
 async function signIn(p: Page, n = 0, role = "admin") {
@@ -196,23 +194,23 @@ test("retry follow-up browser: CA final cancellation conserves the root and perm
       exact: true,
     });
     await retry
-      .getByRole("button", { name: "Load original retry review", exact: true })
+      .getByRole("button", { name: "Review cancelled journal", exact: true })
       .click();
     await retry
       .getByLabel("Original retry reason", { exact: true })
       .fill("Synthetic next separately reviewed original attempt");
     await retry
-      .getByRole("button", { name: "Review fresh original retry", exact: true })
+      .getByRole("button", { name: "Review new journal", exact: true })
       .click();
     await retry
       .getByRole("button", {
-        name: "Prepare fresh original retry",
+        name: "Prepare new journal",
         exact: true,
       })
       .click();
     await expect(
       retry.getByRole("region", {
-        name: "Exact original retry review",
+        name: "Review journal preparation",
         exact: true,
       }),
     ).toHaveCount(0);

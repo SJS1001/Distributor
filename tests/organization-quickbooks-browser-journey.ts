@@ -1,3 +1,4 @@
+import { navigateAccounting } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 
 async function login(page: Page, origin: string) {
@@ -12,7 +13,7 @@ async function login(page: Page, origin: string) {
   ).toBeVisible();
 }
 async function billing(page: Page) {
-  await page.getByRole("button", { name: "Billing", exact: true }).click();
+  await navigateAccounting(page, "QuickBooks connections");
   const panel = page.getByRole("region", {
     name: "Organization QuickBooks connection",
     exact: true,

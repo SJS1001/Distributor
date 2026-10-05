@@ -1,11 +1,9 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3134",
   pattern = "**/api/orders/page?*";
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(page, name, name === "Orders" ? "Orders" : undefined);
 }
 async function login(page: Page) {
   await page.goto(origin);
@@ -20,8 +18,11 @@ async function login(page: Page) {
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   await expect(
-    page.locator(".metrics section").filter({ hasText: "Open orders" }),
-  ).toHaveText("Open orders30");
+    page
+      .locator(".overview-metrics .metric-card")
+      .filter({ has: page.getByText("Open orders", { exact: true }) })
+      .locator("strong"),
+  ).toHaveText("30");
   await nav(page, "Orders");
 }
 test("browser: phone order queue preserves scoped pages on failure, retries exact cursors, filters and reaches oldest order", async ({
@@ -61,7 +62,9 @@ test("browser: phone order queue preserves scoped pages on failure, retries exac
   await queue
     .getByRole("button", { name: "Load more orders", exact: true })
     .press("Enter");
-  await expect(queue.getByRole("status")).toHaveText("45 orders loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "45 orders loaded · All results shown",
+  );
   await expect(
     queue.getByRole("heading", { name: "Order queue", exact: true }),
   ).toBeFocused();
@@ -105,7 +108,9 @@ test("browser: phone order queue preserves scoped pages on failure, retries exac
   await queue
     .getByRole("button", { name: "Retry order queue", exact: true })
     .click();
-  await expect(queue.getByRole("status")).toHaveText("15 orders loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "15 orders loaded · All results shown",
+  );
   await expect(page.getByTitle("queue-042", { exact: true })).toBeVisible();
   await page.unroute(pattern);
   await queue.getByLabel("Order state", { exact: true }).selectOption("open");
@@ -114,7 +119,9 @@ test("browser: phone order queue preserves scoped pages on failure, retries exac
   await queue
     .getByRole("button", { name: "Load more orders", exact: true })
     .click();
-  await expect(queue.getByRole("status")).toHaveText("30 orders loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "30 orders loaded · All results shown",
+  );
   await expect(
     page.getByText("Unrelated customer", { exact: true }),
   ).toHaveCount(0);
@@ -125,8 +132,11 @@ test("browser: phone order queue preserves scoped pages on failure, retries exac
   );
   await nav(page, "Overview");
   await expect(
-    page.locator(".metrics section").filter({ hasText: "Open orders" }),
-  ).toHaveText("Open orders30");
+    page
+      .locator(".overview-metrics .metric-card")
+      .filter({ has: page.getByText("Open orders", { exact: true }) })
+      .locator("strong"),
+  ).toHaveText("30");
   expect(errors).toEqual([]);
 });
 test("browser: order queue ignores superseded filters, abandoned navigation, refresh and signed-out continuations", async ({

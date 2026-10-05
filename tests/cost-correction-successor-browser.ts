@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 test("browser: subsequent correction requires accountant evidence before retaining a closed-period preparation", async ({
   page,
@@ -94,10 +98,7 @@ async function signIn(page: Page, port: number, finance = false) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(page, "Inventory costs");
   await page
     .getByRole("button", { name: "Load stock cost review", exact: true })
     .click();
@@ -220,10 +221,7 @@ async function signInAlready(page: Page) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(page, "Inventory costs");
   await page
     .getByRole("button", { name: "Load stock cost review", exact: true })
     .click();
@@ -495,10 +493,7 @@ test("browser: subsequent correction retains preparation after an abandoned comm
     .getByRole("button", { name: "Prepare subsequent correction", exact: true })
     .click();
   await done;
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   release();
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),

@@ -150,29 +150,35 @@ export function PurchaseQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section aria-label="Purchase order queue">
-      <h2 ref={heading} tabIndex={-1}>
+    <section className="queue-controls" aria-label="Purchase order queue">
+      <h2 id="purchasing-queue" ref={heading} tabIndex={-1}>
         Purchase order queue
       </h2>
-      <label htmlFor={stateId}>Purchase order state</label>
-      <select
-        id={stateId}
-        value={queue.state}
-        disabled={!queue.active}
-        onChange={(e) =>
-          queue.filter(e.target.value as PurchaseQueueState | "")
-        }
-      >
-        <option value="">All states</option>
-        {purchaseQueueStates.map((state) => (
-          <option key={state} value={state}>
-            {state}
-          </option>
-        ))}
-      </select>
+      <div className="queue-field">
+        <label htmlFor={stateId}>Purchase order state</label>
+        <select
+          id={stateId}
+          value={queue.state}
+          disabled={!queue.active}
+          onChange={(e) =>
+            queue.filter(e.target.value as PurchaseQueueState | "")
+          }
+        >
+          <option value="">All states</option>
+          {purchaseQueueStates.map((state) => (
+            <option key={state} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+      </div>
       <p role="status">
         {queue.items.length} purchase orders loaded
-        {queue.busy ? " · Loading…" : ""}
+        {queue.busy
+          ? " · Loading…"
+          : queue.loaded && !queue.next && !queue.error
+            ? " · All results shown"
+            : ""}
       </p>
       <p>
         Newest recorded purchase orders first. Refresh reloads the queue and its
@@ -183,25 +189,27 @@ export function PurchaseQueueControls({
           {queue.error}
         </p>
       )}
-      <button
-        ref={pager}
-        className="secondary"
-        disabled={
-          !queue.active ||
-          queue.busy ||
-          (queue.loaded && !queue.next && !queue.error)
-        }
-        onClick={() => {
-          restoreFocus.current = true;
-          void queue.load(queue.state, queue.next, queue.loaded);
-        }}
-      >
-        {queue.error
-          ? "Retry purchase order queue"
-          : queue.loaded && !queue.next
-            ? "All purchase orders loaded"
-            : "Load more purchase orders"}
-      </button>
+      {(!queue.loaded || queue.next || queue.error || queue.busy) && (
+        <button
+          ref={pager}
+          className="secondary"
+          disabled={
+            !queue.active ||
+            queue.busy ||
+            (queue.loaded && !queue.next && !queue.error)
+          }
+          onClick={() => {
+            restoreFocus.current = true;
+            void queue.load(queue.state, queue.next, queue.loaded);
+          }}
+        >
+          {queue.error
+            ? "Retry purchase order queue"
+            : queue.loaded && !queue.next
+              ? "All purchase orders loaded"
+              : "Load more purchase orders"}
+        </button>
+      )}
     </section>
   );
 }

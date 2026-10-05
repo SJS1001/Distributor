@@ -162,10 +162,15 @@ export function StockQueueControls({
   queue,
   products,
   warehouses,
+  onFilters,
 }: {
   queue: ReturnType<typeof useStockQueue>;
   products: Record<string, any>[];
   warehouses: Record<string, any>[];
+  onFilters?: (filters: {
+    view: StockQueueView | "";
+    warehouseId: string;
+  }) => void;
 }) {
   const heading = useRef<HTMLHeadingElement | null>(null);
   const pager = useRef<HTMLButtonElement | null>(null);
@@ -178,108 +183,129 @@ export function StockQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section aria-label="Stock queue">
-      <h2 ref={heading} tabIndex={-1}>
+    <section className="queue-controls" aria-label="Stock queue">
+      <h2 id="inventory-stock" ref={heading} tabIndex={-1}>
         Stock queue
       </h2>
-      <label htmlFor={`${prefix}-query`}>Search stock serial or bin</label>
-      <input
-        id={`${prefix}-query`}
-        maxLength={100}
-        value={queue.filters.query}
-        disabled={!queue.active}
-        onChange={(e) => queue.filter({ query: e.target.value }, false)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            void queue.load(queue.filters, null, false);
-          }
-        }}
-      />
-      <button
-        className="secondary"
-        disabled={!queue.active || queue.busy}
-        onClick={() => void queue.load(queue.filters, null, false)}
-      >
-        Search stock
-      </button>
-      <label htmlFor={`${prefix}-product`}>Stock product</label>
-      <select
-        id={`${prefix}-product`}
-        disabled={!queue.active}
-        value={queue.filters.productId}
-        onChange={(e) => queue.filter({ productId: e.target.value })}
-      >
-        <option value="">All products</option>
-        {products.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.sku} · {p.name}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={`${prefix}-warehouse`}>Stock warehouse</label>
-      <select
-        id={`${prefix}-warehouse`}
-        disabled={!queue.active}
-        value={queue.filters.warehouseId}
-        onChange={(e) => queue.filter({ warehouseId: e.target.value })}
-      >
-        <option value="">All accessible warehouses</option>
-        {warehouses.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={`${prefix}-view`}>Stock condition or state</label>
-      <select
-        id={`${prefix}-view`}
-        disabled={!queue.active}
-        value={queue.filters.view}
-        onChange={(e) =>
-          queue.filter({ view: e.target.value as StockQueueView | "" })
-        }
-      >
-        <option value="">All stock records</option>
-        {stockQueueViews.map((v) => (
-          <option key={v} value={v}>
-            {stockQueueLabels[v]}
-          </option>
-        ))}
-      </select>
+      <div className="queue-field">
+        <label htmlFor={`${prefix}-query`}>Search stock serial or bin</label>
+        <input
+          id={`${prefix}-query`}
+          maxLength={100}
+          value={queue.filters.query}
+          disabled={!queue.active}
+          onChange={(e) => queue.filter({ query: e.target.value }, false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void queue.load(queue.filters, null, false);
+            }
+          }}
+        />
+        <button
+          className="secondary"
+          disabled={!queue.active || queue.busy}
+          onClick={() => void queue.load(queue.filters, null, false)}
+        >
+          Search stock
+        </button>
+      </div>
+      <div className="queue-field">
+        <label htmlFor={`${prefix}-product`}>Stock product</label>
+        <select
+          id={`${prefix}-product`}
+          disabled={!queue.active}
+          value={queue.filters.productId}
+          onChange={(e) => queue.filter({ productId: e.target.value })}
+        >
+          <option value="">All products</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.sku} · {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="queue-field">
+        <label htmlFor={`${prefix}-warehouse`}>Stock warehouse</label>
+        <select
+          id={`${prefix}-warehouse`}
+          disabled={!queue.active}
+          value={queue.filters.warehouseId}
+          onChange={(e) => {
+            queue.filter({ warehouseId: e.target.value });
+            onFilters?.({
+              view: queue.filters.view,
+              warehouseId: e.target.value,
+            });
+          }}
+        >
+          <option value="">All accessible warehouses</option>
+          {warehouses.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="queue-field">
+        <label htmlFor={`${prefix}-view`}>Stock condition or state</label>
+        <select
+          id={`${prefix}-view`}
+          disabled={!queue.active}
+          value={queue.filters.view}
+          onChange={(e) => {
+            const view = e.target.value as StockQueueView | "";
+            queue.filter({ view });
+            onFilters?.({ view, warehouseId: queue.filters.warehouseId });
+          }}
+        >
+          <option value="">All stock records</option>
+          {stockQueueViews.map((v) => (
+            <option key={v} value={v}>
+              {stockQueueLabels[v]}
+            </option>
+          ))}
+        </select>
+      </div>
       <p role="status">
         {queue.items.length} stock records loaded
-        {queue.busy ? " · Loading…" : ""}
+        {queue.busy
+          ? " · Loading…"
+          : queue.loaded && !queue.next && !queue.error
+            ? " · All results shown"
+            : ""}
       </p>
       <p>
-        Search part of a serial or bin. Select a product by SKU. Records use a
-        stable identifier order; refresh reloads current custody and
-        availability.
+        Search by serial or bin, or narrow the list by product, warehouse and
+        condition. Refresh to see the latest stock availability.
       </p>
       {queue.error && (
         <p role="alert" className="error">
           {queue.error}
         </p>
       )}
-      <button
-        ref={pager}
-        className="secondary"
-        disabled={
-          !queue.active ||
-          queue.busy ||
-          (queue.loaded && !queue.next && !queue.error)
-        }
-        onClick={() => {
-          restoreFocus.current = true;
-          void queue.load(queue.filters, queue.next, queue.loaded);
-        }}
-      >
-        {queue.error
-          ? "Retry stock queue"
-          : queue.loaded && !queue.next
-            ? "All stock records loaded"
-            : "Load more stock"}
-      </button>
+      {(!queue.loaded || queue.next || queue.error || queue.busy) && (
+        <button
+          ref={pager}
+          className="secondary"
+          disabled={
+            !queue.active ||
+            queue.busy ||
+            (queue.loaded && !queue.next && !queue.error)
+          }
+          onClick={() => {
+            restoreFocus.current = true;
+            void queue.load(queue.filters, queue.next, queue.loaded);
+          }}
+        >
+          {queue.error
+            ? "Retry stock queue"
+            : queue.loaded && !queue.next
+              ? "All stock records loaded"
+              : "Load more stock"}
+        </button>
+      )}
     </section>
   );
 }

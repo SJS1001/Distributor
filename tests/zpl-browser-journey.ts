@@ -1,3 +1,4 @@
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -64,13 +65,11 @@ for (const output of ["zpl-8", "zpl-12"] as const) {
       delete headers["content-length"];
       await route.fulfill({ status: 200, headers, body });
     });
-    await page
-      .getByRole("navigation")
-      .getByRole("button", { name: "Inventory", exact: true })
-      .click();
+    await navigateWorkspace(page, "Inventory", "Stock");
     const row = page.getByRole("row").filter({
       has: page.locator("small", { hasText: `${u.serial} · stock` }),
     });
+    await openStockActions(row);
     await row
       .getByRole("button", { name: "Prepare QR label", exact: true })
       .click();

@@ -1,4 +1,10 @@
-import React, { useId, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   countQueueStates,
   type CountQueueState,
@@ -24,10 +30,14 @@ const names: Record<CountQueueState, string> = {
 export function CountQueue({
   initial,
   active,
+  selectedState,
+  onState,
   children,
 }: {
   initial: Page;
   active: boolean;
+  selectedState?: CountQueueState | "";
+  onState?: (state: CountQueueState | "") => void;
   children: (items: Count[]) => React.ReactNode;
 }) {
   const [page, setPage] = useState<Page | null>(initial);
@@ -94,9 +104,17 @@ export function CountQueue({
       }
     }
   };
+  useEffect(() => {
+    if (
+      active &&
+      selectedState !== undefined &&
+      selection.state !== selectedState
+    )
+      void load({ state: selectedState ?? "", after: null, trail: [] }, false);
+  }, [selectedState, active]);
   return (
     <section aria-label="Count queue">
-      <h2 ref={heading} tabIndex={-1}>
+      <h2 id="inventory-counts" ref={heading} tabIndex={-1}>
         Cycle counts
       </h2>
       <label htmlFor={stateId}>Count state</label>
@@ -104,7 +122,8 @@ export function CountQueue({
         id={stateId}
         value={selection.state}
         disabled={!active}
-        onChange={(e) =>
+        onChange={(e) => {
+          onState?.(e.target.value as CountQueueState | "");
           void load(
             {
               state: e.target.value as CountQueueState | "",
@@ -112,8 +131,8 @@ export function CountQueue({
               trail: [],
             },
             false,
-          )
-        }
+          );
+        }}
       >
         <option value="">All states</option>
         {countQueueStates.map((state) => (

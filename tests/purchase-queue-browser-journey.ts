@@ -1,11 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3135",
   pattern = "**/api/purchases/orders/page?*";
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(
+    page,
+    name,
+    name === "Purchasing" ? "Purchase orders" : undefined,
+  );
 }
 async function login(page: Page) {
   await page.goto(origin);
@@ -77,7 +79,7 @@ test("browser: phone purchase queue preserves scoped pages on failure, retries e
     .getByRole("button", { name: "Load more purchase orders", exact: true })
     .press("Enter");
   await expect(queue.getByRole("status")).toHaveText(
-    "46 purchase orders loaded",
+    "46 purchase orders loaded · All results shown",
   );
   await expect(
     queue.getByRole("heading", {
@@ -127,7 +129,7 @@ test("browser: phone purchase queue preserves scoped pages on failure, retries e
     .getByRole("button", { name: "Retry purchase order queue", exact: true })
     .click();
   await expect(queue.getByRole("status")).toHaveText(
-    "16 purchase orders loaded",
+    "16 purchase orders loaded · All results shown",
   );
   await expect(
     page.getByTitle("purchase-queue-042", { exact: true }),
@@ -146,7 +148,7 @@ test("browser: phone purchase queue preserves scoped pages on failure, retries e
     .getByRole("button", { name: "Load more purchase orders", exact: true })
     .click();
   await expect(queue.getByRole("status")).toHaveText(
-    "30 purchase orders loaded",
+    "30 purchase orders loaded · All results shown",
   );
   await expect(page.getByTitle("other-site-079", { exact: true })).toHaveCount(
     0,
@@ -264,6 +266,7 @@ test("browser: purchasing resumes and confirms an off-page saved receipt draft w
   await expect(
     page.getByTitle("purchase-queue-001", { exact: true }),
   ).toHaveCount(0);
+  await navigateWorkspace(page, "Purchasing", "Receipt drafts");
   const draft = page
     .getByRole("table")
     .filter({
@@ -299,6 +302,7 @@ test("browser: purchasing resumes and confirms an off-page saved receipt draft w
   );
   expect(detail.status()).toBe(200);
   expect((await detail.json()).lines[0].received).toBe(1);
+  await navigateWorkspace(page, "Purchasing", "Purchase orders");
   await expect(
     page.getByTitle("purchase-queue-001", { exact: true }),
   ).toHaveCount(0);

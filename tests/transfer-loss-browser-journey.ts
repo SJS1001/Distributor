@@ -1,5 +1,6 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import { reviewDuringInventoryLoad } from "./transfer-review-loading.ts";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 
 const origin = "http://127.0.0.1:3163";
 type Kind = "loss" | "recovery";
@@ -22,10 +23,7 @@ const recovery = (page: Page, kind: Kind) =>
     exact: true,
   });
 const nav = (page: Page, name: string) =>
-  page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  navigateWorkspace(page, name, name === "Inventory" ? "Transfers" : undefined);
 async function login(page: Page, email = "loss@example.test") {
   await page.goto(origin);
   await page.getByLabel("Email", { exact: true }).fill(email);

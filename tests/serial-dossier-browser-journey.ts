@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:3146";
@@ -19,10 +20,7 @@ async function signIn(page: Page) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
 }
 async function openHistory(page: Page) {
   await page.getByRole("button", { name: "Find serial", exact: true }).click();
@@ -200,11 +198,7 @@ test("browser: serial dossier discards abandoned reads on back, close, navigatio
       await dossier(page)
         .getByRole("button", { name: "Close serial dossier", exact: true })
         .click();
-    else if (action === "navigate")
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Overview", exact: true })
-        .click();
+    else if (action === "navigate") await navigateWorkspace(page, "Overview");
     else
       await page.getByRole("button", { name: "Sign out", exact: true }).click();
     release();
@@ -217,10 +211,7 @@ test("browser: serial dossier discards abandoned reads on back, close, navigatio
         .click();
     }
     if (action === "navigate")
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Inventory", exact: true })
-        .click();
+      await navigateWorkspace(page, "Inventory", "Stock");
   }
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),

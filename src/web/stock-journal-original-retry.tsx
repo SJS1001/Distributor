@@ -27,12 +27,6 @@ function FixedReview({ review: r }: { review: Review }) {
         previous permanent reference <code>{s.requestRef}</code>.
       </p>
       <p>
-        Source <code>{s.sourceId}</code> · source hash{" "}
-        <code>{s.sourceHash}</code> · previous review hash{" "}
-        <code>{s.reviewHash}</code> · complete predecessor history hash{" "}
-        <code>{s.historyHash}</code>.
-      </p>
-      <p>
         Final non-posting evidence <code>{e.evidenceHash}</code> ·{" "}
         {e.recordedBy} at {e.recordedAt} · receiver case {e.input.externalRef}:{" "}
         {e.input.evidence}
@@ -42,18 +36,16 @@ function FixedReview({ review: r }: { review: Review }) {
         {c.recordedAt} · {c.body.reason as string}.
       </p>
       <p>
-        Cost policy revision {p.input.policyRevision} · hash{" "}
-        <code>{p.policyHash}</code> · closed through{" "}
+        Cost policy version {p.input.policyRevision} · closed through{" "}
         {p.intent.closedThrough ?? "no date"}.
       </p>
       <p>
-        Fresh permission revision {p.input.authority.revision} · accepted terms{" "}
-        <code>{p.input.authority.disclosureId}</code> · hash{" "}
-        <code>{p.input.authority.disclosureHash}</code>.
+        Current permission version {p.input.authority.revision} · accepted terms{" "}
+        <code>{p.input.authority.disclosureId}</code>.
       </p>
       <div className="table-wrap">
         <table>
-          <caption>Unchanged original retry account mappings</caption>
+          <caption>Accounts for the new journal</caption>
           <thead>
             <tr>
               <th>Source account</th>
@@ -71,10 +63,23 @@ function FixedReview({ review: r }: { review: Review }) {
         </table>
       </div>
       <p>
-        Fixed retry review hash <code>{r.reviewHash}</code>. Preparation creates
-        a distinct ready journal and permanent reference. A different current
-        finance principal must approve it before delivery.
+        Preparing this retry creates a new journal with its own reference. A
+        different authorized finance user must approve it before it can be sent.
       </p>
+      <details>
+        <summary>Technical verification details</summary>
+        <p>
+          Source <code>{s.sourceId}</code> · source hash{" "}
+          <code>{s.sourceHash}</code> · previous review hash{" "}
+          <code>{s.reviewHash}</code> · complete predecessor history hash{" "}
+          <code>{s.historyHash}</code>.
+        </p>
+        <p>
+          Cost policy hash <code>{p.policyHash}</code> · accepted terms hash{" "}
+          <code>{p.input.authority.disclosureHash}</code> · fixed retry review
+          hash <code>{r.reviewHash}</code>.
+        </p>
+      </details>
     </>
   );
 }
@@ -162,7 +167,7 @@ export function StockJournalOriginalRetry({
         setError(
           e instanceof Error
             ? e.message
-            : "Original retry review could not be loaded.",
+            : "Journal details could not be loaded. Try reviewing the cancelled journal again.",
         );
     } finally {
       if (reading.current === controller) {
@@ -203,7 +208,7 @@ export function StockJournalOriginalRetry({
     try {
       if (!navigator.locks)
         throw Error(
-          "This browser cannot coordinate original retries between tabs. Use a browser with Web Locks support.",
+          "This browser cannot safely coordinate journal preparation across tabs. Use a browser with Web Locks support.",
         );
       await navigator.locks.request(
         storageKey,
@@ -212,7 +217,7 @@ export function StockJournalOriginalRetry({
           if (!current()) return;
           if (!lock)
             throw Error(
-              "Another tab is preparing an original retry. Wait for its outcome before retrying.",
+              "Another tab is preparing this journal. Wait for its result before continuing.",
             );
           const previous = retained(storageKey, orgId);
           if (previous.error) throw Error(previous.error);
@@ -222,7 +227,7 @@ export function StockJournalOriginalRetry({
               : !!previous.attempt
           )
             throw Error(
-              "Original retry recovery evidence changed. Close this review and review the retained attempt.",
+              "The saved preparation changed in another tab. Close this review and review the saved preparation again.",
             );
           await checkedAttempt(a, orgId);
           if (!current()) return;
@@ -232,13 +237,13 @@ export function StockJournalOriginalRetry({
             canonical(latest.attempt) !== canonical(previous.attempt)
           )
             throw Error(
-              "Original retry recovery evidence changed. The retained attempt has been preserved.",
+              "The saved preparation changed in another tab. It has been preserved; close this review and review it again.",
             );
           const raw = JSON.stringify(a);
           localStorage.setItem(storageKey, raw);
           if (localStorage.getItem(storageKey) !== raw)
             throw Error(
-              "The exact original retry could not be retained. Nothing was sent.",
+              "This preparation could not be saved in your browser. Nothing was sent. Restore browser storage before trying again.",
             );
           setRecovery({ attempt: a, error: "" });
           setReplaying(true);
@@ -246,12 +251,12 @@ export function StockJournalOriginalRetry({
             if (!current()) return false;
             if (localStorage.getItem(storageKey) !== raw)
               throw Error(
-                "Original retry recovery evidence changed. The retained attempt has been preserved.",
+                "The saved preparation changed in another tab. It has been preserved; close this review and review it again.",
               );
             localStorage.removeItem(storageKey);
             if (localStorage.getItem(storageKey) !== null)
               throw Error(
-                "Original retry recovery evidence could not be cleared. Recover the retained exact attempt after restoring browser storage.",
+                "The saved preparation could not be cleared from your browser. Restore browser storage, then recover the saved preparation to confirm its result.",
               );
             setRecovery({ attempt: null, error: "" });
             restoreFocus.current = true;
@@ -290,12 +295,12 @@ export function StockJournalOriginalRetry({
             receipt = await checkedReceipt(result, a, actorId);
           } catch {
             throw Error(
-              "The original retry reply could not be verified. Recover the retained exact attempt.",
+              "We couldn't confirm this journal preparation. Recover the saved preparation before starting another attempt.",
             );
           }
           if (clear()) {
             setNotice(
-              "Original retry preparation confirmed. Review its current state; a historical receipt does not reset it. Separate finance approval and delivery remain required.",
+              "Journal preparation confirmed. Check the journal's current status: this confirmation does not change any later activity. Preparation alone does not approve or send the journal.",
             );
             saved(receipt.id);
           }
@@ -333,43 +338,42 @@ export function StockJournalOriginalRetry({
       {recovery.attempt && !review && (
         <>
           <p role="status">
-            An exact original retry is retained for this organization and
-            principal. Recover it before another submission.
+            A journal preparation is saved for your user in this organization.
+            Review it before starting another attempt.
           </p>
           <button
             ref={recoverButton}
             onClick={() => void prepare(recovery.attempt!, true)}
           >
-            Review retained original retry attempt
+            Review saved journal preparation
           </button>
         </>
       )}
       {review ? (
         <section
           className="stock-history"
-          aria-label="Exact original retry review"
+          aria-label="Review journal preparation"
         >
           <h4 ref={heading} tabIndex={-1}>
-            Exact original retry review
+            Review journal preparation
           </h4>
           <FixedReview review={review.review} />
-          <p>
-            Original retry reason: {review.payload.reason}. Exact preparation
-            key <code>{review.key}</code>.
-          </p>
+          <p>Reason for retry: {review.payload.reason}.</p>
           <p>
             {replaying
-              ? "Recover the retained original key and body. The native service checks current finance access and the retained preparation without creating a second successor."
-              : "Confirm this fixed cancelled predecessor, unchanged source/date/company and account mappings. Existing approval is not inherited."}
+              ? "Continue the saved preparation using the same request and details. Your finance access is checked again. If this preparation already succeeded, recovery confirms that attempt instead of creating another journal."
+              : "Review the cancelled journal, source, posting date, company and account mappings above. Preparing a new journal does not carry over the previous approval."}
           </p>
+          <details>
+            <summary>Preparation reference</summary>
+            <code>{review.key}</code>
+          </details>
           <div className="actions">
             <button
               disabled={busy || !!recovery.error}
               onClick={() => void submit()}
             >
-              {replaying
-                ? "Recover exact original retry attempt"
-                : "Prepare fresh original retry"}
+              {replaying ? "Recover saved preparation" : "Prepare new journal"}
             </button>
             <button
               disabled={busy}
@@ -379,7 +383,7 @@ export function StockJournalOriginalRetry({
                 setError("");
               }}
             >
-              Close original retry review
+              Close journal review
             </button>
           </div>
         </section>
@@ -390,11 +394,9 @@ export function StockJournalOriginalRetry({
             disabled={loading}
             onClick={() => void load()}
           >
-            Load original retry review
+            Review cancelled journal
           </button>
-          {loading && (
-            <p role="status">Loading complete original retry review</p>
-          )}
+          {loading && <p role="status">Loading journal details for review</p>}
           {source && (
             <form
               aria-label="Original retry entry"
@@ -424,7 +426,7 @@ export function StockJournalOriginalRetry({
                   maxLength={2000}
                 />
               </div>
-              <button type="submit">Review fresh original retry</button>
+              <button type="submit">Review new journal</button>
             </form>
           )}
         </>
@@ -434,7 +436,7 @@ export function StockJournalOriginalRetry({
           fresh attempt.
         </p>
       ) : null}
-      {busy && <p role="status">Confirming exact original retry preparation</p>}
+      {busy && <p role="status">Confirming journal preparation</p>}
     </section>
   );
 }

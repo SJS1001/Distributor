@@ -1,3 +1,4 @@
+import { SavedFilters } from "./saved-filters.tsx";
 import React, {
   useEffect,
   useId,
@@ -25,6 +26,7 @@ export function useOrderQueue(
     items: initial,
     next: initialNext ?? null,
     state: "" as OrderQueueState | "",
+    reservation: "" as "overdue" | "",
     loaded: true,
     busy: false,
     error: "",
@@ -46,6 +48,7 @@ export function useOrderQueue(
       items: initial,
       next: initialNext ?? null,
       state: "",
+      reservation: "",
       loaded: true,
       busy: false,
       error: "",
@@ -59,13 +62,19 @@ export function useOrderQueue(
     }
     return cancel;
   }, [active]);
-  const load = async (state = view.state, after = view.next, append = true) => {
+  const load = async (
+    state = view.state,
+    after = view.next,
+    append = true,
+    reservation = view.reservation,
+  ) => {
     if (!active || pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
     setView((v) => ({ ...v, busy: true, error: "" }));
     const query = new URLSearchParams();
     if (state) query.set("state", state);
+    if (reservation) query.set("reservation", reservation);
     if (after) query.set("after", after);
     const valid = () =>
       pending.current === controller &&
@@ -98,18 +107,22 @@ export function useOrderQueue(
       }
     }
   };
-  const filter = (state: OrderQueueState | "") => {
+  const filter = (
+    state: OrderQueueState | "",
+    reservation: "overdue" | "" = view.reservation,
+  ) => {
     cancel();
     setView({
       source: initial,
       items: [],
       next: null,
       state,
+      reservation,
       loaded: false,
       busy: false,
       error: "",
     });
-    void load(state, null, false);
+    void load(state, null, false, reservation);
   };
   const displayed =
     view.source === initial
@@ -119,6 +132,7 @@ export function useOrderQueue(
           items: initial,
           next: initialNext ?? null,
           state: "" as const,
+          reservation: "" as const,
           loaded: true,
           busy: false,
           error: "",
@@ -135,13 +149,33 @@ export function useOrderQueue(
   };
 }
 
+const orderSavedFilters = ["open", "closed", "overdue"] as const;
+
 export function OrderQueueControls({
   queue,
+  scope,
+  onFilter,
+  onReservation,
 }: {
   queue: ReturnType<typeof useOrderQueue>;
+  scope?: string;
+  onFilter?: (
+    state: OrderQueueState | "",
+    reservation?: "overdue" | "",
+  ) => void;
+  onReservation?: (value: "overdue" | "") => void;
 }) {
+  const apply = (state: OrderQueueState | "") => {
+    queue.filter(state);
+    onFilter?.(state);
+  };
   const heading = useRef<HTMLHeadingElement | null>(null);
   const stateId = useId();
+  const reservationId = useId();
+  const applyReservation = (reservation: "overdue" | "") => {
+    queue.filter(queue.state, reservation);
+    onReservation?.(reservation);
+  };
   const pager = useRef<HTMLButtonElement | null>(null);
   const restoreFocus = useRef(false);
   useEffect(() => {
@@ -151,26 +185,80 @@ export function OrderQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section aria-label="Order queue">
-      <h2 ref={heading} tabIndex={-1}>
+    <section className="queue-controls" aria-label="Order queue">
+      <h2 id="orders-queue" ref={heading} tabIndex={-1}>
         Order queue
       </h2>
-      <label htmlFor={stateId}>Order state</label>
+      <div className="queue-field">
+        <label htmlFor={stateId}>Order state</label>
+        <select
+          id={stateId}
+          value={queue.state}
+          disabled={!queue.active}
+          onChange={(e) => apply(e.target.value as OrderQueueState | "")}
+        >
+          <option value="">All states</option>
+          {orderQueueStates.map((state) => (
+            <option key={state} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+      </div>
+      <label htmlFor={reservationId}>Reservation deadline</label>
       <select
-        id={stateId}
-        value={queue.state}
+        id={reservationId}
+        value={queue.reservation}
         disabled={!queue.active}
-        onChange={(e) => queue.filter(e.target.value as OrderQueueState | "")}
+        onChange={(e) => applyReservation(e.target.value as "overdue" | "")}
       >
-        <option value="">All states</option>
-        {orderQueueStates.map((state) => (
-          <option key={state} value={state}>
-            {state}
-          </option>
-        ))}
+        <option value="">All deadlines</option>
+        <option value="overdue">Overdue reservations on open orders</option>
       </select>
+      {queue.reservation && (
+        <p>
+          Open orders with a recorded reservation deadline at or before the
+          current time, or whose latest reservation history records expiry.{" "}
+          <button
+            type="button"
+            disabled={!queue.active}
+            onClick={() => applyReservation("")}
+          >
+            Clear reservation filter
+          </button>
+        </p>
+      )}
+      {scope && (
+        <SavedFilters
+          scope={scope}
+          allowed={orderSavedFilters}
+          labels={{ overdue: "Overdue reservations" }}
+          value={queue.reservation ? "overdue" : queue.state}
+          disabled={!queue.active || queue.busy}
+          apply={(saved) => {
+            const state = saved === "overdue" ? "" : (saved as OrderQueueState);
+            const reservation = saved === "overdue" ? "overdue" : "";
+            queue.filter(state, reservation);
+            onFilter?.(state, reservation);
+          }}
+        />
+      )}
+      {queue.state && (
+        <button
+          type="button"
+          disabled={!queue.active}
+          onClick={() => apply("")}
+        >
+          Clear order state filter
+        </button>
+      )}
       <p role="status">
-        {queue.items.length} orders loaded{queue.busy ? " · Loading…" : ""}
+        {queue.items.length} orders loaded
+        {queue.busy
+          ? " · Loading…"
+          : queue.loaded && !queue.next && !queue.error
+            ? " · All results shown"
+            : ""}
       </p>
       <p>
         Newest recorded orders first. Refresh reloads the queue and its current
@@ -181,25 +269,27 @@ export function OrderQueueControls({
           {queue.error}
         </p>
       )}
-      <button
-        ref={pager}
-        className="secondary"
-        disabled={
-          !queue.active ||
-          queue.busy ||
-          (queue.loaded && !queue.next && !queue.error)
-        }
-        onClick={() => {
-          restoreFocus.current = true;
-          void queue.load(queue.state, queue.next, queue.loaded);
-        }}
-      >
-        {queue.error
-          ? "Retry order queue"
-          : queue.loaded && !queue.next
-            ? "All orders loaded"
-            : "Load more orders"}
-      </button>
+      {(!queue.loaded || queue.next || queue.error || queue.busy) && (
+        <button
+          ref={pager}
+          className="secondary"
+          disabled={
+            !queue.active ||
+            queue.busy ||
+            (queue.loaded && !queue.next && !queue.error)
+          }
+          onClick={() => {
+            restoreFocus.current = true;
+            void queue.load(queue.state, queue.next, queue.loaded);
+          }}
+        >
+          {queue.error
+            ? "Retry order queue"
+            : queue.loaded && !queue.next
+              ? "All orders loaded"
+              : "Load more orders"}
+        </button>
+      )}
     </section>
   );
 }

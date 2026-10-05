@@ -105,6 +105,16 @@ export class Procurement {
     private catalog: Catalog,
     private inventory: Inventory,
     private identity: Identity,
+    private incomingReceipt?: (
+      actor: Actor,
+      input: {
+        poId: string;
+        purchaseLineId: string;
+        receiptId: string;
+        unitIds: string[];
+        quantity: number;
+      },
+    ) => void,
   ) {
     this.store = database.owned("procurement");
     this.store.migrate(`
@@ -678,6 +688,28 @@ export class Procurement {
       };
     });
   }
+  /** Native supply projection: no purchasing costs are exposed to orders. */
+  incomingSupply(actor: Actor, warehouseId: string, productIds: string[]) {
+    actor = this.authorize(actor, ["commercial", "warehouse"]);
+    if (actor.role === "warehouse") site(actor, warehouseId);
+    return this.store
+      .all<{
+        poId: string;
+        purchaseLineId: string;
+        productId: string;
+        remainingQuantity: number;
+        supplierName: string;
+      }>(
+        `SELECT p.id AS poId,l.id AS purchaseLineId,l.product_id AS productId,l.quantity-l.received AS remainingQuantity,s.name AS supplierName FROM procurement_orders p JOIN procurement_lines l ON l.org_id=p.org_id AND l.po_id=p.id JOIN procurement_suppliers s ON s.org_id=p.org_id AND s.id=p.supplier_id WHERE p.org_id=? AND p.warehouse_id=? AND p.state='open' AND l.received<l.quantity ORDER BY p.created_at,p.id,l.id`,
+        actor.orgId,
+        warehouseId,
+      )
+      .filter((l) => productIds.includes(l.productId))
+      .map((l) => ({
+        ...l,
+        description: this.catalog.product(actor, l.productId).name,
+      }));
+  }
   receive(actor: Actor, key: string, input: ReceiptInput) {
     return this.platform.command(
       actor,
@@ -764,6 +796,13 @@ export class Procurement {
         "UPDATE procurement_orders SET state='received' WHERE id=?",
         input.poId,
       );
+    this.incomingReceipt?.(actor, {
+      poId: input.poId,
+      purchaseLineId: input.lineId,
+      receiptId,
+      unitIds: units,
+      quantity: qty,
+    });
     return { id: receiptId, unitIds: units };
   }
   receipts(actor: Actor) {

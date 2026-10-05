@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Locator } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 
@@ -162,10 +163,7 @@ for (const variant of variants)
         quantity: g.quantity,
       })),
     ).toEqual(shipment.lines);
-    await page
-      .getByRole("navigation")
-      .getByRole("button", { name: "Orders", exact: true })
-      .click();
+    await navigateWorkspace(page, "Orders", "Shipments");
     await page
       .getByRole("row")
       .filter({

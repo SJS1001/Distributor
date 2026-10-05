@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { replacementLabel } from "./replacement-carrier-fixture.ts";
@@ -28,10 +29,7 @@ test("browser: phone replacement carrier preparation, private label and exact di
     };
   };
   const before = await native();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Returns", exact: true })
-    .click();
+  await navigateWorkspace(page, "Returns");
   const history = page.getByRole("region", {
     name: "Replacement history",
     exact: true,

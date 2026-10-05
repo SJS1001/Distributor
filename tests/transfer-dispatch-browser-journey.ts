@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { reviewDuringInventoryLoad } from "./transfer-review-loading.ts";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 
 const origin = "http://127.0.0.1:3162";
 const pattern = "**/api/commands/transfer.dispatch";
@@ -8,10 +9,7 @@ const d = (page: Page) =>
 const recovery = (page: Page) =>
   page.getByRole("region", { name: "Transfer dispatch recovery", exact: true });
 const nav = (page: Page, name: string) =>
-  page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  navigateWorkspace(page, name, name === "Inventory" ? "Stock" : undefined);
 async function login(page: Page, email = "dispatch@example.test") {
   await page.goto(origin);
   await page.getByLabel("Email", { exact: true }).fill(email);
@@ -40,12 +38,14 @@ async function facts(page: Page) {
   };
 }
 async function enter(page: Page, sku: string, quantity = 2) {
-  await page
+  const row = page
     .getByRole("row")
     .filter({ hasText: sku })
-    .filter({ hasText: "· stock" })
-    .getByRole("button", { name: "Transfer", exact: true })
-    .click();
+    .filter({ hasText: "· stock" });
+  const actions = row.locator("details.stock-actions");
+  if ((await actions.getAttribute("open")) === null)
+    await actions.locator("summary").click();
+  await row.getByRole("button", { name: "Transfer", exact: true }).click();
   await d(page)
     .getByLabel("Destination", { exact: true })
     .selectOption({ label: "Ottawa" });
@@ -127,7 +127,7 @@ test("browser: transfer dispatch retains the original portion across reload and 
   const a = JSON.parse(original.raw);
   await d(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await nav(page, "Overview");
-  await reviewDuringInventoryLoad(page, d(page), () => review(page));
+  await reviewDuringInventoryLoad(page, d(page), () => review(page), "Stock");
   await expect(d(page)).toContainText("Synthetic original dispatch DISPATCH-1");
   await expect(d(page)).toContainText("Ottawa");
   await d(page).getByRole("button", { name: "Cancel", exact: true }).click();

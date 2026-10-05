@@ -6,6 +6,8 @@ Independent distributor application and planning workspace for multiple warehous
 
 Distributor has a Node/Fastify backend and a React frontend already connected through authenticated API routes. [Shared runtime and protected recovery operator wiring](docs/RUNTIME-WIRING.md) provide the code composition point for later server/host connections. Actual deployment and qualification are deferred by the owner.
 
+The [native fictional MVP demo](docs/NATIVE-DEMO.md) runs that same frontend and backend with a temporary database per visitor, sample records, onboarding and eight selectable accounts. Run `npm run build` then `npm run demo:native` from this repository and open `http://127.0.0.1:3200/demo`. The earlier public Sites demo is a simplified prototype, not this native runtime. The [source coverage audit](docs/DEMO-FUNCTIONALITY-MATRIX.md) identifies every registered page, command and route and records the remaining external-service and hosting limits.
+
 Inventory includes [evidenced carrying-value adjustments and independent finance review](docs/INVENTORY-VALUATIONS.md), with original acquisition cost and physical quantity preserved. Browser recovery retains the exact reviewed attempt when a reply is uncertain.
 
 Inventory also has a native/API [bulk quantity-error correction](docs/INVENTORY-QUANTITY-CORRECTIONS.md) with separate finance review and [fixed browser confirmation and exact recovery](docs/INVENTORY-QUANTITY-UI.md). A [durable restore coordinator](docs/RESTORE-ACTIVATION.md) retains interrupted transitions and current authority checks; actual infrastructure fencing/routing still requires qualification.

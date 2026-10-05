@@ -1,3 +1,4 @@
+import { navigateAccounting } from "./workspace-navigation.ts";
 // Synthetic browser recovery and independent attestations; no provider transport.
 import { test, expect, type Page } from "@playwright/test";
 const ca = "http://127.0.0.1:3170",
@@ -32,10 +33,7 @@ async function signIn(page: Page, origin = ca, role = "admin") {
   await billing(page);
 }
 async function billing(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(page, "Stock journals");
   await expect(panel(page)).toBeVisible();
 }
 async function open(page: Page, origin = ca) {

@@ -1,12 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { transferQueueStates } from "../src/shared/transfer-queue.ts";
 const origin = "http://127.0.0.1:3160",
   pattern = "**/api/transfers/page?*";
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(
+    page,
+    name,
+    name === "Inventory" ? "Transfers" : undefined,
+  );
 }
 async function login(
   page: Page,

@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -21,10 +22,7 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  const nav = page.getByRole("navigation");
-  await nav
-    .getByRole("button", { name: "Reconciliation", exact: true })
-    .click();
+  await navigateWorkspace(page, "Reconciliation");
   const panel = page.getByRole("region", {
     name: "Stock and billing reconciliation",
     exact: true,
@@ -245,13 +243,11 @@ test("browser: phone reconciliation shows native discrepancies, refreshes money,
     .getByRole("button", { name: "Run reconciliation", exact: true })
     .click();
   await started;
-  await nav.getByRole("button", { name: "Overview", exact: true }).click();
+  await navigateWorkspace(page, "Overview");
   release();
   await expect(panel).toHaveCount(0);
   await page.unroute("**/api/operations/reconciliation");
-  await nav
-    .getByRole("button", { name: "Reconciliation", exact: true })
-    .click();
+  await navigateWorkspace(page, "Reconciliation");
   await expect(panel).toContainText("Stock discrepancies: 2");
   await expect(
     panel

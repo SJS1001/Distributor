@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const endpoint = "/api/quickbooks/organization/revocation";
 async function login(page: Page, origin: string, email = "admin@example.test") {
@@ -12,7 +16,7 @@ async function login(page: Page, origin: string, email = "admin@example.test") {
   ).toBeVisible();
 }
 async function panel(page: Page) {
-  await page.getByRole("button", { name: "Billing", exact: true }).click();
+  await navigateAccounting(page, "QuickBooks connections");
   const p = page.getByRole("region", {
     name: "Organization QuickBooks revocation",
     exact: true,
@@ -349,7 +353,7 @@ test("organization browser revocation invalidates a competing tab review and ign
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await navigateWorkspace(page, "Overview");
   release();
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
@@ -545,6 +549,7 @@ test("organization browser revocation retains a review that never reached the se
     page.getByRole("heading", {
       name: "Billing identities and terms",
       exact: true,
+      includeHidden: true,
     }),
   ).toHaveCount(0);
   await fresh
@@ -559,12 +564,15 @@ test("organization browser revocation retains a review that never reached the se
     }),
   ).toBeVisible();
   releaseSnapshot();
+  // This background Account aging panel is a data-load signal; the
+  // Accounting review must remain visibly open throughout its arrival.
   await expect(
     page.getByRole("heading", {
       name: "Billing identities and terms",
       exact: true,
+      includeHidden: true,
     }),
-  ).toBeVisible();
+  ).toHaveCount(1);
   expect(
     await page.evaluate((k) => localStorage.getItem(k), retained.key),
   ).toBe(retained.raw);

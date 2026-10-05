@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:3139";
@@ -670,10 +671,7 @@ test("browser: individual unavailable item reviews and active removals preserve 
 });
 
 async function ordersPage(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Orders", exact: true })
-    .click();
+  await navigateWorkspace(page, "Orders", "Orders");
   await expect(
     page.getByRole("heading", { name: "Orders", exact: true }),
   ).toBeVisible();

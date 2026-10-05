@@ -602,7 +602,22 @@ export class BillingDocuments {
           net: number;
           holds: number;
           pendingRefunds: number;
-          invoices: unknown[];
+          invoices: {
+            id: string;
+            number: string;
+            origin?: string;
+            currency: string;
+            dueAt: string | null;
+            dueBasis: string;
+            overdueDays: number | null;
+            bucket: string;
+            total: number;
+            credited: number;
+            paid: number;
+            refunded: number;
+            balance: number;
+            pendingRefunds: number;
+          }[];
         }
       >();
     for (const customer of this.identity.customers(actor))
@@ -661,6 +676,7 @@ export class BillingDocuments {
       group.pendingRefunds += pendingRefunds;
       group.invoices.push({
         id: invoice.id,
+        currency: invoice.currency,
         number: invoice.number,
         origin: invoice.origin,
         dueAt,

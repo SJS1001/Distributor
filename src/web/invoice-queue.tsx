@@ -1,3 +1,4 @@
+import { SavedFilters } from "./saved-filters.tsx";
 import React, {
   useEffect,
   useId,
@@ -137,9 +138,17 @@ export function useInvoiceQueue(
 
 export function InvoiceQueueControls({
   queue,
+  scope,
+  onFilter,
 }: {
   queue: ReturnType<typeof useInvoiceQueue>;
+  scope?: string;
+  onFilter?: (state: InvoiceQueueState | "") => void;
 }) {
+  const apply = (state: InvoiceQueueState | "") => {
+    queue.filter(state);
+    onFilter?.(state);
+  };
   const heading = useRef<HTMLHeadingElement | null>(null);
   const stateId = useId();
   const pager = useRef<HTMLButtonElement | null>(null);
@@ -151,27 +160,52 @@ export function InvoiceQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section aria-label="Invoice queue">
-      <h2 ref={heading} tabIndex={-1}>
+    <section className="queue-controls" aria-label="Invoice queue">
+      <h2 id="billing-invoices" ref={heading} tabIndex={-1}>
         Invoice queue
       </h2>
-      <label htmlFor={stateId}>Invoice balance</label>
-      <select
-        id={stateId}
-        value={queue.state}
-        disabled={!queue.active}
-        onChange={(e) => queue.filter(e.target.value as InvoiceQueueState | "")}
-      >
-        <option value="">All balances</option>
-        {invoiceQueueStates.map((state) => (
-          <option key={state} value={state}>
-            {invoiceQueueLabels[state]}
-          </option>
-        ))}
-      </select>
+      <div className="queue-field">
+        <label htmlFor={stateId}>Invoice balance</label>
+        <select
+          id={stateId}
+          value={queue.state}
+          disabled={!queue.active}
+          onChange={(e) => apply(e.target.value as InvoiceQueueState | "")}
+        >
+          <option value="">All balances</option>
+          {invoiceQueueStates.map((state) => (
+            <option key={state} value={state}>
+              {invoiceQueueLabels[state]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {scope && (
+        <SavedFilters
+          scope={scope}
+          allowed={invoiceQueueStates}
+          labels={invoiceQueueLabels}
+          value={queue.state}
+          disabled={!queue.active || queue.busy}
+          apply={(state) => apply(state as InvoiceQueueState)}
+        />
+      )}
+      {queue.state && (
+        <button
+          type="button"
+          disabled={!queue.active}
+          onClick={() => apply("")}
+        >
+          Clear invoice balance filter
+        </button>
+      )}
       <p role="status">
         {queue.items.length} invoices loaded
-        {queue.busy ? " · Loading…" : ""}
+        {queue.busy
+          ? " · Loading…"
+          : queue.loaded && !queue.next && !queue.error
+            ? " · All results shown"
+            : ""}
       </p>
       <p>
         Newest recorded invoices first. Refresh reloads the queue and its
@@ -182,25 +216,27 @@ export function InvoiceQueueControls({
           {queue.error}
         </p>
       )}
-      <button
-        ref={pager}
-        className="secondary"
-        disabled={
-          !queue.active ||
-          queue.busy ||
-          (queue.loaded && !queue.next && !queue.error)
-        }
-        onClick={() => {
-          restoreFocus.current = true;
-          void queue.load(queue.state, queue.next, queue.loaded);
-        }}
-      >
-        {queue.error
-          ? "Retry invoice queue"
-          : queue.loaded && !queue.next
-            ? "All invoices loaded"
-            : "Load more invoices"}
-      </button>
+      {(!queue.loaded || queue.next || queue.error || queue.busy) && (
+        <button
+          ref={pager}
+          className="secondary"
+          disabled={
+            !queue.active ||
+            queue.busy ||
+            (queue.loaded && !queue.next && !queue.error)
+          }
+          onClick={() => {
+            restoreFocus.current = true;
+            void queue.load(queue.state, queue.next, queue.loaded);
+          }}
+        >
+          {queue.error
+            ? "Retry invoice queue"
+            : queue.loaded && !queue.next
+              ? "All invoices loaded"
+              : "Load more invoices"}
+        </button>
+      )}
     </section>
   );
 }

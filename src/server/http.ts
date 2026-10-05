@@ -959,6 +959,43 @@ export function commands(
       }),
       run: (a, k, p) => app.procurement.supplierAvailability(a, k, p),
     },
+    "order.incoming.commit": {
+      schema: obj({
+        orderId: str,
+        lineId: str,
+        revision: num,
+        poId: str,
+        purchaseLineId: str,
+        quantity: num,
+        priority: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.commitIncoming(a, k, p),
+    },
+    "order.incoming.release": {
+      schema: obj({
+        orderId: str,
+        commitmentId: str,
+        revision: num,
+        quantity: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.releaseIncoming(a, k, p),
+    },
+    "order.incoming.priority": {
+      schema: obj({
+        orderId: str,
+        commitmentId: str,
+        revision: num,
+        priority: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.prioritizeIncoming(a, k, p),
+    },
+    "order.incoming.reconcile": {
+      schema: obj({ orderId: str, revision: num, reason: str }),
+      run: (a, k, p) => app.orders.reconcileIncoming(a, k, p),
+    },
     "purchase.create": {
       schema: obj({
         supplierId: str,
@@ -1959,7 +1996,13 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.query.warehouseId,
       ),
   );
-  http.get<{ Querystring: { after?: string; state?: OrderQueueState } }>(
+  http.get<{
+    Querystring: {
+      after?: string;
+      state?: OrderQueueState;
+      reservation?: "overdue";
+    };
+  }>(
     "/api/orders/page",
     {
       schema: {
@@ -1967,8 +2010,9 @@ export async function createHttp(app: Application, options: HttpOptions) {
           {
             after: { type: "string", minLength: 1, maxLength: 128 },
             state: choice(...orderQueueStates),
+            reservation: choice("overdue"),
           },
-          ["after", "state"],
+          ["after", "state", "reservation"],
         ),
       },
     },
@@ -1977,6 +2021,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
         actor(request),
         request.query.after,
         request.query.state,
+        request.query.reservation,
       ),
   );
 
@@ -2095,6 +2140,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
       ),
   );
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));
+  http.get<{ Params: { id: string } }>(
+    "/api/orders/:id/incoming-supply",
+    async (request) =>
+      app.orders.incomingSupply(actor(request), request.params.id),
+  );
   http.get("/api/purchases", async (request) => {
     const current = actor(request),
       page = app.procurement.orderPage(current),
@@ -2349,6 +2399,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/transfer-destinations", async (request) =>
     app.inventory.transferDestinations(actor(request)),
+  );
+  http.get<{ Params: { orderId: string } }>(
+    "/api/orders/:orderId",
+    { schema: { params: obj({ orderId: str }) } },
+    async (request) =>
+      app.orders.detail(actor(request), request.params.orderId),
   );
   http.get<{ Params: { orderId: string } }>(
     "/api/orders/:orderId/picks",

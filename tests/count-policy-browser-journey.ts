@@ -1,3 +1,4 @@
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3128";
 async function signIn(page: Page, email: string) {
@@ -10,10 +11,7 @@ async function signIn(page: Page, email: string) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
 }
 test("browser: independent count review on a phone retains lost-response policy and decision receipts", async ({
   page,
@@ -24,6 +22,7 @@ test("browser: independent count review on a phone retains lost-response policy 
   page.on("pageerror", (e) => errors.push(e.message));
   await signIn(page, "admin@example.test");
   const stock = page.getByRole("row").filter({ hasText: "COUNT-DUTIES-UI" });
+  await openStockActions(stock);
   await stock.getByRole("button", { name: "Start count", exact: true }).click();
   let dialog = page.getByRole("dialog", {
     name: "Start stock count",
@@ -34,6 +33,7 @@ test("browser: independent count review on a phone retains lost-response policy 
     .fill("PHONE-INDEPENDENT-COUNT");
   await dialog.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  await navigateWorkspace(page, "Inventory", "Cycle counts");
   const count = page
     .getByRole("row")
     .filter({ hasText: "PHONE-INDEPENDENT-COUNT" });
@@ -104,6 +104,7 @@ test("browser: independent count review on a phone retains lost-response policy 
     const reviewer = await context.newPage();
     reviewer.on("pageerror", (e) => errors.push(e.message));
     await signIn(reviewer, "count-reviewer@example.test");
+    await navigateWorkspace(reviewer, "Inventory", "Cycle counts");
     const review = reviewer
       .getByRole("row")
       .filter({ hasText: "PHONE-INDEPENDENT-COUNT" });

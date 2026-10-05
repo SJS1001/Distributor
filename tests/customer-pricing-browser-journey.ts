@@ -231,9 +231,9 @@ test("browser: customer price failures retry the same selection and abandoned re
   await observed;
   // Dispatch the navigation control while the modal read is pending.
   await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Orders", exact: true })
-    .evaluate((button) => (button as HTMLButtonElement).click());
+    .getByRole("navigation", { name: "Workspace", exact: true })
+    .getByRole("button", { name: "Sales & customers", exact: true })
+    .press("Enter");
   release();
   await expect(
     page.getByRole("heading", { name: "Orders", exact: true }),

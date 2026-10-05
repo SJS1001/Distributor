@@ -1,11 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3137",
   pattern = "**/api/stock/page?*";
 async function nav(page: Page, name: string) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name, exact: true })
-    .click();
+  await navigateWorkspace(
+    page,
+    name,
+    name === "Inventory" ? "Stock" : undefined,
+  );
 }
 async function login(page: Page) {
   await page.goto(origin);
@@ -35,7 +37,7 @@ test("browser: phone stock queue preserves full totals, failed continuation and 
   await login(page);
   await expect(
     page
-      .locator(".metrics section")
+      .locator(".overview-metrics .metric-card")
       .filter({ has: page.getByText("Available units", { exact: true }) })
       .locator("strong"),
   ).toHaveText("32");
@@ -78,12 +80,15 @@ test("browser: phone stock queue preserves full totals, failed continuation and 
   await queue
     .getByLabel("Search stock serial or bin", { exact: true })
     .press("Enter");
-  await expect(queue.getByRole("status")).toHaveText("1 stock records loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "1 stock records loaded · All results shown",
+  );
   const row = stock(page)
     .getByRole("row")
     .filter({
       has: page.getByText("QUEUE-000-stock-084 · stock", { exact: true }),
     });
+  await row.locator("details.stock-actions > summary").click();
   await row.getByRole("button", { name: "Inspect", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -117,7 +122,9 @@ test("browser: phone stock queue preserves full totals, failed continuation and 
       .click();
     await expect(queue.getByRole("status")).not.toContainText("Loading");
   }
-  await expect(queue.getByRole("status")).toHaveText("32 stock records loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "32 stock records loaded · All results shown",
+  );
   await expect(row.getByText("quarantine", { exact: true })).toBeVisible();
   await expect(
     queue.getByRole("heading", { name: "Stock queue", exact: true }),
@@ -125,7 +132,7 @@ test("browser: phone stock queue preserves full totals, failed continuation and 
   await nav(page, "Overview");
   await expect(
     page
-      .locator(".metrics section")
+      .locator(".overview-metrics .metric-card")
       .filter({ has: page.getByText("Available units", { exact: true }) })
       .locator("strong"),
   ).toHaveText("31");
@@ -160,7 +167,9 @@ test("browser: stock queue discards superseded searches and abandoned navigation
   await queue
     .getByLabel("Stock condition or state", { exact: true })
     .selectOption("available");
-  await expect(queue.getByRole("status")).toHaveText("1 stock records loaded");
+  await expect(queue.getByRole("status")).toHaveText(
+    "1 stock records loaded · All results shown",
+  );
   release();
   await finished;
   await expect(stock(page)).toContainText("QUEUE-000-stock-087");
@@ -273,8 +282,8 @@ test("browser: replacement search discards superseded and closed navigation refr
     // pointer clicks on the background controls.
     else if (action === "navigate")
       await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Overview", exact: true })
+        .getByRole("navigation", { name: "Workspace", exact: true })
+        .getByRole("button", { name: "Workspace", exact: true })
         .press("Enter");
     else
       await page

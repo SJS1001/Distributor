@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 const origin = "http://127.0.0.1:3147";
 
@@ -15,12 +16,9 @@ test("browser: retired customer product receives saved and new delivery scans at
     .getByLabel("Password", { exact: true })
     .fill("long-test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  const nav = () =>
-    page
-      .getByRole("navigation")
-      .getByRole("button", { name: "Purchasing", exact: true })
-      .click();
-  await nav();
+  const nav = (section: string) =>
+    navigateWorkspace(page, "Purchasing", section);
+  await nav("Purchase orders");
   const initial = await (
     await page.request.get(origin + "/api/purchases")
   ).json();
@@ -46,6 +44,7 @@ test("browser: retired customer product receives saved and new delivery scans at
       })
       .getByRole("row")
       .filter({ has: page.getByText(reference, { exact: true }) });
+  await nav("Receipt drafts");
   const first = draft("RETIRED-PART-1");
   await first
     .getByRole("button", { name: "Resume scans", exact: true })
@@ -57,7 +56,7 @@ test("browser: retired customer product receives saved and new delivery scans at
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(first).toContainText("draft · v2");
   await page.reload();
-  await nav();
+  await nav("Receipt drafts");
   const attempts: { key: string; payload: unknown }[] = [];
   await page.route("**/api/commands/purchase.draft.confirm", async (route) => {
     attempts.push({
@@ -94,6 +93,7 @@ test("browser: retired customer product receives saved and new delivery scans at
   const poRow = page
     .getByRole("row")
     .filter({ has: page.getByTitle(po.id, { exact: true }) });
+  await nav("Purchase orders");
   await poRow
     .getByRole("button", { name: "Start receipt draft", exact: true })
     .click();
@@ -129,6 +129,7 @@ test("browser: retired customer product receives saved and new delivery scans at
     .fill("RETIRED-DELIVERY");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await nav("Receipt drafts");
   const second = draft("RETIRED-PART-2");
   await second
     .getByRole("button", { name: "Review and receive", exact: true })

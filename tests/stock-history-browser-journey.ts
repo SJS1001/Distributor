@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
+import { navigateWorkspace } from "./workspace-navigation.ts";
+
 const origin = "http://127.0.0.1:3145";
 async function signIn(page: Page) {
   await page.goto(origin);
@@ -13,10 +15,7 @@ async function signIn(page: Page) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
 }
 const panel = (page: Page) =>
   page.getByRole("region", { name: "Stock movement history", exact: true });
@@ -25,6 +24,15 @@ const openBulk = (page: Page) =>
     .getByRole("row")
     .filter({ hasText: "HISTORY-BULK" })
     .getByRole("button", { name: "Movement history", exact: true });
+async function showBulkHistory(page: Page) {
+  const actions = page
+    .getByRole("row")
+    .filter({ hasText: "HISTORY-BULK" })
+    .locator("details.stock-actions");
+  if ((await actions.getAttribute("open")) === null)
+    await actions.locator("summary").click();
+  await openBulk(page).click();
+}
 test("browser: phone bulk history bounds original-cost pages, retries the same failed cursor and restores focus", async ({
   page,
 }) => {
@@ -35,7 +43,7 @@ test("browser: phone bulk history bounds original-cost pages, retries the same f
   const before = await (
     await page.request.get(`${origin}/api/dashboard`)
   ).json();
-  await openBulk(page).click();
+  await showBulkHistory(page);
   await expect(
     panel(page).getByRole("heading", {
       name: "Stock movement history",
@@ -139,27 +147,20 @@ test("browser: exact serial history clears abandoned reads during navigation and
       await held;
       await route.fulfill({ response: native }).catch(() => {});
     });
-    await openBulk(page).click();
+    await showBulkHistory(page);
     await reading;
     if (action === "close")
       await panel(page)
         .getByRole("button", { name: "Close stock history", exact: true })
         .click();
-    else if (action === "navigate")
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Overview", exact: true })
-        .click();
+    else if (action === "navigate") await navigateWorkspace(page, "Overview");
     else
       await page.getByRole("button", { name: "Sign out", exact: true }).click();
     release();
     await page.unrouteAll({ behavior: "wait" });
     await expect(panel(page)).toHaveCount(0);
     if (action === "navigate")
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Inventory", exact: true })
-        .click();
+      await navigateWorkspace(page, "Inventory", "Stock");
   }
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),

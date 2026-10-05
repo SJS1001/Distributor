@@ -43,8 +43,9 @@ function SupplierResults({
   return (
     <>
       <label>
-        Supplier
+        Supplier <span className="field-requirement">Required</span>
         <select
+          id="purchase-supplier"
           aria-label="Supplier"
           required
           value={selected?.id ?? ""}

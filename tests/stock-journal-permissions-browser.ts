@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 // Synthetic local permission changes. No provider transport or external qualification.
 import { test, expect, type Page } from "@playwright/test";
 const origin = (port: number) => `http://127.0.0.1:${port}`;
@@ -19,10 +23,7 @@ const queue = (p: Page) =>
 const prepare = "**/api/commands/accounting.journal.permission.prepare",
   decide = "**/api/commands/accounting.journal.permission.decide";
 async function billing(p: Page) {
-  await p
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(p, "Stock journals");
   await expect(panel(p)).toBeVisible();
 }
 async function signIn(p: Page, port: number, role = "admin") {
@@ -529,10 +530,7 @@ test("journal permission browser: navigation after native commit keeps uncertain
   await confirm(page);
   await expect.poll(() => reached).toBeTruthy();
   const original = await retained(page);
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   release();
   await page.unrouteAll({ behavior: "wait" });
   await billing(page);

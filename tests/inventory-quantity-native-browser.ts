@@ -1,3 +1,4 @@
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import type {
@@ -65,15 +66,13 @@ async function signIn(p: Page, origin = ca, email = "admin@example.test") {
   await expect(
     p.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await p
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(p, "Inventory", "Stock");
 }
 async function open(p: Page, name: QuantityNativeCase) {
   const row = p
     .getByRole("row")
     .filter({ has: p.getByText(`Q-NATIVE-${name}`, { exact: true }) });
+  await openStockActions(row);
   await row
     .getByRole("button", { name: "Quantity correction", exact: true })
     .click();
@@ -323,12 +322,15 @@ test.describe("Native quantity correction integration", () => {
         expect(record.input.postingDate).toBe("2026-10-01");
         await saved(reviewer.page, "reviewed");
         await expect(
-          reviewer.page.getByRole("row").filter({
-            has: reviewer.page.getByText("Q-NATIVE-approval", {
-              exact: true,
-            }),
-          }),
-        ).toContainText("4 / 0 / 4");
+          reviewer.page
+            .getByRole("row")
+            .filter({
+              has: reviewer.page.getByText("Q-NATIVE-approval", {
+                exact: true,
+              }),
+            })
+            .locator(".stock-quantities > span"),
+        ).toHaveText(["4Book", "0Reserved", "4Available"]);
         const history = await (
           await reviewer.page.request.get(
             `${origin}/api/stock/history?unitId=${before.unitId}`,
@@ -413,10 +415,7 @@ test.describe("Native quantity correction integration", () => {
       await reviewer.context.close();
     }
     await page.reload();
-    await page
-      .getByRole("navigation")
-      .getByRole("button", { name: "Inventory", exact: true })
-      .click();
+    await navigateWorkspace(page, "Inventory", "Stock");
     await page
       .getByRole("button", {
         name: "Recover exact quantity attempt",
@@ -475,10 +474,7 @@ test.describe("Native quantity correction integration", () => {
       effect(terminal, terminal.records[0]!, -2, -2000);
       const readsBefore = reads.length;
       await reviewer.page.reload();
-      await reviewer.page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Inventory", exact: true })
-        .click();
+      await navigateWorkspace(reviewer.page, "Inventory", "Stock");
       await reviewer.page
         .getByRole("button", {
           name: "Recover exact quantity attempt",

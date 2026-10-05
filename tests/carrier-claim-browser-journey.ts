@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page, type Locator } from "@playwright/test";
 const origin = "http://127.0.0.1:3121";
 const reason = "Synthetic stopped writer and carrier investigation";
@@ -13,10 +14,7 @@ async function login(page: Page, email = "admin@example.test") {
   ).toBeVisible();
 }
 async function orders(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Orders", exact: true })
-    .click();
+  await navigateWorkspace(page, "Orders", "Shipments");
 }
 async function bookings(page: Page) {
   const dashboard = await (

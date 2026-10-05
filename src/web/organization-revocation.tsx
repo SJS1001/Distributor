@@ -56,6 +56,7 @@ export function OrganizationQuickBooksRevocation({ orgId }: { orgId: string }) {
   const run = useCallback(
     async (
       fn: (signal: AbortSignal, current: () => boolean) => Promise<void>,
+      restoreFocus = true,
     ) => {
       if (!active.current || pending.current) return;
       const controller = new AbortController();
@@ -84,7 +85,7 @@ export function OrganizationQuickBooksRevocation({ orgId }: { orgId: string }) {
           pending.current = null;
           if (active.current) {
             setBusy(false);
-            heading.current?.focus();
+            if (restoreFocus) heading.current?.focus();
           }
         }
       }
@@ -92,7 +93,7 @@ export function OrganizationQuickBooksRevocation({ orgId }: { orgId: string }) {
     [key, orgId],
   );
   const refresh = useCallback(
-    () =>
+    (restoreFocus = true) =>
       run(async (signal, current) => {
         setReview(null);
         setReceipt(null);
@@ -101,12 +102,12 @@ export function OrganizationQuickBooksRevocation({ orgId }: { orgId: string }) {
           setSummary(s);
           setRetained(saved(key, orgId));
         }
-      }),
+      }, restoreFocus),
     [run, key, orgId],
   );
   useEffect(() => {
     active.current = true;
-    void refresh();
+    void refresh(false);
     const changed = (event: StorageEvent) => {
       if (event.key !== key && event.key !== null) return;
       pending.current?.abort();

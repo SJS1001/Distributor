@@ -20,6 +20,7 @@
     "build": "vite build",
     "bootstrap": "tsx src/server/cli.ts bootstrap",
     "demo": "tsx src/server/cli.ts demo",
+    "demo:native": "tsx src/demo/main.ts",
     "verify:plan": "python3 scripts/verify_plan.py",
     "format:check": "prettier --check src tests vite.config.ts playwright.config.ts tsconfig.json package.json index.html scripts/verify_runtime.mjs scripts/rehearsal*.ts",
     "test:e2e": "npm run build && playwright test",

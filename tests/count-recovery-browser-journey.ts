@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { stockFactsDashboard } from "./stock-browser-facts.ts";
@@ -15,10 +16,7 @@ async function login(page: Page) {
   ).toBeVisible();
 }
 async function inventory(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Cycle counts");
   await expect(
     page
       .getByRole("region", { name: "Count queue", exact: true })
@@ -203,19 +201,13 @@ test.describe("retained count recovery", () => {
           await expect(
             page.getByRole("heading", { name: "Overview", exact: true }),
           ).toBeVisible();
-          await page
-            .getByRole("navigation")
-            .getByRole("button", { name: "Inventory", exact: true })
-            .click();
+          await navigateWorkspace(page, "Inventory", "Cycle counts");
         } else {
           await dialog
             .getByRole("button", { name: "Cancel", exact: true })
             .click();
           if (boundary === "navigation") {
-            await page
-              .getByRole("navigation")
-              .getByRole("button", { name: "Catalog", exact: true })
-              .click();
+            await navigateWorkspace(page, "Catalog");
           } else {
             await page
               .getByRole("button", { name: "Sign out", exact: true })
@@ -647,10 +639,7 @@ test.describe("count confirmation refresh boundaries", () => {
         .getByRole("button", { name: "Continue", exact: true })
         .click();
       await expect.poll(() => held).toBe(true);
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Orders", exact: true })
-        .click();
+      await navigateWorkspace(page, "Orders", "Orders");
       release();
       await expect.poll(() => settled).toBe(true);
       await page.evaluate(

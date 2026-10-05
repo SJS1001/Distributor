@@ -1,3 +1,4 @@
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3291";
 const panel = (p: Page) =>
@@ -17,15 +18,12 @@ async function signIn(p: Page, email = "admin@example.test", server = origin) {
   await inventory(p);
 }
 async function inventory(p: Page) {
-  await p
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(p, "Inventory", "Stock");
 }
 async function open(p: Page, serial = "S1") {
-  await p
-    .getByRole("row")
-    .filter({ hasText: `${serial} · stock` })
+  const row = p.getByRole("row").filter({ hasText: `${serial} · stock` });
+  await openStockActions(row);
+  await row
     .getByRole("button", { name: "Stock valuation", exact: true })
     .click();
   await expect(panel(p)).toBeVisible();

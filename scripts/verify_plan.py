@@ -11,7 +11,8 @@ from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ID = re.compile(r"D-\d{3}|CH-\d{2}|DEC-\d{2}|REQ-\d{2}|G-UB|G\d")
+# Match complete IDs, not substrings such as CH-20 inside RESEARCH-2026.
+ID = re.compile(r"\b(?:D-\d{3}|CH-\d{2}|DEC-\d{2}|REQ-\d{2}|G-UB|G\d)\b")
 errors = []
 
 

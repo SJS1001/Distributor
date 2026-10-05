@@ -1,3 +1,4 @@
+import { INCOMING_SUPPLY_DDL } from "./incoming-supply-schema.ts";
 import { INTEGRATION_OFFLINE_CHECKOUT_PAID_DDL } from "./integration-offline-checkout-paid-schema.ts";
 import { INTEGRATION_OFFLINE_ORIGINAL_LEASE_DDL } from "./integration-offline-original-lease-schema.ts";
 import { INTEGRATION_OFFLINE_CANADA_POST_DDL } from "./integration-offline-canada-post-schema.ts";
@@ -228,6 +229,7 @@ export async function upgradeSchema(
         copied.exec(INTEGRATION_OFFLINE_CANADA_POST_DDL);
         copied.exec(INTEGRATION_OFFLINE_ORIGINAL_LEASE_DDL);
         copied.exec(INTEGRATION_OFFLINE_CHECKOUT_PAID_DDL);
+        copied.exec(INCOMING_SUPPLY_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -266,6 +268,7 @@ export async function upgradeSchema(
           copied.exec(INTEGRATION_OFFLINE_ORIGINAL_LEASE_DDL);
           copied.exec(INTEGRATION_OFFLINE_CHECKOUT_PAID_DDL);
         }
+        if (before.version! <= 22) copied.exec(INCOMING_SUPPLY_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

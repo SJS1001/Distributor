@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -19,10 +20,7 @@ async function login(page: Page) {
   return csrf;
 }
 async function open(page: Page) {
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Orders", exact: true })
-    .click();
+  await navigateWorkspace(page, "Orders", "Shipments");
   await page
     .getByRole("button", {
       name: "Review Canada Post warehouse groups",
@@ -666,10 +664,7 @@ test("browser: Canada Post failed selection can be reviewed again and wholly uns
     .click();
   await expect(booking).toBeVisible();
   expect(await native(page)).toEqual(before);
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Inventory", exact: true })
-    .click();
+  await navigateWorkspace(page, "Inventory", "Stock");
   await expect(panel).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 
 const origin = "http://127.0.0.1:3142";
 async function login(page: Page, existing = false) {
@@ -13,10 +14,7 @@ async function login(page: Page, existing = false) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Workspace" })
-    .getByRole("button", { name: "Purchasing", exact: true })
-    .click();
+  await navigateWorkspace(page, "Purchasing", "Purchase orders");
   await expect(
     page.getByRole("heading", { name: "Purchasing", exact: true }),
   ).toBeVisible();
@@ -136,7 +134,12 @@ test("browser: multi-line purchase review retains off-page quantities, retries o
   await page
     .getByRole("button", { name: "Review purchase order", exact: true })
     .click();
-  await expect(dialog).toContainText("3 units × CAD 5.01 = CAD 15.03");
+  const reviewedLine = dialog.getByRole("row").filter({ hasText: "BUY-00" });
+  await expect(reviewedLine.getByRole("cell")).toHaveText([
+    "3 units",
+    "CAD 5.01",
+    "CAD 15.03",
+  ]);
   expect(bodies).toHaveLength(0);
   expect((await purchases(page)).orders).toEqual(before.orders);
   expect(
@@ -158,12 +161,8 @@ test("browser: multi-line purchase review retains off-page quantities, retries o
   ).toHaveCount(0);
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Purchasing", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Workspace" })
-    .getByRole("button", { name: "Purchasing", exact: true })
-    .click();
   await open(page);
   await expect(dialog).toContainText("Purchase total: CAD 29.03");
   await page
@@ -634,4 +633,48 @@ test("browser: supplier paging retries the failed cursor and ignores superseded 
     ),
   ).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test("browser: purchase validation links to fields and retains corrected draft through fixed review", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  await open(page);
+  await search(page, "BUY-00");
+  await edit(page, "BUY-00", "0", "");
+  await page
+    .getByRole("button", { name: "Review purchase order", exact: true })
+    .click();
+  const summary = page.getByRole("alert", { name: "Check these fields" });
+  await expect(summary).toBeFocused();
+  await expect(summary.getByRole("link")).toHaveCount(2);
+  await summary
+    .getByRole("link")
+    .filter({ hasText: "Units for BUY-00" })
+    .click();
+  const units = page.getByLabel("Units for BUY-00", { exact: true });
+  await expect(units).toBeFocused();
+  await units.fill("3");
+  await expect(units).toBeFocused();
+  await expect(summary.getByRole("link")).toHaveCount(1);
+  await summary.getByRole("link").click();
+  const cost = page.getByLabel("Unit cost in cents for BUY-00", {
+    exact: true,
+  });
+  await expect(cost).toBeFocused();
+  await cost.fill("501");
+  await expect(summary).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Review purchase order", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Reviewed purchase lines" }),
+  ).toContainText("3 units");
+  await page
+    .getByRole("button", { name: "Edit purchase lines", exact: true })
+    .click();
+  await expect(units).toHaveValue("3");
+  await expect(cost).toHaveValue("501");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });

@@ -1,10 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3157";
-async function purchasing(page: Page) {
-  await page
-    .getByRole("navigation", { name: "Workspace" })
-    .getByRole("button", { name: "Purchasing", exact: true })
-    .click();
+async function purchasing(page: Page, section = "Receipts & returns") {
+  await navigateWorkspace(page, "Purchasing", section);
   await expect(
     page.getByRole("heading", { name: "Purchasing", exact: true }),
   ).toBeVisible();
@@ -63,6 +61,7 @@ async function suspend(page: Page, csrf: string, name: string) {
   });
 }
 async function openPurchase(page: Page, name: string) {
+  await purchasing(page, "Purchase orders");
   await page
     .getByRole("button", { name: "Purchase order", exact: true })
     .click();
@@ -367,7 +366,7 @@ test("browser: supplier availability purchase refusal after reviewed suspension 
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await purchasing(page);
+  await purchasing(page, "Purchase orders");
   await page
     .getByRole("button", { name: "Purchase order", exact: true })
     .click();
@@ -457,7 +456,7 @@ test("browser: supplier availability keeps an already committed purchase exact r
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await purchasing(page);
+  await purchasing(page, "Purchase orders");
   await page
     .getByRole("button", { name: "Purchase order", exact: true })
     .click();

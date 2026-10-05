@@ -1,3 +1,4 @@
+import { incomingSupplyInitialize } from "./incoming-supply-schema.ts";
 import { InventoryQuantityCorrections } from "./inventory-quantity-corrections.ts";
 import { InventoryValuations } from "./inventory-valuations.ts";
 import {
@@ -164,8 +165,10 @@ export class Inventory {
     private catalog: Catalog,
     private identity: Identity,
     startupMaintenance = true,
+    private incomingInspection?: (actor: Actor, unitId: string) => void,
   ) {
     this.store = database.owned("inventory");
+    this.store.migrate(incomingSupplyInitialize("inventory"));
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS inventory_warehouses(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,name TEXT NOT NULL,UNIQUE(org_id,name)) STRICT;
       CREATE TABLE IF NOT EXISTS inventory_units(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,product_id TEXT NOT NULL,warehouse_id TEXT NOT NULL,bin TEXT NOT NULL,serial TEXT,quantity INTEGER NOT NULL CHECK(quantity>=0),cost INTEGER NOT NULL CHECK(cost>=0),condition TEXT NOT NULL CHECK(condition IN('usable','quarantine','damaged')),state TEXT NOT NULL CHECK(state IN('stock','transit','sold','scrapped')),revision INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,serial)) STRICT;
@@ -341,7 +344,8 @@ export class Inventory {
   private reserved(unitId: string) {
     return Number(
       this.store.get(
-        "SELECT (SELECT COALESCE(SUM(quantity-consumed-released),0) FROM inventory_allocations WHERE unit_id=?)+(SELECT COUNT(*) FROM inventory_replacements WHERE unit_id=? AND state='reserved') AS qty",
+        "SELECT (SELECT COALESCE(SUM(quantity-consumed-released),0) FROM inventory_allocations WHERE unit_id=?)+(SELECT COUNT(*) FROM inventory_replacements WHERE unit_id=? AND state='reserved')+(SELECT COALESCE(SUM(quantity-settled),0) FROM inventory_incoming_holds WHERE unit_id=?) AS qty",
+        unitId,
         unitId,
         unitId,
       )?.qty ?? 0,
@@ -393,7 +397,8 @@ export class Inventory {
     return `WITH held AS (
       SELECT u.*,
         COALESCE((SELECT SUM(a.quantity-a.consumed-a.released) FROM inventory_allocations a WHERE a.org_id=u.org_id AND a.unit_id=u.id),0)
-        +(SELECT COUNT(*) FROM inventory_replacements r WHERE r.org_id=u.org_id AND r.unit_id=u.id AND r.state='reserved') AS reserved
+        +(SELECT COUNT(*) FROM inventory_replacements r WHERE r.org_id=u.org_id AND r.unit_id=u.id AND r.state='reserved')
+        +COALESCE((SELECT SUM(h.quantity-h.settled) FROM inventory_incoming_holds h WHERE h.org_id=u.org_id AND h.unit_id=u.id),0) AS reserved
       FROM inventory_units u WHERE ${where}
     ), balances AS (
       SELECT *,CASE WHEN state='stock' AND condition='usable' THEN quantity-reserved ELSE 0 END AS available FROM held
@@ -426,6 +431,37 @@ export class Inventory {
         ...scope.parameters,
       )!;
       return { available: Number(row.available) };
+    });
+  }
+  operationalAnalytics(actor: Actor) {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, [
+        "warehouse",
+        "commercial",
+        "finance",
+        "warranty",
+        "support",
+      ]);
+      const scope = this.stockScope(actor);
+      return this.store.all<{
+        warehouseId: string;
+        condition: string;
+        records: number;
+        quantity: number;
+      }>(
+        `SELECT u.warehouse_id AS warehouseId,u.condition,COUNT(*) AS records,SUM(u.quantity) AS quantity FROM inventory_units u WHERE ${scope.where} AND u.state='stock' AND u.condition IN('quarantine','damaged') GROUP BY u.warehouse_id,u.condition ORDER BY u.warehouse_id,u.condition`,
+        ...scope.parameters,
+      );
+    });
+  }
+  countsAwaitingReview(actor: Actor) {
+    return this.database.transaction(() => {
+      actor = this.custodyActor(actor, ["warehouse", "support"]);
+      const scope = this.countScope(actor);
+      return this.store.get<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM inventory_counts WHERE ${scope.where} AND state='submitted'`,
+        ...scope.parameters,
+      )!.count;
     });
   }
   // Called by warranty inside its claim review transaction. Inventory resolves
@@ -1304,7 +1340,9 @@ export class Inventory {
           "Stock changed; refresh before inspecting.",
         );
         check(
-          u.state === "stock" && u.quantity > 0 && this.reserved(u.id) === 0,
+          u.state === "stock" &&
+            u.quantity > 0 &&
+            this.reserved(u.id) === this.incomingHeld(u.id),
           "STATE",
           "Only present, unallocated stock can be inspected.",
         );
@@ -1321,6 +1359,7 @@ export class Inventory {
           u.id,
         );
         this.movement(actor, u, "inspection", 0, u.id, input.reason);
+        this.incomingInspection?.(actor, u.id);
         return { id: u.id, revision: u.revision + 1 };
       },
     );
@@ -2143,6 +2182,140 @@ export class Inventory {
         return result;
       },
     );
+  }
+  /** Receipt-specific earmarks are custody holds, never pickable allocations. */
+  holdIncoming(
+    actor: Actor,
+    input: {
+      commitmentId: string;
+      orderId: string;
+      productId: string;
+      warehouseId: string;
+      unitIds: string[];
+      quantity: number;
+    },
+  ) {
+    this.database.requireTransaction();
+    actor = this.custodyActor(actor, ["warehouse"]);
+    site(actor, input.warehouseId);
+    let remaining = integer(
+      input.quantity,
+      "Incoming receipt quantity",
+      1,
+      100000,
+    );
+    for (const unitId of input.unitIds) {
+      if (!remaining) break;
+      const u = this.unit(actor, unitId);
+      check(
+        u.product_id === input.productId &&
+          u.warehouse_id === input.warehouseId &&
+          u.state === "stock",
+        "INCOMING_STOCK",
+        "Incoming receipt stock differs from its commitment.",
+      );
+      const quantity = Math.min(remaining, u.quantity - this.reserved(u.id));
+      if (!quantity) continue;
+      this.store.run(
+        "INSERT INTO inventory_incoming_holds VALUES(?,?,?,?,?,?,0)",
+        id(),
+        actor.orgId,
+        input.commitmentId,
+        input.orderId,
+        u.id,
+        quantity,
+      );
+      remaining -= quantity;
+    }
+    check(
+      !remaining,
+      "INCOMING_STOCK",
+      "Incoming receipt stock is no longer available.",
+    );
+  }
+  incomingHolds(actor: Actor, commitmentId?: string, unitId?: string) {
+    actor = this.custodyActor(actor, ["warehouse", "commercial", "buyer"]);
+    return this.store
+      .all<{
+        id: string;
+        commitment_id: string;
+        order_id: string;
+        unit_id: string;
+        quantity: number;
+        settled: number;
+      }>(
+        `SELECT * FROM inventory_incoming_holds WHERE org_id=? AND settled<quantity ${commitmentId ? "AND commitment_id=?" : ""} ${unitId ? "AND unit_id=?" : ""} ORDER BY rowid`,
+        actor.orgId,
+        ...(commitmentId ? [commitmentId] : []),
+        ...(unitId ? [unitId] : []),
+      )
+      .filter(
+        (row) =>
+          actor.role !== "warehouse" ||
+          actor.sites.includes(this.unit(actor, row.unit_id).warehouse_id),
+      );
+  }
+  settleIncomingHold(
+    actor: Actor,
+    holdId: string,
+    quantity: number,
+    reserve: boolean,
+  ) {
+    this.database.requireTransaction();
+    actor = this.custodyActor(actor, ["warehouse", "commercial", "buyer"]);
+    const h = this.store.get<{
+      id: string;
+      commitment_id: string;
+      order_id: string;
+      unit_id: string;
+      quantity: number;
+      settled: number;
+    }>(
+      "SELECT * FROM inventory_incoming_holds WHERE org_id=? AND id=?",
+      actor.orgId,
+      holdId,
+    );
+    check(h, "NOT_FOUND", "Incoming custody hold not found.", 404);
+    const u = this.unit(actor, h.unit_id);
+    if (actor.role === "warehouse") site(actor, u.warehouse_id);
+    integer(quantity, "Incoming hold quantity", 1, 100000);
+    check(
+      quantity <= h.quantity - h.settled,
+      "INCOMING_STOCK",
+      "Incoming custody hold changed.",
+    );
+    if (reserve)
+      check(
+        u.state === "stock" &&
+          u.condition === "usable" &&
+          u.quantity >= this.reserved(u.id),
+        "INCOMING_STOCK",
+        "Only inspected usable incoming stock can be reserved.",
+      );
+    this.store.run(
+      "UPDATE inventory_incoming_holds SET settled=settled+? WHERE org_id=? AND id=?",
+      quantity,
+      actor.orgId,
+      h.id,
+    );
+    if (reserve)
+      this.store.run(
+        "INSERT INTO inventory_allocations(id,org_id,order_id,product_id,warehouse_id,unit_id,quantity) VALUES(?,?,?,?,?,?,?)",
+        id(),
+        actor.orgId,
+        h.order_id,
+        u.product_id,
+        u.warehouse_id,
+        u.id,
+        quantity,
+      );
+    return quantity;
+  }
+  private incomingHeld(unitId: string) {
+    return this.store.get<{ quantity: number }>(
+      "SELECT COALESCE(SUM(quantity-settled),0) AS quantity FROM inventory_incoming_holds WHERE unit_id=?",
+      unitId,
+    )!.quantity;
   }
   reserve(
     actor: Actor,

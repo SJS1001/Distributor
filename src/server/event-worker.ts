@@ -4,6 +4,7 @@ import type { Application } from "./application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { check, DomainError } from "./core.ts";
 import { type Region } from "./iam.ts";
+import { inspectSchema } from "./schema-upgrade.ts";
 
 // Explicit, bounded foreground local work. No scheduler, network or provider runtime.
 let app: Application | undefined;
@@ -32,6 +33,14 @@ try {
     region === "CA" || region === "US",
     "REGION",
     "Select the database region.",
+    400,
+  );
+  // Workers may consume an existing store, never initialize a mistyped target.
+  const inspection = inspectSchema(path);
+  check(
+    inspection.kind === "current" && inspection.region === region,
+    "DATABASE",
+    "Select a current application database in the selected region.",
     400,
   );
   app = createRuntimeApplication(path, region as Region, {

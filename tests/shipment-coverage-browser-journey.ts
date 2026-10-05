@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3131";
 async function login(page: Page, email: string) {
@@ -14,10 +15,7 @@ async function login(page: Page, email: string) {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Returns", exact: true })
-    .click();
+  await navigateWorkspace(page, "Returns");
   return csrf;
 }
 test("browser: phone claim retains handover policy across later revisions, transient coverage reads and lost claim replies", async ({

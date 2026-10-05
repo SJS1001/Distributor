@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3140",
   pattern = "**/api/catalog/customer-products/page?*";
@@ -116,7 +117,7 @@ test("browser: paged catalog preserves saved off-page quantities, literal search
     ["Paged product 20", 1],
     ["Paged product 44", 3],
   ]);
-  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await navigateWorkspace(page, "Orders", "Orders");
   await expect(
     page.getByRole("button", {
       name: "Amend quantity: Paged product 44",
@@ -217,7 +218,7 @@ test("browser: saved cart pages preserve failed continuation and resume the sele
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await navigateWorkspace(page, "Orders", "Orders");
   const section = page.getByRole("region", {
     name: "Saved carts",
     exact: true,

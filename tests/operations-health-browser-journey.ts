@@ -1,3 +1,4 @@
+import { navigateWorkspace } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 
 const origin = "http://127.0.0.1:3150";
@@ -16,10 +17,7 @@ test("browser: phone operations health exposes full redacted queues and hold, cl
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  const nav = page.getByRole("navigation");
-  await nav
-    .getByRole("button", { name: "Operations health", exact: true })
-    .click();
+  await navigateWorkspace(page, "Operations health");
   const panel = page.getByRole("region", {
     name: "Operations health",
     exact: true,
@@ -101,7 +99,7 @@ test("browser: phone operations health exposes full redacted queues and hold, cl
         page.getByRole("button", { name: "Sign in", exact: true }),
       ).toBeVisible();
     } else {
-      await nav.getByRole("button", { name: destination, exact: true }).click();
+      await navigateWorkspace(page, destination);
       await expect(
         page.getByRole("heading", { name: destination, exact: true }),
       ).toBeVisible();
@@ -113,9 +111,7 @@ test("browser: phone operations health exposes full redacted queues and hold, cl
     ).toHaveCount(0);
     await expect(panel).toHaveCount(0);
     if (destination !== "sign-out") {
-      await nav
-        .getByRole("button", { name: "Operations health", exact: true })
-        .click();
+      await navigateWorkspace(page, "Operations health");
       await expect(stripe).toContainText("pending: 34");
     }
   }

@@ -1,7 +1,24 @@
 import {
-  InventoryQuantity,
-  type QuantitySelection,
-} from "./inventory-quantity.tsx";
+  authorizedPages,
+  authorizeNavigation,
+  navigationHash,
+  readNavigation,
+  type NavigationIntent,
+} from "./navigation.ts";
+import { OrderDetail } from "./order-detail.tsx";
+import { DemoNotice } from "./demo-notice.tsx";
+import { IncomingSupplyWorkspace } from "./incoming-supply.tsx";
+import { savedFilterKey } from "./saved-filters.tsx";
+import { Overview } from "./overview.tsx";
+import {
+  PageSections,
+  PageSection,
+  WorkspaceNavigation,
+  WorkspaceTabs,
+  pageDescriptions,
+  workspaceGroups,
+} from "./workspace.tsx";
+import { type QuantitySelection } from "./inventory-quantity.tsx";
 import { OrganizationQuickBooksRevocation } from "./organization-revocation.tsx";
 import {
   OrganizationQuickBooksConnection,
@@ -26,11 +43,8 @@ import {
 } from "./supplier-return-queue.tsx";
 import { useStockQueue, StockQueueControls } from "./stock-queue.tsx";
 import { StockHistory } from "./stock-history.tsx";
-import {
-  InventoryValuation,
-  type ValuationSelection,
-} from "./inventory-valuation.tsx";
-import { BinRelocation, type BinSelection } from "./bin-relocation.tsx";
+import { type ValuationSelection } from "./inventory-valuation.tsx";
+import type { BinSelection } from "./bin-relocation.tsx";
 import { ReplacementSerialSelect } from "./replacement-serial-select.tsx";
 import { useInvoiceQueue, InvoiceQueueControls } from "./invoice-queue.tsx";
 import { usePurchaseQueue, PurchaseQueueControls } from "./purchase-queue.tsx";
@@ -68,24 +82,18 @@ import {
 import { CanadaPostWarehouse } from "./canada-post.tsx";
 import { CarrierBooking } from "./carrier-booking.tsx";
 import { CheckoutAction } from "./checkout-action.tsx";
-import { AccountingCosts } from "./accounting-costs.tsx";
-import { StockJournalReconciliation } from "./stock-journal-reconciliation.tsx";
-import { StockJournals } from "./stock-journals.tsx";
-import { AccountingBalanceReview } from "./accounting-balance.tsx";
+
 import { BillingInbox } from "./billing-inbox.tsx";
 import { RefundPaymentSelect } from "./refund-payment-select.tsx";
 import { CashPayments } from "./cash-payments.tsx";
 import { CashRefunds } from "./cash-refunds.tsx";
 import { RefundNotices } from "./refund-notices.tsx";
-import { EventReporting } from "./event-reporting.tsx";
+import { deferredPage } from "./deferred-page.tsx";
 import { DisclosureReview } from "./provider-disclosures.tsx";
 import { ProviderHistory } from "./provider-history.tsx";
 import { OrderAmendments } from "./order-amendments.tsx";
 import { OrderReservations, ReservationStatus } from "./order-reservations.tsx";
 import { SupplierReturnHistory } from "./supplier-return-history.tsx";
-import { ReconciliationPanel } from "./reconciliation.tsx";
-import { OperationsHealthPanel } from "./operations-health.tsx";
-import { AuditHistory } from "./audit-history.tsx";
 import { RequiredMfa } from "./required-mfa.tsx";
 import { MfaSecurity } from "./mfa-security.tsx";
 import { SerialCustody } from "./serial-custody.tsx";
@@ -114,6 +122,56 @@ import type {
   CatalogLifecyclePage,
 } from "../shared/catalog-lifecycle.ts";
 import "./style.css";
+const OperationsHealthPanel = deferredPage("Operations health", async () => {
+  const module = await import("./operations-health.tsx");
+  return { default: module.OperationsHealthPanel };
+});
+const ReconciliationPanel = deferredPage("Reconciliation", async () => {
+  const module = await import("./reconciliation.tsx");
+  return { default: module.ReconciliationPanel };
+});
+const AuditHistory = deferredPage("Audit history", async () => {
+  const module = await import("./audit-history.tsx");
+  return { default: module.AuditHistory };
+});
+const EventReporting = deferredPage("Event reporting", async () => {
+  const module = await import("./event-reporting.tsx");
+  return { default: module.EventReporting };
+});
+const InventoryQuantity = deferredPage("InventoryQuantity", async () => {
+  const module = await import("./inventory-quantity.tsx");
+  return { default: module.InventoryQuantity };
+});
+const InventoryValuation = deferredPage("InventoryValuation", async () => {
+  const module = await import("./inventory-valuation.tsx");
+  return { default: module.InventoryValuation };
+});
+const BinRelocation = deferredPage("BinRelocation", async () => {
+  const module = await import("./bin-relocation.tsx");
+  return { default: module.BinRelocation };
+});
+const AccountingCosts = deferredPage("AccountingCosts", async () => {
+  const module = await import("./accounting-costs.tsx");
+  return { default: module.AccountingCosts };
+});
+const StockJournalReconciliation = deferredPage(
+  "StockJournalReconciliation",
+  async () => {
+    const module = await import("./stock-journal-reconciliation.tsx");
+    return { default: module.StockJournalReconciliation };
+  },
+);
+const StockJournals = deferredPage("StockJournals", async () => {
+  const module = await import("./stock-journals.tsx");
+  return { default: module.StockJournals };
+});
+const AccountingBalanceReview = deferredPage(
+  "AccountingBalanceReview",
+  async () => {
+    const module = await import("./accounting-balance.tsx");
+    return { default: module.AccountingBalanceReview };
+  },
+);
 type Item = Record<string, any>;
 const money = (value: number, currency = "CAD") =>
   new Intl.NumberFormat("en", { style: "currency", currency }).format(
@@ -124,12 +182,59 @@ const purchaseLineName = (line: Item) =>
 function App() {
   const [actor, setActor] = useState<Item | null>(null),
     [data, setData] = useState<Item | null>(null),
-    [page, setPage] = useState("Overview"),
+    [route, setRoute] = useState<NavigationIntent>(() =>
+      readNavigation(window.location.hash),
+    ),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({});
+  const page = route.page;
+  const traversal = useRef<(destination: NavigationIntent) => void>(() => {});
+  const setPage = (destination: string) => {
+    const next = { page: destination };
+    window.history.pushState(null, "", navigationHash(next));
+    setRoute(next);
+  };
+  const appliedHash = useRef(window.location.hash);
+  const orderOpener = useRef<HTMLElement | null>(null);
+  const previousOrder = useRef(route.orderId);
+  useEffect(() => {
+    if (previousOrder.current && !route.orderId && page === "Orders")
+      requestAnimationFrame(() => {
+        if (orderOpener.current?.isConnected) {
+          orderOpener.current.focus();
+          orderOpener.current.scrollIntoView({ block: "nearest" });
+        }
+      });
+    previousOrder.current = route.orderId;
+  }, [route.orderId, page]);
+  useEffect(() => {
+    if (!actor) return;
+    const locationChanged = () => {
+      if (appliedHash.current === window.location.hash) return;
+      appliedHash.current = window.location.hash;
+      traversal.current(readNavigation(window.location.hash));
+    };
+    window.addEventListener("popstate", locationChanged);
+    window.addEventListener("hashchange", locationChanged);
+    const safe = authorizeNavigation(
+      readNavigation(window.location.hash),
+      authorizedPages(actor.role),
+    );
+    if (safe.page !== readNavigation(window.location.hash).page)
+      setNotice(
+        "That destination is unavailable for your account. Overview is shown.",
+      );
+    setRoute(safe);
+    appliedHash.current = navigationHash(safe);
+    window.history.replaceState(null, "", navigationHash(safe));
+    return () => {
+      window.removeEventListener("popstate", locationChanged);
+      window.removeEventListener("hashchange", locationChanged);
+    };
+  }, [actor?.orgId, actor?.id, actor?.role]);
   const claimQueue = useClaimQueue(
     data?.claims,
     data?.claimNext,
@@ -150,6 +255,63 @@ function App() {
     data?.stockNext,
     page === "Inventory" && !!actor && !busy,
   );
+  useEffect(() => {
+    if (
+      orderQueue.active &&
+      !orderQueue.busy &&
+      (orderQueue.state !== (route.orderState ?? "") ||
+        orderQueue.reservation !== (route.orderReservation ?? ""))
+    )
+      orderQueue.filter(route.orderState ?? "", route.orderReservation ?? "");
+  }, [
+    route.orderState,
+    route.orderReservation,
+    orderQueue.reservation,
+    orderQueue.active,
+    orderQueue.state,
+    orderQueue.busy,
+    data?.orders,
+  ]);
+  useEffect(() => {
+    if (
+      invoiceQueue.active &&
+      !invoiceQueue.busy &&
+      invoiceQueue.state !== (route.invoiceBalance ?? "")
+    )
+      invoiceQueue.filter(route.invoiceBalance ?? "");
+  }, [
+    route.invoiceBalance,
+    invoiceQueue.active,
+    invoiceQueue.state,
+    invoiceQueue.busy,
+    data?.invoices,
+  ]);
+  const resetStockIntent = useRef(false);
+  useEffect(() => {
+    if (
+      stockQueue.active &&
+      !stockQueue.busy &&
+      (resetStockIntent.current ||
+        stockQueue.filters.view !== (route.stockView ?? "") ||
+        stockQueue.filters.warehouseId !== (route.warehouseId ?? ""))
+    ) {
+      const reset = resetStockIntent.current;
+      resetStockIntent.current = false;
+      stockQueue.filter({
+        view: route.stockView ?? "",
+        warehouseId: route.warehouseId ?? "",
+        ...(reset ? { query: "", productId: "" } : {}),
+      });
+    }
+  }, [
+    route.stockView,
+    route.warehouseId,
+    stockQueue.active,
+    stockQueue.busy,
+    stockQueue.filters.view,
+    stockQueue.filters.warehouseId,
+    data?.stock,
+  ]);
   const purchaseQueue = usePurchaseQueue(
     extra.purchases?.orders,
     extra.purchases?.orderNext,
@@ -613,6 +775,7 @@ function App() {
     work: (signal: AbortSignal) => Promise<unknown>,
     refreshAfter = true,
     showBusy = true,
+    successMessage = "Saved.",
   ) => {
     stopApplicationRun();
     const controller = new AbortController();
@@ -634,7 +797,7 @@ function App() {
       if ((result as Item)?.skipRefresh) return result;
       if (refreshAfter) await refresh(controller.signal);
       if (!current()) return abandoned;
-      setNotice("Saved.");
+      setNotice(successMessage);
       return result;
     } catch (e) {
       if (!current()) return abandoned;
@@ -1321,7 +1484,12 @@ function App() {
     empty = "No records yet.",
   ) =>
     rows?.length ? (
-      <div className="table-wrap">
+      <div
+        className="table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label={`${columns[0]} records`}
+      >
         <table>
           <thead>
             <tr>
@@ -1478,121 +1646,146 @@ function App() {
         {error && <p role="alert">{error}</p>}
       </main>
     );
-  const pages = staff
-    ? [
-        "Overview",
-        "Orders",
-        "Inventory",
-        "Purchasing",
-        "Catalog",
-        "Billing",
-        "Returns",
-        "Customers",
-        "Security",
-        ...(can("support")
-          ? ["Operations health", "Audit history", "Event reporting"]
-          : []),
-        ...(can("finance") ? ["Reconciliation"] : []),
-        ...(admin ? ["Imports", "Administration"] : []),
-      ]
-    : ["Overview", "Orders", "Billing", "Returns", "Customers", "Security"];
+  const pages = authorizedPages(actor.role);
+  const navigate = (
+    destination: string | NavigationIntent,
+    recordHistory = true,
+  ) => {
+    const intent = authorizeNavigation(
+      typeof destination === "string"
+        ? { page: destination }
+        : readNavigation(navigationHash(destination)),
+      pages,
+    );
+    appliedHash.current = navigationHash(intent);
+    if (recordHistory)
+      window.history.pushState(null, "", navigationHash(intent));
+    stopApplicationRun();
+    stopReceiptHistoryRead();
+    stopOrderEntryRead();
+    stopCatalogRead();
+    orderQueue.stop();
+    purchaseQueue.stop();
+    supplierReturnQueue.stop();
+    invoiceQueue.stop();
+    stockQueue.stop();
+    if (
+      recordHistory &&
+      typeof destination !== "string" &&
+      destination.page === "Inventory" &&
+      (destination.stockView !== undefined ||
+        destination.warehouseId !== undefined)
+    )
+      resetStockIntent.current = true;
+    claimQueue.stop();
+    setRoute(intent);
+    setStockHistory(null);
+    setBinSelection(null);
+    setValuationSelection(null);
+    setQuantitySelection(null);
+    setArrivalSelection(null);
+    setLossSelection(null);
+    setDispatchSelection(null);
+    setCountSelection(null);
+    stockHistoryOpener.current = null;
+    setPurchaseEntryOpen(false);
+    setDialog((current) =>
+      [
+        "Serial history",
+        "Review product retirement",
+        "Review product reactivation",
+        "Product lifecycle history",
+        "Request return or warranty review",
+        "Approve replacement reservation",
+        "Prepare an order",
+        "Edit order quantities",
+        "Review and accept order",
+      ].includes(current?.title ?? "")
+        ? null
+        : current,
+    );
+    setCoverageOpen(false);
+    coverageOpener.current = null;
+    setDecisionClaim(null);
+    decisionOpener.current = null;
+    setCarrierShipmentId(null);
+    setCarrierReplacementId(null);
+    setCanadaPostWarehouse(null);
+    canadaPostOpener.current = null;
+    carrierOpener.current = null;
+    setProviderHistoryAccount(null);
+    setSupplierHistoryId(null);
+    setReservationOrderId(null);
+    reservationOpener.current = null;
+    setAmendmentOrderId(null);
+    amendmentOpener.current = null;
+    setError("");
+  };
+  traversal.current = (intent) => {
+    const safe = authorizeNavigation(intent, pages);
+    if (safe.page !== intent.page)
+      setNotice(
+        "That destination is unavailable for your account. Overview is shown.",
+      );
+    window.history.replaceState(null, "", navigationHash(safe));
+    navigate(safe, false);
+  };
+  const updateRoute = (changes: Partial<NavigationIntent>) => {
+    const next = { ...route, ...changes };
+    appliedHash.current = navigationHash(next);
+    window.history.pushState(null, "", navigationHash(next));
+    setRoute(next);
+  };
+
   return (
     <div className="shell">
-      <aside>
-        <div className="brand">
-          D<span>Distributor</span>
-        </div>
-        <p className="workspace">{data.organization.name}</p>
-        <nav aria-label="Workspace">
-          {pages.map((p) => (
-            <button
-              key={p}
-              aria-current={page === p ? "page" : undefined}
-              onClick={() => {
-                stopApplicationRun();
-                stopReceiptHistoryRead();
-                stopOrderEntryRead();
-                stopCatalogRead();
-                orderQueue.stop();
-                purchaseQueue.stop();
-                supplierReturnQueue.stop();
-                invoiceQueue.stop();
-                stockQueue.stop();
-                claimQueue.stop();
-                setPage(p);
-                setStockHistory(null);
-                setBinSelection(null);
-                setValuationSelection(null);
-                setQuantitySelection(null);
-                setArrivalSelection(null);
-                setLossSelection(null);
-                setDispatchSelection(null);
-                setCountSelection(null);
-                stockHistoryOpener.current = null;
-                setPurchaseEntryOpen(false);
-                setDialog((current) =>
-                  [
-                    "Serial history",
-                    "Review product retirement",
-                    "Review product reactivation",
-                    "Product lifecycle history",
-                    "Request return or warranty review",
-                    "Approve replacement reservation",
-                    "Prepare an order",
-                    "Edit order quantities",
-                    "Review and accept order",
-                  ].includes(current?.title ?? "")
-                    ? null
-                    : current,
-                );
-                setCoverageOpen(false);
-                coverageOpener.current = null;
-                setDecisionClaim(null);
-                decisionOpener.current = null;
-                setCarrierShipmentId(null);
-                setCarrierReplacementId(null);
-                setCanadaPostWarehouse(null);
-                canadaPostOpener.current = null;
-                carrierOpener.current = null;
-                setProviderHistoryAccount(null);
-                setSupplierHistoryId(null);
-                setReservationOrderId(null);
-                reservationOpener.current = null;
-                setAmendmentOrderId(null);
-                amendmentOpener.current = null;
-                setError("");
-              }}
-            >
-              {p}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <strong>{actor.name}</strong>
-          <span>
-            {actor.role} · {data.organization.region}
-          </span>
-          <button onClick={signOut}>Sign out</button>
-        </div>
-      </aside>
-      <main>
-        <header>
+      <a
+        className="skip-link"
+        href="#workspace-content"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("workspace-content")?.focus();
+        }}
+      >
+        Skip to workspace content
+      </a>
+      <WorkspaceNavigation
+        pages={pages}
+        page={page}
+        organization={data.organization.name}
+        name={actor.name}
+        role={actor.role}
+        region={data.organization.region}
+        navigate={navigate}
+        signOut={signOut}
+      />
+      <main id="workspace-content" className="workspace-main" tabIndex={-1}>
+        <header className="workspace-header">
           <div>
             <p className="eyebrow">
-              {staff ? "OPERATIONS" : "CUSTOMER PORTAL"}
+              {staff
+                ? workspaceGroups.find((group) => group.pages.includes(page))
+                    ?.name
+                : "Customer portal"}
             </p>
-            <h1>{page}</h1>
+            <h1 id="workspace-title" tabIndex={-1}>
+              {page}
+            </h1>
+            <p className="page-description">{pageDescriptions[page]}</p>
           </div>
           <button
             className="secondary"
             disabled={busy}
             onClick={() => {
-              void run(refresh, false).catch(() => {});
+              void run(refresh, false, true, "Workspace refreshed.").catch(
+                () => {},
+              );
             }}
           >
             Refresh
           </button>
         </header>
+        <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
         <div className="qualification">
           Development workspace · synthetic qualification pending · storage
           region {data.organization.region} · {currency}
@@ -1644,1472 +1837,1558 @@ function App() {
           />
         )}
         {page === "Overview" && (
-          <>
-            <div className="metrics">
-              {[
-                ["Open orders", data.orderCounts.open],
-                ["Invoice balance", money(data.invoiceSummary.due, currency)],
-                [
-                  "Open returns",
-                  data.claims.filter(
-                    (c: Item) => !["disposed", "rejected"].includes(c.state),
-                  ).length,
-                ],
-                ...(staff
-                  ? [["Available units", data.stockSummary.available]]
-                  : []),
-              ].map(([label, value]) => (
-                <section key={String(label)}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </section>
-              ))}
-            </div>
-            <section className="panel">
-              <h2>Work queue</h2>
-              {table(
-                ["Customer", "Order", "Status", "Created"],
-                data.orders.slice(0, 8),
-                (o: Item) => [
-                  accountName(o.account_id),
-                  o.id.slice(0, 8),
-                  o.state,
-                  new Date(o.created_at).toLocaleString(),
-                ],
+          <Overview
+            canReceive={can("warehouse")}
+            data={data as any}
+            currency={currency}
+            staff={staff}
+            canReadInvoices={can(
+              "finance",
+              "commercial",
+              "buyer",
+              "warranty",
+              "support",
+            )}
+            canPrepare={can("commercial", "buyer")}
+            busy={busy}
+            navigate={navigate}
+            prepare={() => placeOrder()}
+            accountName={accountName}
+          />
+        )}
+        {page === "Orders" && (
+          <PageSections
+            label="Orders sections"
+            selectedSection={
+              route.section ??
+              (canadaPostWarehouse ? "orders-shipments" : "orders-queue")
+            }
+            selectSection={(section) => updateRoute({ section })}
+            defaultSection={
+              canadaPostWarehouse ? "orders-shipments" : undefined
+            }
+            items={[
+              { id: "orders-queue", label: "Orders" },
+              { id: "orders-shipments", label: "Shipments" },
+            ]}
+          >
+            <PageSection id="orders-queue">
+              {can("commercial", "buyer") && (
+                <CartSaveRecovery
+                  key={`${actor!.orgId}:${actor!.id}`}
+                  scope={cartRecoveryKey(actor!.orgId, actor!.id)}
+                  disabled={busy || !!dialog}
+                  recovered={refresh}
+                />
               )}
-            </section>
-            <section className="panel">
-              <h2>Next actions</h2>
               <div className="actions">
                 {can("commercial", "buyer") &&
                   button("Prepare order", () => placeOrder())}
-                {can("warehouse") &&
-                  button("Review inventory", () => {
-                    stopApplicationRun();
-                    setPage("Inventory");
-                  })}
-                {can("finance", "buyer") &&
-                  button("Review invoices", () => {
-                    stopApplicationRun();
-                    setPage("Billing");
-                  })}
               </div>
-            </section>
-          </>
-        )}
-        {page === "Orders" && (
-          <>
-            {can("commercial", "buyer") && (
-              <CartSaveRecovery
-                key={`${actor!.orgId}:${actor!.id}`}
-                scope={cartRecoveryKey(actor!.orgId, actor!.id)}
-                disabled={busy || !!dialog}
-                recovered={refresh}
+              <OrderQueueControls
+                queue={orderQueue}
+                scope={savedFilterKey(actor.orgId, actor.id, "orders")}
+                onFilter={(orderState, orderReservation) =>
+                  updateRoute({
+                    orderState,
+                    orderReservation:
+                      orderReservation ?? route.orderReservation,
+                  })
+                }
+                onReservation={(orderReservation) =>
+                  updateRoute({ orderReservation })
+                }
               />
-            )}
-            <div className="actions">
-              {can("commercial", "buyer") &&
-                button("Prepare order", () => placeOrder())}
-            </div>
-            <OrderQueueControls queue={orderQueue} />
-            {table(
-              ["Customer / order", "Warehouse", "Lines", "Status", "Actions"],
-              orderQueue.items,
-              (o: Item) => [
-                <>
-                  <strong>{accountName(o.account_id)}</strong>
-                  <small title={o.id}>{o.id.slice(0, 8)}</small>
-                </>,
-                warehouseName(o.warehouse_id),
-                o.lines.map((l: Item) => (
-                  <div key={l.id}>
-                    {productName(l.product_id, l.description)} · {l.quantity}{" "}
-                    ordered / {l.allocated} reserved / {l.shipped} shipped /{" "}
-                    {l.canceled} canceled
-                    {o.state === "open" &&
-                      can("commercial", "buyer") &&
-                      button(
-                        `Amend quantity: ${productName(l.product_id, l.description)}`,
-                        () =>
-                          open(
-                            "Amend ordered quantity",
-                            [
-                              {
-                                name: "quantity",
-                                label: "New total ordered units",
-                                type: "number",
-                                value: l.quantity,
-                                min: Math.max(1, l.shipped + l.canceled),
-                                help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
-                              },
-                              {
-                                name: "allowBackorder",
-                                label: "Allow backorder for additional units",
-                                type: "checkbox",
-                              },
-                              {
-                                name: "reason",
-                                label: "Buyer-visible reason for amendment",
-                                type: "textarea",
-                              },
-                            ],
-                            (v) =>
-                              command("order.amend", {
-                                orderId: o.id,
-                                lineId: l.id,
-                                revision: o.revision,
-                                quantity: v.quantity,
-                                allowBackorder: v.allowBackorder,
-                                reason: v.reason,
-                              }),
-                            <>
-                              <p>
-                                {productName(l.product_id, l.description)}: the
-                                quantity is the new total ordered, including
-                                shipped and canceled units.
-                              </p>
-                              <p>
-                                Accepted unit price{" "}
-                                {money(l.unit_price, currency)} and unit tax{" "}
-                                {money(l.unit_tax, currency)} are retained.
-                                Product and warehouse stay the same.
-                              </p>
-                              <p>
-                                Decreases remove backorder first. Picked stock
-                                must be unpicked before it can be removed. The
-                                reason is visible to the buyer.
-                              </p>
-                            </>,
-                            "Save amendment",
-                          ),
-                      )}
-                  </div>
-                )),
-                <div>
-                  <span className="badge">{o.state}</span>
-                  <ReservationStatus reservation={o.reservation} />
-                </div>,
-                <div className="actions">
-                  {can(
-                    "commercial",
-                    "buyer",
-                    "warehouse",
-                    "finance",
-                    "support",
-                  ) &&
-                    button("View amendment history", () => {
-                      setReservationOrderId(null);
-                      reservationOpener.current = null;
-                      amendmentOpener.current =
-                        document.activeElement as HTMLElement | null;
-                      setAmendmentOrderId(o.id);
-                    })}
-                  {can(
-                    "commercial",
-                    "buyer",
-                    "warehouse",
-                    "finance",
-                    "support",
-                  ) &&
-                    button("View reservation history", () => {
-                      setAmendmentOrderId(null);
-                      amendmentOpener.current = null;
-                      reservationOpener.current =
-                        document.activeElement as HTMLElement | null;
-                      setReservationOrderId(o.id);
-                    })}
-                  {o.state === "open" && can("commercial") && (
+              {route.orderId && (
+                <OrderDetail
+                  key={`${actor.orgId}:${actor.id}:${route.orderId}`}
+                  orderId={route.orderId}
+                  accountName={accountName}
+                  warehouseName={warehouseName}
+                  scope={`${actor.orgId}:${actor.id}`}
+                  canAssignIncoming={can("commercial")}
+                  back={() => updateRoute({ orderId: undefined })}
+                />
+              )}
+              <div hidden={!!route.orderId}>
+                {table(
+                  [
+                    "Customer / order",
+                    "Warehouse",
+                    "Lines",
+                    "Status",
+                    "Actions",
+                  ],
+                  orderQueue.items,
+                  (o: Item) => [
                     <>
-                      {button(
-                        o.reservation?.expiresAt == null
-                          ? "Set reservation deadline"
-                          : "Renew reservation deadline",
-                        () =>
-                          open(
-                            "Review reservation deadline",
-                            [
-                              {
-                                name: "expiresAt",
-                                label:
-                                  "Future reservation deadline (local time)",
-                                type: "datetime-local",
-                                help: "Choose a future date and time. Allocation does not renew this deadline.",
-                              },
-                              {
-                                name: "reason",
-                                label:
-                                  "Buyer-visible reason for reservation change",
-                                type: "textarea",
-                              },
-                            ],
-                            async (v) => {
-                              const expiresAt = new Date(v.expiresAt).getTime();
-                              if (!Number.isFinite(expiresAt))
-                                throw new Error(
-                                  "Choose a valid future date and time.",
-                                );
-                              return command("order.reservation.deadline", {
-                                orderId: o.id,
-                                revision: o.revision,
-                                expiresAt,
-                                reason: v.reason,
-                              });
-                            },
-                            <p>
-                              Review the future deadline before saving. Once
-                              due, new reservations, quantity increases and new
-                              picking require an explicit renewal or clearing of
-                              the deadline. No stock is released until expiry is
-                              reviewed. The reason is visible to the buyer.
-                            </p>,
-                            "Save reservation deadline",
-                          ),
-                      )}
-                      {o.reservation?.expiresAt != null && (
-                        <>
-                          {button("Clear reservation deadline", () =>
-                            open(
-                              "Review clearing reservation deadline",
-                              [
-                                {
-                                  name: "reason",
-                                  label:
-                                    "Buyer-visible reason for reservation change",
-                                  type: "textarea",
-                                },
-                              ],
-                              (v) =>
-                                command("order.reservation.deadline", {
-                                  orderId: o.id,
-                                  revision: o.revision,
-                                  expiresAt: null,
-                                  reason: v.reason,
-                                }),
-                              <p>
-                                Clearing removes the deadline and permits new
-                                allocation and picking. This does not restore
-                                stock already released to backorder. The reason
-                                is visible to the buyer.
-                              </p>,
-                              "Clear reservation deadline",
-                            ),
+                      <strong>{accountName(o.account_id)}</strong>
+                      <button
+                        type="button"
+                        className="record-link"
+                        title={o.id}
+                        onClick={(event) => {
+                          orderOpener.current = event.currentTarget;
+                          updateRoute({ orderId: o.id });
+                        }}
+                      >
+                        Open order {o.id}
+                      </button>
+                    </>,
+                    warehouseName(o.warehouse_id),
+                    o.lines.map((l: Item) => (
+                      <div key={l.id}>
+                        {productName(l.product_id, l.description)} ·{" "}
+                        {l.quantity} ordered / {l.allocated} reserved /{" "}
+                        {l.shipped} shipped / {l.canceled} canceled
+                        {o.state === "open" &&
+                          can("commercial", "buyer") &&
+                          button(
+                            `Amend quantity: ${productName(l.product_id, l.description)}`,
+                            () =>
+                              open(
+                                "Amend ordered quantity",
+                                [
+                                  {
+                                    name: "quantity",
+                                    label: "New total ordered units",
+                                    type: "number",
+                                    value: l.quantity,
+                                    min: Math.max(1, l.shipped + l.canceled),
+                                    help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
+                                  },
+                                  {
+                                    name: "allowBackorder",
+                                    label:
+                                      "Allow backorder for additional units",
+                                    type: "checkbox",
+                                  },
+                                  {
+                                    name: "reason",
+                                    label: "Buyer-visible reason for amendment",
+                                    type: "textarea",
+                                  },
+                                ],
+                                (v) =>
+                                  command("order.amend", {
+                                    orderId: o.id,
+                                    lineId: l.id,
+                                    revision: o.revision,
+                                    quantity: v.quantity,
+                                    allowBackorder: v.allowBackorder,
+                                    reason: v.reason,
+                                  }),
+                                <>
+                                  <p>
+                                    {productName(l.product_id, l.description)}:
+                                    the quantity is the new total ordered,
+                                    including shipped and canceled units.
+                                  </p>
+                                  <p>
+                                    Accepted unit price{" "}
+                                    {money(l.unit_price, currency)} and unit tax{" "}
+                                    {money(l.unit_tax, currency)} are retained.
+                                    Product and warehouse stay the same.
+                                  </p>
+                                  <p>
+                                    Decreases remove backorder first. Picked
+                                    stock must be unpicked before it can be
+                                    removed. The reason is visible to the buyer.
+                                  </p>
+                                </>,
+                                "Save amendment",
+                              ),
                           )}
-                          {button("Expire unpicked reservations", () => {
-                            if (
-                              !o.reservation.overdue &&
-                              o.reservation.expiresAt > Date.now()
-                            ) {
-                              setError(
-                                "The reservation deadline is not due yet. Refresh to review its current status.",
-                              );
-                              return;
-                            }
-                            open(
-                              "Review reservation expiry",
-                              [
-                                {
-                                  name: "reason",
-                                  label:
-                                    "Buyer-visible reason for reservation expiry",
-                                  type: "textarea",
+                      </div>
+                    )),
+                    <div>
+                      <span className="badge">{o.state}</span>
+                      <ReservationStatus reservation={o.reservation} />
+                    </div>,
+                    <div className="actions">
+                      {can(
+                        "commercial",
+                        "buyer",
+                        "warehouse",
+                        "finance",
+                        "support",
+                      ) &&
+                        button("View amendment history", () => {
+                          setReservationOrderId(null);
+                          reservationOpener.current = null;
+                          amendmentOpener.current =
+                            document.activeElement as HTMLElement | null;
+                          setAmendmentOrderId(o.id);
+                        })}
+                      {can(
+                        "commercial",
+                        "buyer",
+                        "warehouse",
+                        "finance",
+                        "support",
+                      ) &&
+                        button("View reservation history", () => {
+                          setAmendmentOrderId(null);
+                          amendmentOpener.current = null;
+                          reservationOpener.current =
+                            document.activeElement as HTMLElement | null;
+                          setReservationOrderId(o.id);
+                        })}
+                      {o.state === "open" && can("commercial") && (
+                        <>
+                          {button(
+                            o.reservation?.expiresAt == null
+                              ? "Set reservation deadline"
+                              : "Renew reservation deadline",
+                            () =>
+                              open(
+                                "Review reservation deadline",
+                                [
+                                  {
+                                    name: "expiresAt",
+                                    label:
+                                      "Future reservation deadline (local time)",
+                                    type: "datetime-local",
+                                    help: "Choose a future date and time. Allocation does not renew this deadline.",
+                                  },
+                                  {
+                                    name: "reason",
+                                    label:
+                                      "Buyer-visible reason for reservation change",
+                                    type: "textarea",
+                                  },
+                                ],
+                                async (v) => {
+                                  const expiresAt = new Date(
+                                    v.expiresAt,
+                                  ).getTime();
+                                  if (!Number.isFinite(expiresAt))
+                                    throw new Error(
+                                      "Choose a valid future date and time.",
+                                    );
+                                  return command("order.reservation.deadline", {
+                                    orderId: o.id,
+                                    revision: o.revision,
+                                    expiresAt,
+                                    reason: v.reason,
+                                  });
                                 },
-                              ],
-                              (v) =>
-                                command("order.reservation.expire", {
-                                  orderId: o.id,
-                                  revision: o.revision,
-                                  reason: v.reason,
-                                }),
-                              <p>
-                                Release only unpicked reserved units to
-                                backorder. Picked and packed stock is preserved.
-                                The original ordered quantities, accepted
-                                prices, tax, order total and credit exposure
-                                stay intact. The deadline remains due until
-                                explicitly renewed or cleared. The reason is
-                                visible to the buyer.
-                              </p>,
-                              "Expire unpicked reservations",
-                            );
-                          })}
+                                <p>
+                                  Review the future deadline before saving. Once
+                                  due, new reservations, quantity increases and
+                                  new picking require an explicit renewal or
+                                  clearing of the deadline. No stock is released
+                                  until expiry is reviewed. The reason is
+                                  visible to the buyer.
+                                </p>,
+                                "Save reservation deadline",
+                              ),
+                          )}
+                          {o.reservation?.expiresAt != null && (
+                            <>
+                              {button("Clear reservation deadline", () =>
+                                open(
+                                  "Review clearing reservation deadline",
+                                  [
+                                    {
+                                      name: "reason",
+                                      label:
+                                        "Buyer-visible reason for reservation change",
+                                      type: "textarea",
+                                    },
+                                  ],
+                                  (v) =>
+                                    command("order.reservation.deadline", {
+                                      orderId: o.id,
+                                      revision: o.revision,
+                                      expiresAt: null,
+                                      reason: v.reason,
+                                    }),
+                                  <p>
+                                    Clearing removes the deadline and permits
+                                    new allocation and picking. This does not
+                                    restore stock already released to backorder.
+                                    The reason is visible to the buyer.
+                                  </p>,
+                                  "Clear reservation deadline",
+                                ),
+                              )}
+                              {button("Expire unpicked reservations", () => {
+                                if (
+                                  !o.reservation.overdue &&
+                                  o.reservation.expiresAt > Date.now()
+                                ) {
+                                  setError(
+                                    "The reservation deadline is not due yet. Refresh to review its current status.",
+                                  );
+                                  return;
+                                }
+                                open(
+                                  "Review reservation expiry",
+                                  [
+                                    {
+                                      name: "reason",
+                                      label:
+                                        "Buyer-visible reason for reservation expiry",
+                                      type: "textarea",
+                                    },
+                                  ],
+                                  (v) =>
+                                    command("order.reservation.expire", {
+                                      orderId: o.id,
+                                      revision: o.revision,
+                                      reason: v.reason,
+                                    }),
+                                  <p>
+                                    Release only unpicked reserved units to
+                                    backorder. Picked and packed stock is
+                                    preserved. The original ordered quantities,
+                                    accepted prices, tax, order total and credit
+                                    exposure stay intact. The deadline remains
+                                    due until explicitly renewed or cleared. The
+                                    reason is visible to the buyer.
+                                  </p>,
+                                  "Expire unpicked reservations",
+                                );
+                              })}
+                            </>
+                          )}
                         </>
                       )}
-                    </>
-                  )}
-                  {o.state === "open" &&
-                    can("commercial") &&
-                    button("Allocate", () => {
-                      void run(() =>
-                        command("order.allocate", {
-                          orderId: o.id,
-                          revision: o.revision,
-                        }),
-                      ).catch(() => {});
-                    })}
-                  {o.state === "open" &&
-                    can("commercial", "buyer") &&
-                    button("Cancel units", () =>
-                      simple(
-                        "Cancel open units",
-                        [
-                          select(
-                            "lineId",
-                            "Order line",
-                            o.lines,
-                            (l) =>
-                              `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
-                          ),
-                          {
-                            name: "quantity",
-                            label: "Units",
-                            type: "number",
-                            value: 1,
-                          },
-                          reason,
-                        ],
-                        "order.cancel",
-                        (v) => ({ ...v, orderId: o.id, revision: o.revision }),
-                      ),
-                    )}
-                  {o.state === "open" &&
-                    can("warehouse") &&
-                    button("Pick / pack", () => {
-                      void readReview<Item[]>(`/api/orders/${o.id}/picks`)
-                        .then((picks) => {
-                          if (!picks) return;
-                          open(
-                            "Confirm picked stock",
+                      {o.state === "open" &&
+                        can("commercial") &&
+                        button("Allocate", () => {
+                          void run(() =>
+                            command("order.allocate", {
+                              orderId: o.id,
+                              revision: o.revision,
+                            }),
+                          ).catch(() => {});
+                        })}
+                      {o.state === "open" &&
+                        can("commercial", "buyer") &&
+                        button("Cancel units", () =>
+                          simple(
+                            "Cancel open units",
                             [
                               select(
-                                "allocationId",
-                                "Allocation",
-                                picks.filter(
-                                  (a: Item) =>
-                                    a.quantity > a.consumed + a.released,
-                                ),
-                                (a) =>
-                                  `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin}`,
-                              ),
-                              {
-                                name: "serial",
-                                scan: "single",
-                                label: "Scan serial (leave blank for bulk)",
-                                optional: true,
-                              },
-                              {
-                                name: "unpick",
-                                label: "Unpick instead",
-                                type: "checkbox",
-                              },
-                            ],
-                            (v) =>
-                              command("fulfillment.pick", {
-                                orderId: o.id,
-                                allocationId: v.allocationId,
-                                serial: v.serial || null,
-                                unpick: !!v.unpick,
-                              }),
-                          );
-                        })
-                        .catch((e) => setError(e.message));
-                    })}
-                  {o.state === "open" &&
-                    can("warehouse") &&
-                    button("Report short pick", () => {
-                      void readReview<Item[]>(`/api/orders/${o.id}/picks`)
-                        .then((picks) => {
-                          if (!picks) return;
-                          const available = picks.filter(
-                            (a: Item) =>
-                              a.quantity - a.consumed - a.released - a.packed >
-                              0,
-                          );
-                          if (!available.length) {
-                            setError(
-                              "No unpacked allocated units remain. Void conflicting packing first.",
-                            );
-                            return;
-                          }
-                          open(
-                            "Report unavailable allocated stock",
-                            [
-                              select(
-                                "allocationId",
-                                "Short allocation",
-                                available,
-                                (a) =>
-                                  `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                                "lineId",
+                                "Order line",
+                                o.lines,
+                                (l) =>
+                                  `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
                               ),
                               {
                                 name: "quantity",
-                                label: "Unavailable units",
+                                label: "Units",
                                 type: "number",
                                 value: 1,
                               },
                               reason,
                             ],
-                            (v) => {
-                              const a = available.find(
-                                (a: Item) => a.id === v.allocationId,
-                              )!;
-                              return command("fulfillment.short-pick", {
-                                ...v,
-                                orderId: o.id,
-                                revision: o.revision,
-                                unitRevision: a.unitRevision,
-                              });
-                            },
-                            "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
-                          );
-                        })
-                        .catch((e) => setError(e.message));
-                    })}
-                  {can("warehouse", "commercial", "support") &&
-                    button("View short picks", () => {
-                      void showShortPicks(o.id).catch((e) =>
-                        setError(e.message),
-                      );
-                    })}
-                  {o.state === "open" &&
-                    can("warehouse") &&
-                    button("Pack shipment", () => {
-                      void readReview<Item[]>(`/api/orders/${o.id}/picks`)
-                        .then((picks) => {
-                          if (!picks) return;
-                          const available = picks.filter(
-                            (a: Item) => a.packable > 0,
-                          );
-                          if (!available.length) {
-                            setError(
-                              "No picked units are available to pack. Pick stock or void active packing first.",
-                            );
-                            return;
-                          }
-                          open(
-                            "Pack picked units",
-                            [
-                              {
-                                name: "mode",
-                                label: "Delivery method",
-                                options: [
-                                  {
-                                    value: "collection",
-                                    label: "Customer collection",
-                                  },
-                                  { value: "carrier", label: "Carrier" },
-                                ],
-                              },
-                              {
-                                name: "address",
-                                label: "Destination / collection point",
-                                type: "textarea",
-                              },
-                              ...available.map((a: Item): Field => ({
-                                name: `pack-${a.id}`,
-                                label: `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · units to pack`,
-                                type: "number",
-                                value: a.packable,
-                                max: a.packable,
-                                help: `${a.packable} available; ${a.packed} already packed. Use 0 to leave this allocation for a later shipment.`,
-                              })),
-                            ],
-                            (v) => {
-                              const lines = available
-                                .map((a: Item) => ({
-                                  allocationId: a.id,
-                                  quantity: v[`pack-${a.id}`],
-                                }))
-                                .filter((l: Item) => l.quantity > 0);
-                              if (!lines.length)
-                                throw new Error(
-                                  "Select at least one unit to pack.",
-                                );
-                              return command("fulfillment.pack", {
-                                orderId: o.id,
-                                revision: o.revision,
-                                mode: v.mode,
-                                address: v.address,
-                                lines,
-                              });
-                            },
-                            "Choose the picked quantities for this shipment. Remaining units stay on the order. Packing holds stock; handover creates the invoice.",
-                          );
-                        })
-                        .catch((e) => setError(e.message));
-                    })}
-                </div>,
-              ],
-            )}
-            {reservationOrderId &&
-              orderQueue.items.some(
-                (o: Item) => o.id === reservationOrderId,
-              ) && (
-                <OrderReservations
-                  key={`${reservationOrderId}:${eventViewEpoch}`}
-                  orderId={reservationOrderId}
-                  lines={
-                    orderQueue.items.find(
-                      (o: Item) => o.id === reservationOrderId,
-                    )!.lines
-                  }
-                  onClose={() => {
-                    setReservationOrderId(null);
-                    reservationOpener.current?.focus();
-                    reservationOpener.current = null;
-                  }}
-                />
-              )}
-            {amendmentOrderId &&
-              orderQueue.items.some((o: Item) => o.id === amendmentOrderId) && (
-                <OrderAmendments
-                  key={`${amendmentOrderId}:${eventViewEpoch}`}
-                  orderId={amendmentOrderId}
-                  lines={
-                    orderQueue.items.find(
-                      (o: Item) => o.id === amendmentOrderId,
-                    )!.lines
-                  }
-                  currency={currency}
-                  onClose={() => {
-                    setAmendmentOrderId(null);
-                    amendmentOpener.current?.focus();
-                    amendmentOpener.current = null;
-                  }}
-                />
-              )}
-            <section aria-label="Shipment history">
-              <h2 ref={shipmentHeading} tabIndex={-1}>
-                Shipments
-              </h2>
-              <label htmlFor="shipment-status">Shipment status</label>
-              <select
-                id="shipment-status"
-                value={shipmentFilter}
-                disabled={busy}
-                onChange={(e) =>
-                  filterShipments(e.target.value as ShipmentQueueState | "")
-                }
-              >
-                <option value="">All statuses</option>
-                {shipmentQueueStates.map((state) => (
-                  <option key={state} value={state}>
-                    {state.replaceAll("_", " ")}
-                  </option>
-                ))}
-              </select>
-              <p>
-                Newest first. Loaded: {data.shipments.length}. Saved changes or
-                refresh reload the newest page.
-              </p>
-              {shipmentFilterReady && !data.shipments.length && (
-                <p role="status">No shipments match this status.</p>
-              )}
-              {shipmentsLoading && <p role="status">Loading shipments…</p>}
-              {can("warehouse") && data.warehouses.length > 0 && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={(event) => {
-                    canadaPostOpener.current = event.currentTarget;
-                    setCarrierShipmentId(null);
-                    setCarrierReplacementId(null);
-                    setCanadaPostWarehouse(data.warehouses[0].id);
-                  }}
-                >
-                  Review Canada Post warehouse groups
-                </button>
-              )}
-              {canadaPostWarehouse && (
-                <CanadaPostWarehouse
-                  key={`${canadaPostWarehouse}:${eventViewEpoch}`}
-                  warehouses={data.warehouses}
-                  initialWarehouse={canadaPostWarehouse}
-                  recoveryOwner={
-                    actor.role === "admin"
-                      ? `${actor.orgId}:${actor.id}`
-                      : undefined
-                  }
-                  onClose={() => {
-                    setCanadaPostWarehouse(null);
-                    canadaPostOpener.current?.focus();
-                    canadaPostOpener.current = null;
-                  }}
-                />
-              )}
-              {table(
-                ["Shipment", "Destination", "Units", "Status", "Actions"],
-                data.shipments,
-                (s: Item) => [
-                  s.id.slice(0, 8),
-                  s.address,
-                  s.lines.reduce(
-                    (total: number, l: Item) => total + l.quantity,
-                    0,
-                  ),
-                  `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
-                  <div className="actions">
-                    {s.mode === "carrier" &&
-                      ["packed", "shipped"].includes(s.state) &&
-                      can("warehouse") && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={(event) => {
-                            carrierOpener.current = event.currentTarget;
-                            setCanadaPostWarehouse(null);
-                            setCarrierShipmentId(s.id);
-                          }}
-                        >
-                          Review carrier booking
-                        </button>
-                      )}
-                    {s.state === "shipped" &&
-                      button("View delivery history", () =>
-                        showShipmentDelivery(s.id).catch((e) =>
-                          setError(e.message),
-                        ),
-                      )}
-                    {s.state === "shipped" &&
-                      s.mode === "carrier" &&
-                      !["delivered", "returned"].includes(s.delivery?.state) &&
-                      can("warehouse", "commercial") &&
-                      button("Record delivery outcome", () =>
-                        open(
-                          "Record shipment delivery outcome",
-                          [
-                            {
-                              name: "state",
-                              label: "Delivery outcome",
-                              options: [
-                                { value: "in_transit", label: "In transit" },
-                                { value: "delayed", label: "Delayed" },
-                                { value: "lost", label: "Lost" },
-                                {
-                                  value: "returned",
-                                  label: "Returned to sender",
-                                },
-                                { value: "delivered", label: "Delivered" },
-                              ],
-                              value: "in_transit",
-                            },
-                            {
-                              name: "observedAt",
-                              label: "Observed time (UTC ISO)",
-                              value: new Date().toISOString(),
-                            },
-                            {
-                              name: "reference",
-                              label: "Delivery evidence reference",
-                            },
-                            {
-                              name: "evidence",
-                              label: "Delivery observation",
-                              type: "textarea",
-                            },
-                          ],
-                          (v) =>
-                            command("fulfillment.delivery.update", {
+                            "order.cancel",
+                            (v) => ({
                               ...v,
-                              shipmentId: s.id,
-                              revision: s.delivery?.revision ?? 0,
+                              orderId: o.id,
+                              revision: o.revision,
                             }),
-                          "Record the carrier observation. Loss or return does not restock goods, replace equipment or create credit/refund; use a separately approved return or remedy.",
-                          "Record outcome",
-                        ),
-                      )}
-                    {s.state === "packed" &&
-                      can("warehouse") &&
-                      button(
-                        s.mode === "collection"
-                          ? "Confirm collection"
-                          : "Confirm shipment",
-                        () =>
-                          simple(
-                            "Confirm handover",
-                            [
-                              ...(s.mode === "carrier"
-                                ? ([
-                                    { name: "carrier", label: "Carrier" },
-                                    {
-                                      name: "tracking",
-                                      label: "Tracking / consignment",
-                                    },
-                                  ] as Field[])
-                                : []),
-                              {
-                                name: "handoverEvidence",
-                                label: "Handover evidence",
-                                type: "textarea",
-                              },
-                            ],
-                            "fulfillment.ship",
-                            (v) => ({ ...v, shipmentId: s.id }),
                           ),
-                      )}
-                    {s.state === "packed" &&
-                      can("warehouse") &&
-                      button("Void packing", () =>
-                        simple(
-                          "Void packed shipment",
-                          [reason],
-                          "fulfillment.void",
-                          (v) => ({ ...v, shipmentId: s.id }),
-                        ),
-                      )}
-                  </div>,
-                ],
-              )}
-              {carrierShipmentId &&
-                data.shipments.some(
-                  (s: Item) => s.id === carrierShipmentId,
-                ) && (
-                  <CarrierBooking
-                    key={`${carrierShipmentId}:${eventViewEpoch}`}
+                        )}
+                      {o.state === "open" &&
+                        can("warehouse") &&
+                        button("Pick / pack", () => {
+                          void readReview<Item[]>(`/api/orders/${o.id}/picks`)
+                            .then((picks) => {
+                              if (!picks) return;
+                              open(
+                                "Confirm picked stock",
+                                [
+                                  select(
+                                    "allocationId",
+                                    "Allocation",
+                                    picks.filter(
+                                      (a: Item) =>
+                                        a.quantity > a.consumed + a.released,
+                                    ),
+                                    (a) =>
+                                      `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin}`,
+                                  ),
+                                  {
+                                    name: "serial",
+                                    scan: "single",
+                                    label: "Scan serial (leave blank for bulk)",
+                                    optional: true,
+                                  },
+                                  {
+                                    name: "unpick",
+                                    label: "Unpick instead",
+                                    type: "checkbox",
+                                  },
+                                ],
+                                (v) =>
+                                  command("fulfillment.pick", {
+                                    orderId: o.id,
+                                    allocationId: v.allocationId,
+                                    serial: v.serial || null,
+                                    unpick: !!v.unpick,
+                                  }),
+                              );
+                            })
+                            .catch((e) => setError(e.message));
+                        })}
+                      {o.state === "open" &&
+                        can("warehouse") &&
+                        button("Report short pick", () => {
+                          void readReview<Item[]>(`/api/orders/${o.id}/picks`)
+                            .then((picks) => {
+                              if (!picks) return;
+                              const available = picks.filter(
+                                (a: Item) =>
+                                  a.quantity -
+                                    a.consumed -
+                                    a.released -
+                                    a.packed >
+                                  0,
+                              );
+                              if (!available.length) {
+                                setError(
+                                  "No unpacked allocated units remain. Void conflicting packing first.",
+                                );
+                                return;
+                              }
+                              open(
+                                "Report unavailable allocated stock",
+                                [
+                                  select(
+                                    "allocationId",
+                                    "Short allocation",
+                                    available,
+                                    (a) =>
+                                      `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                                  ),
+                                  {
+                                    name: "quantity",
+                                    label: "Unavailable units",
+                                    type: "number",
+                                    value: 1,
+                                  },
+                                  reason,
+                                ],
+                                (v) => {
+                                  const a = available.find(
+                                    (a: Item) => a.id === v.allocationId,
+                                  )!;
+                                  return command("fulfillment.short-pick", {
+                                    ...v,
+                                    orderId: o.id,
+                                    revision: o.revision,
+                                    unitRevision: a.unitRevision,
+                                  });
+                                },
+                                "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
+                              );
+                            })
+                            .catch((e) => setError(e.message));
+                        })}
+                      {can("warehouse", "commercial", "support") &&
+                        button("View short picks", () => {
+                          void showShortPicks(o.id).catch((e) =>
+                            setError(e.message),
+                          );
+                        })}
+                      {o.state === "open" &&
+                        can("warehouse") &&
+                        button("Pack shipment", () => {
+                          void readReview<Item[]>(`/api/orders/${o.id}/picks`)
+                            .then((picks) => {
+                              if (!picks) return;
+                              const available = picks.filter(
+                                (a: Item) => a.packable > 0,
+                              );
+                              if (!available.length) {
+                                setError(
+                                  "No picked units are available to pack. Pick stock or void active packing first.",
+                                );
+                                return;
+                              }
+                              open(
+                                "Pack picked units",
+                                [
+                                  {
+                                    name: "mode",
+                                    label: "Delivery method",
+                                    options: [
+                                      {
+                                        value: "collection",
+                                        label: "Customer collection",
+                                      },
+                                      { value: "carrier", label: "Carrier" },
+                                    ],
+                                  },
+                                  {
+                                    name: "address",
+                                    label: "Destination / collection point",
+                                    type: "textarea",
+                                  },
+                                  ...available.map((a: Item): Field => ({
+                                    name: `pack-${a.id}`,
+                                    label: `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · units to pack`,
+                                    type: "number",
+                                    value: a.packable,
+                                    max: a.packable,
+                                    help: `${a.packable} available; ${a.packed} already packed. Use 0 to leave this allocation for a later shipment.`,
+                                  })),
+                                ],
+                                (v) => {
+                                  const lines = available
+                                    .map((a: Item) => ({
+                                      allocationId: a.id,
+                                      quantity: v[`pack-${a.id}`],
+                                    }))
+                                    .filter((l: Item) => l.quantity > 0);
+                                  if (!lines.length)
+                                    throw new Error(
+                                      "Select at least one unit to pack.",
+                                    );
+                                  return command("fulfillment.pack", {
+                                    orderId: o.id,
+                                    revision: o.revision,
+                                    mode: v.mode,
+                                    address: v.address,
+                                    lines,
+                                  });
+                                },
+                                "Choose the picked quantities for this shipment. Remaining units stay on the order. Packing holds stock; handover creates the invoice.",
+                              );
+                            })
+                            .catch((e) => setError(e.message));
+                        })}
+                    </div>,
+                  ],
+                )}
+                {reservationOrderId &&
+                  orderQueue.items.some(
+                    (o: Item) => o.id === reservationOrderId,
+                  ) && (
+                    <OrderReservations
+                      key={`${reservationOrderId}:${eventViewEpoch}`}
+                      orderId={reservationOrderId}
+                      lines={
+                        orderQueue.items.find(
+                          (o: Item) => o.id === reservationOrderId,
+                        )!.lines
+                      }
+                      onClose={() => {
+                        setReservationOrderId(null);
+                        reservationOpener.current?.focus();
+                        reservationOpener.current = null;
+                      }}
+                    />
+                  )}
+                {amendmentOrderId &&
+                  orderQueue.items.some(
+                    (o: Item) => o.id === amendmentOrderId,
+                  ) && (
+                    <OrderAmendments
+                      key={`${amendmentOrderId}:${eventViewEpoch}`}
+                      orderId={amendmentOrderId}
+                      lines={
+                        orderQueue.items.find(
+                          (o: Item) => o.id === amendmentOrderId,
+                        )!.lines
+                      }
+                      currency={currency}
+                      onClose={() => {
+                        setAmendmentOrderId(null);
+                        amendmentOpener.current?.focus();
+                        amendmentOpener.current = null;
+                      }}
+                    />
+                  )}
+                {extra.carts && (
+                  <SavedCarts
+                    key={extra.cartRefresh}
+                    initial={extra.carts}
+                    accounts={data.accounts}
+                    warehouses={data.warehouses}
+                    accountName={accountName}
+                    warehouseName={warehouseName}
+                    resume={(accountId, warehouseId) =>
+                      void placeOrder(accountId, warehouseId)
+                    }
+                    disabled={busy}
+                  />
+                )}
+              </div>
+            </PageSection>
+            <PageSection id="orders-shipments">
+              <section aria-label="Shipment history">
+                <h2 id="orders-shipments" ref={shipmentHeading} tabIndex={-1}>
+                  Shipments
+                </h2>
+                <label htmlFor="shipment-status">Shipment status</label>
+                <select
+                  id="shipment-status"
+                  value={shipmentFilter}
+                  disabled={busy}
+                  onChange={(e) =>
+                    filterShipments(e.target.value as ShipmentQueueState | "")
+                  }
+                >
+                  <option value="">All statuses</option>
+                  {shipmentQueueStates.map((state) => (
+                    <option key={state} value={state}>
+                      {state.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </select>
+                <p>
+                  Newest first. Loaded: {data.shipments.length}. Saved changes
+                  or refresh reload the newest page.
+                </p>
+                {shipmentFilterReady && !data.shipments.length && (
+                  <p role="status">No shipments match this status.</p>
+                )}
+                {shipmentsLoading && <p role="status">Loading shipments…</p>}
+                {can("warehouse") && data.warehouses.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={(event) => {
+                      canadaPostOpener.current = event.currentTarget;
+                      setCarrierShipmentId(null);
+                      setCarrierReplacementId(null);
+                      setCanadaPostWarehouse(data.warehouses[0].id);
+                    }}
+                  >
+                    Review Canada Post warehouse groups
+                  </button>
+                )}
+                {canadaPostWarehouse && (
+                  <CanadaPostWarehouse
+                    key={`${canadaPostWarehouse}:${eventViewEpoch}`}
+                    warehouses={data.warehouses}
+                    initialWarehouse={canadaPostWarehouse}
                     recoveryOwner={
                       actor.role === "admin"
                         ? `${actor.orgId}:${actor.id}`
                         : undefined
                     }
-                    shipmentId={carrierShipmentId}
-                    packedDestination={
-                      data.shipments.find(
-                        (s: Item) => s.id === carrierShipmentId,
-                      )!.address
-                    }
-                    packed={
-                      data.shipments.find(
-                        (s: Item) => s.id === carrierShipmentId,
-                      )!.state === "packed"
-                    }
-                    onCanadaPost={() => {
-                      setCanadaPostWarehouse(
-                        data.shipments.find(
-                          (s: Item) => s.id === carrierShipmentId,
-                        )!.warehouse_id,
-                      );
-                      canadaPostOpener.current = carrierOpener.current;
-                      setCarrierShipmentId(null);
-                      setCarrierReplacementId(null);
-                    }}
                     onClose={() => {
-                      setCarrierShipmentId(null);
-                      setCarrierReplacementId(null);
                       setCanadaPostWarehouse(null);
+                      canadaPostOpener.current?.focus();
                       canadaPostOpener.current = null;
-                      carrierOpener.current?.focus();
-                      carrierOpener.current = null;
                     }}
                   />
                 )}
-              {(data.shipmentNext || !shipmentFilterReady) && (
-                <button
-                  type="button"
-                  disabled={busy || shipmentsLoading}
-                  onClick={() => void loadShipments()}
-                >
-                  {shipmentsLoading
-                    ? "Loading shipments…"
-                    : shipmentFilterReady
-                      ? "Load more shipments"
-                      : "Retry shipment filter"}
-                </button>
-              )}
-            </section>
-            {extra.carts && (
-              <SavedCarts
-                key={extra.cartRefresh}
-                initial={extra.carts}
-                accounts={data.accounts}
-                warehouses={data.warehouses}
-                accountName={accountName}
-                warehouseName={warehouseName}
-                resume={(accountId, warehouseId) =>
-                  void placeOrder(accountId, warehouseId)
-                }
-                disabled={busy}
-              />
-            )}
-          </>
+                {table(
+                  ["Shipment", "Destination", "Units", "Status", "Actions"],
+                  data.shipments,
+                  (s: Item) => [
+                    s.id.slice(0, 8),
+                    s.address,
+                    s.lines.reduce(
+                      (total: number, l: Item) => total + l.quantity,
+                      0,
+                    ),
+                    `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
+                    <div className="actions">
+                      {s.mode === "carrier" &&
+                        ["packed", "shipped"].includes(s.state) &&
+                        can("warehouse") && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={(event) => {
+                              carrierOpener.current = event.currentTarget;
+                              setCanadaPostWarehouse(null);
+                              setCarrierShipmentId(s.id);
+                            }}
+                          >
+                            Review carrier booking
+                          </button>
+                        )}
+                      {s.state === "shipped" &&
+                        button("View delivery history", () =>
+                          showShipmentDelivery(s.id).catch((e) =>
+                            setError(e.message),
+                          ),
+                        )}
+                      {s.state === "shipped" &&
+                        s.mode === "carrier" &&
+                        !["delivered", "returned"].includes(
+                          s.delivery?.state,
+                        ) &&
+                        can("warehouse", "commercial") &&
+                        button("Record delivery outcome", () =>
+                          open(
+                            "Record shipment delivery outcome",
+                            [
+                              {
+                                name: "state",
+                                label: "Delivery outcome",
+                                options: [
+                                  { value: "in_transit", label: "In transit" },
+                                  { value: "delayed", label: "Delayed" },
+                                  { value: "lost", label: "Lost" },
+                                  {
+                                    value: "returned",
+                                    label: "Returned to sender",
+                                  },
+                                  { value: "delivered", label: "Delivered" },
+                                ],
+                                value: "in_transit",
+                              },
+                              {
+                                name: "observedAt",
+                                label: "Observed time (UTC ISO)",
+                                value: new Date().toISOString(),
+                              },
+                              {
+                                name: "reference",
+                                label: "Delivery evidence reference",
+                              },
+                              {
+                                name: "evidence",
+                                label: "Delivery observation",
+                                type: "textarea",
+                              },
+                            ],
+                            (v) =>
+                              command("fulfillment.delivery.update", {
+                                ...v,
+                                shipmentId: s.id,
+                                revision: s.delivery?.revision ?? 0,
+                              }),
+                            "Record the carrier observation. Loss or return does not restock goods, replace equipment or create credit/refund; use a separately approved return or remedy.",
+                            "Record outcome",
+                          ),
+                        )}
+                      {s.state === "packed" &&
+                        can("warehouse") &&
+                        button(
+                          s.mode === "collection"
+                            ? "Confirm collection"
+                            : "Confirm shipment",
+                          () =>
+                            simple(
+                              "Confirm handover",
+                              [
+                                ...(s.mode === "carrier"
+                                  ? ([
+                                      { name: "carrier", label: "Carrier" },
+                                      {
+                                        name: "tracking",
+                                        label: "Tracking / consignment",
+                                      },
+                                    ] as Field[])
+                                  : []),
+                                {
+                                  name: "handoverEvidence",
+                                  label: "Handover evidence",
+                                  type: "textarea",
+                                },
+                              ],
+                              "fulfillment.ship",
+                              (v) => ({ ...v, shipmentId: s.id }),
+                            ),
+                        )}
+                      {s.state === "packed" &&
+                        can("warehouse") &&
+                        button("Void packing", () =>
+                          simple(
+                            "Void packed shipment",
+                            [reason],
+                            "fulfillment.void",
+                            (v) => ({ ...v, shipmentId: s.id }),
+                          ),
+                        )}
+                    </div>,
+                  ],
+                )}
+                {carrierShipmentId &&
+                  data.shipments.some(
+                    (s: Item) => s.id === carrierShipmentId,
+                  ) && (
+                    <CarrierBooking
+                      key={`${carrierShipmentId}:${eventViewEpoch}`}
+                      recoveryOwner={
+                        actor.role === "admin"
+                          ? `${actor.orgId}:${actor.id}`
+                          : undefined
+                      }
+                      shipmentId={carrierShipmentId}
+                      packedDestination={
+                        data.shipments.find(
+                          (s: Item) => s.id === carrierShipmentId,
+                        )!.address
+                      }
+                      packed={
+                        data.shipments.find(
+                          (s: Item) => s.id === carrierShipmentId,
+                        )!.state === "packed"
+                      }
+                      onCanadaPost={() => {
+                        setCanadaPostWarehouse(
+                          data.shipments.find(
+                            (s: Item) => s.id === carrierShipmentId,
+                          )!.warehouse_id,
+                        );
+                        canadaPostOpener.current = carrierOpener.current;
+                        setCarrierShipmentId(null);
+                        setCarrierReplacementId(null);
+                      }}
+                      onClose={() => {
+                        setCarrierShipmentId(null);
+                        setCarrierReplacementId(null);
+                        setCanadaPostWarehouse(null);
+                        canadaPostOpener.current = null;
+                        carrierOpener.current?.focus();
+                        carrierOpener.current = null;
+                      }}
+                    />
+                  )}
+                {(data.shipmentNext || !shipmentFilterReady) && (
+                  <button
+                    type="button"
+                    disabled={busy || shipmentsLoading}
+                    onClick={() => void loadShipments()}
+                  >
+                    {shipmentsLoading
+                      ? "Loading shipments…"
+                      : shipmentFilterReady
+                        ? "Load more shipments"
+                        : "Retry shipment filter"}
+                  </button>
+                )}
+              </section>
+            </PageSection>
+          </PageSections>
         )}
         {page === "Inventory" && (
-          <>
-            <div className="actions">
-              {admin &&
-                button("Add warehouse", () =>
-                  simple(
-                    "Add warehouse",
-                    [{ name: "name", label: "Warehouse name" }],
-                    "warehouse.create",
-                  ),
-                )}
-              {button("Find serial", () => {
-                stockHistoryOpener.current =
-                  document.activeElement as HTMLElement;
-                open(
-                  "Serial history",
-                  [
-                    {
-                      name: "serial",
-                      scan: "single",
-                      label: "Scan or enter serial",
+          <PageSections
+            label="Inventory sections"
+            selectedSection={route.section ?? "inventory-stock"}
+            selectSection={(section) => updateRoute({ section })}
+            items={[
+              { id: "inventory-stock", label: "Stock" },
+              ...(can("warehouse", "finance", "support")
+                ? [{ id: "inventory-serials", label: "Serial reviews" }]
+                : []),
+              ...(can("warehouse", "support")
+                ? [{ id: "inventory-counts", label: "Cycle counts" }]
+                : []),
+              ...(can("warehouse", "support")
+                ? [{ id: "inventory-transfers", label: "Transfers" }]
+                : []),
+            ]}
+          >
+            <PageSection id="inventory-stock">
+              <div className="actions">
+                {admin &&
+                  button("Add warehouse", () =>
+                    simple(
+                      "Add warehouse",
+                      [{ name: "name", label: "Warehouse name" }],
+                      "warehouse.create",
+                    ),
+                  )}
+                {button("Find serial", () => {
+                  stockHistoryOpener.current =
+                    document.activeElement as HTMLElement;
+                  open(
+                    "Serial history",
+                    [
+                      {
+                        name: "serial",
+                        scan: "single",
+                        label: "Scan or enter serial",
+                      },
+                    ],
+                    async (v) => {
+                      setDialog(null);
+                      setStockHistory({ serial: v.serial });
+                      return { keepDialog: true };
                     },
-                  ],
-                  async (v) => {
-                    setDialog(null);
-                    setStockHistory({ serial: v.serial });
-                    return { keepDialog: true };
-                  },
-                  undefined,
-                  "Find movement history",
-                );
-              })}
-            </div>
-            {stockHistory && (
-              <StockHistory
-                key={JSON.stringify(stockHistory)}
-                selection={stockHistory}
-                canReviewSerial={[
-                  "admin",
-                  "warehouse",
-                  "commercial",
-                  "finance",
-                  "warranty",
-                ].includes(actor.role)}
-                currency={data.organization.currency}
-                productName={productName}
-                warehouseName={warehouseName}
-                onClose={() => {
-                  setStockHistory(null);
-                  stockHistoryOpener.current?.focus();
-                }}
-              />
-            )}
-            {can("finance") && (
-              <InventoryQuantity
-                key={`quantity:${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-                region={data.organization.region}
-                currency={data.organization.currency}
-                selection={quantitySelection}
-                close={() => setQuantitySelection(null)}
-                saved={(signal) =>
-                  refresh(signal, { preserveQuantitySelection: true })
+                    undefined,
+                    "Find movement history",
+                  );
+                })}
+              </div>
+              {stockHistory && (
+                <StockHistory
+                  key={JSON.stringify(stockHistory)}
+                  selection={stockHistory}
+                  canReviewSerial={[
+                    "admin",
+                    "warehouse",
+                    "commercial",
+                    "finance",
+                    "warranty",
+                  ].includes(actor.role)}
+                  currency={data.organization.currency}
+                  productName={productName}
+                  warehouseName={warehouseName}
+                  onClose={() => {
+                    setStockHistory(null);
+                    stockHistoryOpener.current?.focus();
+                  }}
+                />
+              )}
+              {can("finance") && (
+                <InventoryQuantity
+                  key={`quantity:${actor.orgId}:${actor.id}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  region={data.organization.region}
+                  currency={data.organization.currency}
+                  selection={quantitySelection}
+                  close={() => setQuantitySelection(null)}
+                  saved={(signal) =>
+                    refresh(signal, { preserveQuantitySelection: true })
+                  }
+                />
+              )}
+              {can("finance") && (
+                <InventoryValuation
+                  key={`valuation:${actor.orgId}:${actor.id}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  selection={valuationSelection}
+                  close={() => setValuationSelection(null)}
+                />
+              )}
+              {can("warehouse") && (
+                <BinRelocation
+                  key={`bin-relocation:${actor.orgId}:${actor.id}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  selection={binSelection}
+                  close={() => setBinSelection(null)}
+                  saved={() =>
+                    refreshNotice(
+                      "Bin move confirmed. Review current Inventory before further physical work.",
+                    )
+                  }
+                />
+              )}
+              {can("warehouse") && (
+                <TransferDispatch
+                  key={`${actor.orgId}:${actor.id}:${dispatchSelection?.unitId ?? ""}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  selection={dispatchSelection}
+                  close={() => setDispatchSelection(null)}
+                  saved={() =>
+                    refreshNotice(
+                      "Transfer dispatch confirmed. Review current Inventory and transfer history before further physical work.",
+                    )
+                  }
+                />
+              )}
+              <StockQueueControls
+                queue={stockQueue}
+                onFilters={({ view, warehouseId }) =>
+                  updateRoute({ stockView: view, warehouseId })
                 }
+                products={data.products}
+                warehouses={data.warehouses}
               />
-            )}
-            {can("finance") && (
-              <InventoryValuation
-                key={`valuation:${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-                selection={valuationSelection}
-                close={() => setValuationSelection(null)}
-              />
-            )}
-            {can("warehouse") && (
-              <BinRelocation
-                key={`bin-relocation:${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-                selection={binSelection}
-                close={() => setBinSelection(null)}
-                saved={() =>
-                  refreshNotice(
-                    "Bin move confirmed. Review current Inventory before further physical work.",
-                  )
-                }
-              />
-            )}
-            {can("warehouse") && (
-              <TransferArrival
-                key={`${actor.orgId}:${actor.id}:${arrivalSelection?.transferId ?? ""}:${arrivalSelection?.lineId ?? ""}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-                selection={arrivalSelection}
-                close={() => setArrivalSelection(null)}
-                saved={() =>
-                  refreshNotice(
-                    "Transfer arrival confirmed. Review current Inventory and transfer history before further physical work.",
-                  )
-                }
-              />
-            )}
-            {actor.role === "admin" &&
-              (["loss", "recovery"] as const).map((kind) => {
+              {table(
+                [
+                  "Product / serial",
+                  "Warehouse / bin",
+                  "Condition",
+                  "Stock quantities",
+                  "Actions",
+                ],
+                stockQueue.items,
+                (u: Item) => [
+                  <>
+                    <strong>{productName(u.product_id)}</strong>
+                    <small>
+                      {u.serial ?? "Bulk lot"} · {u.state}
+                    </small>
+                  </>,
+                  <>
+                    <strong>{warehouseName(u.warehouse_id)}</strong>
+                    <small>Bin {u.bin}</small>
+                  </>,
+                  <span
+                    className="stock-condition"
+                    data-condition={u.condition}
+                  >
+                    {u.condition}
+                  </span>,
+                  <div className="stock-quantities">
+                    <span>
+                      <strong>{u.quantity}</strong>
+                      <small>Book</small>
+                    </span>
+                    <span>
+                      <strong>{u.reserved}</strong>
+                      <small>Reserved</small>
+                    </span>
+                    <span>
+                      <strong>{u.available}</strong>
+                      <small>Available</small>
+                    </span>
+                  </div>,
+                  <details className="stock-actions">
+                    <summary
+                      aria-label={`Actions for ${u.serial ?? productName(u.product_id)} at ${warehouseName(u.warehouse_id)}, bin ${u.bin}`}
+                    >
+                      Actions
+                    </summary>
+                    <div className="actions">
+                      {button("Movement history", () => {
+                        stockHistoryOpener.current =
+                          document.activeElement as HTMLElement;
+                        setStockHistory({ unitId: u.id });
+                      })}
+                      {can("finance") &&
+                        !u.serial &&
+                        u.state === "stock" &&
+                        button("Quantity correction", () =>
+                          setQuantitySelection({
+                            unitId: u.id,
+                            product: productName(u.product_id),
+                            warehouse: warehouseName(u.warehouse_id),
+                          }),
+                        )}
+                      {can("finance") &&
+                        button("Stock valuation", () =>
+                          setValuationSelection({
+                            unitId: u.id,
+                            product: productName(u.product_id),
+                            warehouse: warehouseName(u.warehouse_id),
+                          }),
+                        )}
+                      {can("warehouse") &&
+                        u.state === "stock" &&
+                        !u.serial &&
+                        button("Start count", () =>
+                          simple(
+                            "Start stock count",
+                            [
+                              {
+                                name: "countRef",
+                                label: "Count reference (unique)",
+                              },
+                            ],
+                            "count.start",
+                            (v) => ({
+                              ...v,
+                              unitId: u.id,
+                              revision: u.revision,
+                            }),
+                          ),
+                        )}
+                      {can("warehouse") &&
+                        u.state === "stock" &&
+                        u.quantity > 0 &&
+                        button("Prepare QR label", () =>
+                          open(
+                            "Prepare stock QR label",
+                            [
+                              {
+                                name: "output",
+                                label: "Label output",
+                                value: "pdf",
+                                options: [...stockLabelOutputs],
+                              },
+                              {
+                                name: "copies",
+                                label:
+                                  "Copies (including deliberate duplicates)",
+                                type: "number",
+                                value: 1,
+                                min: 1,
+                                max: 20,
+                              },
+                            ],
+                            (v) =>
+                              downloadStockLabel(
+                                u.id,
+                                u.revision,
+                                v.copies,
+                                v.output,
+                              ),
+                            `100 × 50 mm identity label. SKU ${data.products.find((p: Item) => p.id === u.product_id)?.sku ?? "unavailable"}; ${u.serial ? `serial ${u.serial}` : "bulk product: QR contains the SKU"}. Review the identity and copy count. Download preparation does not confirm printing. Print PDFs at actual size. For Zebra ZPL, select the printer's actual 8 or 12 dots per mm head; verify 100 × 50 mm media, ZPL mode and calibration. Transfer the file using your approved printer tool and verify a sample scan before attaching labels.`,
+                            "Prepare and download",
+                          ),
+                        )}
+                      {can("warehouse") &&
+                        u.state === "stock" &&
+                        u.serial &&
+                        u.quantity === 1 &&
+                        u.condition === "quarantine" &&
+                        u.reserved === 0 &&
+                        button("Report missing serial", () =>
+                          open(
+                            "Record missing serial evidence",
+                            [
+                              {
+                                name: "serial",
+                                label: "Expected serial on stock record",
+                              },
+                              {
+                                name: "reviewRef",
+                                label: "Custody review reference (unique)",
+                              },
+                              reason,
+                            ],
+                            (v) =>
+                              command("serial.missing.report", {
+                                ...v,
+                                unitId: u.id,
+                                revision: u.revision,
+                              }),
+                            `Expected serial ${u.serial} at ${warehouseName(u.warehouse_id)} / ${u.bin}. Record the physical search evidence. Submission preserves the one expected unit and its original value; administrator approval is separate.`,
+                          ),
+                        )}
+                      {can("warehouse") &&
+                        u.state === "stock" &&
+                        u.quantity > 0 &&
+                        u.reserved === 0 &&
+                        button("Move to bin", () =>
+                          setBinSelection({
+                            stock: u as BinSelection["stock"],
+                            product: productName(u.product_id),
+                            warehouse: warehouseName(u.warehouse_id),
+                          }),
+                        )}
+                      {can("warehouse") &&
+                        u.state === "stock" &&
+                        u.quantity > 0 &&
+                        button("Inspect", () =>
+                          simple(
+                            "Inspect stock",
+                            [
+                              {
+                                name: "condition",
+                                label: "Condition",
+                                options: [
+                                  "usable",
+                                  "quarantine",
+                                  "damaged",
+                                ].map((v) => ({ value: v, label: v })),
+                              },
+                              reason,
+                            ],
+                            "stock.inspect",
+                            (v) => ({
+                              ...v,
+                              unitId: u.id,
+                              revision: u.revision,
+                            }),
+                          ),
+                        )}
+                      {can("warehouse") &&
+                        u.available > 0 &&
+                        button(
+                          "Transfer",
+                          () =>
+                            setDispatchSelection({
+                              unitId: u.id,
+                              sourceId: u.warehouse_id,
+                              sourceBin: u.bin,
+                              product: productName(u.product_id),
+                              source: warehouseName(u.warehouse_id),
+                              serial: u.serial,
+                              quantity: u.quantity,
+                              availableQuantity: u.available,
+                              revision: u.revision,
+                              unitCost: u.cost,
+                              destinations: extra.transferDestinations
+                                .filter((w: Item) => w.id !== u.warehouse_id)
+                                .map((w: Item) => ({ id: w.id, name: w.name })),
+                            }),
+                          !Array.isArray(extra.transferDestinations),
+                        )}
+                    </div>
+                  </details>,
+                ],
+              )}
+              {extra.labels?.length > 0 && (
+                <>
+                  <h2>Prepared stock labels</h2>
+                  <p>
+                    These receipts record file preparation only. Printing and
+                    attachment require physical verification.
+                  </p>
+                  {table(
+                    ["SKU / serial", "Output", "Copies", "Prepared", "Receipt"],
+                    extra.labels,
+                    (r: Item) => [
+                      `${r.facts.sku} / ${r.facts.serial ?? "bulk SKU"}`,
+                      stockLabelOutputs.find(
+                        (o) => o.value === (r.facts.output ?? "pdf"),
+                      )?.label ?? "Unrecognized output",
+                      r.copies,
+                      r.requested_at,
+                      r.id,
+                    ],
+                  )}
+                </>
+              )}
+            </PageSection>
+            <PageSection id="inventory-serials">
+              {!extra.serialReviews && (
+                <p role="status">
+                  Serial reviews are not loaded yet. Use Refresh to retry if
+                  loading fails.
+                </p>
+              )}
+              {extra.serialReviews && (
+                <SerialCustody
+                  key={extra.serialReviewRefresh}
+                  initial={extra.serialReviews}
+                  warehouseName={warehouseName}
+                  currency={currency}
+                  renderActions={(r: Item) => (
+                    <div className="actions">
+                      {admin &&
+                        r.state === "submitted" &&
+                        button("Approve serial loss", () =>
+                          open(
+                            "Approve missing serial writeoff",
+                            [reason],
+                            (v) =>
+                              command("serial.missing.decide", {
+                                ...v,
+                                reviewId: r.id,
+                                decision: "approve",
+                              }),
+                            `${r.review_ref}: ${r.serial} expected at ${warehouseName(r.warehouse_id)} / ${r.bin}. Approval removes one expected unit and ${money(r.unit_cost, currency)} of original stock value. It does not cancel the order, credit a customer or post an accounting entry.`,
+                          ),
+                        )}
+                      {admin &&
+                        r.state === "submitted" &&
+                        button("Reject serial loss", () =>
+                          simple(
+                            "Reject missing serial review",
+                            [reason],
+                            "serial.missing.decide",
+                            (v) => ({
+                              ...v,
+                              reviewId: r.id,
+                              decision: "reject",
+                            }),
+                          ),
+                        )}
+                      {can("warehouse") &&
+                        r.state === "approved" &&
+                        button("Recover serial", () =>
+                          open(
+                            "Record found serial recovery",
+                            [
+                              {
+                                name: "serial",
+                                label: "Scan recovered serial",
+                                scan: "single",
+                              },
+                              {
+                                name: "receiptRef",
+                                label: "Recovery receipt reference (unique)",
+                              },
+                              { name: "bin", label: "Recovered stock bin" },
+                              reason,
+                            ],
+                            (v) =>
+                              command("serial.missing.recover", {
+                                ...v,
+                                reviewId: r.id,
+                                revision: r.currentRevision,
+                              }),
+                            `Scan the exact lost serial ${r.serial}. Recovery restores one unit at its original ${money(r.unit_cost, currency)} cost in ${warehouseName(r.warehouse_id)}. It remains quarantined until inspection and is not automatically reallocated.`,
+                          ),
+                        )}
+                    </div>
+                  )}
+                />
+              )}
+            </PageSection>
+            <PageSection id="inventory-counts">
+              {!extra.counts && (
+                <p role="status">
+                  Cycle counts are not loaded yet. You can review any retained
+                  operations shown below. Use Refresh to retry if loading fails.
+                </p>
+              )}
+              {extra.countReviewPolicy && (
+                <p>
+                  Approval duties:{" "}
+                  {extra.countReviewPolicy.mode === "independent"
+                    ? "A separate administrator must approve; the count starter and observer cannot approve."
+                    : "Administrator review permits self-review."}{" "}
+                  Policy version {extra.countReviewPolicy.revision}.
+                </p>
+              )}
+              {(["observation", "approve", "reject"] as const).map((kind) => {
+                if (kind === "observation" ? !can("warehouse") : !admin)
+                  return null;
                 const selected =
-                  lossSelection?.kind === kind ? lossSelection : null;
+                  countSelection?.kind === kind ? countSelection.count : null;
                 return (
-                  <TransferLoss
-                    key={`${actor.orgId}:${actor.id}:${kind}:${selected?.lineId ?? ""}:${selected?.kind === "recovery" ? selected.lossId : ""}`}
+                  <CountReview
+                    key={`${actor.orgId}:${actor.id}:${kind}:${selected?.id ?? ""}`}
                     orgId={actor.orgId}
                     actorId={actor.id}
                     kind={kind}
                     selection={selected}
-                    close={() => setLossSelection(null)}
+                    close={() => setCountSelection(null)}
                     saved={() =>
                       refreshNotice(
-                        "Transfer loss/recovery confirmed. Review current Inventory and transfer history before further physical work.",
+                        "Count operation confirmed. Review current stock and count history before further work.",
                       )
                     }
                   />
                 );
               })}
-            {can("warehouse") && (
-              <TransferDispatch
-                key={`${actor.orgId}:${actor.id}:${dispatchSelection?.unitId ?? ""}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-                selection={dispatchSelection}
-                close={() => setDispatchSelection(null)}
-                saved={() =>
-                  refreshNotice(
-                    "Transfer dispatch confirmed. Review current Inventory and transfer history before further physical work.",
-                  )
-                }
-              />
-            )}
-            <StockQueueControls
-              queue={stockQueue}
-              products={data.products}
-              warehouses={data.warehouses}
-            />
-            {table(
-              [
-                "Product / serial",
-                "Warehouse / bin",
-                "Condition",
-                "Book quantity / reserved / available",
-                "Actions",
-              ],
-              stockQueue.items,
-              (u: Item) => [
-                <>
-                  <strong>{productName(u.product_id)}</strong>
-                  <small>
-                    {u.serial ?? "Bulk lot"} · {u.state}
-                  </small>
-                </>,
-                `${warehouseName(u.warehouse_id)} / ${u.bin}`,
-                u.condition,
-                `${u.quantity} / ${u.reserved} / ${u.available}`,
-                <div className="actions">
-                  {button("Movement history", () => {
-                    stockHistoryOpener.current =
-                      document.activeElement as HTMLElement;
-                    setStockHistory({ unitId: u.id });
-                  })}
-                  {can("finance") &&
-                    !u.serial &&
-                    u.state === "stock" &&
-                    button("Quantity correction", () =>
-                      setQuantitySelection({
-                        unitId: u.id,
-                        product: productName(u.product_id),
-                        warehouse: warehouseName(u.warehouse_id),
-                      }),
-                    )}
-                  {can("finance") &&
-                    button("Stock valuation", () =>
-                      setValuationSelection({
-                        unitId: u.id,
-                        product: productName(u.product_id),
-                        warehouse: warehouseName(u.warehouse_id),
-                      }),
-                    )}
-                  {can("warehouse") &&
-                    u.state === "stock" &&
-                    !u.serial &&
-                    button("Start count", () =>
-                      simple(
-                        "Start stock count",
+              {extra.counts && (
+                <CountQueue
+                  key={extra.countRefresh}
+                  initial={extra.counts}
+                  active={!busy}
+                  selectedState={route.countState ?? ""}
+                  onState={(countState) => updateRoute({ countState })}
+                >
+                  {(items) => (
+                    <>
+                      <p>
+                        A saved snapshot does not freeze stock. Approval checks
+                        the stock revision and current reservations; a changed
+                        snapshot needs a new count. Serialized discrepancies
+                        need custody review.
+                      </p>
+                      {table(
                         [
-                          {
-                            name: "countRef",
-                            label: "Count reference (unique)",
-                          },
+                          "Reference / stock",
+                          "Snapshot / observation",
+                          "Status / evidence",
+                          "Actions",
                         ],
-                        "count.start",
-                        (v) => ({ ...v, unitId: u.id, revision: u.revision }),
-                      ),
-                    )}
-                  {can("warehouse") &&
-                    u.state === "stock" &&
-                    u.quantity > 0 &&
-                    button("Prepare QR label", () =>
-                      open(
-                        "Prepare stock QR label",
-                        [
-                          {
-                            name: "output",
-                            label: "Label output",
-                            value: "pdf",
-                            options: [...stockLabelOutputs],
-                          },
-                          {
-                            name: "copies",
-                            label: "Copies (including deliberate duplicates)",
-                            type: "number",
-                            value: 1,
-                            min: 1,
-                            max: 20,
-                          },
+                        items,
+                        (c: Item) => [
+                          <>
+                            <strong>{c.count_ref}</strong>
+                            <small>
+                              {productName(c.product_id)} ·{" "}
+                              {warehouseName(c.warehouse_id)} / {c.bin} ·{" "}
+                              {c.condition}
+                            </small>
+                          </>,
+                          <>
+                            {c.expected_quantity} expected ·{" "}
+                            {c.observed_quantity ?? "not yet"} observed
+                            <small>
+                              {c.delta === null
+                                ? "Awaiting observation"
+                                : `${c.delta > 0 ? "+" : ""}${c.delta} units · ${money(c.valueDelta, currency)} value adjustment`}{" "}
+                              · cutoff {new Date(c.created_at).toLocaleString()}
+                            </small>
+                          </>,
+                          <>
+                            {c.state}
+                            <small>{c.observation_reason ?? ""}</small>
+                            <small>{c.decision_reason ?? ""}</small>
+                            {c.result?.reviewPolicy && (
+                              <small>
+                                Reviewed under {c.result.reviewPolicy.mode}{" "}
+                                policy version {c.result.reviewPolicy.revision}
+                              </small>
+                            )}
+                          </>,
+                          <div className="actions">
+                            {c.state === "draft" &&
+                              can("warehouse") &&
+                              button("Record observation", () =>
+                                reviewCount(c, "observation"),
+                              )}
+                            {c.state === "submitted" &&
+                              c.canApprove &&
+                              button("Approve count", () =>
+                                reviewCount(c, "approve"),
+                              )}
+                            {c.state === "submitted" &&
+                              admin &&
+                              !c.canApprove && (
+                                <small>
+                                  A different administrator must review this
+                                  count.
+                                </small>
+                              )}
+                            {["draft", "submitted"].includes(c.state) &&
+                              admin &&
+                              button("Reject count", () =>
+                                reviewCount(c, "reject"),
+                              )}
+                          </div>,
                         ],
-                        (v) =>
-                          downloadStockLabel(
-                            u.id,
-                            u.revision,
-                            v.copies,
-                            v.output,
-                          ),
-                        `100 × 50 mm identity label. SKU ${data.products.find((p: Item) => p.id === u.product_id)?.sku ?? "unavailable"}; ${u.serial ? `serial ${u.serial}` : "bulk product: QR contains the SKU"}. Review the identity and copy count. Download preparation does not confirm printing. Print PDFs at actual size. For Zebra ZPL, select the printer's actual 8 or 12 dots per mm head; verify 100 × 50 mm media, ZPL mode and calibration. Transfer the file using your approved printer tool and verify a sample scan before attaching labels.`,
-                        "Prepare and download",
-                      ),
-                    )}
-                  {can("warehouse") &&
-                    u.state === "stock" &&
-                    u.serial &&
-                    u.quantity === 1 &&
-                    u.condition === "quarantine" &&
-                    u.reserved === 0 &&
-                    button("Report missing serial", () =>
-                      open(
-                        "Record missing serial evidence",
-                        [
-                          {
-                            name: "serial",
-                            label: "Expected serial on stock record",
-                          },
-                          {
-                            name: "reviewRef",
-                            label: "Custody review reference (unique)",
-                          },
-                          reason,
-                        ],
-                        (v) =>
-                          command("serial.missing.report", {
-                            ...v,
-                            unitId: u.id,
-                            revision: u.revision,
-                          }),
-                        `Expected serial ${u.serial} at ${warehouseName(u.warehouse_id)} / ${u.bin}. Record the physical search evidence. Submission preserves the one expected unit and its original value; administrator approval is separate.`,
-                      ),
-                    )}
-                  {can("warehouse") &&
-                    u.state === "stock" &&
-                    u.quantity > 0 &&
-                    u.reserved === 0 &&
-                    button("Move to bin", () =>
-                      setBinSelection({
-                        stock: u as BinSelection["stock"],
-                        product: productName(u.product_id),
-                        warehouse: warehouseName(u.warehouse_id),
-                      }),
-                    )}
-                  {can("warehouse") &&
-                    u.state === "stock" &&
-                    u.quantity > 0 &&
-                    button("Inspect", () =>
-                      simple(
-                        "Inspect stock",
-                        [
-                          {
-                            name: "condition",
-                            label: "Condition",
-                            options: ["usable", "quarantine", "damaged"].map(
-                              (v) => ({ value: v, label: v }),
-                            ),
-                          },
-                          reason,
-                        ],
-                        "stock.inspect",
-                        (v) => ({ ...v, unitId: u.id, revision: u.revision }),
-                      ),
-                    )}
-                  {can("warehouse") &&
-                    u.available > 0 &&
-                    button(
-                      "Transfer",
-                      () =>
-                        setDispatchSelection({
-                          unitId: u.id,
-                          sourceId: u.warehouse_id,
-                          sourceBin: u.bin,
-                          product: productName(u.product_id),
-                          source: warehouseName(u.warehouse_id),
-                          serial: u.serial,
-                          quantity: u.quantity,
-                          availableQuantity: u.available,
-                          revision: u.revision,
-                          unitCost: u.cost,
-                          destinations: extra.transferDestinations
-                            .filter((w: Item) => w.id !== u.warehouse_id)
-                            .map((w: Item) => ({ id: w.id, name: w.name })),
-                        }),
-                      !Array.isArray(extra.transferDestinations),
-                    )}
-                </div>,
-              ],
-            )}
-            {extra.labels?.length > 0 && (
-              <>
-                <h2>Prepared stock labels</h2>
-                <p>
-                  These receipts record file preparation only. Printing and
-                  attachment require physical verification.
-                </p>
-                {table(
-                  ["SKU / serial", "Output", "Copies", "Prepared", "Receipt"],
-                  extra.labels,
-                  (r: Item) => [
-                    `${r.facts.sku} / ${r.facts.serial ?? "bulk SKU"}`,
-                    stockLabelOutputs.find(
-                      (o) => o.value === (r.facts.output ?? "pdf"),
-                    )?.label ?? "Unrecognized output",
-                    r.copies,
-                    r.requested_at,
-                    r.id,
-                  ],
-                )}
-              </>
-            )}
-            {extra.serialReviews && (
-              <SerialCustody
-                key={extra.serialReviewRefresh}
-                initial={extra.serialReviews}
-                warehouseName={warehouseName}
-                currency={currency}
-                renderActions={(r: Item) => (
-                  <div className="actions">
-                    {admin &&
-                      r.state === "submitted" &&
-                      button("Approve serial loss", () =>
-                        open(
-                          "Approve missing serial writeoff",
-                          [reason],
-                          (v) =>
-                            command("serial.missing.decide", {
-                              ...v,
-                              reviewId: r.id,
-                              decision: "approve",
-                            }),
-                          `${r.review_ref}: ${r.serial} expected at ${warehouseName(r.warehouse_id)} / ${r.bin}. Approval removes one expected unit and ${money(r.unit_cost, currency)} of original stock value. It does not cancel the order, credit a customer or post an accounting entry.`,
-                        ),
                       )}
-                    {admin &&
-                      r.state === "submitted" &&
-                      button("Reject serial loss", () =>
-                        simple(
-                          "Reject missing serial review",
-                          [reason],
-                          "serial.missing.decide",
-                          (v) => ({ ...v, reviewId: r.id, decision: "reject" }),
-                        ),
-                      )}
-                    {can("warehouse") &&
-                      r.state === "approved" &&
-                      button("Recover serial", () =>
-                        open(
-                          "Record found serial recovery",
-                          [
-                            {
-                              name: "serial",
-                              label: "Scan recovered serial",
-                              scan: "single",
-                            },
-                            {
-                              name: "receiptRef",
-                              label: "Recovery receipt reference (unique)",
-                            },
-                            { name: "bin", label: "Recovered stock bin" },
-                            reason,
-                          ],
-                          (v) =>
-                            command("serial.missing.recover", {
-                              ...v,
-                              reviewId: r.id,
-                              revision: r.currentRevision,
-                            }),
-                          `Scan the exact lost serial ${r.serial}. Recovery restores one unit at its original ${money(r.unit_cost, currency)} cost in ${warehouseName(r.warehouse_id)}. It remains quarantined until inspection and is not automatically reallocated.`,
-                        ),
-                      )}
-                  </div>
-                )}
-              />
-            )}
-            {extra.countReviewPolicy && (
-              <section>
-                <h2>Count review policy</h2>
-                <p>
-                  {extra.countReviewPolicy.mode === "independent"
-                    ? "Independent review: a separate administrator must approve. The count starter and observer cannot approve; direct quantity corrections are disabled."
-                    : "Administrator review: an administrator may approve their own count and make direct quantity corrections."}{" "}
-                  Policy version {extra.countReviewPolicy.revision}.
-                </p>
-                {extra.countReviewPolicy.reason && (
-                  <p>{extra.countReviewPolicy.reason}</p>
-                )}
-                {admin &&
-                  button("Configure count review", () =>
-                    open(
-                      "Configure count review policy",
-                      [
-                        {
-                          name: "mode",
-                          label: "Approval duties",
-                          options: [
-                            {
-                              value: "administrator",
-                              label:
-                                "Administrator review (self-review allowed)",
-                            },
-                            {
-                              value: "independent",
-                              label: "Independent administrator review",
-                            },
-                          ],
-                          value: extra.countReviewPolicy.mode,
-                        },
-                        reason,
-                      ],
-                      (v) =>
-                        command("count.policy", {
-                          ...v,
-                          revision: extra.countReviewPolicy.revision,
-                        }),
-                      "This affects all new bulk count approvals in this organization immediately. Existing observations and decisions remain intact. Independent review needs an administrator other than the count starter and observer. Selecting administrator review permits self-review and direct corrections; record the operating reason.",
-                    ),
+                    </>
                   )}
-              </section>
-            )}
-            {(["observation", "approve", "reject"] as const).map((kind) => {
-              if (kind === "observation" ? !can("warehouse") : !admin)
-                return null;
-              const selected =
-                countSelection?.kind === kind ? countSelection.count : null;
-              return (
-                <CountReview
-                  key={`${actor.orgId}:${actor.id}:${kind}:${selected?.id ?? ""}`}
+                </CountQueue>
+              )}
+              {extra.countReviewPolicy && (
+                <details>
+                  <summary>Count review policy and configuration</summary>
+                  <p>
+                    {extra.countReviewPolicy.mode === "independent"
+                      ? "Independent review: a separate administrator must approve. The count starter and observer cannot approve; direct quantity corrections are disabled."
+                      : "Administrator review: an administrator may approve their own count and make direct quantity corrections."}{" "}
+                    Policy version {extra.countReviewPolicy.revision}.
+                  </p>
+                  {extra.countReviewPolicy.reason && (
+                    <p>{extra.countReviewPolicy.reason}</p>
+                  )}
+                  {admin &&
+                    button("Configure count review", () =>
+                      open(
+                        "Configure count review policy",
+                        [
+                          {
+                            name: "mode",
+                            label: "Approval duties",
+                            options: [
+                              {
+                                value: "administrator",
+                                label:
+                                  "Administrator review (self-review allowed)",
+                              },
+                              {
+                                value: "independent",
+                                label: "Independent administrator review",
+                              },
+                            ],
+                            value: extra.countReviewPolicy.mode,
+                          },
+                          reason,
+                        ],
+                        (v) =>
+                          command("count.policy", {
+                            ...v,
+                            revision: extra.countReviewPolicy.revision,
+                          }),
+                        "This affects all new bulk count approvals in this organization immediately. Existing observations and decisions remain intact. Independent review needs an administrator other than the count starter and observer. Selecting administrator review permits self-review and direct corrections; record the operating reason.",
+                      ),
+                    )}
+                </details>
+              )}
+            </PageSection>
+            <PageSection id="inventory-transfers">
+              {!extra.transfers && (
+                <p role="status">
+                  Transfers are not loaded yet. You can review any retained
+                  operations shown below. Use Refresh to retry if loading fails.
+                </p>
+              )}
+              {can("warehouse") && (
+                <TransferArrival
+                  key={`${actor.orgId}:${actor.id}:${arrivalSelection?.transferId ?? ""}:${arrivalSelection?.lineId ?? ""}`}
                   orgId={actor.orgId}
                   actorId={actor.id}
-                  kind={kind}
-                  selection={selected}
-                  close={() => setCountSelection(null)}
+                  selection={arrivalSelection}
+                  close={() => setArrivalSelection(null)}
                   saved={() =>
                     refreshNotice(
-                      "Count operation confirmed. Review current stock and count history before further work.",
+                      "Transfer arrival confirmed. Review current Inventory and transfer history before further physical work.",
                     )
                   }
                 />
-              );
-            })}
-            {extra.counts && (
-              <CountQueue
-                key={extra.countRefresh}
-                initial={extra.counts}
-                active={!busy}
-              >
-                {(items) => (
-                  <>
-                    <p>
-                      A saved snapshot does not freeze stock. Approval checks
-                      the stock revision and current reservations; a changed
-                      snapshot needs a new count. Serialized discrepancies need
-                      custody review.
-                    </p>
-                    {table(
+              )}
+              {actor.role === "admin" &&
+                (["loss", "recovery"] as const).map((kind) => {
+                  const selected =
+                    lossSelection?.kind === kind ? lossSelection : null;
+                  return (
+                    <TransferLoss
+                      key={`${actor.orgId}:${actor.id}:${kind}:${selected?.lineId ?? ""}:${selected?.kind === "recovery" ? selected.lossId : ""}`}
+                      orgId={actor.orgId}
+                      actorId={actor.id}
+                      kind={kind}
+                      selection={selected}
+                      close={() => setLossSelection(null)}
+                      saved={() =>
+                        refreshNotice(
+                          "Transfer loss/recovery confirmed. Review current Inventory and transfer history before further physical work.",
+                        )
+                      }
+                    />
+                  );
+                })}
+              {extra.transfers && (
+                <TransferQueue
+                  key={extra.transferRefresh}
+                  initial={extra.transfers}
+                  active={!busy}
+                >
+                  {(items) =>
+                    table(
                       [
-                        "Reference / stock",
-                        "Snapshot / observation",
-                        "Status / evidence",
+                        "Reference",
+                        "Route",
+                        "Status",
+                        "Quantities / arrivals",
                         "Actions",
                       ],
                       items,
-                      (c: Item) => [
-                        <>
-                          <strong>{c.count_ref}</strong>
-                          <small>
-                            {productName(c.product_id)} ·{" "}
-                            {warehouseName(c.warehouse_id)} / {c.bin} ·{" "}
-                            {c.condition}
-                          </small>
-                        </>,
-                        <>
-                          {c.expected_quantity} expected ·{" "}
-                          {c.observed_quantity ?? "not yet"} observed
-                          <small>
-                            {c.delta === null
-                              ? "Awaiting observation"
-                              : `${c.delta > 0 ? "+" : ""}${c.delta} units · ${money(c.valueDelta, currency)} value adjustment`}{" "}
-                            · cutoff {new Date(c.created_at).toLocaleString()}
-                          </small>
-                        </>,
-                        <>
-                          {c.state}
-                          <small>{c.observation_reason ?? ""}</small>
-                          <small>{c.decision_reason ?? ""}</small>
-                          {c.result?.reviewPolicy && (
-                            <small>
-                              Reviewed under {c.result.reviewPolicy.mode} policy
-                              version {c.result.reviewPolicy.revision}
-                            </small>
-                          )}
-                        </>,
-                        <div className="actions">
-                          {c.state === "draft" &&
-                            can("warehouse") &&
-                            button("Record observation", () =>
-                              reviewCount(c, "observation"),
-                            )}
-                          {c.state === "submitted" &&
-                            c.canApprove &&
-                            button("Approve count", () =>
-                              reviewCount(c, "approve"),
-                            )}
-                          {c.state === "submitted" &&
-                            admin &&
-                            !c.canApprove && (
+                      (t: Item) => [
+                        <span key="reference" title={t.id}>
+                          {t.id}
+                        </span>,
+                        `${t.source_name} → ${t.destination_name}`,
+                        t.state,
+                        <div>
+                          {t.lines.map((line: Item) => (
+                            <div key={line.line_id}>
+                              <strong>
+                                {productName(line.product_id)} ·{" "}
+                                {line.serial ?? "Bulk lot"}
+                              </strong>
                               <small>
-                                A different administrator must review this
-                                count.
+                                {line.quantity} dispatched ·{" "}
+                                {line.receivedQuantity} received ·{" "}
+                                {line.remainingQuantity} in transit
+                                {line.lossQuantity > 0 && (
+                                  <>
+                                    {" "}
+                                    · {line.lostQuantity} unrecovered loss ·{" "}
+                                    {line.recoveredQuantity} recovered
+                                  </>
+                                )}
                               </small>
-                            )}
-                          {["draft", "submitted"].includes(c.state) &&
-                            admin &&
-                            button("Reject count", () =>
-                              reviewCount(c, "reject"),
-                            )}
-                        </div>,
-                      ],
-                    )}
-                  </>
-                )}
-              </CountQueue>
-            )}
-            {extra.transfers && (
-              <TransferQueue
-                key={extra.transferRefresh}
-                initial={extra.transfers}
-                active={!busy}
-              >
-                {(items) =>
-                  table(
-                    [
-                      "Reference",
-                      "Route",
-                      "Status",
-                      "Quantities / arrivals",
-                      "Actions",
-                    ],
-                    items,
-                    (t: Item) => [
-                      <span key="reference" title={t.id}>
-                        {t.id}
-                      </span>,
-                      `${t.source_name} → ${t.destination_name}`,
-                      t.state,
-                      <div>
-                        {t.lines.map((line: Item) => (
-                          <div key={line.line_id}>
-                            <strong>
-                              {productName(line.product_id)} ·{" "}
-                              {line.serial ?? "Bulk lot"}
-                            </strong>
-                            <small>
-                              {line.quantity} dispatched ·{" "}
-                              {line.receivedQuantity} received ·{" "}
-                              {line.remainingQuantity} in transit
-                              {line.lossQuantity > 0 && (
-                                <>
-                                  {" "}
-                                  · {line.lostQuantity} unrecovered loss ·{" "}
-                                  {line.recoveredQuantity} recovered
-                                </>
-                              )}
-                            </small>
-                            {line.legacyReceived && (
-                              <small>
-                                Historical whole receipt; portion evidence
-                                unavailable
-                              </small>
-                            )}
-                            {line.receipts.map((r: Item) => (
-                              <small key={r.id}>
-                                {r.receipt_ref} · {r.quantity} {r.condition} ·{" "}
-                                {r.bin}
-                              </small>
-                            ))}
-                            {line.losses.map((loss: Item) => (
-                              <div key={loss.id}>
+                              {line.legacyReceived && (
                                 <small>
-                                  {loss.loss_ref} · {loss.quantity} loss
-                                  approved · {loss.remainingLostQuantity}{" "}
-                                  unrecovered · {loss.reason}
+                                  Historical whole receipt; portion evidence
+                                  unavailable
                                 </small>
-                                {loss.recoveries.map((r: Item) => (
-                                  <small key={r.id}>
-                                    {r.receipt_ref} · {r.quantity} recovered{" "}
-                                    {r.condition} · {r.bin}
+                              )}
+                              {line.receipts.map((r: Item) => (
+                                <small key={r.id}>
+                                  {r.receipt_ref} · {r.quantity} {r.condition} ·{" "}
+                                  {r.bin}
+                                </small>
+                              ))}
+                              {line.losses.map((loss: Item) => (
+                                <div key={loss.id}>
+                                  <small>
+                                    {loss.loss_ref} · {loss.quantity} loss
+                                    approved · {loss.remainingLostQuantity}{" "}
+                                    unrecovered · {loss.reason}
                                   </small>
-                                ))}
-                                {actor?.role === "admin" &&
-                                  loss.remainingLostQuantity > 0 &&
-                                  button("Recover lost stock", () =>
-                                    setLossSelection({
-                                      kind: "recovery",
-                                      transferId: t.id,
-                                      lineId: line.line_id,
-                                      unitId: line.unit_id,
-                                      product: productName(line.product_id),
-                                      source: warehouseName(t.source_id),
-                                      destination: warehouseName(
-                                        t.destination_id,
-                                      ),
-                                      serial: line.serial,
-                                      dispatchedQuantity: line.quantity,
-                                      remainingQuantity:
-                                        loss.remainingLostQuantity,
-                                      unitCost: line.unit_cost,
-                                      lossId: loss.id,
-                                      lossRef: loss.loss_ref,
-                                      lossQuantity: loss.quantity,
-                                    }),
-                                  )}
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-                      </div>,
-                      can("warehouse") &&
-                        (actor?.role === "admin" ||
-                          actor?.sites.includes(t.destination_id)) && (
-                          <div className="actions">
-                            {t.lines
-                              .filter(
-                                (line: Item) => line.remainingQuantity > 0,
-                              )
-                              .map((line: Item) => (
-                                <React.Fragment key={line.line_id}>
-                                  {button("Receive transfer", () =>
-                                    setArrivalSelection({
-                                      transferId: t.id,
-                                      lineId: line.line_id,
-                                      destinationId: t.destination_id,
-                                      product: productName(line.product_id),
-                                      source: warehouseName(t.source_id),
-                                      destination: warehouseName(
-                                        t.destination_id,
-                                      ),
-                                      serial: line.serial,
-                                      dispatchedQuantity: line.quantity,
-                                      remainingQuantity: line.remainingQuantity,
-                                      unitCost: line.unit_cost,
-                                    }),
-                                  )}
+                                  {loss.recoveries.map((r: Item) => (
+                                    <small key={r.id}>
+                                      {r.receipt_ref} · {r.quantity} recovered{" "}
+                                      {r.condition} · {r.bin}
+                                    </small>
+                                  ))}
                                   {actor?.role === "admin" &&
-                                    button("Approve transit loss", () =>
+                                    loss.remainingLostQuantity > 0 &&
+                                    button("Recover lost stock", () =>
                                       setLossSelection({
-                                        kind: "loss",
+                                        kind: "recovery",
                                         transferId: t.id,
                                         lineId: line.line_id,
                                         unitId: line.unit_id,
@@ -3121,354 +3400,440 @@ function App() {
                                         serial: line.serial,
                                         dispatchedQuantity: line.quantity,
                                         remainingQuantity:
-                                          line.remainingQuantity,
+                                          loss.remainingLostQuantity,
                                         unitCost: line.unit_cost,
-                                        revision: line.transitRevision,
+                                        lossId: loss.id,
+                                        lossRef: loss.loss_ref,
+                                        lossQuantity: loss.quantity,
                                       }),
                                     )}
-                                </React.Fragment>
+                                </div>
                               ))}
-                          </div>
-                        ),
-                    ],
-                  )
-                }
-              </TransferQueue>
-            )}
-          </>
+                            </div>
+                          ))}
+                        </div>,
+                        can("warehouse") &&
+                          (actor?.role === "admin" ||
+                            actor?.sites.includes(t.destination_id)) && (
+                            <div className="actions">
+                              {t.lines
+                                .filter(
+                                  (line: Item) => line.remainingQuantity > 0,
+                                )
+                                .map((line: Item) => (
+                                  <React.Fragment key={line.line_id}>
+                                    {button("Receive transfer", () =>
+                                      setArrivalSelection({
+                                        transferId: t.id,
+                                        lineId: line.line_id,
+                                        destinationId: t.destination_id,
+                                        product: productName(line.product_id),
+                                        source: warehouseName(t.source_id),
+                                        destination: warehouseName(
+                                          t.destination_id,
+                                        ),
+                                        serial: line.serial,
+                                        dispatchedQuantity: line.quantity,
+                                        remainingQuantity:
+                                          line.remainingQuantity,
+                                        unitCost: line.unit_cost,
+                                      }),
+                                    )}
+                                    {actor?.role === "admin" &&
+                                      button("Approve transit loss", () =>
+                                        setLossSelection({
+                                          kind: "loss",
+                                          transferId: t.id,
+                                          lineId: line.line_id,
+                                          unitId: line.unit_id,
+                                          product: productName(line.product_id),
+                                          source: warehouseName(t.source_id),
+                                          destination: warehouseName(
+                                            t.destination_id,
+                                          ),
+                                          serial: line.serial,
+                                          dispatchedQuantity: line.quantity,
+                                          remainingQuantity:
+                                            line.remainingQuantity,
+                                          unitCost: line.unit_cost,
+                                          revision: line.transitRevision,
+                                        }),
+                                      )}
+                                  </React.Fragment>
+                                ))}
+                            </div>
+                          ),
+                      ],
+                    )
+                  }
+                </TransferQueue>
+              )}
+            </PageSection>
+          </PageSections>
         )}
         {page === "Purchasing" && (
-          <>
-            <div className="actions">
-              {can("commercial") &&
-                button("Add supplier", () =>
-                  simple(
-                    "Add supplier",
-                    [{ name: "name", label: "Supplier name" }],
-                    "supplier.create",
-                  ),
-                )}
-              {can("commercial") &&
-                button("Purchase order", () => setPurchaseEntryOpen(true))}
-            </div>
-            <PurchaseQueueControls queue={purchaseQueue} />
-            {table(
-              ["Purchase order", "Warehouse", "Lines", "Status", "Actions"],
-              purchaseQueue.items,
-              (po: Item) => [
-                <span title={po.id}>{po.id.slice(0, 8)}</span>,
-                warehouseName(po.warehouse_id),
-                po.lines.map((l: Item) => (
-                  <div key={l.id}>
-                    {purchaseLineName(l)} · {l.received}/{l.quantity} received
-                  </div>
-                )),
-                po.state,
-                po.state === "open" &&
-                  can("warehouse") &&
-                  button("Start receipt draft", () => receiptDraft(po)),
-              ],
-            )}
-            <h2>Saved receipt scans</h2>
-            <p>
-              Drafts do not reserve or receive stock. Review the saved SKU,
-              quantity, serials, bin and inspection choice before receiving.
-            </p>
-            {table(
-              ["Delivery", "Warehouse / SKU", "Scans", "Status", "Actions"],
-              extra.purchases?.drafts ?? [],
-              (draft: Item) => [
-                draft.delivery_ref,
-                `${warehouseName(draft.warehouse_id)} · ${draft.input.observedSku}`,
-                <div>
-                  {draft.input.serials.length} scans · {draft.input.quantity}{" "}
-                  units · {draft.input.bin}
-                  <br />
-                  {draft.input.quarantine
-                    ? "Inspection required"
-                    : "Available on receipt"}
-                </div>,
-                `${draft.state} · v${draft.revision}`,
-                <div className="actions">
-                  {draft.state === "draft" && can("warehouse") && (
-                    <>
-                      {button("Resume scans", () =>
-                        // The draft already owns the exact purchase and line IDs;
-                        // resuming never depends on the visible queue page.
-                        receiptDraft({ id: draft.po_id }, draft),
-                      )}
-                      {button("Review and receive", () =>
-                        open(
-                          "Review physical receipt",
-                          [],
-                          () =>
-                            command("purchase.draft.confirm", {
+          <PageSections
+            label="Purchasing sections"
+            selectedSection={route.section ?? "purchasing-queue"}
+            selectSection={(section) => updateRoute({ section })}
+            items={[
+              { id: "purchasing-queue", label: "Purchase orders" },
+              { id: "purchasing-incoming", label: "Incoming allocations" },
+              { id: "purchasing-drafts", label: "Receipt drafts" },
+              { id: "purchasing-receipts", label: "Receipts & returns" },
+            ]}
+          >
+            <PageSection id="purchasing-queue">
+              <div className="actions">
+                {can("commercial") &&
+                  button("Add supplier", () =>
+                    simple(
+                      "Add supplier",
+                      [{ name: "name", label: "Supplier name" }],
+                      "supplier.create",
+                    ),
+                  )}
+                {can("commercial") &&
+                  button("Purchase order", () => setPurchaseEntryOpen(true))}
+              </div>
+              <PurchaseQueueControls queue={purchaseQueue} />
+              {table(
+                ["Purchase order", "Warehouse", "Lines", "Status", "Actions"],
+                purchaseQueue.items,
+                (po: Item) => [
+                  <span title={po.id}>{po.id.slice(0, 8)}</span>,
+                  warehouseName(po.warehouse_id),
+                  po.lines.map((l: Item) => (
+                    <div key={l.id}>
+                      {purchaseLineName(l)} · {l.received}/{l.quantity} received
+                    </div>
+                  )),
+                  po.state,
+                  po.state === "open" &&
+                    can("warehouse") &&
+                    button("Start receipt draft", () => receiptDraft(po)),
+                ],
+              )}
+            </PageSection>
+            <PageSection id="purchasing-incoming">
+              <IncomingSupplyWorkspace
+                key={`${actor.orgId}:${actor.id}`}
+                scope={`${actor.orgId}:${actor.id}`}
+                editable={can("commercial")}
+                accountName={accountName}
+                warehouseName={warehouseName}
+              />
+            </PageSection>
+            <PageSection id="purchasing-drafts">
+              <h2 id="purchasing-drafts" tabIndex={-1}>
+                Saved receipt scans
+              </h2>
+              <p>
+                Drafts do not reserve or receive stock. Review the saved SKU,
+                quantity, serials, bin and inspection choice before receiving.
+              </p>
+              {table(
+                ["Delivery", "Warehouse / SKU", "Scans", "Status", "Actions"],
+                extra.purchases?.drafts ?? [],
+                (draft: Item) => [
+                  draft.delivery_ref,
+                  `${warehouseName(draft.warehouse_id)} · ${draft.input.observedSku}`,
+                  <div>
+                    {draft.input.serials.length} scans · {draft.input.quantity}{" "}
+                    units · {draft.input.bin}
+                    <br />
+                    {draft.input.quarantine
+                      ? "Inspection required"
+                      : "Available on receipt"}
+                  </div>,
+                  `${draft.state} · v${draft.revision}`,
+                  <div className="actions">
+                    {draft.state === "draft" && can("warehouse") && (
+                      <>
+                        {button("Resume scans", () =>
+                          // The draft already owns the exact purchase and line IDs;
+                          // resuming never depends on the visible queue page.
+                          receiptDraft({ id: draft.po_id }, draft),
+                        )}
+                        {button("Review and receive", () =>
+                          open(
+                            "Review physical receipt",
+                            [],
+                            () =>
+                              command("purchase.draft.confirm", {
+                                draftId: draft.id,
+                                revision: draft.revision,
+                              }),
+                            `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "bulk (no serials)"}. Confirm only after checking the physical delivery.`,
+                            "Receive stock",
+                          ),
+                        )}
+                        {button("Discard draft", () =>
+                          simple(
+                            "Discard receipt draft",
+                            [reason],
+                            "purchase.draft.discard",
+                            (v) => ({
                               draftId: draft.id,
                               revision: draft.revision,
+                              reason: v.reason,
                             }),
-                          `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "bulk (no serials)"}. Confirm only after checking the physical delivery.`,
-                          "Receive stock",
-                        ),
-                      )}
-                      {button("Discard draft", () =>
-                        simple(
-                          "Discard receipt draft",
-                          [reason],
-                          "purchase.draft.discard",
-                          (v) => ({
-                            draftId: draft.id,
-                            revision: draft.revision,
-                            reason: v.reason,
-                          }),
-                        ),
-                      )}
-                    </>
-                  )}
-                  {button(
-                    "View draft history",
-                    () => void showReceiptHistory(draft.id),
-                  )}
-                </div>,
-              ],
-            )}
-            <h2>Purchase receipts and supplier returns</h2>
-            <p>
-              Confirm physical handover at original stock cost. Record supplier
-              credit evidence or link a separately received replacement, then
-              review the outcome. Accounting reconciliation remains separate;
-              the original purchase order stays received.
-            </p>
-            {table(
-              ["Delivery", "Purchased / returned", "Held stock", "Actions"],
-              extra.purchases?.receipts ?? [],
-              (receipt: Item) => [
-                receipt.delivery_ref,
-                `${receipt.quantity} purchased · ${receipt.returnedQuantity} returned`,
-                receipt.candidates.map((u: Item) => (
-                  <div key={u.id}>
-                    {productName(u.product_id)} ·{" "}
-                    {warehouseName(u.warehouse_id)} · {u.bin} ·{" "}
-                    {u.serial ?? "bulk"} · {u.quantity - u.reserved} unreserved
-                    · {u.condition}
-                  </div>
-                )),
-                actor.role === "admin" &&
-                  receipt.candidates.length > 0 &&
-                  receipt.returnedQuantity < receipt.quantity &&
-                  button("Return to supplier", () =>
-                    simple(
-                      "Confirm supplier return",
-                      [
-                        select(
-                          "unitId",
-                          "Held stock lot",
-                          receipt.candidates,
-                          (u) =>
-                            `${productName(u.product_id)} · ${warehouseName(u.warehouse_id)} · ${u.bin} · ${u.serial ?? "bulk"} · ${u.quantity - u.reserved} units`,
-                        ),
-                        {
-                          name: "quantity",
-                          label: "Units handed over",
-                          type: "number",
-                          value: 1,
-                          min: 1,
-                          max: receipt.quantity - receipt.returnedQuantity,
-                        },
-                        {
-                          name: "serial",
-                          scan: "single",
-                          label: "Scan serial (blank for bulk)",
-                          optional: true,
-                        },
-                        {
-                          name: "returnRef",
-                          label: "Supplier return reference (unique)",
-                        },
-                        {
-                          name: "handoverEvidence",
-                          label: "Supplier handover evidence",
-                        },
-                        { name: "reason", label: "Reason / evidence" },
-                      ],
-                      "purchase.return",
-                      (v) => ({
-                        ...v,
-                        receiptId: receipt.id,
-                        revision: receipt.candidates.find(
-                          (u: Item) => u.id === v.unitId,
-                        ).revision,
-                        serial: v.serial || null,
-                      }),
-                    ),
-                  ),
-              ],
-            )}
-            <SupplierReturnQueueControls
-              queue={supplierReturnQueue}
-              onSearch={() => {
-                setSupplierHistoryId(null);
-                supplierHistoryOpener.current = null;
-              }}
-            />
-            {table(
-              [
-                "Return reference",
-                "Custody",
-                "Quantity / original cost",
-                "Evidence",
-                "Financial status",
-                "Follow-up actions",
-              ],
-              supplierReturnQueue.items,
-              (r: Item) => [
-                r.return_ref,
-                `${warehouseName(r.warehouse_id)} · ${r.serial ?? "bulk"}`,
-                `${r.quantity} units · ${money(r.quantity * r.unit_cost, data.currency)} cost`,
-                `${r.reason} · ${r.handover_evidence}`,
-                <div>
-                  {r.followup.state === "open"
-                    ? r.followup.activeCount > 0
-                      ? "Supplier outcomes recorded · follow-up open"
-                      : "Supplier credit pending · follow-up open"
-                    : `Follow-up closed · ${r.followup.resolution}`}
-                  <p>
-                    {money(r.followup.creditAmount, currency)} supplier credit
-                    recorded · {r.followup.replacementQuantity} replacement
-                    units linked · v{r.followup.revision}
-                  </p>
-                  <p>External accounting reconciliation required.</p>
-                </div>,
-                <div className="actions">
-                  {button("Supplier history", () => {
-                    supplierHistoryOpener.current =
-                      document.activeElement as HTMLElement;
-                    setSupplierHistoryId(r.id);
-                  })}
-                  {can("finance") && r.followup.state === "open" && (
-                    <>
-                      {button("Record supplier credit", () =>
-                        supplierCommand(
-                          r,
-                          "Record supplier credit",
-                          [
-                            {
-                              name: "amount",
-                              label: "Supplier credit amount (cents)",
-                              type: "number",
-                              min: 1,
-                              help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
-                            },
-                          ],
-                          "purchase.return.credit",
-                          { currency },
-                        ),
-                      )}
-                      {button("Link replacement receipt", () =>
-                        supplierCommand(
-                          r,
-                          "Link received supplier replacement",
-                          [
-                            select(
-                              "receiptId",
-                              "Received replacement delivery",
-                              extra.purchases.receipts.filter(
-                                (p: Item) =>
-                                  p.po_id !== r.po_id &&
-                                  p.supplier_id === r.supplier_id &&
-                                  p.product_id === r.result.productId,
-                              ),
-                              (p) =>
-                                `${p.delivery_ref} · ${p.quantity} received`,
-                            ),
-                            {
-                              name: "quantity",
-                              label: "Replacement units linked",
-                              type: "number",
-                              min: 1,
-                              max: r.quantity,
-                              value: 1,
-                            },
-                          ],
-                          "purchase.return.replacement",
-                        ),
-                      )}
-                      {button("Close supplier follow-up", () =>
-                        supplierCommand(
-                          r,
-                          "Review supplier return outcome",
-                          [
-                            {
-                              name: "resolution",
-                              label: "Reviewed resolution",
-                              options: [
-                                {
-                                  value: "reconciled",
-                                  label: "Recorded outcomes reconciled",
-                                },
-                                {
-                                  value: "no-remedy",
-                                  label: "No credit or replacement accepted",
-                                },
-                              ],
-                              help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
-                            },
-                          ],
-                          "purchase.return.review",
-                          { state: "closed" },
-                        ),
-                      )}
-                    </>
-                  )}
-                  {can("finance") &&
-                    r.followup.state === "closed" &&
-                    button("Reopen supplier follow-up", () =>
-                      supplierCommand(
-                        r,
-                        "Reopen supplier return follow-up",
-                        [],
-                        "purchase.return.review",
-                        { state: "open", resolution: null },
-                      ),
+                          ),
+                        )}
+                      </>
                     )}
-                </div>,
-              ],
-            )}
-            {supplierHistoryId &&
-              (() => {
-                const r = supplierReturnQueue.items.find(
-                  (row: Item) => row.id === supplierHistoryId,
-                );
-                return (
-                  r && (
-                    <SupplierReturnHistory
-                      key={`${r.id}:${eventViewEpoch}`}
-                      returnId={r.id}
-                      currency={currency}
-                      canCorrect={can("finance") && r.followup.state === "open"}
-                      onCorrect={(observationId) =>
+                    {button(
+                      "View draft history",
+                      () => void showReceiptHistory(draft.id),
+                    )}
+                  </div>,
+                ],
+              )}
+            </PageSection>
+            <PageSection id="purchasing-receipts">
+              <h2 id="purchasing-receipts" tabIndex={-1}>
+                Purchase receipts and supplier returns
+              </h2>
+              <p>
+                Confirm physical handover at original stock cost. Record
+                supplier credit evidence or link a separately received
+                replacement, then review the outcome. Accounting reconciliation
+                remains separate; the original purchase order stays received.
+              </p>
+              {table(
+                ["Delivery", "Purchased / returned", "Held stock", "Actions"],
+                extra.purchases?.receipts ?? [],
+                (receipt: Item) => [
+                  receipt.delivery_ref,
+                  `${receipt.quantity} purchased · ${receipt.returnedQuantity} returned`,
+                  receipt.candidates.map((u: Item) => (
+                    <div key={u.id}>
+                      {productName(u.product_id)} ·{" "}
+                      {warehouseName(u.warehouse_id)} · {u.bin} ·{" "}
+                      {u.serial ?? "bulk"} · {u.quantity - u.reserved}{" "}
+                      unreserved · {u.condition}
+                    </div>
+                  )),
+                  actor.role === "admin" &&
+                    receipt.candidates.length > 0 &&
+                    receipt.returnedQuantity < receipt.quantity &&
+                    button("Return to supplier", () =>
+                      simple(
+                        "Confirm supplier return",
+                        [
+                          select(
+                            "unitId",
+                            "Held stock lot",
+                            receipt.candidates,
+                            (u) =>
+                              `${productName(u.product_id)} · ${warehouseName(u.warehouse_id)} · ${u.bin} · ${u.serial ?? "bulk"} · ${u.quantity - u.reserved} units`,
+                          ),
+                          {
+                            name: "quantity",
+                            label: "Units handed over",
+                            type: "number",
+                            value: 1,
+                            min: 1,
+                            max: receipt.quantity - receipt.returnedQuantity,
+                          },
+                          {
+                            name: "serial",
+                            scan: "single",
+                            label: "Scan serial (blank for bulk)",
+                            optional: true,
+                          },
+                          {
+                            name: "returnRef",
+                            label: "Supplier return reference (unique)",
+                          },
+                          {
+                            name: "handoverEvidence",
+                            label: "Supplier handover evidence",
+                          },
+                          { name: "reason", label: "Reason / evidence" },
+                        ],
+                        "purchase.return",
+                        (v) => ({
+                          ...v,
+                          receiptId: receipt.id,
+                          revision: receipt.candidates.find(
+                            (u: Item) => u.id === v.unitId,
+                          ).revision,
+                          serial: v.serial || null,
+                        }),
+                      ),
+                    ),
+                ],
+              )}
+              <SupplierReturnQueueControls
+                queue={supplierReturnQueue}
+                onSearch={() => {
+                  setSupplierHistoryId(null);
+                  supplierHistoryOpener.current = null;
+                }}
+              />
+              {table(
+                [
+                  "Return reference",
+                  "Custody",
+                  "Quantity / original cost",
+                  "Evidence",
+                  "Financial status",
+                  "Follow-up actions",
+                ],
+                supplierReturnQueue.items,
+                (r: Item) => [
+                  r.return_ref,
+                  `${warehouseName(r.warehouse_id)} · ${r.serial ?? "bulk"}`,
+                  `${r.quantity} units · ${money(r.quantity * r.unit_cost, data.currency)} cost`,
+                  `${r.reason} · ${r.handover_evidence}`,
+                  <div>
+                    {r.followup.state === "open"
+                      ? r.followup.activeCount > 0
+                        ? "Supplier outcomes recorded · follow-up open"
+                        : "Supplier credit pending · follow-up open"
+                      : `Follow-up closed · ${r.followup.resolution}`}
+                    <p>
+                      {money(r.followup.creditAmount, currency)} supplier credit
+                      recorded · {r.followup.replacementQuantity} replacement
+                      units linked · v{r.followup.revision}
+                    </p>
+                    <p>External accounting reconciliation required.</p>
+                  </div>,
+                  <div className="actions">
+                    {button("Supplier history", () => {
+                      supplierHistoryOpener.current =
+                        document.activeElement as HTMLElement;
+                      setSupplierHistoryId(r.id);
+                    })}
+                    {can("finance") && r.followup.state === "open" && (
+                      <>
+                        {button("Record supplier credit", () =>
+                          supplierCommand(
+                            r,
+                            "Record supplier credit",
+                            [
+                              {
+                                name: "amount",
+                                label: "Supplier credit amount (cents)",
+                                type: "number",
+                                min: 1,
+                                help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
+                              },
+                            ],
+                            "purchase.return.credit",
+                            { currency },
+                          ),
+                        )}
+                        {button("Link replacement receipt", () =>
+                          supplierCommand(
+                            r,
+                            "Link received supplier replacement",
+                            [
+                              select(
+                                "receiptId",
+                                "Received replacement delivery",
+                                extra.purchases.receipts.filter(
+                                  (p: Item) =>
+                                    p.po_id !== r.po_id &&
+                                    p.supplier_id === r.supplier_id &&
+                                    p.product_id === r.result.productId,
+                                ),
+                                (p) =>
+                                  `${p.delivery_ref} · ${p.quantity} received`,
+                              ),
+                              {
+                                name: "quantity",
+                                label: "Replacement units linked",
+                                type: "number",
+                                min: 1,
+                                max: r.quantity,
+                                value: 1,
+                              },
+                            ],
+                            "purchase.return.replacement",
+                          ),
+                        )}
+                        {button("Close supplier follow-up", () =>
+                          supplierCommand(
+                            r,
+                            "Review supplier return outcome",
+                            [
+                              {
+                                name: "resolution",
+                                label: "Reviewed resolution",
+                                options: [
+                                  {
+                                    value: "reconciled",
+                                    label: "Recorded outcomes reconciled",
+                                  },
+                                  {
+                                    value: "no-remedy",
+                                    label: "No credit or replacement accepted",
+                                  },
+                                ],
+                                help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
+                              },
+                            ],
+                            "purchase.return.review",
+                            { state: "closed" },
+                          ),
+                        )}
+                      </>
+                    )}
+                    {can("finance") &&
+                      r.followup.state === "closed" &&
+                      button("Reopen supplier follow-up", () =>
                         supplierCommand(
                           r,
-                          "Void supplier observation",
+                          "Reopen supplier return follow-up",
                           [],
-                          "purchase.return.void",
-                          { observationId },
-                        )
-                      }
-                      onClose={() => {
-                        setSupplierHistoryId(null);
-                        supplierHistoryOpener.current?.focus();
-                      }}
-                    />
-                  )
-                );
-              })()}
-            <SupplierAvailability
-              key={`${actor.orgId}:${actor.id}`}
-              orgId={actor.orgId}
-              actorId={actor.id}
-              canManage={can("commercial")}
-            />
-          </>
+                          "purchase.return.review",
+                          { state: "open", resolution: null },
+                        ),
+                      )}
+                  </div>,
+                ],
+              )}
+              {supplierHistoryId &&
+                (() => {
+                  const r = supplierReturnQueue.items.find(
+                    (row: Item) => row.id === supplierHistoryId,
+                  );
+                  return (
+                    r && (
+                      <SupplierReturnHistory
+                        key={`${r.id}:${eventViewEpoch}`}
+                        returnId={r.id}
+                        currency={currency}
+                        canCorrect={
+                          can("finance") && r.followup.state === "open"
+                        }
+                        onCorrect={(observationId) =>
+                          supplierCommand(
+                            r,
+                            "Void supplier observation",
+                            [],
+                            "purchase.return.void",
+                            { observationId },
+                          )
+                        }
+                        onClose={() => {
+                          setSupplierHistoryId(null);
+                          supplierHistoryOpener.current?.focus();
+                        }}
+                      />
+                    )
+                  );
+                })()}
+              <SupplierAvailability
+                key={`${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                canManage={can("commercial")}
+              />
+            </PageSection>
+          </PageSections>
         )}
         {page === "Catalog" && (
           <>
@@ -3529,1028 +3894,1133 @@ function App() {
           </>
         )}
         {page === "Billing" && (
-          <>
-            {can("finance") && <QuickBooksConnection key={eventViewEpoch} />}
-            {can("finance") && (
-              <OrganizationQuickBooksConnection
-                key={`org-oauth:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
-                orgId={actor.orgId}
+          <PageSections
+            label="Billing sections"
+            selectedSection={route.section ?? "billing-invoices"}
+            selectSection={(section) => updateRoute({ section })}
+            items={[
+              { id: "billing-invoices", label: "Invoices" },
+              ...(can("finance")
+                ? [{ id: "billing-accounting", label: "Accounting" }]
+                : []),
+              ...(extra.aging
+                ? [{ id: "billing-aging", label: "Account aging" }]
+                : []),
+              ...(extra.effects
+                ? [{ id: "billing-providers", label: "Provider activity" }]
+                : []),
+            ]}
+          >
+            <PageSection id="billing-invoices">
+              <div className="actions">
+                {can("finance") && (
+                  <a className="button secondary" href="/api/accounting.csv">
+                    Export reconciliation CSV
+                  </a>
+                )}
+              </div>
+              <InvoiceQueueControls
+                queue={invoiceQueue}
+                scope={savedFilterKey(actor.orgId, actor.id, "invoices")}
+                onFilter={(invoiceBalance) => updateRoute({ invoiceBalance })}
               />
-            )}
-            {can("finance") && (
-              <OrganizationQuickBooksRevocation
-                key={`org-revocation:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
-                orgId={actor.orgId}
-              />
-            )}
-            {can("finance") && (
-              <AccountingCosts
-                key={`costs:${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-              />
-            )}
-            {can("finance") && (
-              <StockJournalReconciliation
-                key={`reconciliation:${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-              />
-            )}
-            {can("finance") && (
-              <StockJournals
-                key={`${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-              />
-            )}
-            <div className="actions">
-              {can("finance") && (
-                <a className="button secondary" href="/api/accounting.csv">
-                  Export reconciliation CSV
-                </a>
-              )}
-            </div>
-            <InvoiceQueueControls queue={invoiceQueue} />
-            {table(
-              ["Invoice", "Customer", "Total", "Balance", "Actions"],
-              invoiceQueue.items,
-              (i: Item) => [
-                <>
-                  <strong>{i.number}</strong>
-                  <small>{new Date(i.created_at).toLocaleDateString()}</small>
-                  {i.opening && (
-                    <small>
-                      Historical opening document · source {i.opening.source_id}
-                      <br />
-                      Due {new Date(i.opening.due_at).toLocaleDateString()} ·
-                      cutoff {i.opening.cutoff_at}
-                      <br />
-                      At cutoff: {money(i.opening.credited, i.currency)}{" "}
-                      credited · {money(i.opening.paid, i.currency)} paid ·{" "}
-                      {money(i.opening.refunded, i.currency)} refunded
-                    </small>
-                  )}
-                </>,
-                accountName(i.account_id),
-                money(i.total, i.currency),
-                money(i.balance, i.currency),
-                <div className="actions">
-                  {can("finance") &&
-                    i.balance > 0 &&
-                    button("Record payment", () =>
-                      simple(
-                        "Record verified manual payment",
-                        [
-                          {
-                            name: "amount",
-                            label: "Amount in cents",
-                            type: "number",
-                            value: i.balance,
-                          },
-                          {
-                            name: "reference",
-                            label: "Bank / payment reference",
-                          },
-                          reason,
-                        ],
-                        "billing.payment.manual",
-                        (v) => ({ ...v, invoiceId: i.id }),
-                      ),
+              {table(
+                ["Invoice", "Customer", "Total", "Balance", "Actions"],
+                invoiceQueue.items,
+                (i: Item) => [
+                  <>
+                    <strong>{i.number}</strong>
+                    <small>{new Date(i.created_at).toLocaleDateString()}</small>
+                    {i.opening && (
+                      <small>
+                        Historical opening document · source{" "}
+                        {i.opening.source_id}
+                        <br />
+                        Due {new Date(i.opening.due_at).toLocaleDateString()} ·
+                        cutoff {i.opening.cutoff_at}
+                        <br />
+                        At cutoff: {money(i.opening.credited, i.currency)}{" "}
+                        credited · {money(i.opening.paid, i.currency)} paid ·{" "}
+                        {money(i.opening.refunded, i.currency)} refunded
+                      </small>
                     )}
-                  {can("finance", "buyer") &&
-                    i.balance > 0 &&
-                    button("Request Stripe checkout", () => {
-                      void run(() =>
-                        command("stripe.checkout", { invoiceId: i.id }),
-                      ).catch(() => {});
-                    })}
-                  {can("finance") &&
-                    !i.opening &&
-                    !extra.effects?.some(
-                      (e: Item) =>
-                        e.provider === "quickbooks" &&
-                        e.kind === "invoice" &&
-                        e.reference === i.id,
-                    ) &&
-                    button("Queue QuickBooks invoice", () =>
-                      queueAccountingInvoice(i),
-                    )}
-                  {can("finance") &&
-                    i.balance < 0 &&
-                    button("Request refund", () =>
-                      simple(
-                        "Request credited cash refund",
-                        [
-                          {
-                            name: "paymentId",
-                            label: "Original payment",
-                            content: <RefundPaymentSelect invoiceId={i.id} />,
-                          },
-                          {
-                            name: "amount",
-                            label: "Amount in cents",
-                            type: "number",
-                            value: -i.balance,
-                          },
-                          {
-                            name: "reference",
-                            label: "Unique refund reference",
-                          },
-                          reason,
-                        ],
-                        "billing.refund.request",
-                        (v) => ({ ...v, invoiceId: i.id }),
-                      ),
-                    )}
-                  {can("finance") &&
-                    i.lines.some((l: Item) => l.creditable_quantity > 0) &&
-                    button("Credit units", () =>
-                      simple(
-                        "Issue credit against original invoice",
-                        [
-                          select(
-                            "lineId",
-                            "Invoice line",
-                            i.lines.filter(
-                              (l: Item) => l.creditable_quantity > 0,
+                  </>,
+                  accountName(i.account_id),
+                  money(i.total, i.currency),
+                  money(i.balance, i.currency),
+                  <div className="actions">
+                    {can("finance") &&
+                      i.balance > 0 &&
+                      button("Record payment", () =>
+                        simple(
+                          "Record verified manual payment",
+                          [
+                            {
+                              name: "amount",
+                              label: "Amount in cents",
+                              type: "number",
+                              value: i.balance,
+                            },
+                            {
+                              name: "reference",
+                              label: "Bank / payment reference",
+                            },
+                            reason,
+                          ],
+                          "billing.payment.manual",
+                          (v) => ({ ...v, invoiceId: i.id }),
+                        ),
+                      )}
+                    {can("finance", "buyer") &&
+                      i.balance > 0 &&
+                      button("Request Stripe checkout", () => {
+                        void run(() =>
+                          command("stripe.checkout", { invoiceId: i.id }),
+                        ).catch(() => {});
+                      })}
+                    {can("finance") &&
+                      !i.opening &&
+                      !extra.effects?.some(
+                        (e: Item) =>
+                          e.provider === "quickbooks" &&
+                          e.kind === "invoice" &&
+                          e.reference === i.id,
+                      ) &&
+                      button("Queue QuickBooks invoice", () =>
+                        queueAccountingInvoice(i),
+                      )}
+                    {can("finance") &&
+                      i.balance < 0 &&
+                      button("Request refund", () =>
+                        simple(
+                          "Request credited cash refund",
+                          [
+                            {
+                              name: "paymentId",
+                              label: "Original payment",
+                              content: <RefundPaymentSelect invoiceId={i.id} />,
+                            },
+                            {
+                              name: "amount",
+                              label: "Amount in cents",
+                              type: "number",
+                              value: -i.balance,
+                            },
+                            {
+                              name: "reference",
+                              label: "Unique refund reference",
+                            },
+                            reason,
+                          ],
+                          "billing.refund.request",
+                          (v) => ({ ...v, invoiceId: i.id }),
+                        ),
+                      )}
+                    {can("finance") &&
+                      i.lines.some((l: Item) => l.creditable_quantity > 0) &&
+                      button("Credit units", () =>
+                        simple(
+                          "Issue credit against original invoice",
+                          [
+                            select(
+                              "lineId",
+                              "Invoice line",
+                              i.lines.filter(
+                                (l: Item) => l.creditable_quantity > 0,
+                              ),
+                              (l) =>
+                                `${l.description} · ${l.quantity} invoiced · ${l.credited_quantity} credited · ${l.creditable_quantity} remaining`,
                             ),
-                            (l) =>
-                              `${l.description} · ${l.quantity} invoiced · ${l.credited_quantity} credited · ${l.creditable_quantity} remaining`,
+                            {
+                              name: "quantity",
+                              label: "Units to credit",
+                              type: "number",
+                              value: 1,
+                            },
+                            {
+                              name: "reference",
+                              label: "Unique business reference",
+                            },
+                            reason,
+                          ],
+                          "billing.credit",
+                          (v) => ({
+                            invoiceId: i.id,
+                            reference: v.reference,
+                            reason: v.reason,
+                            lines: [{ lineId: v.lineId, quantity: v.quantity }],
+                          }),
+                        ),
+                      )}
+                    {button("Download invoice PDF", () => {
+                      void run((signal) =>
+                        downloadDocument("invoice", i.id, signal),
+                      )
+                        .then((receipt) => {
+                          if (typeof receipt === "string")
+                            setNotice(
+                              "PDF download prepared. Receipt does not confirm delivery.",
+                            );
+                        })
+                        .catch(() => {});
+                    })}
+                    {can("finance") &&
+                      !i.hasActivePublication &&
+                      button("Review and publish invoice", () =>
+                        publishDocument(
+                          "invoice",
+                          i.id,
+                          i.number,
+                          i.account_id,
+                        ),
+                      )}
+                  </div>,
+                ],
+              )}
+              {extra.credits?.length > 0 && (
+                <>
+                  <h2>Credit notes</h2>
+                  {table(
+                    [
+                      "Credit",
+                      "Original invoice",
+                      "Total",
+                      ...(can("finance") || can("support")
+                        ? ["QuickBooks handoff"]
+                        : []),
+                      "Actions",
+                    ],
+                    extra.credits,
+                    (c: Item) => {
+                      const posted = extra.effects?.find(
+                          (e: Item) =>
+                            e.provider === "quickbooks" &&
+                            e.kind === "credit" &&
+                            e.reference === c.id,
+                        ),
+                        parent = extra.effects?.find(
+                          (e: Item) =>
+                            e.provider === "quickbooks" &&
+                            e.kind === "invoice" &&
+                            e.reference === c.invoice_id &&
+                            e.state === "completed",
+                        );
+                      return [
+                        c.number,
+                        c.invoice_number,
+                        money(c.total, c.currency),
+                        ...(can("finance") || can("support")
+                          ? [
+                              posted ? (
+                                <div className="actions">
+                                  <span>{posted.state}</span>
+                                  {posted.creditApplication && (
+                                    <small>
+                                      Reserved{" "}
+                                      {money(
+                                        posted.creditApplication.reservedAmount,
+                                        currency,
+                                      )}
+                                      ; remaining credit{" "}
+                                      {money(
+                                        posted.creditApplication
+                                          .availableCredit,
+                                        currency,
+                                      )}
+                                      ; invoice capacity{" "}
+                                      {money(
+                                        posted.creditApplication
+                                          .availableInvoice,
+                                        currency,
+                                      )}
+                                    </small>
+                                  )}
+                                  {can("finance") &&
+                                    posted.state === "completed" &&
+                                    posted.creditApplication?.availableCredit >
+                                      0 &&
+                                    posted.creditApplication?.availableInvoice >
+                                      0 &&
+                                    button("Apply QuickBooks credit", () =>
+                                      open(
+                                        "Apply QuickBooks credit",
+                                        [
+                                          {
+                                            name: "amount",
+                                            label: "Credit application (cents)",
+                                            type: "number",
+                                            value: 0,
+                                            min: 1,
+                                            max: Math.min(
+                                              posted.creditApplication
+                                                .availableCredit,
+                                              posted.creditApplication
+                                                .availableInvoice,
+                                            ),
+                                          },
+                                        ],
+                                        (v) =>
+                                          command("quickbooks.credit.apply", {
+                                            creditId: c.id,
+                                            amount: v.amount,
+                                          }),
+                                        `Apply part or all of ${c.number} to its original invoice. Review the amount; pending and unknown applications reserve capacity. This applies existing credit without repaying or charging cash.`,
+                                        "Queue application",
+                                      ),
+                                    )}
+                                </div>
+                              ) : can("finance") && parent ? (
+                                button("Queue QuickBooks credit", () =>
+                                  open(
+                                    "Queue QuickBooks credit",
+                                    [],
+                                    () =>
+                                      command("quickbooks.credit", {
+                                        creditId: c.id,
+                                      }),
+                                    `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
+                                    "Queue credit",
+                                  ),
+                                )
+                              ) : (
+                                "Reconcile QuickBooks invoice first"
+                              ),
+                            ]
+                          : []),
+                        <div className="actions">
+                          {button("Download credit PDF", () => {
+                            void run((signal) =>
+                              downloadDocument("credit", c.id, signal),
+                            )
+                              .then((receipt) => {
+                                if (typeof receipt === "string")
+                                  setNotice(
+                                    "PDF download prepared. Receipt does not confirm delivery.",
+                                  );
+                              })
+                              .catch(() => {});
+                          })}
+                          {can("finance") &&
+                            !c.hasActivePublication &&
+                            button("Review and publish credit", () =>
+                              publishDocument(
+                                "credit",
+                                c.id,
+                                c.number,
+                                c.account_id,
+                              ),
+                            )}
+                        </div>,
+                      ];
+                    },
+                  )}
+                </>
+              )}
+              {extra.refundNotices && (
+                <RefundNotices
+                  key={extra.refundNoticeRefresh}
+                  initial={extra.refundNotices}
+                  personal={actor.role === "buyer"}
+                  accountName={accountName}
+                  renderActions={(n) =>
+                    n.acknowledged
+                      ? "Read by you"
+                      : button("Mark notice read", () =>
+                          open(
+                            "Review refund notice",
+                            [],
+                            () =>
+                              command("billing.refund.notice.acknowledge", {
+                                noticeId: n.id,
+                                revision: n.revision,
+                              }),
+                            `${n.number}: ${n.message} Marking this notice read records only your acknowledgment. It does not confirm repayment, close the refund case or send another refund. Refresh to see later status changes.`,
+                            "Mark notice read",
                           ),
-                          {
-                            name: "quantity",
-                            label: "Units to credit",
-                            type: "number",
-                            value: 1,
-                          },
-                          {
-                            name: "reference",
-                            label: "Unique business reference",
-                          },
-                          reason,
-                        ],
-                        "billing.credit",
-                        (v) => ({
-                          invoiceId: i.id,
-                          reference: v.reference,
-                          reason: v.reason,
-                          lines: [{ lineId: v.lineId, quantity: v.quantity }],
-                        }),
-                      ),
-                    )}
-                  {button("Download invoice PDF", () => {
-                    void run((signal) =>
-                      downloadDocument("invoice", i.id, signal),
-                    )
-                      .then((receipt) => {
-                        if (typeof receipt === "string")
-                          setNotice(
-                            "PDF download prepared. Receipt does not confirm delivery.",
-                          );
-                      })
-                      .catch(() => {});
-                  })}
-                  {can("finance") &&
-                    !i.hasActivePublication &&
-                    button("Review and publish invoice", () =>
-                      publishDocument("invoice", i.id, i.number, i.account_id),
-                    )}
-                </div>,
-              ],
-            )}
-            {extra.credits?.length > 0 && (
-              <>
-                <h2>Credit notes</h2>
-                {table(
-                  [
-                    "Credit",
-                    "Original invoice",
-                    "Total",
-                    ...(can("finance") || can("support")
-                      ? ["QuickBooks handoff"]
-                      : []),
-                    "Actions",
-                  ],
-                  extra.credits,
-                  (c: Item) => {
+                        )
+                  }
+                />
+              )}
+              {extra.inbox && (
+                <BillingInbox
+                  key={extra.inboxRefresh}
+                  initial={extra.inbox}
+                  personal={actor.role === "buyer"}
+                  accountName={accountName}
+                  renderActions={(p) => (
+                    <div className="actions">
+                      {actor.role === "buyer" &&
+                        p.state === "available" &&
+                        button(
+                          p.acknowledgments.some(
+                            (a: Item) => a.actor_id === actor.id,
+                          )
+                            ? "Download received PDF"
+                            : "Download and review receipt",
+                          () => receiveDocument(p),
+                        )}
+                      {can("finance") &&
+                        p.state === "available" &&
+                        button("Withdraw publication", () =>
+                          open(
+                            "Withdraw portal publication",
+                            [reason],
+                            (v) =>
+                              command("billing.portal.withdraw", {
+                                publicationId: p.id,
+                                revision: p.revision,
+                                reason: v.reason,
+                              }),
+                            `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
+                            "Withdraw from inbox",
+                          ),
+                        )}
+                    </div>
+                  )}
+                />
+              )}
+              {extra.downloads?.length > 0 && (
+                <>
+                  <h2>Prepared document downloads</h2>
+                  <p>
+                    These receipts record an authorized request and prepared
+                    bytes. They do not establish receipt, reading or delivery to
+                    the customer.
+                  </p>
+                  {table(
+                    ["Document", "Requested", "Bytes", "SHA-256", "State"],
+                    extra.downloads,
+                    (d: Item) => [
+                      d.number,
+                      d.requested_at,
+                      d.size,
+                      <code>{d.content_hash}</code>,
+                      d.state,
+                    ],
+                  )}
+                </>
+              )}
+              {extra.payments && (
+                <CashPayments
+                  key={extra.paymentRefresh}
+                  initial={extra.payments}
+                  renderActions={(p) => {
                     const posted = extra.effects?.find(
                         (e: Item) =>
                           e.provider === "quickbooks" &&
-                          e.kind === "credit" &&
-                          e.reference === c.id,
+                          e.kind === "payment" &&
+                          e.reference === p.id,
                       ),
                       parent = extra.effects?.find(
                         (e: Item) =>
                           e.provider === "quickbooks" &&
                           e.kind === "invoice" &&
-                          e.reference === c.invoice_id &&
+                          e.reference === p.invoice_id &&
                           e.state === "completed",
                       );
-                    return [
-                      c.number,
-                      c.invoice_number,
-                      money(c.total, c.currency),
-                      ...(can("finance") || can("support")
-                        ? [
-                            posted ? (
-                              <div className="actions">
-                                <span>{posted.state}</span>
-                                {posted.creditApplication && (
-                                  <small>
-                                    Reserved{" "}
-                                    {money(
-                                      posted.creditApplication.reservedAmount,
-                                      currency,
-                                    )}
-                                    ; remaining credit{" "}
-                                    {money(
-                                      posted.creditApplication.availableCredit,
-                                      currency,
-                                    )}
-                                    ; invoice capacity{" "}
-                                    {money(
-                                      posted.creditApplication.availableInvoice,
-                                      currency,
-                                    )}
-                                  </small>
-                                )}
-                                {can("finance") &&
-                                  posted.state === "completed" &&
-                                  posted.creditApplication?.availableCredit >
-                                    0 &&
-                                  posted.creditApplication?.availableInvoice >
-                                    0 &&
-                                  button("Apply QuickBooks credit", () =>
-                                    open(
-                                      "Apply QuickBooks credit",
-                                      [
-                                        {
-                                          name: "amount",
-                                          label: "Credit application (cents)",
-                                          type: "number",
-                                          value: 0,
-                                          min: 1,
-                                          max: Math.min(
-                                            posted.creditApplication
-                                              .availableCredit,
-                                            posted.creditApplication
-                                              .availableInvoice,
-                                          ),
-                                        },
-                                      ],
-                                      (v) =>
-                                        command("quickbooks.credit.apply", {
-                                          creditId: c.id,
-                                          amount: v.amount,
-                                        }),
-                                      `Apply part or all of ${c.number} to its original invoice. Review the amount; pending and unknown applications reserve capacity. This applies existing credit without repaying or charging cash.`,
-                                      "Queue application",
-                                    ),
-                                  )}
-                              </div>
-                            ) : can("finance") && parent ? (
-                              button("Queue QuickBooks credit", () =>
+                    return posted
+                      ? posted.state
+                      : can("finance") && parent
+                        ? button("Queue QuickBooks payment", () =>
+                            open(
+                              "Queue QuickBooks payment",
+                              [
+                                {
+                                  name: "appliedAmount",
+                                  label: "Apply to invoice (cents)",
+                                  type: "number",
+                                  value: 0,
+                                  min: 0,
+                                  max: p.amount,
+                                },
+                                {
+                                  name: "depositAccountRef",
+                                  label: "QuickBooks deposit account ID",
+                                },
+                              ],
+                              (v) =>
+                                command("quickbooks.payment", {
+                                  ...v,
+                                  paymentId: p.id,
+                                }),
+                              `Record ${money(p.amount, p.currency)} already received. Choose the amount to apply to ${p.invoiceNumber}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
+                              "Queue payment",
+                            ),
+                          )
+                        : "Reconcile QuickBooks invoice first";
+                  }}
+                />
+              )}
+              {extra.refunds && (
+                <CashRefunds
+                  key={extra.refundRefresh}
+                  initial={extra.refunds}
+                  renderActions={(r) => (
+                    <div className="actions">
+                      {can("finance") &&
+                        r.state === "pending" &&
+                        (r.provider === "manual"
+                          ? button("Verify manual refund", () =>
+                              simple(
+                                "Verify bank refund",
+                                [
+                                  {
+                                    name: "reference",
+                                    label: "Bank refund reference",
+                                  },
+                                  reason,
+                                ],
+                                "billing.refund.manual",
+                                (v) => ({ ...v, refundId: r.id }),
+                              ),
+                            )
+                          : !extra.effects?.some(
+                              (e: Item) =>
+                                e.kind === "refund" && e.reference === r.id,
+                            ) &&
+                            button("Queue Stripe refund", () => {
+                              void run(() =>
+                                command("stripe.refund", { refundId: r.id }),
+                              ).catch(() => {});
+                            }))}
+                      {can("finance") &&
+                        (() => {
+                          const expense = extra.effects?.find(
+                              (e: Item) =>
+                                e.provider === "quickbooks" &&
+                                e.kind === "refund-expense" &&
+                                e.reference === r.id,
+                            ),
+                            application = extra.effects?.find(
+                              (e: Item) =>
+                                e.provider === "quickbooks" &&
+                                e.kind === "refund-application" &&
+                                e.reference === r.id,
+                            ),
+                            credits =
+                              extra.credits?.filter(
+                                (c: Item) =>
+                                  c.invoice_id === r.invoice_id &&
+                                  extra.effects?.some(
+                                    (e: Item) =>
+                                      e.provider === "quickbooks" &&
+                                      e.kind === "credit" &&
+                                      e.reference === c.id &&
+                                      e.state === "completed" &&
+                                      e.creditApplication?.availableCredit >=
+                                        r.amount,
+                                  ),
+                              ) ?? [],
+                            payment = extra.effects?.some(
+                              (e: Item) =>
+                                e.provider === "quickbooks" &&
+                                e.kind === "payment" &&
+                                e.reference === r.payment_id &&
+                                e.state === "completed",
+                            );
+                          if (expense && r.state !== "completed")
+                            return (
+                              <strong role="status">
+                                Accounting refund requires review: native cash
+                                is {r.state}. Reconcile the existing provider
+                                outcome.
+                              </strong>
+                            );
+                          if (application)
+                            return (
+                              <span>
+                                QuickBooks refund link: {application.state}
+                              </span>
+                            );
+                          if (expense)
+                            return expense.state === "completed" ? (
+                              button("Link refund expense to credit", () =>
                                 open(
-                                  "Queue QuickBooks credit",
+                                  "Link refund expense to credit",
                                   [],
                                   () =>
-                                    command("quickbooks.credit", {
-                                      creditId: c.id,
+                                    command("quickbooks.refund.apply", {
+                                      refundId: r.id,
                                     }),
-                                  `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
-                                  "Queue credit",
+                                  "Link the reconciled expense and its reserved original credit through a zero-cash accounting payment. Review the bank, receivable account and accounting date already saved on the expense. This records the earlier cash refund.",
+                                  "Queue refund link",
                                 ),
                               )
                             ) : (
-                              "Reconcile QuickBooks invoice first"
+                              <span>
+                                QuickBooks refund expense: {expense.state}
+                              </span>
+                            );
+                          if (r.state !== "completed") return null;
+                          if (!payment || !credits.length)
+                            return (
+                              <span>
+                                Reconcile the original QuickBooks payment and an
+                                available credit first.
+                              </span>
+                            );
+                          return button("Queue QuickBooks refund expense", () =>
+                            open(
+                              "Queue QuickBooks refund expense",
+                              [
+                                select(
+                                  "creditId",
+                                  "Original QuickBooks credit",
+                                  credits,
+                                  (c: Item) => c.number,
+                                ),
+                                {
+                                  name: "bankAccountRef",
+                                  label: "QuickBooks refund bank account ID",
+                                },
+                                {
+                                  name: "receivableAccountRef",
+                                  label: "QuickBooks accounts receivable ID",
+                                },
+                                {
+                                  name: "nonTaxCodeRef",
+                                  label: "QuickBooks non-tax expense code ID",
+                                },
+                                {
+                                  name: "expenseDate",
+                                  label: "Refund accounting date",
+                                  type: "date",
+                                  value: new Date().toISOString().slice(0, 10),
+                                },
+                              ],
+                              (v) =>
+                                command("quickbooks.refund", {
+                                  ...v,
+                                  refundId: r.id,
+                                }),
+                              `Record ${money(r.amount, r.currency)} already returned to the customer. Choose the original credit and verify the bank, receivable account, non-tax code and open accounting period. Existing credit records the sales tax; this expense records cash once. After reconciliation, link the expense to its credit.`,
+                              "Queue refund expense",
                             ),
-                          ]
-                        : []),
-                      <div className="actions">
-                        {button("Download credit PDF", () => {
-                          void run((signal) =>
-                            downloadDocument("credit", c.id, signal),
-                          )
-                            .then((receipt) => {
-                              if (typeof receipt === "string")
-                                setNotice(
-                                  "PDF download prepared. Receipt does not confirm delivery.",
-                                );
-                            })
-                            .catch(() => {});
-                        })}
-                        {can("finance") &&
-                          !c.hasActivePublication &&
-                          button("Review and publish credit", () =>
-                            publishDocument(
-                              "credit",
-                              c.id,
-                              c.number,
-                              c.account_id,
-                            ),
-                          )}
-                      </div>,
-                    ];
-                  },
-                )}
-              </>
-            )}
-            {extra.refundNotices && (
-              <RefundNotices
-                key={extra.refundNoticeRefresh}
-                initial={extra.refundNotices}
-                personal={actor.role === "buyer"}
-                accountName={accountName}
-                renderActions={(n) =>
-                  n.acknowledged
-                    ? "Read by you"
-                    : button("Mark notice read", () =>
-                        open(
-                          "Review refund notice",
-                          [],
-                          () =>
-                            command("billing.refund.notice.acknowledge", {
-                              noticeId: n.id,
-                              revision: n.revision,
-                            }),
-                          `${n.number}: ${n.message} Marking this notice read records only your acknowledgment. It does not confirm repayment, close the refund case or send another refund. Refresh to see later status changes.`,
-                          "Mark notice read",
-                        ),
-                      )
-                }
-              />
-            )}
-            {extra.inbox && (
-              <BillingInbox
-                key={extra.inboxRefresh}
-                initial={extra.inbox}
-                personal={actor.role === "buyer"}
-                accountName={accountName}
-                renderActions={(p) => (
-                  <div className="actions">
-                    {actor.role === "buyer" &&
-                      p.state === "available" &&
-                      button(
-                        p.acknowledgments.some(
-                          (a: Item) => a.actor_id === actor.id,
-                        )
-                          ? "Download received PDF"
-                          : "Download and review receipt",
-                        () => receiveDocument(p),
+                          );
+                        })()}
+                    </div>
+                  )}
+                />
+              )}
+            </PageSection>
+            <PageSection id="billing-accounting">
+              {can("finance") && (
+                <section className="accounting-section">
+                  <h2 id="billing-accounting" tabIndex={-1}>
+                    Accounting connections & stock journals
+                  </h2>
+                  <p>
+                    Provider connections, inventory costs and ledger
+                    reconciliation.
+                  </p>
+                  <details className="workspace-disclosure">
+                    <summary>
+                      <span>
+                        QuickBooks connections
+                        <small>Authorization, access and revocation</small>
+                      </span>
+                    </summary>
+                    <div className="disclosure-body">
+                      {can("finance") && (
+                        <QuickBooksConnection key={eventViewEpoch} />
                       )}
-                    {can("finance") &&
-                      p.state === "available" &&
-                      button("Withdraw publication", () =>
+                      {can("finance") && (
+                        <OrganizationQuickBooksConnection
+                          key={`org-oauth:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
+                          orgId={actor.orgId}
+                        />
+                      )}
+                      {can("finance") && (
+                        <OrganizationQuickBooksRevocation
+                          key={`org-revocation:${actor.orgId}:${actor.id}:${eventViewEpoch}`}
+                          orgId={actor.orgId}
+                        />
+                      )}
+                    </div>
+                  </details>
+                  <details className="workspace-disclosure">
+                    <summary>
+                      <span>
+                        Inventory costs<small>Cost records and valuation</small>
+                      </span>
+                    </summary>
+                    <div className="disclosure-body">
+                      {can("finance") && (
+                        <AccountingCosts
+                          key={`costs:${actor.orgId}:${actor.id}`}
+                          orgId={actor.orgId}
+                          actorId={actor.id}
+                        />
+                      )}
+                    </div>
+                  </details>
+                  <details className="workspace-disclosure">
+                    <summary>
+                      <span>
+                        Stock journals
+                        <small>
+                          Review entries and reconcile accounting differences
+                        </small>
+                      </span>
+                    </summary>
+                    <div className="disclosure-body">
+                      {can("finance") && (
+                        <StockJournalReconciliation
+                          key={`reconciliation:${actor.orgId}:${actor.id}`}
+                          orgId={actor.orgId}
+                          actorId={actor.id}
+                        />
+                      )}
+                      {can("finance") && (
+                        <StockJournals
+                          key={`${actor.orgId}:${actor.id}`}
+                          orgId={actor.orgId}
+                          actorId={actor.id}
+                        />
+                      )}
+                    </div>
+                  </details>
+                </section>
+              )}
+            </PageSection>
+            <PageSection id="billing-aging">
+              {extra.aging && (
+                <>
+                  <h2 id="billing-aging" tabIndex={-1}>
+                    Account aging
+                  </h2>
+                  <p>
+                    Current ledger balances · due dates use UTC calendar days.
+                    Missing due dates remain unknown. Credit balances and
+                    pending refunds appear separately.
+                  </p>
+                  {can("finance") && (
+                    <a
+                      className="button secondary"
+                      href="/api/billing/aging.csv"
+                    >
+                      Export aging CSV
+                    </a>
+                  )}
+                  {table(
+                    [
+                      "Customer",
+                      "Not due",
+                      "1–30 days",
+                      "31–60 days",
+                      "61–90 days",
+                      "Over 90 days",
+                      "Unknown due",
+                      "Credit balance",
+                      "Net",
+                      "Holds / pending refunds",
+                    ],
+                    extra.aging.accounts,
+                    (a: Item) => [
+                      a.name,
+                      money(a.notDue, a.currency),
+                      money(a.days1to30, a.currency),
+                      money(a.days31to60, a.currency),
+                      money(a.days61to90, a.currency),
+                      money(a.daysOver90, a.currency),
+                      money(a.unknownDue, a.currency),
+                      money(a.creditBalance, a.currency),
+                      money(a.net, a.currency),
+                      `${money(a.holds, a.currency)} / ${money(a.pendingRefunds, a.currency)}`,
+                    ],
+                  )}
+                  <small>Observed {extra.aging.observedAt}</small>
+                </>
+              )}
+              {extra.billingProfiles && (
+                <>
+                  <h2>Billing identities and terms</h2>
+                  <p>
+                    Changes apply to new invoices. Existing native documents
+                    retain issuance details; reconstructed documents identify
+                    missing historical details.
+                  </p>
+                  {table(
+                    [
+                      "Party",
+                      "Address",
+                      "Tax registration",
+                      "Terms",
+                      "Actions",
+                    ],
+                    [
+                      { ...extra.billingProfiles.issuer, accountId: null },
+                      ...extra.billingProfiles.customers,
+                    ],
+                    (p: Item) => [
+                      p.name,
+                      p.address || "Not recorded",
+                      p.taxRegistration || "Not recorded",
+                      p.accountId === null
+                        ? "Issuer"
+                        : p.termDays === null
+                          ? "Not recorded"
+                          : `${p.termDays} calendar days`,
+                      button("Edit billing details", () =>
                         open(
-                          "Withdraw portal publication",
-                          [reason],
+                          "Edit billing details",
+                          [
+                            {
+                              name: "name",
+                              label: "Billing name",
+                              value: p.name,
+                            },
+                            {
+                              name: "address",
+                              label: "Billing address",
+                              type: "textarea",
+                              value: p.address,
+                              optional: true,
+                            },
+                            {
+                              name: "taxRegistration",
+                              label: "Tax registration",
+                              value: p.taxRegistration,
+                              optional: true,
+                            },
+                            ...(p.accountId === null
+                              ? []
+                              : [
+                                  {
+                                    name: "termsChoice",
+                                    label: "Terms basis",
+                                    value:
+                                      p.termDays === null
+                                        ? "unknown"
+                                        : "configured",
+                                    options: [
+                                      {
+                                        value: "unknown",
+                                        label: "Not recorded",
+                                      },
+                                      {
+                                        value: "configured",
+                                        label: "Specified calendar days",
+                                      },
+                                    ],
+                                  },
+                                  {
+                                    name: "termDays",
+                                    label: "Calendar days",
+                                    type: "number" as const,
+                                    value: p.termDays ?? 0,
+                                    min: 0,
+                                    max: 365,
+                                  },
+                                ]),
+                            reason,
+                          ],
                           (v) =>
-                            command("billing.portal.withdraw", {
-                              publicationId: p.id,
-                              revision: p.revision,
+                            command("billing.profile", {
+                              accountId: p.accountId,
+                              name: v.name,
+                              address: v.address,
+                              taxRegistration: v.taxRegistration,
+                              termDays:
+                                p.accountId === null ||
+                                v.termsChoice === "unknown"
+                                  ? null
+                                  : v.termDays,
+                              version: p.version,
                               reason: v.reason,
                             }),
-                          `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
-                          "Withdraw from inbox",
                         ),
-                      )}
-                  </div>
-                )}
-              />
-            )}
-            {extra.aging && (
-              <>
-                <h2>Account aging</h2>
-                <p>
-                  Current ledger balances · due dates use UTC calendar days.
-                  Missing due dates remain unknown. Credit balances and pending
-                  refunds appear separately.
-                </p>
-                {can("finance") && (
-                  <a className="button secondary" href="/api/billing/aging.csv">
-                    Export aging CSV
-                  </a>
-                )}
-                {table(
-                  [
-                    "Customer",
-                    "Not due",
-                    "1–30 days",
-                    "31–60 days",
-                    "61–90 days",
-                    "Over 90 days",
-                    "Unknown due",
-                    "Credit balance",
-                    "Net",
-                    "Holds / pending refunds",
-                  ],
-                  extra.aging.accounts,
-                  (a: Item) => [
-                    a.name,
-                    money(a.notDue, a.currency),
-                    money(a.days1to30, a.currency),
-                    money(a.days31to60, a.currency),
-                    money(a.days61to90, a.currency),
-                    money(a.daysOver90, a.currency),
-                    money(a.unknownDue, a.currency),
-                    money(a.creditBalance, a.currency),
-                    money(a.net, a.currency),
-                    `${money(a.holds, a.currency)} / ${money(a.pendingRefunds, a.currency)}`,
-                  ],
-                )}
-                <small>Observed {extra.aging.observedAt}</small>
-              </>
-            )}
-            {extra.billingProfiles && (
-              <>
-                <h2>Billing identities and terms</h2>
-                <p>
-                  Changes apply to new invoices. Existing native documents
-                  retain issuance details; reconstructed documents identify
-                  missing historical details.
-                </p>
-                {table(
-                  ["Party", "Address", "Tax registration", "Terms", "Actions"],
-                  [
-                    { ...extra.billingProfiles.issuer, accountId: null },
-                    ...extra.billingProfiles.customers,
-                  ],
-                  (p: Item) => [
-                    p.name,
-                    p.address || "Not recorded",
-                    p.taxRegistration || "Not recorded",
-                    p.accountId === null
-                      ? "Issuer"
-                      : p.termDays === null
-                        ? "Not recorded"
-                        : `${p.termDays} calendar days`,
-                    button("Edit billing details", () =>
-                      open(
-                        "Edit billing details",
-                        [
-                          {
-                            name: "name",
-                            label: "Billing name",
-                            value: p.name,
-                          },
-                          {
-                            name: "address",
-                            label: "Billing address",
-                            type: "textarea",
-                            value: p.address,
-                            optional: true,
-                          },
-                          {
-                            name: "taxRegistration",
-                            label: "Tax registration",
-                            value: p.taxRegistration,
-                            optional: true,
-                          },
-                          ...(p.accountId === null
-                            ? []
-                            : [
-                                {
-                                  name: "termsChoice",
-                                  label: "Terms basis",
-                                  value:
-                                    p.termDays === null
-                                      ? "unknown"
-                                      : "configured",
-                                  options: [
-                                    { value: "unknown", label: "Not recorded" },
-                                    {
-                                      value: "configured",
-                                      label: "Specified calendar days",
-                                    },
-                                  ],
-                                },
-                                {
-                                  name: "termDays",
-                                  label: "Calendar days",
-                                  type: "number" as const,
-                                  value: p.termDays ?? 0,
-                                  min: 0,
-                                  max: 365,
-                                },
-                              ]),
-                          reason,
-                        ],
-                        (v) =>
-                          command("billing.profile", {
-                            accountId: p.accountId,
-                            name: v.name,
-                            address: v.address,
-                            taxRegistration: v.taxRegistration,
-                            termDays:
-                              p.accountId === null ||
-                              v.termsChoice === "unknown"
-                                ? null
-                                : v.termDays,
-                            version: p.version,
-                            reason: v.reason,
-                          }),
                       ),
-                    ),
-                  ],
-                )}
-              </>
-            )}
-            {extra.downloads?.length > 0 && (
-              <>
-                <h2>Prepared document downloads</h2>
-                <p>
-                  These receipts record an authorized request and prepared
-                  bytes. They do not establish receipt, reading or delivery to
-                  the customer.
-                </p>
-                {table(
-                  ["Document", "Requested", "Bytes", "SHA-256", "State"],
-                  extra.downloads,
-                  (d: Item) => [
-                    d.number,
-                    d.requested_at,
-                    d.size,
-                    <code>{d.content_hash}</code>,
-                    d.state,
-                  ],
-                )}
-              </>
-            )}
-            {extra.payments && (
-              <CashPayments
-                key={extra.paymentRefresh}
-                initial={extra.payments}
-                renderActions={(p) => {
-                  const posted = extra.effects?.find(
-                      (e: Item) =>
-                        e.provider === "quickbooks" &&
-                        e.kind === "payment" &&
-                        e.reference === p.id,
-                    ),
-                    parent = extra.effects?.find(
-                      (e: Item) =>
-                        e.provider === "quickbooks" &&
-                        e.kind === "invoice" &&
-                        e.reference === p.invoice_id &&
-                        e.state === "completed",
-                    );
-                  return posted
-                    ? posted.state
-                    : can("finance") && parent
-                      ? button("Queue QuickBooks payment", () =>
-                          open(
-                            "Queue QuickBooks payment",
-                            [
-                              {
-                                name: "appliedAmount",
-                                label: "Apply to invoice (cents)",
-                                type: "number",
-                                value: 0,
-                                min: 0,
-                                max: p.amount,
-                              },
-                              {
-                                name: "depositAccountRef",
-                                label: "QuickBooks deposit account ID",
-                              },
-                            ],
-                            (v) =>
-                              command("quickbooks.payment", {
-                                ...v,
-                                paymentId: p.id,
-                              }),
-                            `Record ${money(p.amount, p.currency)} already received. Choose the amount to apply to ${p.invoiceNumber}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
-                            "Queue payment",
-                          ),
-                        )
-                      : "Reconcile QuickBooks invoice first";
-                }}
-              />
-            )}
-            {extra.refunds && (
-              <CashRefunds
-                key={extra.refundRefresh}
-                initial={extra.refunds}
-                renderActions={(r) => (
-                  <div className="actions">
-                    {can("finance") &&
-                      r.state === "pending" &&
-                      (r.provider === "manual"
-                        ? button("Verify manual refund", () =>
-                            simple(
-                              "Verify bank refund",
-                              [
+                    ],
+                  )}
+                </>
+              )}
+            </PageSection>
+            <PageSection id="billing-providers">
+              {extra.effects && (
+                <>
+                  <h2 id="billing-providers" tabIndex={-1}>
+                    Provider operations
+                  </h2>
+                  {table(
+                    ["Provider", "Status", "Result", "Actions"],
+                    extra.effects,
+                    (e: Item) => [
+                      `${e.provider} · ${e.kind}`,
+                      <>
+                        {e.accountingApplication?.cancellation
+                          ? "canceled"
+                          : e.result?.status
+                            ? `${e.state} · ${e.result.status}`
+                            : e.state}
+                        {e.accountingRefund && (
+                          <small>
+                            Native refund: {e.accountingRefund.nativeState}
+                            {e.accountingRefund.requiresReview
+                              ? " · Finance review required; reconcile the existing accounting outcome."
+                              : " · Confirmed cash already returned"}
+                          </small>
+                        )}
+                        {e.accountingApplication && (
+                          <small>
+                            {e.accountingApplication.creditNumber} to{" "}
+                            {e.accountingApplication.invoiceNumber}
+                            {" · "}
+                            {money(
+                              e.accountingApplication.amount,
+                              e.accountingApplication.currency,
+                            )}
+                            {e.accountingApplication.cancellation && (
+                              <>
+                                {" · Canceled: "}
+                                {e.accountingApplication.cancellation.reason}
+                                {" · "}
                                 {
-                                  name: "reference",
-                                  label: "Bank refund reference",
-                                },
-                                reason,
-                              ],
-                              "billing.refund.manual",
-                              (v) => ({ ...v, refundId: r.id }),
-                            ),
-                          )
-                        : !extra.effects?.some(
-                            (e: Item) =>
-                              e.kind === "refund" && e.reference === r.id,
-                          ) &&
-                          button("Queue Stripe refund", () => {
-                            void run(() =>
-                              command("stripe.refund", { refundId: r.id }),
-                            ).catch(() => {});
-                          }))}
-                    {can("finance") &&
-                      (() => {
-                        const expense = extra.effects?.find(
-                            (e: Item) =>
-                              e.provider === "quickbooks" &&
-                              e.kind === "refund-expense" &&
-                              e.reference === r.id,
-                          ),
-                          application = extra.effects?.find(
-                            (e: Item) =>
-                              e.provider === "quickbooks" &&
-                              e.kind === "refund-application" &&
-                              e.reference === r.id,
-                          ),
-                          credits =
-                            extra.credits?.filter(
-                              (c: Item) =>
-                                c.invoice_id === r.invoice_id &&
-                                extra.effects?.some(
-                                  (e: Item) =>
-                                    e.provider === "quickbooks" &&
-                                    e.kind === "credit" &&
-                                    e.reference === c.id &&
-                                    e.state === "completed" &&
-                                    e.creditApplication?.availableCredit >=
-                                      r.amount,
-                                ),
-                            ) ?? [],
-                          payment = extra.effects?.some(
-                            (e: Item) =>
-                              e.provider === "quickbooks" &&
-                              e.kind === "payment" &&
-                              e.reference === r.payment_id &&
-                              e.state === "completed",
-                          );
-                        if (expense && r.state !== "completed")
-                          return (
-                            <strong role="status">
-                              Accounting refund requires review: native cash is{" "}
-                              {r.state}. Reconcile the existing provider
-                              outcome.
-                            </strong>
-                          );
-                        if (application)
-                          return (
-                            <span>
-                              QuickBooks refund link: {application.state}
-                            </span>
-                          );
-                        if (expense)
-                          return expense.state === "completed" ? (
-                            button("Link refund expense to credit", () =>
+                                  e.accountingApplication.cancellation
+                                    .created_at
+                                }
+                                {" · Reserved capacity released"}
+                              </>
+                            )}
+                          </small>
+                        )}
+                      </>,
+                      e.checkout ? (
+                        <div>
+                          <CheckoutAction
+                            key={e.id}
+                            effectId={e.id}
+                            checkout={e.checkout}
+                          />
+                          <small>
+                            {e.checkout.state === "superseded"
+                              ? "Superseded checkout"
+                              : "Current checkout"}
+                            {" · Current invoice balance: "}
+                            {money(
+                              e.checkout.currentBalance,
+                              e.checkout.currency,
+                            )}
+                          </small>
+                          {e.checkout.replacementReason && (
+                            <small>
+                              Replacement reason: {e.checkout.replacementReason}
+                            </small>
+                          )}
+                          {e.error && <small role="alert">{e.error}</small>}
+                          {["pending", "running", "unknown"].includes(
+                            e.state,
+                          ) && (
+                            <small>
+                              {e.state === "pending"
+                                ? "Awaiting explicit provider send. No new payment has been recorded."
+                                : "Reconciliation required. Verify the existing provider outcome before replacing checkout."}
+                            </small>
+                          )}
+                        </div>
+                      ) : (
+                        (e.error ??
+                        e.external_ref ??
+                        "Awaiting configured provider processing")
+                      ),
+                      can("finance", "support") ? (
+                        <div>
+                          {e.provider === "stripe" &&
+                            e.kind === "checkout" &&
+                            e.state === "completed" && (
+                              <button
+                                onClick={() =>
+                                  void run(() =>
+                                    request(
+                                      `/api/effects/${encodeURIComponent(e.id)}/refresh-checkout`,
+                                      { method: "POST" },
+                                    ),
+                                  ).catch(() => {})
+                                }
+                              >
+                                Refresh checkout status
+                              </button>
+                            )}
+
+                          {can("finance") &&
+                            !actor.accountId &&
+                            e.checkout?.canClose &&
+                            button("Close checkout link", () =>
                               open(
-                                "Link refund expense to credit",
+                                "Close checkout link",
                                 [],
                                 () =>
-                                  command("quickbooks.refund.apply", {
-                                    refundId: r.id,
-                                  }),
-                                "Link the reconciled expense and its reserved original credit through a zero-cash accounting payment. Review the bank, receivable account and accounting date already saved on the expense. This records the earlier cash refund.",
-                                "Queue refund link",
-                              ),
-                            )
-                          ) : (
-                            <span>
-                              QuickBooks refund expense: {expense.state}
-                            </span>
-                          );
-                        if (r.state !== "completed") return null;
-                        if (!payment || !credits.length)
-                          return (
-                            <span>
-                              Reconcile the original QuickBooks payment and an
-                              available credit first.
-                            </span>
-                          );
-                        return button("Queue QuickBooks refund expense", () =>
-                          open(
-                            "Queue QuickBooks refund expense",
-                            [
-                              select(
-                                "creditId",
-                                "Original QuickBooks credit",
-                                credits,
-                                (c: Item) => c.number,
-                              ),
-                              {
-                                name: "bankAccountRef",
-                                label: "QuickBooks refund bank account ID",
-                              },
-                              {
-                                name: "receivableAccountRef",
-                                label: "QuickBooks accounts receivable ID",
-                              },
-                              {
-                                name: "nonTaxCodeRef",
-                                label: "QuickBooks non-tax expense code ID",
-                              },
-                              {
-                                name: "expenseDate",
-                                label: "Refund accounting date",
-                                type: "date",
-                                value: new Date().toISOString().slice(0, 10),
-                              },
-                            ],
-                            (v) =>
-                              command("quickbooks.refund", {
-                                ...v,
-                                refundId: r.id,
-                              }),
-                            `Record ${money(r.amount, r.currency)} already returned to the customer. Choose the original credit and verify the bank, receivable account, non-tax code and open accounting period. Existing credit records the sales tax; this expense records cash once. After reconciliation, link the expense to its credit.`,
-                            "Queue refund expense",
-                          ),
-                        );
-                      })()}
-                  </div>
-                )}
-              />
-            )}
-            {extra.effects && (
-              <>
-                <h2>Provider operations</h2>
-                {table(
-                  ["Provider", "Status", "Result", "Actions"],
-                  extra.effects,
-                  (e: Item) => [
-                    `${e.provider} · ${e.kind}`,
-                    <>
-                      {e.accountingApplication?.cancellation
-                        ? "canceled"
-                        : e.result?.status
-                          ? `${e.state} · ${e.result.status}`
-                          : e.state}
-                      {e.accountingRefund && (
-                        <small>
-                          Native refund: {e.accountingRefund.nativeState}
-                          {e.accountingRefund.requiresReview
-                            ? " · Finance review required; reconcile the existing accounting outcome."
-                            : " · Confirmed cash already returned"}
-                        </small>
-                      )}
-                      {e.accountingApplication && (
-                        <small>
-                          {e.accountingApplication.creditNumber} to{" "}
-                          {e.accountingApplication.invoiceNumber}
-                          {" · "}
-                          {money(
-                            e.accountingApplication.amount,
-                            e.accountingApplication.currency,
-                          )}
-                          {e.accountingApplication.cancellation && (
-                            <>
-                              {" · Canceled: "}
-                              {e.accountingApplication.cancellation.reason}
-                              {" · "}
-                              {e.accountingApplication.cancellation.created_at}
-                              {" · Reserved capacity released"}
-                            </>
-                          )}
-                        </small>
-                      )}
-                    </>,
-                    e.checkout ? (
-                      <div>
-                        <CheckoutAction
-                          key={e.id}
-                          effectId={e.id}
-                          checkout={e.checkout}
-                        />
-                        <small>
-                          {e.checkout.state === "superseded"
-                            ? "Superseded checkout"
-                            : "Current checkout"}
-                          {" · Current invoice balance: "}
-                          {money(
-                            e.checkout.currentBalance,
-                            e.checkout.currency,
-                          )}
-                        </small>
-                        {e.checkout.replacementReason && (
-                          <small>
-                            Replacement reason: {e.checkout.replacementReason}
-                          </small>
-                        )}
-                        {e.error && <small role="alert">{e.error}</small>}
-                        {["pending", "running", "unknown"].includes(
-                          e.state,
-                        ) && (
-                          <small>
-                            {e.state === "pending"
-                              ? "Awaiting explicit provider send. No new payment has been recorded."
-                              : "Reconciliation required. Verify the existing provider outcome before replacing checkout."}
-                          </small>
-                        )}
-                      </div>
-                    ) : (
-                      (e.error ??
-                      e.external_ref ??
-                      "Awaiting configured provider processing")
-                    ),
-                    can("finance", "support") ? (
-                      <div>
-                        {e.provider === "stripe" &&
-                          e.kind === "checkout" &&
-                          e.state === "completed" && (
-                            <button
-                              onClick={() =>
-                                void run(() =>
                                   request(
-                                    `/api/effects/${encodeURIComponent(e.id)}/refresh-checkout`,
+                                    `/api/effects/${encodeURIComponent(e.id)}/close-checkout`,
                                     { method: "POST" },
                                   ),
-                                ).catch(() => {})
-                              }
-                            >
-                              Refresh checkout status
-                            </button>
-                          )}
-
-                        {can("finance") &&
-                          !actor.accountId &&
-                          e.checkout?.canClose &&
-                          button("Close checkout link", () =>
-                            open(
-                              "Close checkout link",
-                              [],
-                              () =>
-                                request(
-                                  `/api/effects/${encodeURIComponent(e.id)}/close-checkout`,
-                                  { method: "POST" },
-                                ),
-                              `Close the ${e.checkout.invoiceNumber} checkout for ${money(e.checkout.amount, e.checkout.currency)}. The buyer will no longer be able to use the old link. This does not record a payment or prepare a replacement. If the outcome is uncertain, refresh and reconcile before continuing.`,
-                              "Confirm close checkout",
-                            ),
-                          )}
-                        {can("finance") &&
-                          !actor.accountId &&
-                          e.checkout?.canRenew &&
-                          Number.isSafeInteger(e.checkout.currentBalance) &&
-                          e.checkout.currentBalance > 0 &&
-                          button("Review checkout replacement", () => {
-                            const reviewed = {
-                              effectId: e.id,
-                              reviewVersion: e.checkout.reviewVersion,
-                              amount: e.checkout.currentBalance,
-                            };
-                            open(
-                              "Review checkout replacement",
-                              [
-                                {
-                                  name: "reason",
-                                  label:
-                                    "Buyer-visible reason for checkout replacement",
-                                  type: "textarea",
-                                  maxLength: 1000,
-                                },
-                              ],
-                              (values) =>
-                                command("stripe.checkout.renew", {
-                                  ...reviewed,
-                                  reason: values.reason,
-                                }),
-                              <>
-                                <p>Invoice {e.checkout.invoiceNumber}</p>
-                                <p>
-                                  Original frozen amount:{" "}
-                                  {money(
-                                    e.checkout.amount,
-                                    e.checkout.currency,
-                                  )}
-                                </p>
-                                <p>
-                                  Reviewed replacement amount (current invoice
-                                  balance):{" "}
-                                  {money(reviewed.amount, e.checkout.currency)}
-                                </p>
-                                <p>
-                                  The old checkout will be superseded. The
-                                  replacement remains pending until finance
-                                  explicitly sends it. This records no payment.
-                                  If the balance or checkout changes, refresh
-                                  and review again.
-                                </p>
-                              </>,
-                              "Prepare replacement checkout",
-                            );
-                          })}
-
-                        {can("finance") &&
-                          e.provider === "quickbooks" &&
-                          e.kind === "invoice" &&
-                          e.state === "completed" && (
-                            <AccountingBalanceReview
-                              effectId={e.id}
-                              latest={e.accountingBalance ?? null}
-                              refresh={refresh}
-                            />
-                          )}
-                        <div className="actions">
+                                `Close the ${e.checkout.invoiceNumber} checkout for ${money(e.checkout.amount, e.checkout.currency)}. The buyer will no longer be able to use the old link. This does not record a payment or prepare a replacement. If the outcome is uncertain, refresh and reconcile before continuing.`,
+                                "Confirm close checkout",
+                              ),
+                            )}
                           {can("finance") &&
-                            e.accountingApplication?.canCancel &&
-                            button("Cancel unsent credit application", () => {
+                            !actor.accountId &&
+                            e.checkout?.canRenew &&
+                            Number.isSafeInteger(e.checkout.currentBalance) &&
+                            e.checkout.currentBalance > 0 &&
+                            button("Review checkout replacement", () => {
                               const reviewed = {
                                 effectId: e.id,
-                                reviewVersion:
-                                  e.accountingApplication.reviewVersion,
-                                amount: e.accountingApplication.amount,
+                                reviewVersion: e.checkout.reviewVersion,
+                                amount: e.checkout.currentBalance,
                               };
                               open(
-                                "Cancel unsent credit application",
+                                "Review checkout replacement",
                                 [
                                   {
                                     name: "reason",
-                                    label: "Cancellation reason",
+                                    label:
+                                      "Buyer-visible reason for checkout replacement",
                                     type: "textarea",
                                     maxLength: 1000,
                                   },
                                 ],
                                 (values) =>
-                                  command("quickbooks.credit.cancel", {
+                                  command("stripe.checkout.renew", {
                                     ...reviewed,
                                     reason: values.reason,
                                   }),
-                                `Cancel ${money(reviewed.amount, e.accountingApplication.currency)} from ${e.accountingApplication.creditNumber} to ${e.accountingApplication.invoiceNumber}. This releases its reserved accounting capacity and retains the history. The native credit, invoice and cash remain unchanged. Only a never-started application can be canceled.`,
-                                "Confirm cancellation",
+                                <>
+                                  <p>Invoice {e.checkout.invoiceNumber}</p>
+                                  <p>
+                                    Original frozen amount:{" "}
+                                    {money(
+                                      e.checkout.amount,
+                                      e.checkout.currency,
+                                    )}
+                                  </p>
+                                  <p>
+                                    Reviewed replacement amount (current invoice
+                                    balance):{" "}
+                                    {money(
+                                      reviewed.amount,
+                                      e.checkout.currency,
+                                    )}
+                                  </p>
+                                  <p>
+                                    The old checkout will be superseded. The
+                                    replacement remains pending until finance
+                                    explicitly sends it. This records no
+                                    payment. If the balance or checkout changes,
+                                    refresh and review again.
+                                  </p>
+                                </>,
+                                "Prepare replacement checkout",
                               );
                             })}
-                          {(e.kind !== "refund" || can("finance")) &&
-                            e.state === "pending" &&
-                            e.checkout?.state !== "superseded" &&
-                            button("Send to provider", () => {
-                              void run(() =>
-                                request(`/api/effects/${e.id}/execute`, {
-                                  method: "POST",
-                                }),
-                              ).catch(() => {});
-                            })}
+
                           {can("finance") &&
-                            e.kind === "refund" &&
-                            e.state === "completed" &&
-                            button("Refresh refund status", () => {
-                              void run(() =>
-                                request(`/api/effects/${e.id}/refresh-refund`, {
-                                  method: "POST",
-                                }),
-                              ).catch(() => {});
-                            })}
-                          {(e.kind !== "refund" || can("finance")) &&
-                            e.state === "unknown" &&
-                            button("Check provider outcome", () => {
-                              void run(() =>
-                                request(`/api/effects/${e.id}/reconcile`, {
-                                  method: "POST",
-                                }),
-                              ).catch(() => {});
-                            })}
+                            e.provider === "quickbooks" &&
+                            e.kind === "invoice" &&
+                            e.state === "completed" && (
+                              <AccountingBalanceReview
+                                effectId={e.id}
+                                latest={e.accountingBalance ?? null}
+                                refresh={refresh}
+                              />
+                            )}
+                          <div className="actions">
+                            {can("finance") &&
+                              e.accountingApplication?.canCancel &&
+                              button("Cancel unsent credit application", () => {
+                                const reviewed = {
+                                  effectId: e.id,
+                                  reviewVersion:
+                                    e.accountingApplication.reviewVersion,
+                                  amount: e.accountingApplication.amount,
+                                };
+                                open(
+                                  "Cancel unsent credit application",
+                                  [
+                                    {
+                                      name: "reason",
+                                      label: "Cancellation reason",
+                                      type: "textarea",
+                                      maxLength: 1000,
+                                    },
+                                  ],
+                                  (values) =>
+                                    command("quickbooks.credit.cancel", {
+                                      ...reviewed,
+                                      reason: values.reason,
+                                    }),
+                                  `Cancel ${money(reviewed.amount, e.accountingApplication.currency)} from ${e.accountingApplication.creditNumber} to ${e.accountingApplication.invoiceNumber}. This releases its reserved accounting capacity and retains the history. The native credit, invoice and cash remain unchanged. Only a never-started application can be canceled.`,
+                                  "Confirm cancellation",
+                                );
+                              })}
+                            {(e.kind !== "refund" || can("finance")) &&
+                              e.state === "pending" &&
+                              e.checkout?.state !== "superseded" &&
+                              button("Send to provider", () => {
+                                void run(() =>
+                                  request(`/api/effects/${e.id}/execute`, {
+                                    method: "POST",
+                                  }),
+                                ).catch(() => {});
+                              })}
+                            {can("finance") &&
+                              e.kind === "refund" &&
+                              e.state === "completed" &&
+                              button("Refresh refund status", () => {
+                                void run(() =>
+                                  request(
+                                    `/api/effects/${e.id}/refresh-refund`,
+                                    {
+                                      method: "POST",
+                                    },
+                                  ),
+                                ).catch(() => {});
+                              })}
+                            {(e.kind !== "refund" || can("finance")) &&
+                              e.state === "unknown" &&
+                              button("Check provider outcome", () => {
+                                void run(() =>
+                                  request(`/api/effects/${e.id}/reconcile`, {
+                                    method: "POST",
+                                  }),
+                                ).catch(() => {});
+                              })}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      ""
-                    ),
-                  ],
-                )}
-              </>
-            )}
-            {extra.callbacks?.length > 0 && (
-              <>
-                <h2>Payment and refund confirmations</h2>
-                {table(
-                  ["Event", "Operation", "Status", "Review", "Actions"],
-                  extra.callbacks,
-                  (c: Item) => [
-                    c.event_id,
-                    c.kind === "refund" ? "Refund" : "Payment",
-                    c.state,
-                    c.error ?? "",
-                    can("finance") &&
-                    ["waiting", "blocked", "failed"].includes(c.state)
-                      ? button("Retry verification", () => {
-                          void run(() =>
-                            request(`/api/provider-callbacks/${c.id}/retry`, {
-                              method: "POST",
-                            }),
-                          ).catch(() => {});
-                        })
-                      : "",
-                  ],
-                )}
-              </>
-            )}
-          </>
+                      ) : (
+                        ""
+                      ),
+                    ],
+                  )}
+                </>
+              )}
+              {extra.callbacks?.length > 0 && (
+                <>
+                  <h2>Payment and refund confirmations</h2>
+                  {table(
+                    ["Event", "Operation", "Status", "Review", "Actions"],
+                    extra.callbacks,
+                    (c: Item) => [
+                      c.event_id,
+                      c.kind === "refund" ? "Refund" : "Payment",
+                      c.state,
+                      c.error ?? "",
+                      can("finance") &&
+                      ["waiting", "blocked", "failed"].includes(c.state)
+                        ? button("Retry verification", () => {
+                            void run(() =>
+                              request(`/api/provider-callbacks/${c.id}/retry`, {
+                                method: "POST",
+                              }),
+                            ).catch(() => {});
+                          })
+                        : "",
+                    ],
+                  )}
+                </>
+              )}
+            </PageSection>
+          </PageSections>
         )}
         {page === "Returns" && (
           <>
@@ -6512,6 +6982,7 @@ function PasswordChangeForm({
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
+    <DemoNotice />
     {location.pathname === "/quickbooks/callback" ? (
       <QuickBooksCallback />
     ) : location.pathname === "/quickbooks/organization/callback" ? (

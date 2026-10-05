@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 // Real synthetic browser/HTTP journeys; no provider requests or finance qualification.
 import { test, expect, type Page } from "@playwright/test";
 const origin = (n = 0) => `http://127.0.0.1:${3202 + n}`;
@@ -10,14 +14,11 @@ const control = (p: Page) =>
   panel(p).getByRole("region", { name: "Original journal retry", exact: true });
 const exact = (p: Page) =>
   control(p).getByRole("region", {
-    name: "Exact original retry review",
+    name: "Review journal preparation",
     exact: true,
   });
 async function billing(p: Page) {
-  await p
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(p, "Stock journals");
   await expect(panel(p)).toBeVisible();
 }
 async function signIn(p: Page, n = 0, role = "admin") {
@@ -55,20 +56,20 @@ async function open(p: Page, n = 0) {
 }
 async function review(p: Page) {
   await control(p)
-    .getByRole("button", { name: "Load original retry review", exact: true })
+    .getByRole("button", { name: "Review cancelled journal", exact: true })
     .click();
   await control(p)
     .getByLabel("Original retry reason", { exact: true })
     .fill("Synthetic separately reviewed fresh original attempt");
   await control(p)
-    .getByRole("button", { name: "Review fresh original retry", exact: true })
+    .getByRole("button", { name: "Review new journal", exact: true })
     .click();
   await expect(exact(p).getByRole("heading")).toBeFocused();
   expect(await exact(p).locator("input,textarea,select").count()).toBe(0);
 }
 async function confirm(p: Page) {
   await exact(p)
-    .getByRole("button", { name: "Prepare fresh original retry", exact: true })
+    .getByRole("button", { name: "Prepare new journal", exact: true })
     .click();
 }
 async function retained(p: Page) {
@@ -133,7 +134,7 @@ test("browser: original retry refuses a substituted review and preserves uncerta
     { times: 1 },
   );
   await control(page)
-    .getByRole("button", { name: "Load original retry review", exact: true })
+    .getByRole("button", { name: "Review cancelled journal", exact: true })
     .click();
   await expect(control(page).getByRole("alert")).toContainText(
     "could not be verified",
@@ -162,7 +163,7 @@ test("browser: original retry refuses a substituted review and preserves uncerta
   );
   await confirm(page);
   await expect(control(page).getByRole("alert")).toContainText(
-    "reply could not be verified",
+    "We couldn't confirm this journal preparation",
   );
   const kept = await retained(page);
   expect(kept).not.toBeNull();
@@ -273,13 +274,13 @@ test("browser: original retry preserves a competing retained request that arrive
   );
   await confirm(page);
   await expect(control(page).getByRole("alert")).toContainText(
-    "recovery evidence changed",
+    "saved preparation changed",
   );
   expect(sent).toHaveLength(0);
   expect(await exact(page).innerText()).toBe(fixed);
   expect(JSON.parse((await retained(page))!)).toEqual(competing);
   await exact(page)
-    .getByRole("button", { name: "Close original retry review", exact: true })
+    .getByRole("button", { name: "Close journal review", exact: true })
     .click();
   await recoverReview(page);
   await expect(exact(page)).toContainText(
@@ -408,7 +409,7 @@ test("browser: original retry sends nothing without durable storage or Web Locks
 async function recoverReview(p: Page) {
   await control(p)
     .getByRole("button", {
-      name: "Review retained original retry attempt",
+      name: "Review saved journal preparation",
       exact: true,
     })
     .click();
@@ -417,7 +418,7 @@ async function recoverReview(p: Page) {
 async function recover(p: Page) {
   await exact(p)
     .getByRole("button", {
-      name: "Recover exact original retry attempt",
+      name: "Recover saved preparation",
       exact: true,
     })
     .click();
@@ -442,13 +443,10 @@ test("browser: original retry abandons late reads and retains late committed pre
     await route.fulfill({ response }).catch(() => {});
   });
   await control(page)
-    .getByRole("button", { name: "Load original retry review", exact: true })
+    .getByRole("button", { name: "Review cancelled journal", exact: true })
     .click();
   await readArrived;
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   releaseRead();
   await page.unroute(readPath);
   await billing(page);
@@ -478,21 +476,18 @@ test("browser: original retry abandons late reads and retains late committed pre
   await postArrived;
   const saved = await retained(page);
   expect(saved).not.toBeNull();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   releasePost();
   await page.unroute(commandPath);
   await billing(page);
   expect(await retained(page)).toBe(saved);
   await recoverReview(page);
   await exact(page)
-    .getByRole("button", { name: "Close original retry review", exact: true })
+    .getByRole("button", { name: "Close journal review", exact: true })
     .click();
   await expect(
     control(page).getByRole("button", {
-      name: "Review retained original retry attempt",
+      name: "Review saved journal preparation",
       exact: true,
     }),
   ).toBeFocused();

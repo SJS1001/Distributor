@@ -1,3 +1,7 @@
+import {
+  navigateWorkspace,
+  navigateAccounting,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -19,10 +23,7 @@ async function signIn(page: Page, email = "admin@example.test") {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(page, "Inventory costs");
   await page
     .getByRole("button", { name: "Load stock cost review", exact: true })
     .click();
@@ -331,10 +332,7 @@ test("browser: phone correction retries exact attempts, requires separate financ
     await expect(
       other.getByRole("heading", { name: "Overview", exact: true }),
     ).toBeVisible();
-    await other
-      .getByRole("navigation")
-      .getByRole("button", { name: "Billing", exact: true })
-      .click();
+    await navigateAccounting(other, "Inventory costs");
     await other
       .getByRole("button", { name: "Load stock cost review", exact: true })
       .click();
@@ -445,10 +443,7 @@ test("browser: phone correction retries exact attempts, requires separate financ
     await signInIfNeeded();
     async function signInIfNeeded() {
       // The original preparer's session remains signed in after reload.
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Billing", exact: true })
-        .click();
+      await navigateAccounting(page, "Inventory costs");
       await page
         .getByRole("button", { name: "Load stock cost review", exact: true })
         .click();
@@ -580,21 +575,14 @@ test("browser: correction reads discard responses after navigation and sign-out"
       .getByRole("button", { name: "Refresh cost corrections", exact: true })
       .click();
     await reading;
-    if (action === "navigate")
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Overview", exact: true })
-        .click();
+    if (action === "navigate") await navigateWorkspace(page, "Overview");
     else
       await page.getByRole("button", { name: "Sign out", exact: true }).click();
     release();
     await page.unrouteAll({ behavior: "wait" });
     await expect(panel(page)).toHaveCount(0);
     if (action === "navigate") {
-      await page
-        .getByRole("navigation")
-        .getByRole("button", { name: "Billing", exact: true })
-        .click();
+      await navigateAccounting(page, "Inventory costs");
       await page
         .getByRole("button", { name: "Load stock cost review", exact: true })
         .click();

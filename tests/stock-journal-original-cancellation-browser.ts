@@ -1,3 +1,7 @@
+import {
+  navigateAccounting,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 // Public browser/HTTP journeys with synthetic isolated originals; no provider IO.
 import { test, expect, type Page } from "@playwright/test";
 const origin = (n = 0) => `http://127.0.0.1:${3196 + n}`;
@@ -17,10 +21,7 @@ const exact = (p: Page) =>
     exact: true,
   });
 async function billing(p: Page) {
-  await p
-    .getByRole("navigation")
-    .getByRole("button", { name: "Billing", exact: true })
-    .click();
+  await navigateAccounting(p, "Stock journals");
   await expect(panel(p)).toBeVisible();
 }
 async function signIn(p: Page, n = 0, role = "admin") {
@@ -482,10 +483,7 @@ test("browser: original cancellation abandons late reads and preserves a late co
     })
     .click();
   await readArrived;
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   releaseRead();
   await page.unroute(readPath);
   await billing(page);
@@ -516,10 +514,7 @@ test("browser: original cancellation abandons late reads and preserves a late co
   await postArrived;
   const saved = await retained(page);
   expect(saved).not.toBeNull();
-  await page
-    .getByRole("navigation")
-    .getByRole("button", { name: "Overview", exact: true })
-    .click();
+  await navigateWorkspace(page, "Overview");
   releasePost();
   await page.unroute(postPath);
   await billing(page);

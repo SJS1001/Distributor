@@ -191,7 +191,9 @@ export class InventoryQuantityCorrections {
       "Carrying quantity differs from physical stock.",
     );
     const reserved = this.store.get<{ quantity: number }>(
-      "SELECT COALESCE(SUM(quantity-consumed-released),0) AS quantity FROM inventory_allocations WHERE org_id=? AND unit_id=?",
+      "SELECT (SELECT COALESCE(SUM(quantity-consumed-released),0) FROM inventory_allocations WHERE org_id=? AND unit_id=?)+(SELECT COALESCE(SUM(quantity-settled),0) FROM inventory_incoming_holds WHERE org_id=? AND unit_id=?) AS quantity",
+      actor.orgId,
+      unit.id,
       actor.orgId,
       unit.id,
     )!.quantity;
