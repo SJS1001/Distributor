@@ -21,4 +21,4 @@ The proposed aggregate is a new shared contract and extends the dashboard baseli
 
 ## Publication status
 
-No GitHub mutation or account switch was attempted. GET /user returned `SJS1001`; the recorded mutation/publication identity check expects `sjsmithbot`. The available GitHub CLI account inventory lists only SJS1001. This draft retains the exact proposed issue without changing credentials or treating coordination input as new owner authorization. Issue intake is separate from delivery of the already authorized source snapshot.
+No GitHub mutation or global account switch was attempted. The default profile returned SJS1001, but a subsequently identified existing profile authenticates as sjsmithbot. That profile reports pull=true and push=false for Distributor. A fresh issue listing found only issues #1 (saved filters/history), #2 (category tabs) and #3 (bundle splitting); none covers this aggregate. The exact proposal remains a draft: coordination input does not independently authorize a new external issue. No implementation or access change was made. Issue intake remains separate from delivery of the already authorized source snapshot.
