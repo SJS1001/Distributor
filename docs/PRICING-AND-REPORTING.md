@@ -1,6 +1,6 @@
 # Pricing, freight and reports
 
-Implemented in the current schema27 candidate. This guide describes the code;
+Implemented in the schema27 release. This guide describes the code;
 see WORKFLOW-COMPLETION-2026-10-05.md for verification and deployment status.
 
 ## Set customer prices

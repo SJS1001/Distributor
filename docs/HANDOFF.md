@@ -3369,3 +3369,14 @@ CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
 - Final full workstation suite passed6,038/6,038, zero failures/skips/cancellations (312.6s). Final override, shipping and scanner browser journeys and five reporting journeys passed. Typecheck, build, formatting and plan validation passed. Original failed receipts remain in ignored local evidence.
 - Local Docker image built and uploaded as workflow27-20261005, digest sha256:90fea9be744f197928b2f2a9fdf60306529317a40fa54c773cbbdf1240770ccc. No activation yet; live schema26 fingerprint freshly verified. Prepared encrypted backup, isolated restore, clone migration/conservation and rollback-pair helpers in ignored local evidence.
 - Source commit/push and authorized one-Machine Canadian pilot maintenance next. No CI/runners, PR or merge. Scanner provider remains unconfigured, real iPhone Safari and broader product gates remain unqualified.
+
+- Release source committed/pushedd65610e. Existing writer stopped; fresh schema26 encrypted backup downloaded. First isolated restore attempt could not fetch the old image because Docker registry authentication was missing; renewed registry login, pulled exact previous digest and restored successfully with network disabled. Failure and successful retry logs retained privately. Candidate image installation remains in maintenance; clone conservation checks precede activation.
+
+- Candidate source verification matched388 files. Schema26→27 fresh-clone upgrade preserved all806 rows across174 preexisting nonmetadata tables, with source raw hash unchanged and integrity/foreign-key checks passed. Candidate activation and normal process restart dispatched only after review; final HTTP/role/browser checks still pending.
+
+### 2026-10-05 workflow release live
+
+- Source d65610e/schema27 deployed to existing Toronto machine after encrypted restore and clone-conservation review. Existing normal app process resumed; current schema inspection and HTTP health passed.
+- Live1440/390 customer/admin sign-in, role isolation, wholesale-cost and optional threshold controls, reports, manufacturer library/documents/reload/return/logout passed; zero page errors. Screenshot inspection completed. Live controls were read-only; policy checkbox only unsaved form state. Actual override mutation proof is the passing local journey.
+- Initial post-deploy inspection preceded VM startup; retry succeeded. Live harness initially expected optional limit fields while disabled, corrected to reveal unsaved fields. Earlier failures retained. Receipt docs/evidence/LIVE-PRICING-WORKFLOWS-2026-10-05.md.
+- Source and release evidence are being committed/pushed; no PR/merge/CI. Actual internal messaging remains unconfigured; physical iPhone Safari and broader provider/operational gates remain unqualified. No fabricated business limits, cost or SKU mappings seeded.

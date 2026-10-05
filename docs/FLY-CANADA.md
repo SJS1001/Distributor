@@ -236,3 +236,7 @@ rotate both published passwords and revoke their sessions.
 linked beneath Administration. Email/SMS buttons open local composers, not an
 internal delivery service. Physical iPhone behavior remains to be qualified; see
 [scanning](SCANNING.md). No additional server or schema change is needed.
+
+## Pricing and workflow upgrade, 2026-10-05
+
+Current pilot source is `d65610e`, schema27, image `workflow27-20261005` on the same Toronto Machine. See the [pricing/workflow release receipt](evidence/LIVE-PRICING-WORKFLOWS-2026-10-05.md) for the encrypted restore,806-row conservation check, live browser proof and retained rollback pair. The optional internal scanner relay is implemented but unconfigured; [delivery setup](SCANNER-LINK-DELIVERY.md) describes the boundary.
