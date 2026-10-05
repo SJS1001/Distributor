@@ -3234,3 +3234,16 @@ next deployment. Initial stale portal-link count and decoder minified exception
 name failures retained; repaired using stable decoder getKind, blank-frame QR
 check passes. Signed-in scanner routing guard added during self-review; final
 browser regression in progress. No CI/PR/merge or new cloud lane.
+
+2026-10-05T18:35Z — Customer/scanner release943af34 deployed to existing Toronto
+pilot via local-only build, image aeff4bc28145f7a24462a6b6d388c1365bb4938989e2bccd46b9312767b8e768;
+343 live source files match frozen manifest. Final machine started/health1of1.
+Final TypeScript/build/backend3/browser11/format/whitespace/plan pass. Live1440/390
+customer+admin prefill/clicklogin/expectedroles/logout, buyer staff-access403,
+public/admin scanner navigation/reload, QR, composerlinks, notices, nooverflow or
+pageerrors pass; screenshots inspected. Initial live harness helper path corrected
+before successful final check, failure retained. Physical iPhone and internal
+server-sent email/SMS remain outstanding; device composers only. See
+[evidence/LIVE-CUSTOMER-SCANNER-2026-10-05.md](evidence/LIVE-CUSTOMER-SCANNER-2026-10-05.md).
+Source and receipt push next under freshly verified sjsmithbot write access.
+No PR/merge/CI. Unrelated Sites/cache preserved.
