@@ -8,15 +8,15 @@ async function contend(
   f: ReturnType<typeof fixture>,
   same = false,
 ) {
-  let revision = 0;
+  // Both contenders need a current quote. Saving the same cart again would
+  // invalidate the first quote before stock or credit contention is exercised.
+  const cart = f.app.orders.saveCart(f.actor, "cart", {
+    accountId: f.buyer,
+    warehouseId: f.w1,
+    revision: 0,
+    lines: [{ productId: f.product, quantity: 1 }],
+  });
   const quotes = [0, 1].map((i) => {
-    const cart = f.app.orders.saveCart(f.actor, `cart-${i}`, {
-      accountId: f.buyer,
-      warehouseId: f.w1,
-      revision,
-      lines: [{ productId: f.product, quantity: 1 }],
-    });
-    revision = cart.revision;
     return f.app.orders.quote(f.actor, `quote-${i}`, {
       cartId: cart.id,
       revision: cart.revision,

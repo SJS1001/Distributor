@@ -3309,3 +3309,63 @@ Receipt: docs/evidence/LIVE-GREE-AVAILABILITY-2026-10-05.md. Docs verification:
 441 Markdown/2181 links pass. Source commit8476731 deployed; evidence commit/push
 next. No CI/PR/merge. Public manufacturer library remains separate from fictional
 saleable catalog; real-device Safari and internal email/SMS remain unqualified.
+
+2026-10-05 — Owner expanded iterative completion to customer MSRP multipliers,
+per-account detailed/net-only prices, historical price changes/sold amounts and
+adjustments, shipping included/extra, customer reporting and customizable graphical
+admin workspace. Three explicit Codex subagents dispatched: pricing_policy owns
+server/shared/schema/history (Astra high), pricing_experience owns frontend pricing
+and Customers tabs (Sol medium), spec_gap_audit performs independent source/spec
+audit (Astra high). Parent owns catalog paging/product focus and reporting. Active
+ledger: WORKFLOW-COMPLETION-2026-10-05.md. No separate cloud launch claimed. Prior
+release evidence pushed486880f, deployed source8476731/schema26 remains live. No
+CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
+
+### 2026-10-05 workflow continuation — reporting and shipping
+
+- Independent source audit completed: `docs/WORKFLOW-GAP-AUDIT-2026-10-05.md` records six concrete code/wiring gaps with acceptance criteria. No product gate inferred from the audit.
+- Parent added browser-scoped, org/user-scoped report visibility/order preferences, exposed buyer Reports using existing account-scoped aggregates, improved history/stock chart presentation, changed staff catalog to replacing cursor pages and focused product dialog. Local source only.
+- Pricing backend (Astra high) has six focused pricing tests and two frozen-schema26 upgrade tests passing. Broader recovery rerun is pending stable shipping schema integration; preserve earlier failed receipts rather than claim all passing.
+- Pricing interface (Sol medium) owns customer pricing controls and remaining Returns/Imports task tabs. Native browser journey originally passed then fresh integration run paused because concurrent shipping schema assembly temporarily causes SCHEMA_DRIFT. This is a local in-progress failure, not a live outage.
+- Shipping specialist (Astra high) launched with quote/order/invoice snapshot and explicit tax, partial-shipment/retry and credit safety responsibilities. Shared schema/HTTP changes coordinated with pricing backend. No external provider actions.
+- Pricing backend assigned next bounded financial-report projection/API work: historical invoice line prices, credits and cash movements separately, valid date ranges, account scope and currency separation. Parent will integrate visual report UI.
+- No separate cloud session, CI job, PR, push or deployment performed in this continuation. Live remains the prior schema26 release.
+
+### 2026-10-05 workflow continuation — approved price overrides
+
+- Owner explicitly approved reviewed equipment cost, one-off selling-price overrides, mandatory reasons, maximum-discount/minimum-margin limits and separate authorized exception approval; buyer cost secrecy is required. Actual receipt cost history stays separate from reviewed pricing cost.
+- Pricing backend owns catalog cost/policy/history; shipping specialist owns order override lifecycle; pricing interface owns admin controls and browser workflow after their Gree/shipping handoffs. Unconfigured policy or missing cost requires approval. Discount baseline is ordinary negotiated customer net price; margin excludes tax/freight. Self-approval is prohibited.
+- Combined stable local checkpoint passed 237 tests covering enrollment, reference, pricing, sales reporting, shipping, authority, frozen upgrade and recovery/activation. New override schema work follows this checkpoint and is not yet verified.
+- Parent reporting/catalog build and five browser journeys passed after phone heading/date-control and calendar-spacing fixes. Report preferences remain browser-local per organization/user, not cross-device. Mobile Chromium evidence is not real iPhone Safari evidence.
+- Prior release remains live; these changes have not been committed or deployed. Internal scanner delivery is still outstanding. No CI, PR, merge, or separate cloud session launched.
+
+### 2026-10-05 workflow continuation — override and scanner verification
+
+- Order override lifecycle implemented: separate current administrator for exceptions, exact current price/cost/policy evidence, pending/rejected blocks, one-off consumption and immutable accepted price. Specialist checkpoint 78/78 focused checks and additional six override tests passed; browser verification and independent security review remain in progress.
+- Independent review identified missing mandatory-MFA-enrollment revalidation for a historical approving administrator. Pricing specialist owns corrective catalog/order gates and regression tests; do not treat earlier checkpoints as final security acceptance.
+- Parent added authenticated internal scanner-link adapter/HTTP/UI with org binding, validated recipient, quotas, fixed scanner URL, exact retained attempt outcomes and ambiguity-safe recovery. Optional HTTPS relay configuration is disabled unless explicitly provisioned; no actual messaging provider is configured or qualified, and no real message was sent.
+- Scanner browser journey passed on 390px Chromium: public sign-in boundary, dropped accepted response recovered with the same key/body and only one synthetic send, invalid-phone correction, no horizontal overflow. Four initial backend tests passed; shipping specialist now performs independent scanner security/retry review.
+- Full workstation backend regression suite is running in ignored local-evidence/workflow-full-tests-20261005.log. No CI/runners. All this work remains uncommitted and undeployed at this checkpoint.
+
+### 2026-10-05 pricing interface checkpoint — reviewed offers
+
+- Uncommitted working tree on `486880f`, local schema27 synthetic fixtures, Node24.16/Chromium only. Added admin reviewed wholesale-cost controls and cursor history in product Pricing tab, configurable maximum-discount/minimum-margin rules in Customers Pricing, and saved-cart one-off net-price review/clear/independent approval controls. Reasons are mandatory. Pending mutation recovery is scoped to organization/actor/record and retains exact command, revision, payload and idempotency key across reload; server authority remains required.
+- Focused `tests/price-overrides.playwright.config.ts` journey passed: cost60 CAD, maximum discount10%, minimum margin20%; offer90 activates; offer50 requires another admin; proposing admin has no approval control; dropped committed response retries the identical request after reload; independent approver approves; buyer quote shows50 CAD net per unit and113 CAD total with a neutral adjusted-price marker, without wholesale cost, margin or proposal reasons. Phone390px has no horizontal overflow or JavaScript page errors. Explicit-clear browser verification follows the latest saved-cart revision refresh.
+- Earlier customer-pricing and Gree-reference browser journeys passed again after the shared recovery changes, using separate output directories to avoid concurrent trace deletion. Typecheck and Vite build passed; existing initial bundle-size warning remains. React Doctor scanned41 changed files with no new findings; aggregate59/Critical is not a product qualification gate.
+- One browser-discovered issue was fixed: the general workspace refresh closed the selling-price panel after successful mutation, hiding resulting status. The editor now refreshes its authoritative read and leaves the review open. Historical failed browser runs remain test-development evidence; current passing checks do not qualify real devices, providers, production operation or deployment. No commit/push/CI/PR/deploy was performed by this interface lane.
+- Final explicit-clear rerun passed (same local fixture, 3.7s journey/6.2s total). Reopening the staff review after the buyer saved the cart obtains the current cart revision; explicit clear then resets the offered-price input to ordinary100 CAD. The previous clear attempt with an older cart revision correctly failed closed rather than overwriting a newer cart review.
+
+### 2026-10-05 workflow regression repair and source freeze
+
+- Initial full workstation suite completed: 6,027/6,038 passed, 11 failed. Original log retained in ignored local-evidence/workflow-full-tests-20261005.log. This was not a passing release.
+- Concurrency and purchasing fixtures incorrectly rewrote shared carts between competing quotes; updated fixtures quote one current cart revision. Focused files pass3/3 and28/28; purchasing original rerun also captured a nondeterministic resubmission failure. Production stale-revision checks remain intact.
+- Billing.issue had a real regression: its new transaction fence blocked authorized read-only exact invoice retries. Fence moved after current authority, native provenance and existing-invoice checks; new financial writes still require a transaction. Added valid unissued shipment refusal with unchanged facts. Invoice authority/shipping/recovery focused run27/27 passed. Earlier recovery failure was a concurrent source-file change during source-conservation checks.
+- Buyer navigation test updated for actual accessible customer menu/current-page semantics and Reports destination; focused checks pass.
+- Scanner independent review fixed response cancellation, strict JSON content type and malformed URL configuration. Nine backend checks and one phone-size synthetic browser journey passed, including simultaneous retries, revoked authority, restore holds and timeout ambiguity. No actual email/SMS delivery is claimed.
+- Override final browser passed, including separate approval, customer cost secrecy and explicit clearing back to ordinary account price. New pricing/reporting and scanner operator guides added. Source freeze and final combined checks next; live still source8476731/schema26. No CI, PR or merge.
+
+### 2026-10-05 frozen workflow release checks
+
+- Final full workstation suite passed6,038/6,038, zero failures/skips/cancellations (312.6s). Final override, shipping and scanner browser journeys and five reporting journeys passed. Typecheck, build, formatting and plan validation passed. Original failed receipts remain in ignored local evidence.
+- Local Docker image built and uploaded as workflow27-20261005, digest sha256:90fea9be744f197928b2f2a9fdf60306529317a40fa54c773cbbdf1240770ccc. No activation yet; live schema26 fingerprint freshly verified. Prepared encrypted backup, isolated restore, clone migration/conservation and rollback-pair helpers in ignored local evidence.
+- Source commit/push and authorized one-Machine Canadian pilot maintenance next. No CI/runners, PR or merge. Scanner provider remains unconfigured, real iPhone Safari and broader product gates remain unqualified.

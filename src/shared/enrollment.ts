@@ -1,3 +1,4 @@
+import type { RequestedReference } from "./catalog-reference.ts";
 export const canadianProvinces = [
   "AB",
   "BC",
@@ -20,6 +21,7 @@ export type EnrollmentConfig = {
   approvalRequired: true;
 };
 export type EnrollmentSubmission = {
+  requestedReference?: RequestedReference;
   businessName: string;
   contactName: string;
   email: string;

@@ -1,6 +1,12 @@
+import { PriceOverridesEditor } from "./price-overrides.tsx";
+import { PriceApprovalPolicyEditor } from "./price-authority.tsx";
+import { readReference } from "./reference-context.ts";
+import { ShippingTermsEditor } from "./shipping-terms.tsx";
+import { shippingSummary } from "../shared/shipping-terms.ts";
 import { ManufacturerCollection } from "./manufacturer-collection.tsx";
 import { Storefront } from "./storefront.tsx";
 import { CustomerPurchasingRules } from "./purchasing-rules.tsx";
+import { CustomerPricingControls } from "./customer-pricing.tsx";
 import { OrderRequests } from "./order-requests.tsx";
 import type { OrderRequest } from "../shared/purchasing.ts";
 import { EnrollmentReview } from "./enrollment-review.tsx";
@@ -238,7 +244,7 @@ function App() {
       publicRoute !== "activate" &&
       !["scanner", "products", "product"].includes(publicRoute)
     )
-      document.title = `${page} · dstrbtr`;
+      document.title = `${actor.role === "buyer" && page === "Overview" ? "Reports" : page} · dstrbtr`;
   }, [actor, data, page, publicRoute]);
   const traversal = useRef<(destination: NavigationIntent) => void>(() => {});
   const setPage = (destination: string) => {
@@ -278,8 +284,24 @@ function App() {
     };
     window.addEventListener("popstate", locationChanged);
     window.addEventListener("hashchange", locationChanged);
+    const requested = readNavigation(window.location.hash);
+    const explicitPage = new URLSearchParams(
+      window.location.hash.replace(/^#\/?/, ""),
+    ).get("page");
+    const reference = readReference(window.location.hash);
     const safe = authorizeNavigation(
-      readNavigation(window.location.hash),
+      actor.role === "buyer" &&
+        !authorizedPages(actor.role).includes(explicitPage ?? "")
+        ? {
+            page: "Shop",
+            ...(reference
+              ? {
+                  referenceFamily: reference.familyId,
+                  referenceModel: reference.modelId ?? undefined,
+                }
+              : {}),
+          }
+        : requested,
       authorizedPages(actor.role),
     );
     if (
@@ -422,6 +444,16 @@ function App() {
   );
   const supplierHistoryOpener = useRef<HTMLElement | null>(null);
   const [amendmentOrderId, setAmendmentOrderId] = useState<string | null>(null);
+  const [priceCart, setPriceCart] = useState<{
+    id: string;
+    revision: number;
+  } | null>(null);
+  const priceOpener = useRef<HTMLElement | null>(null);
+  const [shippingCart, setShippingCart] = useState<{
+    id: string;
+    revision: number;
+  } | null>(null);
+  const shippingTermsOpener = useRef<HTMLElement | null>(null);
   const amendmentOpener = useRef<HTMLElement | null>(null);
   const [reservationOrderId, setReservationOrderId] = useState<string | null>(
     null,
@@ -560,6 +592,9 @@ function App() {
     coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
+    setShippingCart(null);
+    setPriceCart(null);
+    shippingTermsOpener.current = null;
     setCarrierShipmentId(null);
     setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
@@ -747,6 +782,9 @@ function App() {
     setData((current) =>
       current ? { ...current, shipments: [], shipmentNext: null } : current,
     );
+    setShippingCart(null);
+    setPriceCart(null);
+    shippingTermsOpener.current = null;
     setCarrierShipmentId(null);
     void loadShipments(state, true);
   };
@@ -801,6 +839,9 @@ function App() {
     coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
+    setShippingCart(null);
+    setPriceCart(null);
+    shippingTermsOpener.current = null;
     setCarrierShipmentId(null);
     setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
@@ -880,6 +921,9 @@ function App() {
     coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
+    setShippingCart(null);
+    setPriceCart(null);
+    shippingTermsOpener.current = null;
     setCarrierShipmentId(null);
     setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
@@ -1431,7 +1475,7 @@ function App() {
               }
             : {}),
         }),
-      `${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit`).join("\n")}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes. Orders requiring verification await distributor approval without reserving stock or taking payment.`,
+      `${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit${l.priceOverride ? " · reviewed one-off selling price" : ""}`).join("\n")}\n${shippingSummary(quote.shipping, quote.currency)}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes. Orders requiring verification await distributor approval without reserving stock or taking payment.`,
     );
     return { keepDialog: true };
   };
@@ -1992,6 +2036,9 @@ function App() {
     coverageOpener.current = null;
     setDecisionClaim(null);
     decisionOpener.current = null;
+    setShippingCart(null);
+    setPriceCart(null);
+    shippingTermsOpener.current = null;
     setCarrierShipmentId(null);
     setCarrierReplacementId(null);
     setCanadaPostWarehouse(null);
@@ -2006,6 +2053,7 @@ function App() {
     setError("");
   };
   traversal.current = (intent) => {
+    const reference = readReference(window.location.hash);
     const safe = authorizeNavigation(intent, pages);
     if (safe.page !== intent.page)
       setNotice(
@@ -2053,14 +2101,20 @@ function App() {
                 : (data.accounts[0]?.name ?? "Customer portal")}
             </p>
             <h1 id="workspace-title" tabIndex={-1}>
-              {!staff && page === "Billing" ? "Invoices & payments" : page}
+              {!staff && page === "Billing"
+                ? "Invoices & payments"
+                : !staff && page === "Overview"
+                  ? "Reports"
+                  : page}
             </h1>
             <p className="page-description">
               {!staff && page === "Orders"
                 ? "Your orders, approval requests and deliveries."
                 : !staff && page === "Billing"
                   ? "Your invoices, payment records and outstanding balances."
-                  : pageDescriptions[page]}
+                  : !staff && page === "Overview"
+                    ? "Your sales, purchases, spending and pricing history."
+                    : pageDescriptions[page]}
             </p>
           </div>
           <button
@@ -2135,6 +2189,14 @@ function App() {
               key={`${actor.id}:${extra.cartRefresh}`}
               accountId={data.accounts[0].id}
               accountName={data.accounts[0].name}
+              reference={
+                route.referenceFamily
+                  ? {
+                      familyId: route.referenceFamily,
+                      modelId: route.referenceModel ?? null,
+                    }
+                  : undefined
+              }
               prepare={(product) =>
                 placeOrder(data.accounts[0].id, undefined, [
                   { productId: product.id, quantity: 1 },
@@ -2148,6 +2210,7 @@ function App() {
           ))}
         {page === "Overview" && (
           <Overview
+            preferenceScope={`${actor.orgId}:${actor.id}`}
             canReceive={can("warehouse")}
             data={data as any}
             currency={currency}
@@ -2234,6 +2297,7 @@ function App() {
                   (o: Item) => [
                     <>
                       <strong>{accountName(o.account_id)}</strong>
+                      <small>{shippingSummary(o.shipping, currency)}</small>
                       <button
                         type="button"
                         className="record-link"
@@ -2727,8 +2791,76 @@ function App() {
                     resume={(accountId, warehouseId) =>
                       void placeOrder(accountId, warehouseId)
                     }
+                    priceDetails={
+                      can("commercial")
+                        ? (id: string, revision: number) => {
+                            priceOpener.current =
+                              document.activeElement instanceof HTMLElement
+                                ? document.activeElement
+                                : null;
+                            setPriceCart({ id, revision });
+                          }
+                        : undefined
+                    }
+                    shippingDetails={
+                      can("commercial")
+                        ? (id, revision) => {
+                            shippingTermsOpener.current =
+                              document.activeElement instanceof HTMLElement
+                                ? document.activeElement
+                                : null;
+                            setShippingCart({ id, revision });
+                          }
+                        : undefined
+                    }
                     disabled={busy}
                   />
+                )}
+                {priceCart && can("commercial") && (
+                  <section className="panel">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setPriceCart(null);
+                        priceOpener.current?.focus();
+                      }}
+                    >
+                      Close selling price review
+                    </button>
+                    <PriceOverridesEditor
+                      key={`${actor.orgId}:${actor.id}:${priceCart.id}`}
+                      cartId={priceCart.id}
+                      recoveryScope={`${actor.orgId}:${actor.id}`}
+                      onSaved={() => setNotice("Selling price review updated.")}
+                    />
+                  </section>
+                )}
+                {shippingCart && can("commercial") && (
+                  <section className="panel">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setShippingCart(null);
+                        shippingTermsOpener.current?.focus();
+                      }}
+                    >
+                      Close shipping terms
+                    </button>
+                    <ShippingTermsEditor
+                      key={`${actor.orgId}:${actor.id}:${shippingCart.id}`}
+                      cartId={shippingCart.id}
+                      cartRevision={shippingCart.revision}
+                      currency={currency}
+                      recoveryScope={`${actor.orgId}:${actor.id}`}
+                      onSaved={() =>
+                        run(refresh, false, true, "Shipping terms saved.").then(
+                          () => {},
+                        )
+                      }
+                    />
+                  </section>
                 )}
               </div>
             </PageSection>
@@ -2787,6 +2919,8 @@ function App() {
                     disabled={busy}
                     onClick={(event) => {
                       canadaPostOpener.current = event.currentTarget;
+                      setShippingCart(null);
+                      shippingTermsOpener.current = null;
                       setCarrierShipmentId(null);
                       setCarrierReplacementId(null);
                       setCanadaPostWarehouse(data.warehouses[0].id);
@@ -2966,10 +3100,14 @@ function App() {
                           )!.warehouse_id,
                         );
                         canadaPostOpener.current = carrierOpener.current;
+                        setShippingCart(null);
+                        shippingTermsOpener.current = null;
                         setCarrierShipmentId(null);
                         setCarrierReplacementId(null);
                       }}
                       onClose={() => {
+                        setShippingCart(null);
+                        shippingTermsOpener.current = null;
                         setCarrierShipmentId(null);
                         setCarrierReplacementId(null);
                         setCanadaPostWarehouse(null);
@@ -4200,6 +4338,7 @@ function App() {
                 )}
             </div>
             <CatalogMaintenance
+              recoveryScope={`${actor.orgId}:${actor.id}`}
               key={eventViewEpoch}
               canManage={can("commercial")}
               canManageAvailability={actor.role === "admin"}
@@ -4279,7 +4418,17 @@ function App() {
                     )}
                   </>,
                   accountName(i.account_id),
-                  money(i.total, i.currency),
+                  <>
+                    {money(i.total, i.currency)}
+                    <small>{shippingSummary(i.shipping, i.currency)}</small>
+                    {i.shipping?.treatment === "extra" && (
+                      <small>
+                        {i.shipping.charged
+                          ? "Shipping charge is on this invoice."
+                          : "Shipping charge is not on this invoice."}
+                      </small>
+                    )}
+                  </>,
                   money(i.balance, i.currency),
                   <div className="actions">
                     {can("finance") &&
@@ -5356,1627 +5505,1733 @@ function App() {
           </PageSections>
         )}
         {page === "Returns" && (
-          <>
-            {admin && extra.coveragePolicy && (
-              <section>
-                <h2>Warranty coverage policy</h2>
-                <p>
-                  Policy version {extra.coveragePolicy.revision}:{" "}
-                  {extra.coveragePolicy.days} whole UTC days after shipment.
-                  Settings are provisional; eligibility requires review.
-                </p>
-                {extra.coveragePolicy.reason && (
-                  <p>{extra.coveragePolicy.reason}</p>
-                )}
-                {button("Configure warranty coverage", () =>
-                  open(
-                    "Configure warranty coverage policy",
-                    [
-                      {
-                        name: "days",
-                        label: "Coverage duration in days",
-                        type: "number",
-                        value: extra.coveragePolicy.days,
-                      },
-                      reason,
-                    ],
-                    (v) =>
-                      command("warranty.policy", {
-                        ...v,
-                        revision: extra.coveragePolicy.revision,
-                      }),
-                    "This applies to future shipments and provisional assessments of historical sales without a retained shipment policy. Previously retained shipment dates, claim snapshots and inherited replacement dates remain unchanged. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
-                  ),
-                )}
-              </section>
-            )}
-
-            <div className="actions">
-              {can("warranty", "commercial", "buyer") &&
-                button("Submit claim / return", () => {
-                  let selected: SoldSerial | null = data.soldUnits[0] ?? null;
-                  let reviewed: WarrantyCoverage | null = null;
-                  open(
-                    "Request return or warranty review",
-                    [
-                      {
-                        name: "unitId",
-                        label: "Sold serial",
-                        content: (
-                          <ClaimSerialReview
-                            initial={{
-                              items: data.soldUnits,
-                              next: data.soldUnitNext,
-                            }}
-                            onChange={(unit, coverage) => {
-                              selected = unit;
-                              reviewed = coverage;
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        name: "type",
-                        label: "Request type",
-                        options: [
-                          { value: "return", label: "Return" },
-                          { value: "warranty", label: "Warranty" },
-                        ],
-                      },
-                      {
-                        name: "issue",
-                        label: "Issue / reason",
-                        type: "textarea",
-                      },
-                      {
-                        name: "evidence",
-                        label: "Evidence reference",
-                        type: "textarea",
-                      },
-                    ],
-                    (v) => {
-                      if (!selected || selected.id !== v.unitId)
-                        throw new Error(
-                          "Select a currently loaded sold serial.",
-                        );
-                      if (!reviewed)
-                        throw new Error(
-                          "Load and review the claim coverage dates before submitting.",
-                        );
-                      return command("warranty.submit", {
-                        ...v,
-                        accountId: selected.accountId,
-                        ...(reviewed.policy
-                          ? { policyRevision: reviewed.policy.revision }
-                          : {}),
-                      });
-                    },
-                  );
-                })}
-              {can("warranty", "commercial", "buyer") && (
-                <button
-                  className="secondary"
-                  onClick={(event) => {
-                    coverageOpener.current = event.currentTarget;
-                    setCoverageOpen(true);
-                  }}
-                >
-                  Check sold serial coverage
-                </button>
-              )}
-            </div>
-            {coverageOpen && (
-              <SoldCoverage
-                initial={{ items: data.soldUnits, next: data.soldUnitNext }}
-                onClose={() => {
-                  setCoverageOpen(false);
-                  coverageOpener.current?.focus();
-                }}
-              />
-            )}
-            <ClaimQueueControls queue={claimQueue} />
-            {table(
-              ["Claim", "Customer", "Issue", "State", "Actions"],
-              claimQueue.items,
-              (c: Item) => [
-                c.id.slice(0, 8),
-                accountName(c.account_id),
-                c.issue,
-                c.state,
-                <div className="actions">
-                  <RetainedClaimCoverage
-                    key={`${c.id}:${eventViewEpoch}`}
-                    claimId={c.id}
-                  />
-
-                  <button
-                    className="secondary"
-                    onClick={(event) => {
-                      evidenceOpener.current = event.currentTarget;
-                      setEvidenceClaim(c.id);
-                    }}
-                  >
-                    Evidence files
-                  </button>
-                  <button
-                    className="secondary"
-                    onClick={(event) => {
-                      decisionOpener.current = event.currentTarget;
-                      setDecisionClaim(c.id);
-                    }}
-                  >
-                    Claim activity
-                  </button>
-                  {c.state === "submitted" &&
-                    can("warranty") &&
-                    button("Review", () =>
-                      simple(
-                        "Review request",
-                        [
-                          {
-                            name: "approved",
-                            label: "Approve return authorization",
-                            type: "checkbox",
-                          },
-                          reason,
-                        ],
-                        "warranty.review",
-                        (v) => ({ ...v, claimId: c.id }),
-                      ),
-                    )}
-                  {c.state === "approved" &&
-                    can("warehouse") &&
-                    button("Receive return", () =>
-                      simple(
-                        "Receive authorized return",
-                        [
-                          select(
-                            "warehouseId",
-                            "Warehouse",
-                            data.warehouses,
-                            (w) => w.name,
+          <PageSections
+            label="Returns sections"
+            selectedSection={route.section ?? "returns-claims"}
+            selectSection={(section) => updateRoute({ section })}
+            items={[
+              { id: "returns-claims", label: "Claims and returns" },
+              { id: "returns-replacements", label: "Replacements" },
+              ...(can("warranty", "warehouse", "finance", "commercial")
+                ? [{ id: "returns-manufacturers", label: "Manufacturer cases" }]
+                : []),
+              ...(admin
+                ? [{ id: "returns-policy", label: "Coverage policy" }]
+                : []),
+            ]}
+          >
+            <PageSection id="returns-claims">
+              {" "}
+              <div className="actions">
+                {can("warranty", "commercial", "buyer") &&
+                  button("Submit claim / return", () => {
+                    let selected: SoldSerial | null = data.soldUnits[0] ?? null;
+                    let reviewed: WarrantyCoverage | null = null;
+                    open(
+                      "Request return or warranty review",
+                      [
+                        {
+                          name: "unitId",
+                          label: "Sold serial",
+                          content: (
+                            <ClaimSerialReview
+                              initial={{
+                                items: data.soldUnits,
+                                next: data.soldUnitNext,
+                              }}
+                              onChange={(unit, coverage) => {
+                                selected = unit;
+                                reviewed = coverage;
+                              }}
+                            />
                           ),
-                          { name: "bin", label: "Quarantine bin" },
-                          {
-                            name: "serial",
-                            scan: "single",
-                            label: "Scan returned serial",
-                          },
-                        ],
-                        "warranty.receive",
-                        (v) => ({ ...v, claimId: c.id }),
-                      ),
-                    )}
-                  {c.type === "warranty" &&
-                    ["approved", "received", "inspected", "repair"].includes(
-                      c.state,
-                    ) &&
-                    can("warranty") &&
-                    !c.manufacturerCases?.some(
-                      (m: Item) => m.state === "pending",
-                    ) &&
-                    button("Record manufacturer referral", () =>
-                      open(
-                        "Record manufacturer referral",
-                        [
-                          { name: "manufacturer", label: "Manufacturer" },
-                          {
-                            name: "reference",
-                            label: "Manufacturer case reference",
-                          },
-                          {
-                            name: "evidence",
-                            label: "Referral evidence reference",
-                            type: "textarea",
-                          },
-                          reason,
-                        ],
-                        (v) =>
-                          command("warranty.manufacturer.refer", {
-                            ...v,
-                            claimId: c.id,
-                          }),
-                        "Record a referral already arranged outside Distributor. This does not contact the manufacturer, move equipment or authorize a customer credit.",
-                        "Record referral",
-                      ),
-                    )}
-                  {c.state === "received" &&
-                    can("warehouse", "warranty") &&
-                    button("Inspect", () =>
-                      simple(
-                        "Inspect returned equipment",
-                        [
-                          {
-                            name: "findings",
-                            label: "Inspection findings",
-                            type: "textarea",
-                          },
-                        ],
-                        "warranty.inspect",
-                        (v) => ({ ...v, claimId: c.id }),
-                      ),
-                    )}
-                  {["inspected", "repair"].includes(c.state) &&
-                    !c.replacements?.some(
-                      (r: Item) => r.state === "reserved",
-                    ) &&
-                    can("warranty") &&
-                    button("Disposition", () =>
-                      simple(
-                        "Approve stock disposition",
-                        [
-                          {
-                            name: "disposition",
-                            label: "Disposition",
-                            options: ["restock", "scrap", "repair"].map(
-                              (v) => ({ value: v, label: v }),
-                            ),
-                          },
-                          reason,
-                        ],
-                        "warranty.disposition",
-                        (v) => ({ ...v, claimId: c.id }),
-                      ),
-                    )}
-                  {["inspected", "repair"].includes(c.state) &&
-                    !c.credit_id &&
-                    !c.replacements?.some(
-                      (r: Item) => r.state !== "cancelled",
-                    ) &&
-                    can("warranty") &&
-                    button("Approve replacement", () =>
-                      open(
-                        "Approve replacement reservation",
-                        [
-                          {
-                            name: "newUnitId",
-                            label: "Replacement serial",
-                            content: (
-                              <ReplacementSerialSelect
-                                claimId={c.id}
-                                warehouseName={warehouseName}
-                              />
-                            ),
-                          },
-                          {
-                            name: "oldDisposition",
-                            label: "Returned unit at handover",
-                            options: [
-                              { value: "scrap", label: "Scrap" },
-                              {
-                                value: "restock",
-                                label: "Restock after inspection / repair",
-                              },
-                            ],
-                          },
-                          {
-                            name: "coveragePolicy",
-                            label: "Replacement coverage",
-                            options: [
-                              {
-                                value: "inherit_original",
-                                label: "Retain original coverage end date",
-                              },
-                            ],
-                          },
-                          reason,
-                        ],
-                        (v) =>
-                          command("warranty.replacement.reserve", {
-                            ...v,
-                            claimId: c.id,
-                          }),
-                        `Reserve one serial for customer collection or carrier dispatch. The returned unit stays in quarantine until handover. Coverage ends ${c.coverage_end}. Coverage and remedy policies require business qualification.`,
-                        "Reserve replacement",
-                      ),
-                    )}
-                  {c.state === "disposed" &&
-                    !c.credit_id &&
-                    !c.replacements?.some(
-                      (r: Item) => r.state !== "cancelled",
-                    ) &&
-                    can("finance") &&
-                    button("Issue return credit", () =>
-                      simple(
-                        "Approve return credit",
-                        [reason],
-                        "warranty.credit",
-                        (v) => ({ ...v, claimId: c.id }),
-                      ),
-                    )}
-                </div>,
-              ],
-            )}
-            {evidenceClaim && (
-              <WarrantyEvidence
-                key={evidenceClaim}
-                claimId={evidenceClaim}
-                role={actor.role}
-                onClose={() => {
-                  setEvidenceClaim(null);
-                  evidenceOpener.current?.focus();
-                }}
-              />
-            )}
-            {decisionClaim && (
-              <WarrantyDecisions
-                key={decisionClaim}
-                claimId={decisionClaim}
-                buyer={actor.role === "buyer"}
-                onClose={() => {
-                  setDecisionClaim(null);
-                  decisionOpener.current?.focus();
-                }}
-              />
-            )}
-            <section aria-label="Replacement history">
-              <h2>Replacement history</h2>
-              <p>
-                Approved serials are held for customer collection or carrier
-                dispatch. Handover records the scanned serial and recipient,
-                retains original invoice and coverage, and applies the approved
-                returned-unit disposition.
-              </p>
+                        },
+                        {
+                          name: "type",
+                          label: "Request type",
+                          options: [
+                            { value: "return", label: "Return" },
+                            { value: "warranty", label: "Warranty" },
+                          ],
+                        },
+                        {
+                          name: "issue",
+                          label: "Issue / reason",
+                          type: "textarea",
+                        },
+                        {
+                          name: "evidence",
+                          label: "Evidence reference",
+                          type: "textarea",
+                        },
+                      ],
+                      (v) => {
+                        if (!selected || selected.id !== v.unitId)
+                          throw new Error(
+                            "Select a currently loaded sold serial.",
+                          );
+                        if (!reviewed)
+                          throw new Error(
+                            "Load and review the claim coverage dates before submitting.",
+                          );
+                        return command("warranty.submit", {
+                          ...v,
+                          accountId: selected.accountId,
+                          ...(reviewed.policy
+                            ? { policyRevision: reviewed.policy.revision }
+                            : {}),
+                        });
+                      },
+                    );
+                  })}
+                {can("warranty", "commercial", "buyer") && (
+                  <button
+                    className="secondary"
+                    onClick={(event) => {
+                      coverageOpener.current = event.currentTarget;
+                      setCoverageOpen(true);
+                    }}
+                  >
+                    Check sold serial coverage
+                  </button>
+                )}
+              </div>
+              {coverageOpen && (
+                <SoldCoverage
+                  initial={{ items: data.soldUnits, next: data.soldUnitNext }}
+                  onClose={() => {
+                    setCoverageOpen(false);
+                    coverageOpener.current?.focus();
+                  }}
+                />
+              )}
+              <ClaimQueueControls queue={claimQueue} />
               {table(
-                ["Claim", "Serials / coverage", "State", "Evidence", "Actions"],
-                claimQueue.items.flatMap((c: Item) =>
-                  (c.replacements ?? []).map((r: Item) => ({ ...r, claim: c })),
-                ),
-                (r: Item) => [
-                  r.claimId.slice(0, 8),
-                  <>
-                    {r.oldSerial} → {r.newSerial}
-                    <small>
-                      Coverage ends {r.coverageEnd} · returned unit:{" "}
-                      {r.oldDisposition}
-                    </small>
-                  </>,
-                  `${r.state} · v${r.revision}`,
-                  <>
-                    {r.shipping && (
-                      <>
-                        <p>
-                          Carrier: {r.shipping.carrier} · Tracking:{" "}
-                          {r.shipping.tracking}
-                        </p>
-                        <p>
-                          Shipping: {r.shipping.state} · v{r.shipping.revision}
-                        </p>
-                        <p>Observed: {r.shipping.observedAt}</p>
-                        {r.shipping.address && (
-                          <p>Delivery address: {r.shipping.address}</p>
-                        )}
-                      </>
-                    )}
-                    {r.recipient && <p>Recipient: {r.recipient}</p>}
-                    {r.evidence && <p>{r.evidence}</p>}
-                    {(r.history ?? []).map((h: Item) => (
-                      <p key={h.revision}>
-                        v{h.revision} · {h.state} · {h.reason}
-                      </p>
-                    ))}
-                  </>,
+                ["Claim", "Customer", "Issue", "State", "Actions"],
+                claimQueue.items,
+                (c: Item) => [
+                  c.id.slice(0, 8),
+                  accountName(c.account_id),
+                  c.issue,
+                  c.state,
                   <div className="actions">
-                    {can("warehouse") &&
-                      button("Review replacement carrier booking", () => {
-                        carrierOpener.current =
-                          document.activeElement as HTMLElement;
-                        setCarrierReplacementId(r.id);
-                      })}
-                    {r.state === "reserved" &&
+                    <RetainedClaimCoverage
+                      key={`${c.id}:${eventViewEpoch}`}
+                      claimId={c.id}
+                    />
+
+                    <button
+                      className="secondary"
+                      onClick={(event) => {
+                        evidenceOpener.current = event.currentTarget;
+                        setEvidenceClaim(c.id);
+                      }}
+                    >
+                      Evidence files
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={(event) => {
+                        decisionOpener.current = event.currentTarget;
+                        setDecisionClaim(c.id);
+                      }}
+                    >
+                      Claim activity
+                    </button>
+                    {c.state === "submitted" &&
                       can("warranty") &&
-                      button("Cancel replacement", () =>
+                      button("Review", () =>
                         simple(
-                          "Cancel replacement reservation",
-                          [reason],
-                          "warranty.replacement.cancel",
-                          (v) => ({
-                            ...v,
-                            replacementId: r.id,
-                            revision: r.revision,
-                          }),
-                        ),
-                      )}
-                    {r.shipping &&
-                      button("View shipping history", () => {
-                        void showReplacementShipping(r.id).catch((e) =>
-                          setError(e.message),
-                        );
-                      })}
-                    {r.shipping &&
-                      r.shipping.state !== "delivered" &&
-                      can("warehouse") &&
-                      button("Record shipping outcome", () =>
-                        open(
-                          "Record replacement shipping outcome",
+                          "Review request",
                           [
                             {
-                              name: "state",
-                              label: "Shipping outcome",
+                              name: "approved",
+                              label: "Approve return authorization",
+                              type: "checkbox",
+                            },
+                            reason,
+                          ],
+                          "warranty.review",
+                          (v) => ({ ...v, claimId: c.id }),
+                        ),
+                      )}
+                    {c.state === "approved" &&
+                      can("warehouse") &&
+                      button("Receive return", () =>
+                        simple(
+                          "Receive authorized return",
+                          [
+                            select(
+                              "warehouseId",
+                              "Warehouse",
+                              data.warehouses,
+                              (w) => w.name,
+                            ),
+                            { name: "bin", label: "Quarantine bin" },
+                            {
+                              name: "serial",
+                              scan: "single",
+                              label: "Scan returned serial",
+                            },
+                          ],
+                          "warranty.receive",
+                          (v) => ({ ...v, claimId: c.id }),
+                        ),
+                      )}
+                    {c.type === "warranty" &&
+                      ["approved", "received", "inspected", "repair"].includes(
+                        c.state,
+                      ) &&
+                      can("warranty") &&
+                      !c.manufacturerCases?.some(
+                        (m: Item) => m.state === "pending",
+                      ) &&
+                      button("Record manufacturer referral", () =>
+                        open(
+                          "Record manufacturer referral",
+                          [
+                            { name: "manufacturer", label: "Manufacturer" },
+                            {
+                              name: "reference",
+                              label: "Manufacturer case reference",
+                            },
+                            {
+                              name: "evidence",
+                              label: "Referral evidence reference",
+                              type: "textarea",
+                            },
+                            reason,
+                          ],
+                          (v) =>
+                            command("warranty.manufacturer.refer", {
+                              ...v,
+                              claimId: c.id,
+                            }),
+                          "Record a referral already arranged outside Distributor. This does not contact the manufacturer, move equipment or authorize a customer credit.",
+                          "Record referral",
+                        ),
+                      )}
+                    {c.state === "received" &&
+                      can("warehouse", "warranty") &&
+                      button("Inspect", () =>
+                        simple(
+                          "Inspect returned equipment",
+                          [
+                            {
+                              name: "findings",
+                              label: "Inspection findings",
+                              type: "textarea",
+                            },
+                          ],
+                          "warranty.inspect",
+                          (v) => ({ ...v, claimId: c.id }),
+                        ),
+                      )}
+                    {["inspected", "repair"].includes(c.state) &&
+                      !c.replacements?.some(
+                        (r: Item) => r.state === "reserved",
+                      ) &&
+                      can("warranty") &&
+                      button("Disposition", () =>
+                        simple(
+                          "Approve stock disposition",
+                          [
+                            {
+                              name: "disposition",
+                              label: "Disposition",
+                              options: ["restock", "scrap", "repair"].map(
+                                (v) => ({ value: v, label: v }),
+                              ),
+                            },
+                            reason,
+                          ],
+                          "warranty.disposition",
+                          (v) => ({ ...v, claimId: c.id }),
+                        ),
+                      )}
+                    {["inspected", "repair"].includes(c.state) &&
+                      !c.credit_id &&
+                      !c.replacements?.some(
+                        (r: Item) => r.state !== "cancelled",
+                      ) &&
+                      can("warranty") &&
+                      button("Approve replacement", () =>
+                        open(
+                          "Approve replacement reservation",
+                          [
+                            {
+                              name: "newUnitId",
+                              label: "Replacement serial",
+                              content: (
+                                <ReplacementSerialSelect
+                                  claimId={c.id}
+                                  warehouseName={warehouseName}
+                                />
+                              ),
+                            },
+                            {
+                              name: "oldDisposition",
+                              label: "Returned unit at handover",
                               options: [
-                                { value: "in_transit", label: "In transit" },
-                                { value: "delayed", label: "Delayed" },
-                                { value: "lost", label: "Reported lost" },
-                                { value: "delivered", label: "Delivered" },
+                                { value: "scrap", label: "Scrap" },
+                                {
+                                  value: "restock",
+                                  label: "Restock after inspection / repair",
+                                },
                               ],
                             },
                             {
-                              name: "observedAt",
-                              label: "Observed time (UTC ISO)",
-                              value: new Date().toISOString(),
+                              name: "coveragePolicy",
+                              label: "Replacement coverage",
+                              options: [
+                                {
+                                  value: "inherit_original",
+                                  label: "Retain original coverage end date",
+                                },
+                              ],
                             },
-                            {
-                              name: "reference",
-                              label: "Shipping evidence reference",
-                            },
-                            {
-                              name: "evidence",
-                              label: "Shipping observation",
-                              type: "textarea",
-                            },
+                            reason,
                           ],
                           (v) =>
-                            command("warranty.replacement.shipping.update", {
+                            command("warranty.replacement.reserve", {
                               ...v,
-                              replacementId: r.id,
-                              revision: r.shipping.revision,
+                              claimId: c.id,
                             }),
-                          `Review the external evidence for ${r.shipping.carrier} / ${r.shipping.tracking}. A delay or reported loss leaves sold custody and the original invoice unchanged.`,
-                          "Record outcome",
+                          `Reserve one serial for customer collection or carrier dispatch. The returned unit stays in quarantine until handover. Coverage ends ${c.coverage_end}. Coverage and remedy policies require business qualification.`,
+                          "Reserve replacement",
                         ),
                       )}
-                    {r.state === "reserved" &&
-                      can("warehouse") &&
-                      button("Dispatch replacement", () =>
-                        open(
-                          "Record replacement carrier handover",
-                          [
-                            {
-                              name: "serial",
-                              label: "Scan replacement serial",
-                              scan: "single",
-                            },
-                            { name: "recipient", label: "Delivery recipient" },
-                            {
-                              name: "address",
-                              label: "Delivery address",
-                              type: "textarea",
-                            },
-                            { name: "carrier", label: "Carrier name" },
-                            {
-                              name: "tracking",
-                              label: "Carrier tracking reference",
-                            },
-                            {
-                              name: "evidence",
-                              label: "Carrier handover evidence",
-                              type: "textarea",
-                            },
-                          ],
-                          (v) =>
-                            command("warranty.replacement.dispatch", {
-                              ...v,
-                              replacementId: r.id,
-                              revision: r.revision,
-                            }),
-                          `${r.newSerial} replaces ${r.oldSerial} for ${accountName(r.claim.account_id)}. Confirm physical handover to the carrier; returned unit disposition: ${r.oldDisposition}.`,
-                          "Record dispatch",
-                        ),
-                      )}
-                    {r.state === "reserved" &&
-                      can("warehouse") &&
-                      button("Hand over replacement", () =>
-                        open(
-                          "Record replacement collection",
-                          [
-                            {
-                              name: "serial",
-                              label: "Scan replacement serial",
-                              scan: "single",
-                            },
-                            {
-                              name: "recipient",
-                              label: "Collection recipient",
-                            },
-                            {
-                              name: "evidence",
-                              label: "Collection evidence reference",
-                              type: "textarea",
-                            },
-                          ],
-                          (v) =>
-                            command("warranty.replacement.handover", {
-                              ...v,
-                              replacementId: r.id,
-                              revision: r.revision,
-                            }),
-                          `${r.newSerial} replaces ${r.oldSerial}. Confirm physical collection for ${accountName(r.claim.account_id)}; returned unit disposition: ${r.oldDisposition}.`,
-                          "Record handover",
+                    {c.state === "disposed" &&
+                      !c.credit_id &&
+                      !c.replacements?.some(
+                        (r: Item) => r.state !== "cancelled",
+                      ) &&
+                      can("finance") &&
+                      button("Issue return credit", () =>
+                        simple(
+                          "Approve return credit",
+                          [reason],
+                          "warranty.credit",
+                          (v) => ({ ...v, claimId: c.id }),
                         ),
                       )}
                   </div>,
                 ],
-                "No replacements have been recorded.",
               )}
-              {carrierReplacementId &&
-                claimQueue.items
-                  .flatMap((c: Item) => c.replacements ?? [])
-                  .some((r: Item) => r.id === carrierReplacementId) && (
-                  <CarrierBooking
-                    key={`replacement:${carrierReplacementId}:${eventViewEpoch}`}
-                    shipmentId={carrierReplacementId}
-                    replacementId={carrierReplacementId}
-                    packedDestination=""
-                    packed={
-                      claimQueue.items
-                        .flatMap((c: Item) => c.replacements ?? [])
-                        .find((r: Item) => r.id === carrierReplacementId)!
-                        .state === "reserved"
-                    }
-                    recoveryOwner={
-                      actor.role === "admin"
-                        ? `${actor.orgId}:${actor.id}`
-                        : undefined
-                    }
-                    onCanadaPost={(warehouseId) => {
-                      if (!warehouseId) return;
-                      stopApplicationRun();
-                      orderQueue.stop();
-                      purchaseQueue.stop();
-                      supplierReturnQueue.stop();
-                      invoiceQueue.stop();
-                      stockQueue.stop();
-                      claimQueue.stop();
-                      setPage("Orders");
-                      setCanadaPostWarehouse(warehouseId);
-                      canadaPostOpener.current = null;
-                      setCarrierReplacementId(null);
-                      carrierOpener.current = null;
-                    }}
-                    onClose={() => {
-                      setCarrierReplacementId(null);
-                      carrierOpener.current?.focus();
-                      carrierOpener.current = null;
-                    }}
-                  />
-                )}
-            </section>
-            {can("warranty", "warehouse", "finance", "commercial") && (
-              <section aria-label="Manufacturer case history">
-                <h2>Manufacturer case history</h2>
+              {evidenceClaim && (
+                <WarrantyEvidence
+                  key={evidenceClaim}
+                  claimId={evidenceClaim}
+                  role={actor.role}
+                  onClose={() => {
+                    setEvidenceClaim(null);
+                    evidenceOpener.current?.focus();
+                  }}
+                />
+              )}
+              {decisionClaim && (
+                <WarrantyDecisions
+                  key={decisionClaim}
+                  claimId={decisionClaim}
+                  buyer={actor.role === "buyer"}
+                  onClose={() => {
+                    setDecisionClaim(null);
+                    decisionOpener.current?.focus();
+                  }}
+                />
+              )}
+            </PageSection>
+            <PageSection id="returns-replacements">
+              {" "}
+              <section aria-label="Replacement history">
+                <h2>Replacement history</h2>
                 <p>
-                  Staff record referrals and responses obtained outside
-                  Distributor. Acceptance does not move equipment, approve a
-                  replacement or issue a credit. Follow the separate authorized
-                  return and billing tasks.
+                  Approved serials are held for customer collection or carrier
+                  dispatch. Handover records the scanned serial and recipient,
+                  retains original invoice and coverage, and applies the
+                  approved returned-unit disposition.
                 </p>
                 {table(
                   [
                     "Claim",
-                    "Manufacturer / reference",
+                    "Serials / coverage",
                     "State",
-                    "Evidence history",
+                    "Evidence",
                     "Actions",
                   ],
                   claimQueue.items.flatMap((c: Item) =>
-                    (c.manufacturerCases ?? []).map((m: Item) => ({
-                      ...m,
+                    (c.replacements ?? []).map((r: Item) => ({
+                      ...r,
                       claim: c,
                     })),
                   ),
-                  (m: Item) => [
-                    m.claim.id.slice(0, 8),
+                  (r: Item) => [
+                    r.claimId.slice(0, 8),
                     <>
-                      {m.manufacturer}
-                      <small>{m.reference}</small>
+                      {r.oldSerial} → {r.newSerial}
+                      <small>
+                        Coverage ends {r.coverageEnd} · returned unit:{" "}
+                        {r.oldDisposition}
+                      </small>
                     </>,
-                    `${m.state} · revision ${m.revision}`,
-                    m.history.map((h: Item) => (
-                      <div key={h.revision}>
-                        <small>
-                          {h.state} · {h.created_at} · {h.actor_id}
-                        </small>
-                        <small>
-                          {h.evidence} · {h.reason}
-                        </small>
-                      </div>
-                    )),
-                    m.state === "pending" && can("warranty")
-                      ? button("Record manufacturer response", () =>
+                    `${r.state} · v${r.revision}`,
+                    <>
+                      {r.shipping && (
+                        <>
+                          <p>
+                            Carrier: {r.shipping.carrier} · Tracking:{" "}
+                            {r.shipping.tracking}
+                          </p>
+                          <p>
+                            Shipping: {r.shipping.state} · v
+                            {r.shipping.revision}
+                          </p>
+                          <p>Observed: {r.shipping.observedAt}</p>
+                          {r.shipping.address && (
+                            <p>Delivery address: {r.shipping.address}</p>
+                          )}
+                        </>
+                      )}
+                      {r.recipient && <p>Recipient: {r.recipient}</p>}
+                      {r.evidence && <p>{r.evidence}</p>}
+                      {(r.history ?? []).map((h: Item) => (
+                        <p key={h.revision}>
+                          v{h.revision} · {h.state} · {h.reason}
+                        </p>
+                      ))}
+                    </>,
+                    <div className="actions">
+                      {can("warehouse") &&
+                        button("Review replacement carrier booking", () => {
+                          carrierOpener.current =
+                            document.activeElement as HTMLElement;
+                          setCarrierReplacementId(r.id);
+                        })}
+                      {r.state === "reserved" &&
+                        can("warranty") &&
+                        button("Cancel replacement", () =>
+                          simple(
+                            "Cancel replacement reservation",
+                            [reason],
+                            "warranty.replacement.cancel",
+                            (v) => ({
+                              ...v,
+                              replacementId: r.id,
+                              revision: r.revision,
+                            }),
+                          ),
+                        )}
+                      {r.shipping &&
+                        button("View shipping history", () => {
+                          void showReplacementShipping(r.id).catch((e) =>
+                            setError(e.message),
+                          );
+                        })}
+                      {r.shipping &&
+                        r.shipping.state !== "delivered" &&
+                        can("warehouse") &&
+                        button("Record shipping outcome", () =>
                           open(
-                            "Record manufacturer response",
+                            "Record replacement shipping outcome",
                             [
                               {
-                                name: "outcome",
-                                label: "Manufacturer outcome",
+                                name: "state",
+                                label: "Shipping outcome",
                                 options: [
-                                  "accepted",
-                                  "denied",
-                                  "cancelled",
-                                ].map((v) => ({ value: v, label: v })),
+                                  { value: "in_transit", label: "In transit" },
+                                  { value: "delayed", label: "Delayed" },
+                                  { value: "lost", label: "Reported lost" },
+                                  { value: "delivered", label: "Delivered" },
+                                ],
+                              },
+                              {
+                                name: "observedAt",
+                                label: "Observed time (UTC ISO)",
+                                value: new Date().toISOString(),
+                              },
+                              {
+                                name: "reference",
+                                label: "Shipping evidence reference",
                               },
                               {
                                 name: "evidence",
-                                label: "Response evidence reference",
+                                label: "Shipping observation",
                                 type: "textarea",
                               },
-                              reason,
                             ],
                             (v) =>
-                              command("warranty.manufacturer.decide", {
+                              command("warranty.replacement.shipping.update", {
                                 ...v,
-                                caseId: m.id,
-                                revision: m.revision,
+                                replacementId: r.id,
+                                revision: r.shipping.revision,
                               }),
-                            `${m.manufacturer} · ${m.reference} · ${m.state}. Record the actual external response or cancellation evidence. This does not change stock, claim disposition or money.`,
-                            "Record response",
+                            `Review the external evidence for ${r.shipping.carrier} / ${r.shipping.tracking}. A delay or reported loss leaves sold custody and the original invoice unchanged.`,
+                            "Record outcome",
                           ),
-                        )
-                      : "",
+                        )}
+                      {r.state === "reserved" &&
+                        can("warehouse") &&
+                        button("Dispatch replacement", () =>
+                          open(
+                            "Record replacement carrier handover",
+                            [
+                              {
+                                name: "serial",
+                                label: "Scan replacement serial",
+                                scan: "single",
+                              },
+                              {
+                                name: "recipient",
+                                label: "Delivery recipient",
+                              },
+                              {
+                                name: "address",
+                                label: "Delivery address",
+                                type: "textarea",
+                              },
+                              { name: "carrier", label: "Carrier name" },
+                              {
+                                name: "tracking",
+                                label: "Carrier tracking reference",
+                              },
+                              {
+                                name: "evidence",
+                                label: "Carrier handover evidence",
+                                type: "textarea",
+                              },
+                            ],
+                            (v) =>
+                              command("warranty.replacement.dispatch", {
+                                ...v,
+                                replacementId: r.id,
+                                revision: r.revision,
+                              }),
+                            `${r.newSerial} replaces ${r.oldSerial} for ${accountName(r.claim.account_id)}. Confirm physical handover to the carrier; returned unit disposition: ${r.oldDisposition}.`,
+                            "Record dispatch",
+                          ),
+                        )}
+                      {r.state === "reserved" &&
+                        can("warehouse") &&
+                        button("Hand over replacement", () =>
+                          open(
+                            "Record replacement collection",
+                            [
+                              {
+                                name: "serial",
+                                label: "Scan replacement serial",
+                                scan: "single",
+                              },
+                              {
+                                name: "recipient",
+                                label: "Collection recipient",
+                              },
+                              {
+                                name: "evidence",
+                                label: "Collection evidence reference",
+                                type: "textarea",
+                              },
+                            ],
+                            (v) =>
+                              command("warranty.replacement.handover", {
+                                ...v,
+                                replacementId: r.id,
+                                revision: r.revision,
+                              }),
+                            `${r.newSerial} replaces ${r.oldSerial}. Confirm physical collection for ${accountName(r.claim.account_id)}; returned unit disposition: ${r.oldDisposition}.`,
+                            "Record handover",
+                          ),
+                        )}
+                    </div>,
                   ],
-                  "No manufacturer cases have been recorded.",
+                  "No replacements have been recorded.",
                 )}
+                {carrierReplacementId &&
+                  claimQueue.items
+                    .flatMap((c: Item) => c.replacements ?? [])
+                    .some((r: Item) => r.id === carrierReplacementId) && (
+                    <CarrierBooking
+                      key={`replacement:${carrierReplacementId}:${eventViewEpoch}`}
+                      shipmentId={carrierReplacementId}
+                      replacementId={carrierReplacementId}
+                      packedDestination=""
+                      packed={
+                        claimQueue.items
+                          .flatMap((c: Item) => c.replacements ?? [])
+                          .find((r: Item) => r.id === carrierReplacementId)!
+                          .state === "reserved"
+                      }
+                      recoveryOwner={
+                        actor.role === "admin"
+                          ? `${actor.orgId}:${actor.id}`
+                          : undefined
+                      }
+                      onCanadaPost={(warehouseId) => {
+                        if (!warehouseId) return;
+                        stopApplicationRun();
+                        orderQueue.stop();
+                        purchaseQueue.stop();
+                        supplierReturnQueue.stop();
+                        invoiceQueue.stop();
+                        stockQueue.stop();
+                        claimQueue.stop();
+                        setPage("Orders");
+                        setCanadaPostWarehouse(warehouseId);
+                        canadaPostOpener.current = null;
+                        setCarrierReplacementId(null);
+                        carrierOpener.current = null;
+                      }}
+                      onClose={() => {
+                        setCarrierReplacementId(null);
+                        carrierOpener.current?.focus();
+                        carrierOpener.current = null;
+                      }}
+                    />
+                  )}
               </section>
-            )}
-          </>
+            </PageSection>
+            <PageSection id="returns-manufacturers">
+              {" "}
+              {can("warranty", "warehouse", "finance", "commercial") && (
+                <section aria-label="Manufacturer case history">
+                  <h2>Manufacturer case history</h2>
+                  <p>
+                    Staff record referrals and responses obtained outside
+                    Distributor. Acceptance does not move equipment, approve a
+                    replacement or issue a credit. Follow the separate
+                    authorized return and billing tasks.
+                  </p>
+                  {table(
+                    [
+                      "Claim",
+                      "Manufacturer / reference",
+                      "State",
+                      "Evidence history",
+                      "Actions",
+                    ],
+                    claimQueue.items.flatMap((c: Item) =>
+                      (c.manufacturerCases ?? []).map((m: Item) => ({
+                        ...m,
+                        claim: c,
+                      })),
+                    ),
+                    (m: Item) => [
+                      m.claim.id.slice(0, 8),
+                      <>
+                        {m.manufacturer}
+                        <small>{m.reference}</small>
+                      </>,
+                      `${m.state} · revision ${m.revision}`,
+                      m.history.map((h: Item) => (
+                        <div key={h.revision}>
+                          <small>
+                            {h.state} · {h.created_at} · {h.actor_id}
+                          </small>
+                          <small>
+                            {h.evidence} · {h.reason}
+                          </small>
+                        </div>
+                      )),
+                      m.state === "pending" && can("warranty")
+                        ? button("Record manufacturer response", () =>
+                            open(
+                              "Record manufacturer response",
+                              [
+                                {
+                                  name: "outcome",
+                                  label: "Manufacturer outcome",
+                                  options: [
+                                    "accepted",
+                                    "denied",
+                                    "cancelled",
+                                  ].map((v) => ({ value: v, label: v })),
+                                },
+                                {
+                                  name: "evidence",
+                                  label: "Response evidence reference",
+                                  type: "textarea",
+                                },
+                                reason,
+                              ],
+                              (v) =>
+                                command("warranty.manufacturer.decide", {
+                                  ...v,
+                                  caseId: m.id,
+                                  revision: m.revision,
+                                }),
+                              `${m.manufacturer} · ${m.reference} · ${m.state}. Record the actual external response or cancellation evidence. This does not change stock, claim disposition or money.`,
+                              "Record response",
+                            ),
+                          )
+                        : "",
+                    ],
+                    "No manufacturer cases have been recorded.",
+                  )}
+                </section>
+              )}
+            </PageSection>
+            <PageSection id="returns-policy">
+              {admin && extra.coveragePolicy && (
+                <section>
+                  <h2>Warranty coverage policy</h2>
+                  <p>
+                    Policy version {extra.coveragePolicy.revision}:{" "}
+                    {extra.coveragePolicy.days} whole UTC days after shipment.
+                    Settings are provisional; eligibility requires review.
+                  </p>
+                  {extra.coveragePolicy.reason && (
+                    <p>{extra.coveragePolicy.reason}</p>
+                  )}
+                  {button("Configure warranty coverage", () =>
+                    open(
+                      "Configure warranty coverage policy",
+                      [
+                        {
+                          name: "days",
+                          label: "Coverage duration in days",
+                          type: "number",
+                          value: extra.coveragePolicy.days,
+                        },
+                        reason,
+                      ],
+                      (v) =>
+                        command("warranty.policy", {
+                          ...v,
+                          revision: extra.coveragePolicy.revision,
+                        }),
+                      "This applies to future shipments and provisional assessments of historical sales without a retained shipment policy. Previously retained shipment dates, claim snapshots and inherited replacement dates remain unchanged. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
+                    ),
+                  )}
+                </section>
+              )}
+            </PageSection>
+          </PageSections>
         )}
         {(page === "Customers" || (page === "Account" && !staff)) && (
-          <>
-            {staff && can("commercial") && (
+          <PageSections
+            label="Customer workspace sections"
+            selectedSection={route.section ?? "customer-accounts"}
+            selectSection={(section) => updateRoute({ section })}
+            items={[
+              { id: "customer-accounts", label: "Accounts" },
+              ...(staff && can("commercial")
+                ? [{ id: "customer-purchasing", label: "Purchasing access" }]
+                : []),
+              ...(admin
+                ? [
+                    { id: "customer-pricing", label: "Pricing" },
+                    { id: "customer-providers", label: "Provider settings" },
+                  ]
+                : []),
+            ]}
+          >
+            <PageSection id="customer-purchasing">
               <CustomerPurchasingRules accounts={data.accounts} />
-            )}
-            {!staff && (
-              <button onClick={() => navigate({ page: "Returns" })}>
-                Returns and warranty requests
-              </button>
-            )}
-            <p>
-              Each processor exception allows processing outside the application
-              storage region. Review the applicable terms before accepting.
-              Carrier services require separate setup and qualification.
-            </p>
-            <div className="actions">
-              {can("commercial") &&
-                button("Add customer", () =>
-                  simple(
-                    "Add customer account",
-                    [
-                      { name: "name", label: "Customer name" },
-                      { name: "tier", label: "Price tier", value: "standard" },
-                      {
-                        name: "creditLimit",
-                        label: "Credit limit in cents",
-                        type: "number",
-                      },
-                    ],
-                    "account.create",
-                  ),
-                )}
-            </div>
-            {admin && (
-              <section className="panel">
-                <h2>Provider disclosures</h2>
-                <p>
-                  Publish vendor-reviewed terms before offering an exception.
-                  Each new version requires renewed customer acceptance.
-                  Qualification evidence must refer to the applicable contract
-                  and processing locations.
-                </p>
-                <DisclosureReview disclosures={data.providerDisclosures} />
-                {button("Publish provider disclosure", () =>
-                  open(
-                    "Publish provider disclosure",
-                    [
-                      {
-                        name: "provider",
-                        label: "Named provider",
-                        options: providerChoices.map((p) => ({
-                          value: p.id,
-                          label: p.label,
-                        })),
-                      },
-                      { name: "version", label: "New disclosure version" },
-                      {
-                        name: "purposes",
-                        label: "Processing purposes",
-                        type: "textarea",
-                      },
-                      {
-                        name: "minimumData",
-                        label: "Minimum data fields",
-                        type: "textarea",
-                        help: "One entry per line.",
-                      },
-                      {
-                        name: "processingCountries",
-                        label: "Processing countries",
-                        help: "Comma-separated uppercase two-letter country codes.",
-                      },
-                      {
-                        name: "subprocessors",
-                        label: "Subprocessors",
-                        type: "textarea",
-                        optional: true,
-                        help: "One named entity per line; leave empty only if reviewed terms identify none.",
-                      },
-                      {
-                        name: "retention",
-                        label: "Retention and deletion",
-                        type: "textarea",
-                      },
-                      {
-                        name: "withdrawal",
-                        label: "Withdrawal consequences",
-                        type: "textarea",
-                      },
-                      {
-                        name: "termsReference",
-                        label: "Terms reference",
-                        type: "textarea",
-                      },
-                      {
-                        name: "reviewEvidence",
-                        label: "Vendor and business qualification evidence",
-                        type: "textarea",
-                      },
-                    ],
-                    (v) =>
-                      command("provider.disclosure.publish", {
-                        provider: v.provider,
-                        region: data.organization.region,
-                        previousDisclosureId:
-                          data.providerDisclosures.find(
-                            (d: Item) => d.provider === v.provider,
-                          )?.id ?? null,
-                        version: v.version,
-                        purposes: v.purposes,
-                        minimumData: v.minimumData
-                          .split("\n")
-                          .map((x: string) => x.trim())
-                          .filter(Boolean),
-                        processingCountries: v.processingCountries
-                          .split(",")
-                          .map((x: string) => x.trim())
-                          .filter(Boolean),
-                        subprocessors: v.subprocessors
-                          .split("\n")
-                          .map((x: string) => x.trim())
-                          .filter(Boolean),
-                        retention: v.retention,
-                        withdrawal: v.withdrawal,
-                        termsReference: v.termsReference,
-                        reviewEvidence: v.reviewEvidence,
-                      }),
-                  ),
-                )}
-                {data.providerDisclosures.map((d: Item) => (
-                  <div key={d.id}>
-                    {button(
-                      `Withdraw ${providerChoices.find((p) => p.id === d.provider)?.label} disclosure`,
-                      () =>
-                        open(
-                          "Withdraw provider disclosure",
-                          [reason],
-                          (v) =>
-                            command("provider.disclosure.withdraw", {
-                              provider: d.provider,
-                              disclosureId: d.id,
-                              reason: v.reason,
-                            }),
-                          "Withdrawal blocks subsequent provider processing. Historical terms and customer acceptance remain recorded.",
-                        ),
-                    )}
-                  </div>
-                ))}
-              </section>
-            )}
-            {table(
-              [
-                "Customer",
-                "Tier",
-                "Credit limit",
-                "Hold",
-                "Residency",
-                "Actions",
-              ],
-              data.accounts,
-              (a: Item) => [
-                a.name,
-                a.tier,
-                money(a.credit_limit, a.currency),
-                a.held ? "On hold" : "Clear",
-                `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
-                  .filter(
-                    (p) =>
-                      JSON.parse(a.provider_exceptions).includes(p) &&
-                      !a.providerReviews.some(
-                        (r: Item) => r.provider === p && r.current === 1,
-                      ),
-                  )
-                  .map(
-                    (p) =>
-                      ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
-                  )
-                  .join("")}`,
-                <div className="actions">
-                  {can("finance") &&
-                    button(a.held ? "Clear hold" : "Apply hold", () =>
-                      simple("Finance hold", [reason], "account.hold", (v) => ({
-                        ...v,
-                        accountId: a.id,
-                        held: !a.held,
-                      })),
-                    )}
-                  {can("commercial", "finance", "support", "buyer") &&
-                    button("Acceptance history", () => {
-                      providerHistoryOpener.current =
-                        document.activeElement as HTMLElement;
-                      setProviderHistoryAccount(a.id);
-                    })}
-                  {can("commercial", "buyer") &&
-                    button("Residency choice", () =>
-                      open(
-                        "Choose data residency",
-                        [
-                          {
-                            name: "region",
-                            label: "Application storage region",
-                            options: [
-                              { value: "CA", label: "Canada" },
-                              { value: "US", label: "United States" },
-                            ],
-                            value: data.organization.region,
-                          },
-                          {
-                            name: "mode",
-                            label: "Processor policy",
-                            options: [
-                              {
-                                value: "strict",
-                                label: "Strict regional residency",
-                              },
-                              {
-                                value: "provider-exceptions",
-                                label: "Accept selected processor exceptions",
-                              },
-                            ],
-                            value: a.residency_mode,
-                          },
-                          ...providerChoices
-                            .filter((p) =>
-                              data.providerDisclosures.some(
-                                (d: Item) => d.provider === p.id,
-                              ),
-                            )
-                            .map(({ id, label }): Field => ({
-                              name: id,
-                              label: `Allow ${label} processing outside the storage region`,
-                              type: "checkbox",
-                              value:
-                                JSON.parse(a.provider_exceptions).includes(
-                                  id,
-                                ) &&
-                                a.providerReviews.some(
-                                  (r: Item) =>
-                                    r.provider === id && r.current === 1,
-                                ),
-                            })),
-                          ...(actor.role === "buyer"
-                            ? []
-                            : [
-                                {
-                                  name: "representative",
-                                  label: "Authorized customer representative",
-                                  optional: true,
-                                  help: "Required when staff records a customer exception.",
-                                },
-                                {
-                                  name: "evidenceRef",
-                                  label:
-                                    "External customer acceptance evidence",
-                                  type: "textarea" as const,
-                                  optional: true,
-                                  help: "Reference the customer acceptance of these exact terms; a staff acknowledgment alone is insufficient.",
-                                },
-                              ]),
-                          {
-                            name: "acknowledgment",
-                            label: "Acknowledgment of reviewed processor terms",
-                            type: "textarea",
-                          },
-                        ],
-                        (v) =>
-                          command("account.residency", {
-                            accountId: a.id,
-                            region: v.region,
-                            mode: v.mode,
-                            providers: providerNames.filter((p) => v[p]),
-                            ...(providerNames.some((p) => v[p])
-                              ? {
-                                  acceptance: {
-                                    basis:
-                                      actor.role === "buyer"
-                                        ? "buyer"
-                                        : "recorded",
-                                    ...(actor.role === "buyer"
-                                      ? {}
-                                      : {
-                                          representative: v.representative,
-                                          evidenceRef: v.evidenceRef,
-                                        }),
-                                    disclosures: providerNames
-                                      .filter((p) => v[p])
-                                      .map((provider) => ({
-                                        provider,
-                                        disclosureId:
-                                          data.providerDisclosures.find(
-                                            (d: Item) =>
-                                              d.provider === provider,
-                                          ).id,
-                                      })),
-                                  },
-                                }
-                              : {}),
-                            version: a.residency_version,
-                            acknowledgment: v.acknowledgment,
-                          }),
-                        <DisclosureReview
-                          disclosures={data.providerDisclosures}
-                        />,
-                      ),
-                    )}
-                </div>,
-              ],
-            )}
-            {providerHistoryAccount &&
-              can("commercial", "finance", "support", "buyer") &&
-              data.accounts.some(
-                (a: Item) => a.id === providerHistoryAccount,
-              ) && (
-                <ProviderHistory
-                  key={`${providerHistoryAccount}:${eventViewEpoch}`}
-                  account={data.accounts.find(
-                    (a: Item) => a.id === providerHistoryAccount,
-                  )}
-                  close={() => {
-                    setProviderHistoryAccount(null);
-                    providerHistoryOpener.current?.focus();
-                  }}
+            </PageSection>
+            <PageSection id="customer-pricing">
+              <CustomerPricingControls
+                accounts={data.accounts}
+                recoveryScope={`${actor.orgId}:${actor.id}`}
+              />
+              {actor.role === "admin" && (
+                <PriceApprovalPolicyEditor
+                  recoveryScope={`${actor.orgId}:${actor.id}`}
                 />
               )}
-          </>
+            </PageSection>
+            <PageSection id="customer-accounts">
+              {!staff && (
+                <button onClick={() => navigate({ page: "Returns" })}>
+                  Returns and warranty requests
+                </button>
+              )}
+              <p>
+                Each processor exception allows processing outside the
+                application storage region. Review the applicable terms before
+                accepting. Carrier services require separate setup and
+                qualification.
+              </p>
+              <div className="actions">
+                {can("commercial") &&
+                  button("Add customer", () =>
+                    simple(
+                      "Add customer account",
+                      [
+                        { name: "name", label: "Customer name" },
+                        {
+                          name: "tier",
+                          label: "Price tier",
+                          value: "standard",
+                        },
+                        {
+                          name: "creditLimit",
+                          label: "Credit limit in cents",
+                          type: "number",
+                        },
+                      ],
+                      "account.create",
+                    ),
+                  )}
+              </div>
+
+              {table(
+                [
+                  "Customer",
+                  "Tier",
+                  "Credit limit",
+                  "Hold",
+                  "Residency",
+                  "Actions",
+                ],
+                data.accounts,
+                (a: Item) => [
+                  a.name,
+                  a.tier,
+                  money(a.credit_limit, a.currency),
+                  a.held ? "On hold" : "Clear",
+                  `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
+                    .filter(
+                      (p) =>
+                        JSON.parse(a.provider_exceptions).includes(p) &&
+                        !a.providerReviews.some(
+                          (r: Item) => r.provider === p && r.current === 1,
+                        ),
+                    )
+                    .map(
+                      (p) =>
+                        ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
+                    )
+                    .join("")}`,
+                  <div className="actions">
+                    {can("finance") &&
+                      button(a.held ? "Clear hold" : "Apply hold", () =>
+                        simple(
+                          "Finance hold",
+                          [reason],
+                          "account.hold",
+                          (v) => ({
+                            ...v,
+                            accountId: a.id,
+                            held: !a.held,
+                          }),
+                        ),
+                      )}
+                    {can("commercial", "finance", "support", "buyer") &&
+                      button("Acceptance history", () => {
+                        providerHistoryOpener.current =
+                          document.activeElement as HTMLElement;
+                        setProviderHistoryAccount(a.id);
+                      })}
+                    {can("commercial", "buyer") &&
+                      button("Residency choice", () =>
+                        open(
+                          "Choose data residency",
+                          [
+                            {
+                              name: "region",
+                              label: "Application storage region",
+                              options: [
+                                { value: "CA", label: "Canada" },
+                                { value: "US", label: "United States" },
+                              ],
+                              value: data.organization.region,
+                            },
+                            {
+                              name: "mode",
+                              label: "Processor policy",
+                              options: [
+                                {
+                                  value: "strict",
+                                  label: "Strict regional residency",
+                                },
+                                {
+                                  value: "provider-exceptions",
+                                  label: "Accept selected processor exceptions",
+                                },
+                              ],
+                              value: a.residency_mode,
+                            },
+                            ...providerChoices
+                              .filter((p) =>
+                                data.providerDisclosures.some(
+                                  (d: Item) => d.provider === p.id,
+                                ),
+                              )
+                              .map(({ id, label }): Field => ({
+                                name: id,
+                                label: `Allow ${label} processing outside the storage region`,
+                                type: "checkbox",
+                                value:
+                                  JSON.parse(a.provider_exceptions).includes(
+                                    id,
+                                  ) &&
+                                  a.providerReviews.some(
+                                    (r: Item) =>
+                                      r.provider === id && r.current === 1,
+                                  ),
+                              })),
+                            ...(actor.role === "buyer"
+                              ? []
+                              : [
+                                  {
+                                    name: "representative",
+                                    label: "Authorized customer representative",
+                                    optional: true,
+                                    help: "Required when staff records a customer exception.",
+                                  },
+                                  {
+                                    name: "evidenceRef",
+                                    label:
+                                      "External customer acceptance evidence",
+                                    type: "textarea" as const,
+                                    optional: true,
+                                    help: "Reference the customer acceptance of these exact terms; a staff acknowledgment alone is insufficient.",
+                                  },
+                                ]),
+                            {
+                              name: "acknowledgment",
+                              label:
+                                "Acknowledgment of reviewed processor terms",
+                              type: "textarea",
+                            },
+                          ],
+                          (v) =>
+                            command("account.residency", {
+                              accountId: a.id,
+                              region: v.region,
+                              mode: v.mode,
+                              providers: providerNames.filter((p) => v[p]),
+                              ...(providerNames.some((p) => v[p])
+                                ? {
+                                    acceptance: {
+                                      basis:
+                                        actor.role === "buyer"
+                                          ? "buyer"
+                                          : "recorded",
+                                      ...(actor.role === "buyer"
+                                        ? {}
+                                        : {
+                                            representative: v.representative,
+                                            evidenceRef: v.evidenceRef,
+                                          }),
+                                      disclosures: providerNames
+                                        .filter((p) => v[p])
+                                        .map((provider) => ({
+                                          provider,
+                                          disclosureId:
+                                            data.providerDisclosures.find(
+                                              (d: Item) =>
+                                                d.provider === provider,
+                                            ).id,
+                                        })),
+                                    },
+                                  }
+                                : {}),
+                              version: a.residency_version,
+                              acknowledgment: v.acknowledgment,
+                            }),
+                          <DisclosureReview
+                            disclosures={data.providerDisclosures}
+                          />,
+                        ),
+                      )}
+                  </div>,
+                ],
+              )}
+              {providerHistoryAccount &&
+                can("commercial", "finance", "support", "buyer") &&
+                data.accounts.some(
+                  (a: Item) => a.id === providerHistoryAccount,
+                ) && (
+                  <ProviderHistory
+                    key={`${providerHistoryAccount}:${eventViewEpoch}`}
+                    account={data.accounts.find(
+                      (a: Item) => a.id === providerHistoryAccount,
+                    )}
+                    close={() => {
+                      setProviderHistoryAccount(null);
+                      providerHistoryOpener.current?.focus();
+                    }}
+                  />
+                )}
+            </PageSection>
+            <PageSection id="customer-providers">
+              {admin && (
+                <section className="panel">
+                  <h2>Provider disclosures</h2>
+                  <p>
+                    Publish vendor-reviewed terms before offering an exception.
+                    Each new version requires renewed customer acceptance.
+                    Qualification evidence must refer to the applicable contract
+                    and processing locations.
+                  </p>
+                  <DisclosureReview disclosures={data.providerDisclosures} />
+                  {button("Publish provider disclosure", () =>
+                    open(
+                      "Publish provider disclosure",
+                      [
+                        {
+                          name: "provider",
+                          label: "Named provider",
+                          options: providerChoices.map((p) => ({
+                            value: p.id,
+                            label: p.label,
+                          })),
+                        },
+                        { name: "version", label: "New disclosure version" },
+                        {
+                          name: "purposes",
+                          label: "Processing purposes",
+                          type: "textarea",
+                        },
+                        {
+                          name: "minimumData",
+                          label: "Minimum data fields",
+                          type: "textarea",
+                          help: "One entry per line.",
+                        },
+                        {
+                          name: "processingCountries",
+                          label: "Processing countries",
+                          help: "Comma-separated uppercase two-letter country codes.",
+                        },
+                        {
+                          name: "subprocessors",
+                          label: "Subprocessors",
+                          type: "textarea",
+                          optional: true,
+                          help: "One named entity per line; leave empty only if reviewed terms identify none.",
+                        },
+                        {
+                          name: "retention",
+                          label: "Retention and deletion",
+                          type: "textarea",
+                        },
+                        {
+                          name: "withdrawal",
+                          label: "Withdrawal consequences",
+                          type: "textarea",
+                        },
+                        {
+                          name: "termsReference",
+                          label: "Terms reference",
+                          type: "textarea",
+                        },
+                        {
+                          name: "reviewEvidence",
+                          label: "Vendor and business qualification evidence",
+                          type: "textarea",
+                        },
+                      ],
+                      (v) =>
+                        command("provider.disclosure.publish", {
+                          provider: v.provider,
+                          region: data.organization.region,
+                          previousDisclosureId:
+                            data.providerDisclosures.find(
+                              (d: Item) => d.provider === v.provider,
+                            )?.id ?? null,
+                          version: v.version,
+                          purposes: v.purposes,
+                          minimumData: v.minimumData
+                            .split("\n")
+                            .map((x: string) => x.trim())
+                            .filter(Boolean),
+                          processingCountries: v.processingCountries
+                            .split(",")
+                            .map((x: string) => x.trim())
+                            .filter(Boolean),
+                          subprocessors: v.subprocessors
+                            .split("\n")
+                            .map((x: string) => x.trim())
+                            .filter(Boolean),
+                          retention: v.retention,
+                          withdrawal: v.withdrawal,
+                          termsReference: v.termsReference,
+                          reviewEvidence: v.reviewEvidence,
+                        }),
+                    ),
+                  )}
+                  {data.providerDisclosures.map((d: Item) => (
+                    <div key={d.id}>
+                      {button(
+                        `Withdraw ${providerChoices.find((p) => p.id === d.provider)?.label} disclosure`,
+                        () =>
+                          open(
+                            "Withdraw provider disclosure",
+                            [reason],
+                            (v) =>
+                              command("provider.disclosure.withdraw", {
+                                provider: d.provider,
+                                disclosureId: d.id,
+                                reason: v.reason,
+                              }),
+                            "Withdrawal blocks subsequent provider processing. Historical terms and customer acceptance remain recorded.",
+                          ),
+                      )}
+                    </div>
+                  ))}
+                </section>
+              )}
+            </PageSection>
+          </PageSections>
         )}
         {page === "Imports" && admin && (
-          <>
-            <section className="panel">
-              <h2>Opening stock review</h2>
-              <p>
-                Import a reviewed opening balance before this product has stock
-                at its destination warehouse. A dry run changes no stock. Any
-                rejected row or unmatched quantity/value blocks the whole batch.
-              </p>
-              {button("Dry run opening stock", () =>
-                open(
-                  "Dry run opening stock",
-                  [
-                    {
-                      name: "batchRef",
-                      label: "Batch reference (new for each correction)",
-                    },
-                    {
-                      name: "sourceRef",
-                      label:
-                        "Source dataset reference (keep for corrected batches)",
-                    },
-                    { name: "sourceHash", label: "Original source SHA-256" },
-                    {
-                      name: "cutoffAt",
-                      label: "Source cutoff (UTC)",
-                      value: new Date().toISOString(),
-                    },
-                    {
-                      name: "expectedQuantity",
-                      label: "Independent source quantity",
-                      type: "number",
-                      max: 1e9,
-                    },
-                    {
-                      name: "expectedValue",
-                      label: `Independent source cost (${currency} cents)`,
-                      type: "number",
-                      max: 1e12,
-                    },
-                    {
-                      name: "acknowledgment",
-                      label: "Source rights, mapping and cutoff evidence",
-                      type: "textarea",
-                    },
-                    {
-                      name: "rows",
-                      label: "Opening rows (JSON)",
-                      type: "textarea",
-                      help: "Array of objects: sourceId, sku, warehouse (exact name), bin, serial (null for bulk), quantity, unitCost (cents), condition (usable/quarantine/damaged). Maximum 500 rows. Use the source evidence, not sample balances.",
-                    },
-                  ],
-                  async (v) => {
-                    let rows;
-                    try {
-                      rows = JSON.parse(v.rows);
-                    } catch {
-                      throw new Error(
-                        "Opening rows must be valid JSON. Correct the file before creating a dry run.",
-                      );
-                    }
-                    return command("import.opening.preview", {
-                      ...v,
-                      rows,
-                      version: 1,
-                      region: data.organization.region,
-                      currency,
-                    });
-                  },
-                ),
-              )}
-            </section>
-            <section className="panel">
-              <h2>Customer and catalog review</h2>
-              <p>
-                Dry runs create no accounts or products. Every row explicitly
-                creates a new record (targetId null) or matches an existing ID
-                with all reviewed fields equal. Approval applies the whole
-                batch. New customers start with strict residency; matching
-                preserves existing choices. No users, provider consent, stock,
-                unpaid balances or accounting entries are imported here.
-              </p>
-              <details>
-                <summary>Existing record IDs for explicit matching</summary>
-                {table(
-                  ["Type", "Target ID", "Name / SKU"],
-                  [
-                    ...data.accounts.map((a: Item) => ({
-                      ...a,
-                      kind: "customer",
-                      label: a.name,
-                    })),
-                    ...data.products.map((p: Item) => ({
-                      ...p,
-                      kind: "catalog",
-                      label: `${p.sku} · ${p.name}`,
-                    })),
-                  ],
-                  (r: Item) => [r.kind, r.id, r.label],
-                )}
-              </details>
-              {button("Dry run customer/catalog", () =>
-                open(
-                  "Dry run customer/catalog",
-                  [
-                    {
-                      name: "kind",
-                      label: "Import type",
-                      options: [
-                        { value: "customer", label: "Customers" },
-                        { value: "catalog", label: "Catalog" },
-                      ],
-                      value: "customer",
-                    },
-                    {
-                      name: "batchRef",
-                      label: "Batch reference (new for each correction)",
-                    },
-                    {
-                      name: "sourceRef",
-                      label:
-                        "Source dataset reference (keep for corrected batches)",
-                    },
-                    { name: "sourceHash", label: "Original source SHA-256" },
-                    {
-                      name: "cutoffAt",
-                      label: "Source cutoff (UTC)",
-                      value: new Date().toISOString(),
-                    },
-                    {
-                      name: "expectedQuantity",
-                      label: "Independent source record count",
-                      type: "number",
-                      max: 500,
-                    },
-                    {
-                      name: "expectedValue",
-                      label: `Independent control amount (${currency} cents)`,
-                      type: "number",
-                      max: 1e12,
-                      help: "Sum of customer credit limits or catalog base unit prices. This is a migration control total, not stock value or an account balance.",
-                    },
-                    {
-                      name: "acknowledgment",
-                      label: "Source rights, mapping and cutoff evidence",
-                      type: "textarea",
-                    },
-                    {
-                      name: "rows",
-                      label: "Master rows (JSON)",
-                      type: "textarea",
-                      help: "Maximum 500 objects. Customers: sourceId, targetId, name, tier, creditLimit (cents), held (boolean). Catalog: sourceId, targetId, sku, name, serialized (boolean), unitPrice (cents), taxBasisPoints. targetId is null for creation or an exact existing ID for matching; no other fields.",
-                    },
-                  ],
-                  async (v) => {
-                    let rows;
-                    try {
-                      rows = JSON.parse(v.rows);
-                    } catch {
-                      throw new Error(
-                        "Master rows must be valid JSON. Correct the file before creating a dry run.",
-                      );
-                    }
-                    return command("import.masters.preview", {
-                      ...v,
-                      rows,
-                      version: 1,
-                      region: data.organization.region,
-                      currency,
-                    });
-                  },
-                ),
-              )}
-            </section>
-            <section className="panel">
-              <h2>Unpaid document review</h2>
-              <p>
-                Carry forward original invoices and their reconciled outstanding
-                balances. Historical credits, payments and refunds remain source
-                evidence. Approval creates no stock, shipment, new cash receipt
-                or accounting delivery.
-              </p>
-              <details>
-                <summary>Customer and product IDs for document mapping</summary>
-                {table(
-                  ["Type", "ID", "Name / SKU"],
-                  [
-                    ...data.accounts.map((a: Item) => ({
-                      id: a.id,
-                      kind: "Customer",
-                      label: a.name,
-                    })),
-                    ...data.products.map((p: Item) => ({
-                      id: p.id,
-                      kind: "Product",
-                      label: `${p.sku} · ${p.name}`,
-                    })),
-                  ],
-                  (r: Item) => [r.kind, r.id, r.label],
-                )}
-              </details>
-              {button("Dry run unpaid documents", () =>
-                open(
-                  "Dry run unpaid documents",
-                  [
-                    {
-                      name: "batchRef",
-                      label: "Batch reference (new for each correction)",
-                    },
-                    {
-                      name: "sourceRef",
-                      label:
-                        "Source dataset reference (keep for corrected batches)",
-                    },
-                    { name: "sourceHash", label: "Original source SHA-256" },
-                    {
-                      name: "cutoffAt",
-                      label: "Source cutoff (UTC)",
-                      value: new Date().toISOString(),
-                    },
-                    {
-                      name: "expectedQuantity",
-                      label: "Independent document count",
-                      type: "number",
-                      min: 1,
-                      max: 500,
-                    },
-                    ...[
-                      ["expectedNet", "Independent original net"],
-                      ["expectedTax", "Independent original tax"],
-                      ["expectedCredited", "Independent historical credits"],
-                      ["expectedPaid", "Independent historical payments"],
-                      ["expectedRefunded", "Independent historical refunds"],
-                      ["expectedValue", "Independent outstanding balance"],
-                    ].map(([name, label]) => ({
-                      name: name!,
-                      label: `${label} (${currency} cents)`,
-                      type: "number" as const,
-                      min: 0,
-                      max: 1e12,
-                    })),
-                    {
-                      name: "acknowledgment",
-                      label: "Source rights, mapping and cutoff evidence",
-                      type: "textarea",
-                    },
-                    {
-                      name: "rows",
-                      label: "Unpaid document rows (JSON)",
-                      type: "textarea",
-                      help: "Maximum 500 documents: sourceId, accountId, number, issuedAt, dueAt, net, tax, total, credited, paid, refunded, balance, lines. Each original line: productId, description, quantity, unitPrice, unitTax, creditedQuantity. Money is integer cents; dates are canonical UTC. Preserve original amounts and credited units; do not substitute the remaining balance for the invoice total.",
-                    },
-                  ],
-                  async (v) => {
-                    let rows;
-                    try {
-                      rows = JSON.parse(v.rows);
-                    } catch {
-                      throw new Error(
-                        "Unpaid document rows must be valid JSON. Correct the file before creating a dry run.",
-                      );
-                    }
-                    return command("import.documents.preview", {
-                      ...v,
-                      rows,
-                      version: 1,
-                      region: data.organization.region,
-                      currency,
-                    });
-                  },
-                ),
-              )}
-            </section>
-            {(extra.documentImports ?? []).map((b: Item) => (
-              <section
-                className="panel"
-                key={b.id}
-                aria-label={`Document batch ${b.batchRef}`}
-              >
-                <h2>
-                  {b.batchRef} · unpaid documents · {b.state}
-                </h2>
+          <PageSections
+            label="Import sections"
+            selectedSection={route.section ?? "imports-opening"}
+            selectSection={(section) => updateRoute({ section })}
+            items={[
+              { id: "imports-opening", label: "Opening stock" },
+              { id: "imports-masters", label: "Customers and catalog" },
+              { id: "imports-documents", label: "Unpaid documents" },
+            ]}
+          >
+            <PageSection id="imports-opening">
+              {" "}
+              <section className="panel">
+                <h2>Opening stock review</h2>
                 <p>
-                  Source {b.sourceRef} · cutoff {b.cutoffAt}
+                  Import a reviewed opening balance before this product has
+                  stock at its destination warehouse. A dry run changes no
+                  stock. Any rejected row or unmatched quantity/value blocks the
+                  whole batch.
                 </p>
-                <p>
-                  Source hash: <code>{b.sourceHash}</code>
-                </p>
-                <p>{b.acknowledgment}</p>
-                <p>
-                  Independent source: {b.expectedQuantity} documents. Eligible:{" "}
-                  {b.report.quantity} documents. {b.report.issues.length} review
-                  issues.
-                </p>
-                {table(
-                  ["Control", "Independent source", "Eligible documents"],
-                  [
-                    {
-                      label: "Original net",
-                      expected: b.expectedNet,
-                      actual: b.report.net,
+                {button("Dry run opening stock", () =>
+                  open(
+                    "Dry run opening stock",
+                    [
+                      {
+                        name: "batchRef",
+                        label: "Batch reference (new for each correction)",
+                      },
+                      {
+                        name: "sourceRef",
+                        label:
+                          "Source dataset reference (keep for corrected batches)",
+                      },
+                      { name: "sourceHash", label: "Original source SHA-256" },
+                      {
+                        name: "cutoffAt",
+                        label: "Source cutoff (UTC)",
+                        value: new Date().toISOString(),
+                      },
+                      {
+                        name: "expectedQuantity",
+                        label: "Independent source quantity",
+                        type: "number",
+                        max: 1e9,
+                      },
+                      {
+                        name: "expectedValue",
+                        label: `Independent source cost (${currency} cents)`,
+                        type: "number",
+                        max: 1e12,
+                      },
+                      {
+                        name: "acknowledgment",
+                        label: "Source rights, mapping and cutoff evidence",
+                        type: "textarea",
+                      },
+                      {
+                        name: "rows",
+                        label: "Opening rows (JSON)",
+                        type: "textarea",
+                        help: "Array of objects: sourceId, sku, warehouse (exact name), bin, serial (null for bulk), quantity, unitCost (cents), condition (usable/quarantine/damaged). Maximum 500 rows. Use the source evidence, not sample balances.",
+                      },
+                    ],
+                    async (v) => {
+                      let rows;
+                      try {
+                        rows = JSON.parse(v.rows);
+                      } catch {
+                        throw new Error(
+                          "Opening rows must be valid JSON. Correct the file before creating a dry run.",
+                        );
+                      }
+                      return command("import.opening.preview", {
+                        ...v,
+                        rows,
+                        version: 1,
+                        region: data.organization.region,
+                        currency,
+                      });
                     },
-                    {
-                      label: "Original tax",
-                      expected: b.expectedTax,
-                      actual: b.report.tax,
-                    },
-                    {
-                      label: "Historical credits",
-                      expected: b.expectedCredited,
-                      actual: b.report.credited,
-                    },
-                    {
-                      label: "Historical payments",
-                      expected: b.expectedPaid,
-                      actual: b.report.paid,
-                    },
-                    {
-                      label: "Historical refunds",
-                      expected: b.expectedRefunded,
-                      actual: b.report.refunded,
-                    },
-                    {
-                      label: "Outstanding balance",
-                      expected: b.expectedValue,
-                      actual: b.report.value,
-                    },
-                  ],
-                  (r: Item) => [
-                    r.label,
-                    money(r.expected, b.currency),
-                    money(r.actual, b.currency),
-                  ],
-                )}
-                {table(
-                  [
-                    "Row / source",
-                    "Original invoice / customer",
-                    "Source fields",
-                    "Outstanding",
-                    "Review",
-                  ],
-                  b.report.rows,
-                  (r: Item) => [
-                    `${r.row} · ${r.sourceId ?? "missing source ID"}`,
-                    r.entry
-                      ? `${r.entry.matchKey} · ${r.entry.name}`
-                      : "Unmapped",
-                    <code>{JSON.stringify(r.source)}</code>,
-                    r.entry ? money(r.entry.value, b.currency) : "Rejected",
-                    r.issues.length
-                      ? r.issues.map((i: Item) => i.message).join(" ")
-                      : "Eligible",
-                  ],
-                )}
-                {b.report.issues
-                  .filter((i: Item) => i.row === null)
-                  .map((i: Item, index: number) => (
-                    <p role="alert" key={index}>
-                      {i.message}
-                    </p>
-                  ))}
-                <p>
-                  Review fingerprint: <code>{b.reviewHash}</code>
-                </p>
-                {b.result ? (
-                  <>
-                    <p>
-                      {b.result.decision} · {b.result.reason} ·{" "}
-                      {b.result.quantity} documents /{" "}
-                      {money(b.result.value, b.currency)} outstanding
-                    </p>
-                    {table(
-                      [
-                        "Source row",
-                        "Original number",
-                        "Permanent invoice",
-                        "Original total",
-                        "Opening outstanding",
-                      ],
-                      b.result.mappings,
-                      (m: Item) => [
-                        m.sourceId,
-                        m.number,
-                        m.invoiceId,
-                        money(m.total, b.currency),
-                        money(m.balance, b.currency),
-                      ],
-                    )}
-                  </>
-                ) : (
-                  <div className="actions">
-                    {b.state === "ready" &&
-                      button("Approve document batch", () =>
-                        open(
-                          "Approve document batch",
-                          [reason],
-                          (v) =>
-                            command("import.documents.decide", {
-                              batchId: b.id,
-                              reviewHash: b.reviewHash,
-                              decision: "approve",
-                              reason: v.reason,
-                            }),
-                          `Review the original documents, historical credits/cash/refunds and independent ${money(b.expectedValue, b.currency)} outstanding balance. This records historical debt without posting new cash or accounting entries.`,
-                        ),
-                      )}
-                    {button("Reject document batch", () =>
-                      open("Reject document batch", [reason], (v) =>
-                        command("import.documents.decide", {
-                          batchId: b.id,
-                          reviewHash: b.reviewHash,
-                          decision: "reject",
-                          reason: v.reason,
-                        }),
-                      ),
-                    )}
-                  </div>
+                  ),
                 )}
               </section>
-            ))}
-            {(extra.masterImports ?? []).map((b: Item) => (
-              <section
-                className="panel"
-                key={b.id}
-                aria-label={`Master batch ${b.batchRef}`}
-              >
-                <h2>
-                  {b.batchRef} · {b.kind} · {b.state}
-                </h2>
-                <p>
-                  Source {b.sourceRef} · cutoff {b.cutoffAt}
-                </p>
-                <p>
-                  Source hash: <code>{b.sourceHash}</code>
-                </p>
-                <p>{b.acknowledgment}</p>
-                <p>
-                  Independent source: {b.expectedQuantity} records /{" "}
-                  {money(b.expectedValue, b.currency)} control amount. Eligible:{" "}
-                  {b.report.quantity} records /{" "}
-                  {money(b.report.value, b.currency)}. {b.report.creates} create
-                  / {b.report.matches} match. {b.report.issues.length} review
-                  issues.
-                </p>
-                {table(
-                  [
-                    "Row / source",
-                    "Reviewed record",
-                    "Source fields",
-                    "Action / control amount",
-                    "Review",
-                  ],
-                  b.report.rows,
-                  (r: Item) => [
-                    `${r.row} · ${r.sourceId ?? "missing source ID"}`,
-                    r.entry
-                      ? `${r.entry.name} · ${r.entry.matchKey}`
-                      : "Unmapped",
-                    <code>{JSON.stringify(r.source)}</code>,
-                    r.entry
-                      ? `${r.entry.targetId ? `Match ${r.entry.targetId}` : "Create"} / ${money(r.entry.value, b.currency)}`
-                      : "Rejected",
-                    r.issues.length
-                      ? r.issues.map((i: Item) => i.message).join(" ")
-                      : "Eligible",
-                  ],
-                )}
-                {b.report.issues
-                  .filter((i: Item) => i.row === null)
-                  .map((i: Item, index: number) => (
-                    <p role="alert" key={index}>
-                      {i.message}
-                    </p>
-                  ))}
-                <p>
-                  Review fingerprint: <code>{b.reviewHash}</code>
-                </p>
-                {b.result ? (
-                  <>
-                    <p>
-                      {b.result.decision} · {b.result.reason} ·{" "}
-                      {b.result.quantity} records /{" "}
-                      {money(b.result.value, b.currency)}
-                    </p>
-                    {table(
-                      [
-                        "Source row",
-                        "Permanent target",
-                        "Action",
-                        "Control amount",
-                      ],
-                      b.result.mappings,
-                      (m: Item) => [
-                        m.sourceId,
-                        m.targetId,
-                        m.action,
-                        money(m.value, b.currency),
-                      ],
-                    )}
-                  </>
-                ) : (
-                  <div className="actions">
-                    {b.state === "ready" &&
-                      button("Approve master batch", () =>
-                        open(
-                          "Approve master batch",
-                          [reason],
-                          (v) =>
-                            command("import.masters.decide", {
-                              batchId: b.id,
-                              reviewHash: b.reviewHash,
-                              decision: "approve",
-                              reason: v.reason,
-                            }),
-                          `Review ${b.report.creates} creations and ${b.report.matches} exact matches. Control amount is ${money(b.expectedValue, b.currency)}; it is not an opening balance. Residency choices remain protected.`,
+              {(extra.openingImports ?? []).map((b: Item) => (
+                <section
+                  className="panel"
+                  key={b.id}
+                  aria-label={`Opening batch ${b.batchRef}`}
+                >
+                  <h2>
+                    {b.batchRef} · {b.state}
+                  </h2>
+                  <p>
+                    Source {b.sourceRef} · cutoff {b.cutoffAt}
+                  </p>
+                  <p>
+                    Source hash: <code>{b.sourceHash}</code>
+                  </p>
+                  <p>{b.acknowledgment}</p>
+                  <p>
+                    Independent source: {b.expectedQuantity} units /{" "}
+                    {money(b.expectedValue, b.currency)}. Eligible rows:{" "}
+                    {b.report.quantity} units /{" "}
+                    {money(b.report.value, b.currency)}.{" "}
+                    {b.report.issues.length} review issues.
+                  </p>
+                  {table(
+                    [
+                      "Row / source",
+                      "Target stock",
+                      "Quantity / cost",
+                      "Review",
+                    ],
+                    b.report.rows,
+                    (r: Item) => [
+                      `${r.row} · ${r.sourceId ?? "missing source ID"}`,
+                      r.entry
+                        ? `${productName(r.entry.productId)} · ${warehouseName(r.entry.warehouseId)} / ${r.entry.bin} · ${r.entry.serial ?? "bulk"} · ${r.entry.condition}`
+                        : "Unmapped",
+                      r.entry
+                        ? `${r.entry.quantity} × ${money(r.entry.unitCost, b.currency)}`
+                        : "Rejected",
+                      r.issues.length
+                        ? r.issues.map((i: Item) => i.message).join(" ")
+                        : "Eligible",
+                    ],
+                  )}
+                  {b.report.issues
+                    .filter((i: Item) => i.row === null)
+                    .map((i: Item, index: number) => (
+                      <p role="alert" key={index}>
+                        {i.message}
+                      </p>
+                    ))}
+                  {b.result ? (
+                    <>
+                      <p>
+                        {b.result.decision} · {b.result.reason} ·{" "}
+                        {b.result.quantity} units /{" "}
+                        {money(b.result.value, b.currency)}
+                      </p>
+                      {table(
+                        [
+                          "Source row",
+                          "Permanent stock record",
+                          "Applied quantity / value",
+                        ],
+                        b.result.mappings,
+                        (m: Item) => [
+                          m.sourceId,
+                          m.unitId,
+                          `${m.quantity} / ${money(m.value, b.currency)}`,
+                        ],
+                      )}
+                    </>
+                  ) : (
+                    <div className="actions">
+                      {b.state === "ready" &&
+                        button("Approve opening stock", () =>
+                          open(
+                            "Approve opening stock",
+                            [reason],
+                            (v) =>
+                              command("import.opening.decide", {
+                                batchId: b.id,
+                                reviewHash: b.reviewHash,
+                                decision: "approve",
+                                reason: v.reason,
+                              }),
+                            `Review ${b.expectedQuantity} units valued at ${money(b.expectedValue, b.currency)} from ${b.sourceRef}. All rows apply together. This creates opening custody, without supplier purchase or accounting entries.`,
+                          ),
+                        )}
+                      {button("Reject opening batch", () =>
+                        open("Reject opening batch", [reason], (v) =>
+                          command("import.opening.decide", {
+                            batchId: b.id,
+                            reviewHash: b.reviewHash,
+                            decision: "reject",
+                            reason: v.reason,
+                          }),
                         ),
                       )}
-                    {button("Reject master batch", () =>
-                      open("Reject master batch", [reason], (v) =>
-                        command("import.masters.decide", {
-                          batchId: b.id,
-                          reviewHash: b.reviewHash,
-                          decision: "reject",
-                          reason: v.reason,
-                        }),
-                      ),
-                    )}
-                  </div>
+                    </div>
+                  )}
+                </section>
+              ))}
+            </PageSection>
+            <PageSection id="imports-masters">
+              {" "}
+              <section className="panel">
+                <h2>Customer and catalog review</h2>
+                <p>
+                  Dry runs create no accounts or products. Every row explicitly
+                  creates a new record (targetId null) or matches an existing ID
+                  with all reviewed fields equal. Approval applies the whole
+                  batch. New customers start with strict residency; matching
+                  preserves existing choices. No users, provider consent, stock,
+                  unpaid balances or accounting entries are imported here.
+                </p>
+                <details>
+                  <summary>Existing record IDs for explicit matching</summary>
+                  {table(
+                    ["Type", "Target ID", "Name / SKU"],
+                    [
+                      ...data.accounts.map((a: Item) => ({
+                        ...a,
+                        kind: "customer",
+                        label: a.name,
+                      })),
+                      ...data.products.map((p: Item) => ({
+                        ...p,
+                        kind: "catalog",
+                        label: `${p.sku} · ${p.name}`,
+                      })),
+                    ],
+                    (r: Item) => [r.kind, r.id, r.label],
+                  )}
+                </details>
+                {button("Dry run customer/catalog", () =>
+                  open(
+                    "Dry run customer/catalog",
+                    [
+                      {
+                        name: "kind",
+                        label: "Import type",
+                        options: [
+                          { value: "customer", label: "Customers" },
+                          { value: "catalog", label: "Catalog" },
+                        ],
+                        value: "customer",
+                      },
+                      {
+                        name: "batchRef",
+                        label: "Batch reference (new for each correction)",
+                      },
+                      {
+                        name: "sourceRef",
+                        label:
+                          "Source dataset reference (keep for corrected batches)",
+                      },
+                      { name: "sourceHash", label: "Original source SHA-256" },
+                      {
+                        name: "cutoffAt",
+                        label: "Source cutoff (UTC)",
+                        value: new Date().toISOString(),
+                      },
+                      {
+                        name: "expectedQuantity",
+                        label: "Independent source record count",
+                        type: "number",
+                        max: 500,
+                      },
+                      {
+                        name: "expectedValue",
+                        label: `Independent control amount (${currency} cents)`,
+                        type: "number",
+                        max: 1e12,
+                        help: "Sum of customer credit limits or catalog base unit prices. This is a migration control total, not stock value or an account balance.",
+                      },
+                      {
+                        name: "acknowledgment",
+                        label: "Source rights, mapping and cutoff evidence",
+                        type: "textarea",
+                      },
+                      {
+                        name: "rows",
+                        label: "Master rows (JSON)",
+                        type: "textarea",
+                        help: "Maximum 500 objects. Customers: sourceId, targetId, name, tier, creditLimit (cents), held (boolean). Catalog: sourceId, targetId, sku, name, serialized (boolean), unitPrice (cents), taxBasisPoints. targetId is null for creation or an exact existing ID for matching; no other fields.",
+                      },
+                    ],
+                    async (v) => {
+                      let rows;
+                      try {
+                        rows = JSON.parse(v.rows);
+                      } catch {
+                        throw new Error(
+                          "Master rows must be valid JSON. Correct the file before creating a dry run.",
+                        );
+                      }
+                      return command("import.masters.preview", {
+                        ...v,
+                        rows,
+                        version: 1,
+                        region: data.organization.region,
+                        currency,
+                      });
+                    },
+                  ),
                 )}
               </section>
-            ))}
-            {(extra.openingImports ?? []).map((b: Item) => (
-              <section
-                className="panel"
-                key={b.id}
-                aria-label={`Opening batch ${b.batchRef}`}
-              >
-                <h2>
-                  {b.batchRef} · {b.state}
-                </h2>
-                <p>
-                  Source {b.sourceRef} · cutoff {b.cutoffAt}
-                </p>
-                <p>
-                  Source hash: <code>{b.sourceHash}</code>
-                </p>
-                <p>{b.acknowledgment}</p>
-                <p>
-                  Independent source: {b.expectedQuantity} units /{" "}
-                  {money(b.expectedValue, b.currency)}. Eligible rows:{" "}
-                  {b.report.quantity} units /{" "}
-                  {money(b.report.value, b.currency)}. {b.report.issues.length}{" "}
-                  review issues.
-                </p>
-                {table(
-                  ["Row / source", "Target stock", "Quantity / cost", "Review"],
-                  b.report.rows,
-                  (r: Item) => [
-                    `${r.row} · ${r.sourceId ?? "missing source ID"}`,
-                    r.entry
-                      ? `${productName(r.entry.productId)} · ${warehouseName(r.entry.warehouseId)} / ${r.entry.bin} · ${r.entry.serial ?? "bulk"} · ${r.entry.condition}`
-                      : "Unmapped",
-                    r.entry
-                      ? `${r.entry.quantity} × ${money(r.entry.unitCost, b.currency)}`
-                      : "Rejected",
-                    r.issues.length
-                      ? r.issues.map((i: Item) => i.message).join(" ")
-                      : "Eligible",
-                  ],
-                )}
-                {b.report.issues
-                  .filter((i: Item) => i.row === null)
-                  .map((i: Item, index: number) => (
-                    <p role="alert" key={index}>
-                      {i.message}
-                    </p>
-                  ))}
-                {b.result ? (
-                  <>
-                    <p>
-                      {b.result.decision} · {b.result.reason} ·{" "}
-                      {b.result.quantity} units /{" "}
-                      {money(b.result.value, b.currency)}
-                    </p>
-                    {table(
-                      [
-                        "Source row",
-                        "Permanent stock record",
-                        "Applied quantity / value",
-                      ],
-                      b.result.mappings,
-                      (m: Item) => [
-                        m.sourceId,
-                        m.unitId,
-                        `${m.quantity} / ${money(m.value, b.currency)}`,
-                      ],
-                    )}
-                  </>
-                ) : (
-                  <div className="actions">
-                    {b.state === "ready" &&
-                      button("Approve opening stock", () =>
-                        open(
-                          "Approve opening stock",
-                          [reason],
-                          (v) =>
-                            command("import.opening.decide", {
-                              batchId: b.id,
-                              reviewHash: b.reviewHash,
-                              decision: "approve",
-                              reason: v.reason,
-                            }),
-                          `Review ${b.expectedQuantity} units valued at ${money(b.expectedValue, b.currency)} from ${b.sourceRef}. All rows apply together. This creates opening custody, without supplier purchase or accounting entries.`,
+              {(extra.masterImports ?? []).map((b: Item) => (
+                <section
+                  className="panel"
+                  key={b.id}
+                  aria-label={`Master batch ${b.batchRef}`}
+                >
+                  <h2>
+                    {b.batchRef} · {b.kind} · {b.state}
+                  </h2>
+                  <p>
+                    Source {b.sourceRef} · cutoff {b.cutoffAt}
+                  </p>
+                  <p>
+                    Source hash: <code>{b.sourceHash}</code>
+                  </p>
+                  <p>{b.acknowledgment}</p>
+                  <p>
+                    Independent source: {b.expectedQuantity} records /{" "}
+                    {money(b.expectedValue, b.currency)} control amount.
+                    Eligible: {b.report.quantity} records /{" "}
+                    {money(b.report.value, b.currency)}. {b.report.creates}{" "}
+                    create / {b.report.matches} match. {b.report.issues.length}{" "}
+                    review issues.
+                  </p>
+                  {table(
+                    [
+                      "Row / source",
+                      "Reviewed record",
+                      "Source fields",
+                      "Action / control amount",
+                      "Review",
+                    ],
+                    b.report.rows,
+                    (r: Item) => [
+                      `${r.row} · ${r.sourceId ?? "missing source ID"}`,
+                      r.entry
+                        ? `${r.entry.name} · ${r.entry.matchKey}`
+                        : "Unmapped",
+                      <code>{JSON.stringify(r.source)}</code>,
+                      r.entry
+                        ? `${r.entry.targetId ? `Match ${r.entry.targetId}` : "Create"} / ${money(r.entry.value, b.currency)}`
+                        : "Rejected",
+                      r.issues.length
+                        ? r.issues.map((i: Item) => i.message).join(" ")
+                        : "Eligible",
+                    ],
+                  )}
+                  {b.report.issues
+                    .filter((i: Item) => i.row === null)
+                    .map((i: Item, index: number) => (
+                      <p role="alert" key={index}>
+                        {i.message}
+                      </p>
+                    ))}
+                  <p>
+                    Review fingerprint: <code>{b.reviewHash}</code>
+                  </p>
+                  {b.result ? (
+                    <>
+                      <p>
+                        {b.result.decision} · {b.result.reason} ·{" "}
+                        {b.result.quantity} records /{" "}
+                        {money(b.result.value, b.currency)}
+                      </p>
+                      {table(
+                        [
+                          "Source row",
+                          "Permanent target",
+                          "Action",
+                          "Control amount",
+                        ],
+                        b.result.mappings,
+                        (m: Item) => [
+                          m.sourceId,
+                          m.targetId,
+                          m.action,
+                          money(m.value, b.currency),
+                        ],
+                      )}
+                    </>
+                  ) : (
+                    <div className="actions">
+                      {b.state === "ready" &&
+                        button("Approve master batch", () =>
+                          open(
+                            "Approve master batch",
+                            [reason],
+                            (v) =>
+                              command("import.masters.decide", {
+                                batchId: b.id,
+                                reviewHash: b.reviewHash,
+                                decision: "approve",
+                                reason: v.reason,
+                              }),
+                            `Review ${b.report.creates} creations and ${b.report.matches} exact matches. Control amount is ${money(b.expectedValue, b.currency)}; it is not an opening balance. Residency choices remain protected.`,
+                          ),
+                        )}
+                      {button("Reject master batch", () =>
+                        open("Reject master batch", [reason], (v) =>
+                          command("import.masters.decide", {
+                            batchId: b.id,
+                            reviewHash: b.reviewHash,
+                            decision: "reject",
+                            reason: v.reason,
+                          }),
                         ),
                       )}
-                    {button("Reject opening batch", () =>
-                      open("Reject opening batch", [reason], (v) =>
-                        command("import.opening.decide", {
-                          batchId: b.id,
-                          reviewHash: b.reviewHash,
-                          decision: "reject",
-                          reason: v.reason,
-                        }),
-                      ),
-                    )}
-                  </div>
+                    </div>
+                  )}
+                </section>
+              ))}
+            </PageSection>
+            <PageSection id="imports-documents">
+              {" "}
+              <section className="panel">
+                <h2>Unpaid document review</h2>
+                <p>
+                  Carry forward original invoices and their reconciled
+                  outstanding balances. Historical credits, payments and refunds
+                  remain source evidence. Approval creates no stock, shipment,
+                  new cash receipt or accounting delivery.
+                </p>
+                <details>
+                  <summary>
+                    Customer and product IDs for document mapping
+                  </summary>
+                  {table(
+                    ["Type", "ID", "Name / SKU"],
+                    [
+                      ...data.accounts.map((a: Item) => ({
+                        id: a.id,
+                        kind: "Customer",
+                        label: a.name,
+                      })),
+                      ...data.products.map((p: Item) => ({
+                        id: p.id,
+                        kind: "Product",
+                        label: `${p.sku} · ${p.name}`,
+                      })),
+                    ],
+                    (r: Item) => [r.kind, r.id, r.label],
+                  )}
+                </details>
+                {button("Dry run unpaid documents", () =>
+                  open(
+                    "Dry run unpaid documents",
+                    [
+                      {
+                        name: "batchRef",
+                        label: "Batch reference (new for each correction)",
+                      },
+                      {
+                        name: "sourceRef",
+                        label:
+                          "Source dataset reference (keep for corrected batches)",
+                      },
+                      { name: "sourceHash", label: "Original source SHA-256" },
+                      {
+                        name: "cutoffAt",
+                        label: "Source cutoff (UTC)",
+                        value: new Date().toISOString(),
+                      },
+                      {
+                        name: "expectedQuantity",
+                        label: "Independent document count",
+                        type: "number",
+                        min: 1,
+                        max: 500,
+                      },
+                      ...[
+                        ["expectedNet", "Independent original net"],
+                        ["expectedTax", "Independent original tax"],
+                        ["expectedCredited", "Independent historical credits"],
+                        ["expectedPaid", "Independent historical payments"],
+                        ["expectedRefunded", "Independent historical refunds"],
+                        ["expectedValue", "Independent outstanding balance"],
+                      ].map(([name, label]) => ({
+                        name: name!,
+                        label: `${label} (${currency} cents)`,
+                        type: "number" as const,
+                        min: 0,
+                        max: 1e12,
+                      })),
+                      {
+                        name: "acknowledgment",
+                        label: "Source rights, mapping and cutoff evidence",
+                        type: "textarea",
+                      },
+                      {
+                        name: "rows",
+                        label: "Unpaid document rows (JSON)",
+                        type: "textarea",
+                        help: "Maximum 500 documents: sourceId, accountId, number, issuedAt, dueAt, net, tax, total, credited, paid, refunded, balance, lines. Each original line: productId, description, quantity, unitPrice, unitTax, creditedQuantity. Money is integer cents; dates are canonical UTC. Preserve original amounts and credited units; do not substitute the remaining balance for the invoice total.",
+                      },
+                    ],
+                    async (v) => {
+                      let rows;
+                      try {
+                        rows = JSON.parse(v.rows);
+                      } catch {
+                        throw new Error(
+                          "Unpaid document rows must be valid JSON. Correct the file before creating a dry run.",
+                        );
+                      }
+                      return command("import.documents.preview", {
+                        ...v,
+                        rows,
+                        version: 1,
+                        region: data.organization.region,
+                        currency,
+                      });
+                    },
+                  ),
                 )}
               </section>
-            ))}
-          </>
+              {(extra.documentImports ?? []).map((b: Item) => (
+                <section
+                  className="panel"
+                  key={b.id}
+                  aria-label={`Document batch ${b.batchRef}`}
+                >
+                  <h2>
+                    {b.batchRef} · unpaid documents · {b.state}
+                  </h2>
+                  <p>
+                    Source {b.sourceRef} · cutoff {b.cutoffAt}
+                  </p>
+                  <p>
+                    Source hash: <code>{b.sourceHash}</code>
+                  </p>
+                  <p>{b.acknowledgment}</p>
+                  <p>
+                    Independent source: {b.expectedQuantity} documents.
+                    Eligible: {b.report.quantity} documents.{" "}
+                    {b.report.issues.length} review issues.
+                  </p>
+                  {table(
+                    ["Control", "Independent source", "Eligible documents"],
+                    [
+                      {
+                        label: "Original net",
+                        expected: b.expectedNet,
+                        actual: b.report.net,
+                      },
+                      {
+                        label: "Original tax",
+                        expected: b.expectedTax,
+                        actual: b.report.tax,
+                      },
+                      {
+                        label: "Historical credits",
+                        expected: b.expectedCredited,
+                        actual: b.report.credited,
+                      },
+                      {
+                        label: "Historical payments",
+                        expected: b.expectedPaid,
+                        actual: b.report.paid,
+                      },
+                      {
+                        label: "Historical refunds",
+                        expected: b.expectedRefunded,
+                        actual: b.report.refunded,
+                      },
+                      {
+                        label: "Outstanding balance",
+                        expected: b.expectedValue,
+                        actual: b.report.value,
+                      },
+                    ],
+                    (r: Item) => [
+                      r.label,
+                      money(r.expected, b.currency),
+                      money(r.actual, b.currency),
+                    ],
+                  )}
+                  {table(
+                    [
+                      "Row / source",
+                      "Original invoice / customer",
+                      "Source fields",
+                      "Outstanding",
+                      "Review",
+                    ],
+                    b.report.rows,
+                    (r: Item) => [
+                      `${r.row} · ${r.sourceId ?? "missing source ID"}`,
+                      r.entry
+                        ? `${r.entry.matchKey} · ${r.entry.name}`
+                        : "Unmapped",
+                      <code>{JSON.stringify(r.source)}</code>,
+                      r.entry ? money(r.entry.value, b.currency) : "Rejected",
+                      r.issues.length
+                        ? r.issues.map((i: Item) => i.message).join(" ")
+                        : "Eligible",
+                    ],
+                  )}
+                  {b.report.issues
+                    .filter((i: Item) => i.row === null)
+                    .map((i: Item, index: number) => (
+                      <p role="alert" key={index}>
+                        {i.message}
+                      </p>
+                    ))}
+                  <p>
+                    Review fingerprint: <code>{b.reviewHash}</code>
+                  </p>
+                  {b.result ? (
+                    <>
+                      <p>
+                        {b.result.decision} · {b.result.reason} ·{" "}
+                        {b.result.quantity} documents /{" "}
+                        {money(b.result.value, b.currency)} outstanding
+                      </p>
+                      {table(
+                        [
+                          "Source row",
+                          "Original number",
+                          "Permanent invoice",
+                          "Original total",
+                          "Opening outstanding",
+                        ],
+                        b.result.mappings,
+                        (m: Item) => [
+                          m.sourceId,
+                          m.number,
+                          m.invoiceId,
+                          money(m.total, b.currency),
+                          money(m.balance, b.currency),
+                        ],
+                      )}
+                    </>
+                  ) : (
+                    <div className="actions">
+                      {b.state === "ready" &&
+                        button("Approve document batch", () =>
+                          open(
+                            "Approve document batch",
+                            [reason],
+                            (v) =>
+                              command("import.documents.decide", {
+                                batchId: b.id,
+                                reviewHash: b.reviewHash,
+                                decision: "approve",
+                                reason: v.reason,
+                              }),
+                            `Review the original documents, historical credits/cash/refunds and independent ${money(b.expectedValue, b.currency)} outstanding balance. This records historical debt without posting new cash or accounting entries.`,
+                          ),
+                        )}
+                      {button("Reject document batch", () =>
+                        open("Reject document batch", [reason], (v) =>
+                          command("import.documents.decide", {
+                            batchId: b.id,
+                            reviewHash: b.reviewHash,
+                            decision: "reject",
+                            reason: v.reason,
+                          }),
+                        ),
+                      )}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </PageSection>
+          </PageSections>
         )}
         {(page === "Security" || (page === "Account" && !staff)) && (
           <section className="panel">

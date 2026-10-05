@@ -143,6 +143,7 @@ export function Overview({
   navigate,
   prepare,
   accountName,
+  preferenceScope,
 }: {
   data: OverviewData;
   currency: string;
@@ -154,6 +155,7 @@ export function Overview({
   navigate: (page: string | NavigationIntent) => void;
   prepare: () => void;
   accountName: (id: string) => string;
+  preferenceScope?: string;
 }) {
   const invoice = data.invoiceSummary;
   const metrics = [
@@ -423,6 +425,8 @@ export function Overview({
       </div>
       {data.analytics ? (
         <OperationalAnalytics
+          preferenceScope={preferenceScope}
+          customer={!staff}
           data={data.analytics}
           navigate={navigate}
           warehouseName={(id) =>

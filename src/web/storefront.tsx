@@ -1,3 +1,6 @@
+import { ReferenceMatches } from "./gree-reference-loader.tsx";
+import type { ReferenceRequest } from "./reference-context.ts";
+import { CustomerPrice } from "./customer-pricing.tsx";
 import { AvailabilityBadge } from "./product-availability.tsx";
 import { ManufacturerCollection } from "./manufacturer-collection.tsx";
 import React, { useEffect, useRef, useState } from "react";
@@ -132,8 +135,7 @@ function ProductCard({
         <h3>{product.name}</h3>
         <AvailabilityBadge product={product} />
         <div className="sf-card-price">
-          <strong>{displayMoney(product.unit_price, product.currency)}</strong>
-          <span>per unit</span>
+          <CustomerPrice product={product} compact />
         </div>
         <p className="sf-tax">
           + {displayMoney(product.unit_tax, product.currency)} tax / unit
@@ -150,7 +152,7 @@ function ProductCard({
     </article>
   );
 }
-function ProductDetail({
+export function ProductDetail({
   product,
   back,
   prepare,
@@ -218,10 +220,7 @@ function ProductDetail({
           <AvailabilityBadge product={product} />
           <div className="sf-purchase-panel">
             <p className="sf-price-label">Your account price</p>
-            <p className="sf-detail-price">
-              <span>{displayMoney(product.unit_price, product.currency)}</span>{" "}
-              <span className="sf-price-unit">/ unit</span>
-            </p>
+            <CustomerPrice product={product} />
             <p className="sf-tax">
               + {displayMoney(product.unit_tax, product.currency)} tax per unit
             </p>
@@ -426,10 +425,10 @@ function ProductResults({
               <p className="sf-sku">{featured.sku}</p>
               <h2>{featured.name}</h2>
               <AvailabilityBadge product={featured} />
-              <p className="sf-showcase-price">
-                {displayMoney(featured.unit_price, featured.currency)}{" "}
-                <span>/ unit · before tax</span>
-              </p>
+              <div className="sf-showcase-price">
+                <CustomerPrice product={featured} />
+                <span>Before tax</span>
+              </div>
             </div>
             <button
               className="sf-showcase-link"
@@ -542,12 +541,14 @@ function FeaturedImage({ product }: { product: CustomerProduct }) {
   );
 }
 export function Storefront({
+  reference,
   accountId,
   accountName,
   prepare,
 }: {
   accountId: string;
   accountName: string;
+  reference?: ReferenceRequest;
   prepare: (product: CustomerProduct) => void;
 }) {
   const [search, setSearch] = useState(""),
@@ -617,6 +618,13 @@ export function Storefront({
   );
   return (
     <div className="storefront">
+      {reference && (
+        <ReferenceMatches
+          reference={reference}
+          accountId={accountId}
+          prepare={prepare}
+        />
+      )}
       <ManufacturerCollection />
       <p className="sf-account-context">
         Curated for <strong>{accountName}</strong>

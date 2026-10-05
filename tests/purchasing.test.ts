@@ -56,7 +56,9 @@ function quote(f: Fixture, actor = f.actor, quantity = 1) {
   });
 }
 function submit(f: Fixture, actor = f.actor, quantity = 1) {
-  const q = quote(f, actor, quantity);
+  return submitQuote(f, actor, quote(f, actor, quantity));
+}
+function submitQuote(f: Fixture, actor: Actor, q: ReturnType<typeof quote>) {
   const result = f.app.orders.accept(actor, `accept-${q.id}`, {
     quoteId: q.id,
     allowBackorder: false,
@@ -703,7 +705,16 @@ for (const resource of ["stock", "credit"] as const)
             "UPDATE inventory_units SET condition='quarantine' WHERE serial IN('S2','S3')",
           );
       const first = submit(f),
-        second = submit(f);
+        cart = f.app.orders.orderEntry(f.actor, f.buyer, f.w1).cart!;
+      // Keep both requests current so the race reaches stock/credit checks.
+      const second = submitQuote(
+        f,
+        f.actor,
+        f.app.orders.quote(f.actor, "second-current-quote", {
+          cartId: cart.id,
+          revision: cart.revision,
+        }),
+      );
       const results = await race(t, f, [
         approval(f, first, "first"),
         approval(f, second, "second"),
@@ -731,14 +742,19 @@ for (const action of ["withdraw", "resubmit"] as const)
         b = buyer(f);
       policy(f);
       const request = submit(f, b);
-      const next = quote(f, b, 2);
+      // A cart edit would invalidate the approval before the race starts.
+      // Resubmit a fresh quote of the current cart to race request revisions.
+      const cart = f.app.orders.orderEntry(b, f.buyer, f.w1).cart!;
       const payload =
         action === "withdraw"
           ? { requestId: request.id, revision: request.revision }
           : {
               requestId: request.id,
               revision: request.revision,
-              quoteId: next.id,
+              quoteId: f.app.orders.quote(b, "resubmit-current-quote", {
+                cartId: cart.id,
+                revision: cart.revision,
+              }).id,
               allowBackorder: false,
               message: "Updated customer request",
             };

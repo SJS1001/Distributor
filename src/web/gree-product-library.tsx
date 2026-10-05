@@ -1,3 +1,4 @@
+import { referenceHref } from "./reference-context.ts";
 import { useEffect, useState } from "react";
 import catalogData from "./gree-catalog-data.json" with { type: "json" };
 import "./gree-product-library.css";
@@ -45,7 +46,13 @@ export function ProductImage({
     <div className="gree-image-unavailable">Product image unavailable</div>
   );
 }
-export function GreeProductLibrary({ detail = false }: { detail?: boolean }) {
+export function GreeProductLibrary({
+  detail = false,
+  authenticated = false,
+}: {
+  detail?: boolean;
+  authenticated?: boolean;
+}) {
   const [hash, setHash] = useState(window.location.hash);
   useEffect(() => {
     const update = () => {
@@ -65,7 +72,9 @@ export function GreeProductLibrary({ detail = false }: { detail?: boolean }) {
   }, [categoryFromHash]);
   const selectedId = (() => {
     try {
-      return decodeURIComponent(hash.slice("#product=".length));
+      return decodeURIComponent(
+        hash.slice("#product=".length).split("&")[0] ?? "",
+      );
     } catch {
       return "";
     }
@@ -75,7 +84,11 @@ export function GreeProductLibrary({ detail = false }: { detail?: boolean }) {
   );
   if (detail)
     return selected ? (
-      <GreeProductDetail key={selected.id} product={selected} />
+      <GreeProductDetail
+        key={`${selected.id}:${hash}`}
+        product={selected}
+        authenticated={authenticated}
+      />
     ) : (
       <section className="gree-library">
         <h1>Product not found</h1>
@@ -210,11 +223,24 @@ function DescriptionContent({ text }: { text: string }) {
     </>
   );
 }
-function GreeProductDetail({ product }: { product: GreeProduct }) {
+function GreeProductDetail({
+  product,
+  authenticated,
+}: {
+  product: GreeProduct;
+  authenticated: boolean;
+}) {
   const [imageIndex, setImageIndex] = useState(0);
   const [tab, setTab] = useState("overview");
   const image = product.images[imageIndex];
-  const [modelId, setModelId] = useState(product.models?.[0]?.id || "");
+  const [modelId, setModelId] = useState(
+    () =>
+      new URLSearchParams(window.location.hash.slice(1)).get(
+        "referenceModel",
+      ) ||
+      product.models?.[0]?.id ||
+      "",
+  );
   const selectedModel = product.models?.find((model) => model.id === modelId);
   const specifications =
     selectedModel?.specifications || product.specifications || [];
@@ -274,10 +300,25 @@ function GreeProductDetail({ product }: { product: GreeProduct }) {
               : `Explore ${product.title} equipment and manufacturer technical information.`}
           </p>
           <div className="gree-detail-actions">
-            <a className="public-primary" href="#customer-sign-in">
-              Sign in for pricing & availability ↗
+            <a
+              className="public-primary"
+              href={referenceHref(
+                authenticated ? "#page=Shop" : "#customer-sign-in",
+                { familyId: product.id, modelId: modelId || null },
+              )}
+            >
+              {authenticated
+                ? "View reviewed purchasing matches ↗"
+                : "Sign in for pricing & availability ↗"}
             </a>
-            <a href="#apply">Apply for a trade account →</a>
+            <a
+              href={referenceHref("#apply", {
+                familyId: product.id,
+                modelId: modelId || null,
+              })}
+            >
+              Apply for a trade account →
+            </a>
           </div>
           <p className="gree-purchasing-note">
             Purchasing options depend on your approved trade account. Match the
@@ -358,7 +399,17 @@ function GreeProductDetail({ product }: { product: GreeProduct }) {
               <select
                 id="gree-model"
                 value={modelId}
-                onChange={(event) => setModelId(event.target.value)}
+                onChange={(event) => {
+                  setModelId(event.target.value);
+                  window.history.replaceState(
+                    null,
+                    "",
+                    referenceHref(productHref(product), {
+                      familyId: product.id,
+                      modelId: event.target.value,
+                    }),
+                  );
+                }}
               >
                 {product.models.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -450,7 +501,13 @@ function GreeProductDetail({ product }: { product: GreeProduct }) {
       </section>
       <div className="gree-detail-bottom">
         <h2>Ready for your next installation?</h2>
-        <a className="public-primary" href="#customer-sign-in">
+        <a
+          className="public-primary"
+          href={referenceHref(
+            authenticated ? "#page=Shop" : "#customer-sign-in",
+            { familyId: product.id, modelId: modelId || null },
+          )}
+        >
           Open your trade account ↗
         </a>
       </div>

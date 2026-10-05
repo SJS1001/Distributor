@@ -1,4 +1,6 @@
 import { installCatalogMedia } from "./catalog-media-http.ts";
+import { installScannerLinks } from "./scanner-link-http.ts";
+import type { ScannerLinkTransport } from "./scanner-link.ts";
 import { installCanonicalOrigin } from "./canonical-origin.ts";
 import { enrollmentClientAddress } from "./enrollment-client-address.ts";
 import {
@@ -1318,6 +1320,49 @@ export function commands(
       }),
       run: (a, k, p) => app.orders.saveCart(a, k, p),
     },
+    "cart.price-override.set": {
+      schema: obj({
+        cartId: str,
+        cartRevision: num,
+        productId: str,
+        revision: num,
+        unitPrice: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.priceOverrides.set(a, k, p),
+    },
+    "cart.price-override.decide": {
+      schema: obj({
+        cartId: str,
+        cartRevision: num,
+        productId: str,
+        revision: num,
+        decision: choice("approve", "reject"),
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.priceOverrides.decide(a, k, p),
+    },
+    "cart.price-override.clear": {
+      schema: obj({
+        cartId: str,
+        cartRevision: num,
+        productId: str,
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.priceOverrides.clear(a, k, p),
+    },
+    "cart.shipping.set": {
+      schema: obj({
+        cartId: str,
+        cartRevision: num,
+        treatment: choice("included", "extra", "unspecified"),
+        net: num,
+        tax: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.orders.setCartShipping(a, k, p),
+    },
     "cart.quote": {
       schema: obj({ cartId: str, revision: num }),
       run: (a, k, p) => app.orders.quote(a, k, p),
@@ -1332,6 +1377,78 @@ export function commands(
         reason: str,
       }),
       run: (a, k, p) => app.catalog.setPurchasingPolicy(a, k, p),
+    },
+    "catalog.pricing.set": {
+      schema: obj({
+        accountId: str,
+        multiplierBp: {
+          anyOf: [
+            { type: "integer", minimum: 0, maximum: 10000 },
+            { type: "null" },
+          ],
+        },
+        displayMode: choice("detailed", "net_only"),
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setPricingPolicy(a, k, p),
+    },
+    "catalog.price-approval-policy.set": {
+      schema: obj({
+        maxDiscountBp: {
+          anyOf: [
+            { type: "integer", minimum: 0, maximum: 10000 },
+            { type: "null" },
+          ],
+        },
+        minMarginBp: {
+          anyOf: [
+            { type: "integer", minimum: 0, maximum: 10000 },
+            { type: "null" },
+          ],
+        },
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setPriceApprovalPolicy(a, k, p),
+    },
+    "catalog.unit-cost.set": {
+      schema: obj({
+        productId: str,
+        unitCostCents: {
+          anyOf: [
+            { type: "integer", minimum: 0, maximum: 1000000000 },
+            { type: "null" },
+          ],
+        },
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setReviewedUnitCost(a, k, p),
+    },
+    "catalog.reference.set": {
+      schema: obj({
+        productId: str,
+        familyId: { anyOf: [str, { type: "null" }] },
+        modelId: { anyOf: [str, { type: "null" }] },
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setProductReference(a, k, p),
+    },
+    "catalog.product-msrp.set": {
+      schema: obj({
+        productId: str,
+        msrpCents: {
+          anyOf: [
+            { type: "integer", minimum: 0, maximum: 1000000000 },
+            { type: "null" },
+          ],
+        },
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setProductMsrp(a, k, p),
     },
     "catalog.product-availability.set": {
       schema: obj({
@@ -1712,6 +1829,7 @@ export type HttpOptions = {
   logger?: boolean;
   providers?: ProviderRuntime;
   carriers?: CarrierRuntime;
+  scannerLinks?: ScannerLinkTransport;
   quickbooksBrowser?: QuickBooksBrowser;
   organizationQuickbooksBrowser?: OrganizationQuickBooksBrowser;
 };
@@ -1929,8 +2047,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
             businessNumber: enrollmentString(80, 0),
             notes: enrollmentString(1000, 0),
             acknowledgment: { const: true },
+            requestedReference: obj({
+              familyId: enrollmentString(128),
+              modelId: { anyOf: [enrollmentString(128), { type: "null" }] },
+            }),
           },
-          ["businessNumber", "notes"],
+          ["businessNumber", "notes", "requestedReference"],
         ),
       },
     },
@@ -2120,11 +2242,97 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     );
   }
+  http.get<{ Querystring: { from: string; to: string; accountId?: string } }>(
+    "/api/reports/sales",
+    {
+      schema: {
+        querystring: obj({ from: str, to: str, accountId: str }, ["accountId"]),
+      },
+    },
+    async (r) => app.billing.salesReport(actor(r), r.query),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/reference",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.catalog.productReference(actor(r), r.params.id),
+  );
+  http.get<{
+    Querystring: { familyId: string; modelId?: string; accountId?: string };
+  }>(
+    "/api/customer-products/reference",
+    {
+      schema: {
+        querystring: obj({ familyId: str, modelId: str, accountId: str }, [
+          "modelId",
+          "accountId",
+        ]),
+      },
+    },
+    async (r) =>
+      app.catalog.customerReference(
+        actor(r),
+        {
+          familyId: r.query.familyId,
+          modelId: r.query.modelId ?? null,
+        },
+        r.query.accountId,
+      ),
+  );
+  http.get("/api/catalog/price-approval-policy", async (r) =>
+    app.catalog.priceApprovalPolicy(actor(r)),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/unit-cost",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.catalog.reviewedUnitCost(actor(r), r.params.id),
+  );
+  http.get<{ Querystring: { productId?: string; after?: string } }>(
+    "/api/catalog/price-authority-history",
+    {
+      schema: {
+        querystring: obj({ productId: str, after: str }, [
+          "productId",
+          "after",
+        ]),
+      },
+    },
+    async (r) => app.catalog.priceAuthorityHistory(actor(r), r.query),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/carts/:id/price-overrides",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.orders.priceOverrides.cart(actor(r), r.params.id),
+  );
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get<{ Params: { accountId: string } }>(
     "/api/catalog/purchasing/:accountId",
     { schema: { params: obj({ accountId: str }) } },
     async (r) => app.catalog.purchasingPolicy(actor(r), r.params.accountId),
+  );
+  http.get<{ Params: { accountId: string } }>(
+    "/api/catalog/pricing/:accountId",
+    { schema: { params: obj({ accountId: str }) } },
+    async (r) => app.catalog.pricingPolicy(actor(r), r.params.accountId),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/msrp",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.catalog.productMsrp(actor(r), r.params.id),
+  );
+  http.get<{
+    Querystring: { accountId?: string; productId?: string; after?: string };
+  }>(
+    "/api/catalog/pricing-history",
+    {
+      schema: {
+        querystring: obj({ accountId: str, productId: str, after: str }, [
+          "accountId",
+          "productId",
+          "after",
+        ]),
+      },
+    },
+    async (r) => app.catalog.pricingHistory(actor(r), r.query),
   );
   http.get<{ Params: { id: string } }>(
     "/api/catalog/products/:id/availability",
@@ -2384,6 +2592,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.query.accountId,
         request.query.warehouseId,
       ),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/carts/:id/shipping",
+    async (request) =>
+      app.orders.cartShipping(actor(request), request.params.id),
   );
   http.get("/api/carts", async (request) => app.orders.carts(actor(request)));
   http.get<{ Params: { id: string } }>(
@@ -4226,6 +4439,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
   );
   installCatalogMedia(http, app, actor);
+  installScannerLinks(http, app, actor, origin, options.scannerLinks);
   const evidenceParams = obj({ claimId: str, evidenceId: str });
   http.get<{ Params: { claimId: string }; Querystring: { after?: string } }>(
     "/api/warranty/claims/:claimId/evidence",

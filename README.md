@@ -18,6 +18,8 @@ Billing includes [subsequent account mapping correction review and exact prepara
 
 The intended product covers billing, online ordering, inventory, equipment scanning, fulfillment/logistics and warranty/returns. Modules should be added through defined interfaces without rewriting the product core. Project UB is a candidate optional integration, not a prerequisite for routine distributor operations.
 
+See the current [workflow completion ledger](docs/WORKFLOW-COMPLETION-2026-10-05.md), [pricing, freight and reporting guide](docs/PRICING-AND-REPORTING.md), and [scanner-link delivery setup](docs/SCANNER-LINK-DELIVERY.md) for the latest local implementation and release limits.
+
 ## Start here
 
 | Document                                                                           | Purpose                                                                                                                                                                   |

@@ -1,3 +1,11 @@
+import { BillingSalesReport } from "./billing-sales-report.ts";
+import type { SalesReportFilter } from "../shared/billing-sales-report.ts";
+import { shippingTermsInitialize } from "./shipping-terms-schema.ts";
+import {
+  unspecifiedShipping,
+  type ShippingTerms,
+  type InvoiceShipping,
+} from "../shared/shipping-terms.ts";
 import { analyticsPeriod } from "../shared/operational-analytics.ts";
 import type { SQLInputValue } from "node:sqlite";
 import type { BillingSalesEvidence } from "./sales-evidence.ts";
@@ -64,6 +72,7 @@ type InvoiceLineRow = {
 export type Invoice = InvoiceRow & {
   origin?: "native" | "opening";
   opening?: ReturnType<BillingOpening["snapshot"]>;
+  shipping?: InvoiceShipping;
 };
 export type RecordedPayment = {
   id: string;
@@ -108,6 +117,7 @@ export class Billing {
     startupMaintenance = true,
   ) {
     this.store = database.owned("billing");
+    this.store.migrate(shippingTermsInitialize("billing"));
     this.store.migrate(`
     CREATE TABLE IF NOT EXISTS billing_holds(order_id TEXT PRIMARY KEY,org_id TEXT NOT NULL,account_id TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0)) STRICT;
     CREATE TABLE IF NOT EXISTS billing_counters(org_id TEXT PRIMARY KEY,value INTEGER NOT NULL) STRICT;
@@ -209,9 +219,24 @@ export class Billing {
     }
     return {
       ...row,
+      shipping: this.shippingSnapshot(actor, invoiceId),
       origin: opening ? "opening" : "native",
       opening,
       ...(opening ? { order_id: null, shipment_id: null } : {}),
+    };
+  }
+  private shippingSnapshot(actor: Actor, invoiceId: string): InvoiceShipping {
+    const row = this.store.get<{ terms: string; line_id: string | null }>(
+      "SELECT terms,line_id FROM billing_shipping_snapshots WHERE org_id=? AND invoice_id=?",
+      actor.orgId,
+      invoiceId,
+    );
+    return {
+      ...(row
+        ? (JSON.parse(row.terms) as ShippingTerms)
+        : unspecifiedShipping()),
+      charged: !!row?.line_id,
+      lineId: row?.line_id ?? null,
     };
   }
   lines(actor: Actor, invoiceId: string) {
@@ -236,6 +261,10 @@ export class Billing {
           );
         return {
           ...line,
+          kind:
+            this.shippingSnapshot(actor, invoiceId).lineId === line.id
+              ? ("shipping" as const)
+              : ("product" as const),
           historical_credited_quantity: historical,
           credited_quantity: historical + subsequent,
           creditable_quantity: Number(line.quantity) - historical - subsequent,
@@ -256,7 +285,7 @@ export class Billing {
       lines: this.store.all(
         `SELECT id,invoice_id AS invoice,product_id AS product,CAST(quantity AS TEXT) AS quantity,
          CAST(unit_price AS TEXT) AS price,CAST(unit_tax AS TEXT) AS tax
-         FROM billing_lines WHERE org_id=? ORDER BY rowid`,
+         FROM billing_lines WHERE org_id=? AND NOT EXISTS(SELECT 1 FROM billing_shipping_snapshots s WHERE s.org_id=billing_lines.org_id AND s.line_id=billing_lines.id) ORDER BY rowid`,
         actor.orgId,
       ),
     };
@@ -419,6 +448,7 @@ export class Billing {
     orderId: string,
     shipmentId: string,
     lines: CommercialLine[],
+    shipping: ShippingTerms = unspecifiedShipping(),
   ) {
     actor = this.current(actor, ["warehouse"]);
     // The fulfillment owner checks current custody before saved results or
@@ -439,8 +469,33 @@ export class Billing {
       );
       return { id: old.id, number: old.number };
     }
-    const net = lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0),
-      tax = lines.reduce((sum, l) => sum + l.quantity * l.unitTax, 0),
+    // An authorized retry only reads the verified native invoice. New money,
+    // including the once-per-order freight charge, requires atomic handover.
+    this.database.requireTransaction();
+    const alreadyCharged = this.store.get(
+      "SELECT invoice_id FROM billing_shipping_snapshots WHERE org_id=? AND order_id=? AND line_id IS NOT NULL",
+      actor.orgId,
+      orderId,
+    );
+    const chargeShipping = shipping.treatment === "extra" && !alreadyCharged;
+    const shippingLineId = chargeShipping ? id() : null;
+    const invoiceLines = chargeShipping
+      ? [
+          ...lines,
+          {
+            productId: `shipping:${orderId}`,
+            description: "Agreed shipping charge (once per order)",
+            quantity: 1,
+            unitPrice: shipping.net,
+            unitTax: shipping.tax,
+          },
+        ]
+      : lines;
+    const net = invoiceLines.reduce(
+        (sum, l) => sum + l.quantity * l.unitPrice,
+        0,
+      ),
+      tax = invoiceLines.reduce((sum, l) => sum + l.quantity * l.unitTax, 0),
       total = integer(net + tax, "invoice total", 0, 1e12),
       invoiceId = id(),
       number = this.number(actor, "INV");
@@ -459,10 +514,10 @@ export class Billing {
       total,
       now(),
     );
-    for (const l of lines)
+    for (const l of invoiceLines)
       this.store.run(
         "INSERT INTO billing_lines VALUES(?,?,?,?,?,?,?,?)",
-        id(),
+        l.productId === `shipping:${orderId}` ? shippingLineId! : id(),
         actor.orgId,
         invoiceId,
         l.productId,
@@ -471,6 +526,14 @@ export class Billing {
         l.unitPrice,
         l.unitTax,
       );
+    this.store.run(
+      "INSERT INTO billing_shipping_snapshots VALUES(?,?,?,?,?)",
+      actor.orgId,
+      invoiceId,
+      orderId,
+      JSON.stringify(shipping),
+      shippingLineId,
+    );
     this.platform.event(actor, "billing.invoice.issued", invoiceId, {
       orderId,
       shipmentId,
@@ -640,6 +703,13 @@ export class Billing {
         due: Number(row.due),
       };
     });
+  }
+  salesReport(actor: Actor, filter: SalesReportFilter) {
+    return new BillingSalesReport(
+      this.database,
+      this.store,
+      this.identity,
+    ).read(actor, filter);
   }
   operationalAnalytics(actor: Actor, asOf = new Date().toISOString()) {
     return this.database.transaction(() => {

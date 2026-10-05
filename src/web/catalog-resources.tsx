@@ -1,3 +1,5 @@
+import { UnitCostEditor } from "./price-authority.tsx";
+import { ReferenceMappingEditor } from "./gree-reference-loader.tsx";
 import React, { useState } from "react";
 import { resourceMutation } from "./api.ts";
 import { PageSection, PageSections } from "./workspace.tsx";
@@ -8,6 +10,7 @@ import {
   displayMoney,
 } from "./storefront.tsx";
 import { ProductAvailabilityEditor } from "./product-availability.tsx";
+import { ProductMsrpEditor } from "./customer-pricing.tsx";
 import { ProductPurchasingRules } from "./purchasing-rules.tsx";
 import {
   catalogImageMaxBytes,
@@ -443,10 +446,12 @@ function ResourceCollection({
 export function CatalogResourceWorkspace({
   product,
   canManageAvailability,
+  recoveryScope,
   close,
 }: {
   product: CatalogProduct;
   canManageAvailability: boolean;
+  recoveryScope: string;
   close: () => void;
 }) {
   return (
@@ -461,6 +466,12 @@ export function CatalogResourceWorkspace({
         label="Catalog product management"
         items={[
           { id: "catalog-details", label: "Details" },
+          ...(canManageAvailability
+            ? [
+                { id: "catalog-pricing", label: "Pricing" },
+                { id: "catalog-reference", label: "Reference mapping" },
+              ]
+            : []),
           { id: "catalog-images", label: "Images" },
           { id: "catalog-documents", label: "Documents" },
           { id: "catalog-rules", label: "Purchasing rules" },
@@ -491,6 +502,27 @@ export function CatalogResourceWorkspace({
             Customer quotes use their account prices.
           </p>
         </PageSection>
+        {canManageAvailability && (
+          <PageSection id="catalog-pricing">
+            <ProductMsrpEditor
+              productId={product.id}
+              currency={product.currency}
+              recoveryScope={recoveryScope}
+            />
+            <UnitCostEditor
+              productId={product.id}
+              recoveryScope={recoveryScope}
+            />
+          </PageSection>
+        )}
+        {canManageAvailability && (
+          <PageSection id="catalog-reference">
+            <ReferenceMappingEditor
+              productId={product.id}
+              recoveryScope={recoveryScope}
+            />
+          </PageSection>
+        )}
         <PageSection id="catalog-images">
           <ResourceCollection product={product} images />
         </PageSection>

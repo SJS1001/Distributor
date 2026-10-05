@@ -47,7 +47,19 @@ test("browser: staff catalog preserves search during paging and reviews retireme
   ).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Staff catalog" }),
-  ).toContainText("40 products loaded");
+  ).toContainText("20 products loaded");
+  await expect(
+    page.getByRole("button", { name: "Retire LIFE-00", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Previous catalog page", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Retire LIFE-00", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retire LIFE-39", exact: true }),
+  ).toHaveCount(0);
   await search(page, "LIFE-42");
   await page
     .getByRole("button", { name: "Retire LIFE-42", exact: true })

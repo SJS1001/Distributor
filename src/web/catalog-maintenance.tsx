@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ProductAvailabilityEditor } from "./product-availability.tsx";
 import { CatalogResourceWorkspace } from "./catalog-resources.tsx";
-import { usePages } from "./billing-inbox.tsx";
+import { useCursorPage } from "./cursor-page.ts";
 import type {
   CatalogProduct,
   CatalogLifecycleRecord,
@@ -12,6 +12,7 @@ const priceFormatters = {
   USD: new Intl.NumberFormat("en", { style: "currency", currency: "USD" }),
 };
 type Actions = {
+  recoveryScope: string;
   canManage: boolean;
   canManageAvailability: boolean;
   busy: boolean;
@@ -28,13 +29,14 @@ function Products({
   state: string;
   manage: (product: CatalogProduct) => void;
 }) {
-  const rows = usePages<CatalogProduct>(
+  const rows = useCursorPage<CatalogProduct>(
     `/api/catalog/products/page?state=${state}&q=${encodeURIComponent(search)}`,
   );
   return (
     <section aria-label="Staff catalog">
       <p role="status">
-        {rows.items.length} products loaded{rows.busy ? " · Loading…" : ""}
+        Page {rows.pageNumber} · {rows.items.length} products loaded
+        {rows.busy ? " · Loading…" : ""}
       </p>
       {rows.error && (
         <p role="alert" className="error">
@@ -121,15 +123,26 @@ function Products({
       {rows.loaded && !rows.busy && !rows.items.length && (
         <p>No matching products.</p>
       )}
-      {(rows.next || rows.error) && (
-        <button disabled={rows.busy} onClick={() => void rows.load()}>
-          {rows.error ? "Retry catalog page" : "Next staff catalog page"}
+      <nav className="actions" aria-label="Catalog pages">
+        <button
+          disabled={rows.busy || rows.pageNumber === 1}
+          onClick={rows.previous}
+        >
+          Previous catalog page
         </button>
-      )}
+        <button disabled={rows.busy || !rows.next} onClick={rows.nextPage}>
+          Next staff catalog page
+        </button>
+        {rows.error && (
+          <button disabled={rows.busy} onClick={rows.retry}>
+            Retry catalog page
+          </button>
+        )}
+      </nav>
       <p>
         Pages show current status, ordered by SKU. Refresh after changes. Base
-        prices are staff reference prices; customer quotes apply current tier
-        prices.
+        prices are staff reference prices; customer quotes apply their account's
+        pricing rules.
       </p>
     </section>
   );
@@ -146,10 +159,11 @@ export function CatalogMaintenance(actions: Actions) {
   return (
     <>
       {product && (
-        <CatalogResourceWorkspace
+        <ProductDialog
           key={product.id}
           product={product}
           canManageAvailability={actions.canManageAvailability}
+          recoveryScope={actions.recoveryScope}
           close={() => setProduct(null)}
         />
       )}
@@ -191,6 +205,29 @@ export function CatalogMaintenance(actions: Actions) {
         manage={setProduct}
       />
     </>
+  );
+}
+function ProductDialog(
+  props: React.ComponentProps<typeof CatalogResourceWorkspace>,
+) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialog.current?.showModal();
+    return () => previous?.focus();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="catalog-management-dialog"
+      aria-label={`Manage ${props.product.sku}`}
+      onCancel={(event) => {
+        event.preventDefault();
+        props.close();
+      }}
+    >
+      <CatalogResourceWorkspace {...props} />
+    </dialog>
   );
 }
 export function CatalogHistoryRows({

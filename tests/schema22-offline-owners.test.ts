@@ -9,6 +9,19 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture } from "./fixtures.ts";
 const laterTables = [
+  "orders_cart_shipping",
+  "orders_shipping_snapshots",
+  "billing_shipping_snapshots",
+  "catalog_price_authority_history",
+  "catalog_price_approval_policy",
+  "catalog_reviewed_unit_cost",
+  "platform_scanner_links",
+  "orders_price_overrides",
+  "orders_price_override_snapshots",
+  "catalog_product_references",
+  "catalog_account_pricing",
+  "catalog_product_msrp",
+  "catalog_pricing_history",
   "catalog_product_availability",
   "catalog_resource_history",
   "catalog_resources",

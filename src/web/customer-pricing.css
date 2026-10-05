@@ -1,0 +1,50 @@
+.pricing-editor {
+  max-width: 46rem;
+  margin-block: 1.25rem;
+}
+.pricing-editor fieldset {
+  display: grid;
+  gap: 1rem;
+}
+.pricing-editor label {
+  display: grid;
+  gap: 0.4rem;
+}
+.pricing-editor input,
+.pricing-editor select,
+.pricing-editor textarea {
+  width: 100%;
+  max-width: 100%;
+}
+.pricing-editor .pricing-preview,
+.pricing-recovery {
+  padding: 1rem;
+  border: 1px solid var(--border, #d7dce3);
+  border-radius: 0.5rem;
+  background: var(--surface, #f7f8fa);
+}
+.pricing-recovery pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+.customer-price {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.customer-price strong {
+  font-size: 1.3em;
+}
+.customer-msrp,
+.customer-price-unit {
+  color: #52616a;
+  font-size: 0.85rem;
+}
+.customer-savings {
+  color: #246b49;
+  font-size: 0.9rem;
+}
+.customer-price-compact strong {
+  font-size: 1rem;
+}

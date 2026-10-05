@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import scannerNotices from "./scanner-notices.txt?url";
 import { ScanInput } from "./scan-input.tsx";
+import { ScannerLinkDelivery } from "./scanner-link-delivery.tsx";
 
 export function ScannerPage() {
   const [qr, setQr] = useState("");
@@ -118,6 +119,7 @@ export function ScannerPage() {
             Copy link
           </button>
         </div>
+        <ScannerLinkDelivery />
         <p className="scanner-link-address">{url}</p>
         <p role="status">{status}</p>
         <p>

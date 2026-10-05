@@ -91,10 +91,10 @@ test("overview does not expose unavailable finance, warehouse or order-entry con
   assert.match(buyer, /Track orders/);
 });
 
-test("buyer navigation exposes four storefront destinations and the active page", () => {
+test("buyer navigation exposes storefront destinations, reports and the active page", () => {
   const html = renderToStaticMarkup(
     React.createElement(WorkspaceNavigation, {
-      pages: ["Shop", "Orders", "Billing", "Account", "Returns"],
+      pages: ["Shop", "Orders", "Billing", "Reports", "Account", "Returns"],
       page: "Orders",
       organization: "Synthetic organization",
       name: "Buyer",
@@ -108,12 +108,18 @@ test("buyer navigation exposes four storefront destinations and the active page"
     html,
     />Inventory<|>Purchasing<|>Administration<|>Reconciliation<|>Operations health</,
   );
-  assert.match(html, /aria-current="true"[^]*?<span>Orders<\/span>/);
+  assert.match(html, /<button aria-current="page">Orders<\/button>/);
   assert.doesNotMatch(html, />Returns<|>Customers<|>Catalog</);
-  assert.match(html, />Shop<|>Invoices &amp; payments<|>Account</);
+  for (const destination of [
+    "Shop",
+    "Invoices &amp; payments",
+    "Reports",
+    "Account",
+  ])
+    assert.ok(html.includes(`>${destination}</button>`));
   assert.match(
     html,
-    /aria-expanded="false" aria-controls="workspace-navigation"/,
+    /aria-expanded="false" aria-controls="customer-navigation"/,
   );
 });
 

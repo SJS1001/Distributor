@@ -1,3 +1,4 @@
+import { validateReference } from "./catalog-reference-index.ts";
 import { randomBytes } from "node:crypto";
 import {
   canadianProvinces,
@@ -155,6 +156,13 @@ export class Enrollment {
       "Application fields are too long.",
       400,
     );
+    const requested =
+      input.requestedReference === undefined
+        ? undefined
+        : validateReference(input.requestedReference);
+    const reviewedNotes = requested
+      ? `${notes}${notes ? "\n\n" : ""}Requested manufacturer reference: ${requested.label} [family ${requested.familyId}${requested.modelId ? `, model ${requested.modelId}` : ""}]. Availability and native product mapping require distributor review.`
+      : notes;
     return this.write(() => {
       check(
         Number(
@@ -187,7 +195,7 @@ export class Enrollment {
         phone,
         input.province,
         businessNumber,
-        notes,
+        reviewedNotes,
         now(),
       );
       return received;

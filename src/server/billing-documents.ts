@@ -1,3 +1,4 @@
+import type { InvoiceShipping } from "../shared/shipping-terms.ts";
 import {
   canonical,
   check,
@@ -28,6 +29,7 @@ type Profile = Party & {
   updatedAt: string;
 };
 export type DocumentFacts = {
+  shipping?: InvoiceShipping;
   kind: DocumentKind;
   documentId: string;
   accountId: string;
@@ -320,6 +322,7 @@ export class BillingDocuments {
               : "Customer billing profile at issuance"
             : "Legacy native due date not recorded",
       },
+      shipping: invoice.shipping,
       net: invoice.net,
       tax: invoice.tax,
       total: invoice.total,

@@ -124,3 +124,27 @@
 .catalog-maintenance-table td:last-child .actions button:last-child {
   grid-column: 1 / -1;
 }
+.catalog-management-dialog {
+  width: min(1040px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid #c9d3df;
+  border-radius: 12px;
+  color: #182c42;
+  background: #fff;
+  box-shadow: 0 24px 80px #0e203c55;
+  overflow: auto;
+}
+.catalog-management-dialog::backdrop {
+  background: #10253d99;
+}
+.catalog-management-dialog .catalog-product-manager {
+  margin: 0;
+  border: 0;
+}
+@media (max-width: 600px) {
+  .catalog-management-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+}

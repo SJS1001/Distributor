@@ -82,8 +82,8 @@ for (const profile of frozen.profiles)
     assert.deepEqual(readFileSync(source), bytes);
     const receipt = await upgradeSchema(source, target, profile.hash, "CA");
     assert.equal(receipt.sourceVersion, 25);
-    assert.equal(receipt.version, 26);
-    assert.equal(SCHEMA_VERSION, 26);
+    assert.equal(receipt.version, SCHEMA_VERSION);
+    assert.ok(SCHEMA_VERSION >= 26);
     assert.equal(inspectSchema(target).kind, "current");
     assert.deepEqual(rows(target), before);
     assert.equal(

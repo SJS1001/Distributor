@@ -1,3 +1,4 @@
+import { CustomerPrice } from "./customer-pricing.tsx";
 import React, { useEffect, useId, useRef, useState } from "react";
 import type {
   CartLine,
@@ -130,11 +131,11 @@ export function CartQuantities({
         onChange={(event) => change(product, event.target.value)}
         aria-describedby={`${prefix}-price-${product.id}`}
       />
-      <small id={`${prefix}-price-${product.id}`}>
-        Customer price {money(product.unit_price, product.currency)} +{" "}
+      <div id={`${prefix}-price-${product.id}`}>
+        <CustomerPrice product={product} compact />+{" "}
         {money(product.unit_tax, product.currency)} tax per unit (
         {product.currency}).
-      </small>
+      </div>
       {basket[product.id] && (
         <button
           type="button"

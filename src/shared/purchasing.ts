@@ -1,3 +1,4 @@
+import type { ShippingTerms } from "./shipping-terms.ts";
 export type PurchasingPolicy = {
   accountId: string;
   mode: "none" | "all" | "selected";
@@ -29,6 +30,7 @@ export type OrderRequestHistory = {
   staffNote?: string;
 };
 export type OrderRequest = {
+  shipping?: ShippingTerms;
   id: string;
   accountId: string;
   warehouseId: string;

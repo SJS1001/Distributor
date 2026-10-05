@@ -1,3 +1,4 @@
+import { shippingSummary } from "../shared/shipping-terms.ts";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { PDFDocument, rgb } from "pdf-lib";
@@ -11,6 +12,7 @@ const fontBytes = readFileSync(
 // A stored rendition retains the renderer and font that produced its bytes.
 export const rendererHash = createHash("sha256")
   .update(readFileSync(new URL(import.meta.url)))
+  .update(readFileSync(new URL("../shared/shipping-terms.ts", import.meta.url)))
   .update(fontBytes)
   .update("pdf-lib@1.17.1;@pdf-lib/fontkit@1.1.1")
   .digest("hex");
@@ -104,6 +106,15 @@ export async function renderDocument(facts: DocumentFacts, factsHash: string) {
     paragraph(party.address || "Billing address not recorded.");
     paragraph(`Tax registration: ${party.taxRegistration || "not recorded"}`);
   }
+  paragraph(shippingSummary(facts.shipping, facts.currency));
+  if (facts.shipping?.treatment === "extra")
+    paragraph(
+      facts.kind === "credit"
+        ? "Shipping credit, if any, is shown explicitly in the credit lines below."
+        : facts.shipping.charged
+          ? "The agreed shipping charge is included in this invoice."
+          : "No shipping charge on this invoice; the agreed charge belongs to the first shipment invoice.",
+    );
   paragraph("Original document lines", 13);
   facts.lines.forEach((line, index) => {
     paragraph(`${index + 1}. ${line.description}`, 11, 3);

@@ -9,6 +9,8 @@ export function SavedCarts({
   accountName,
   warehouseName,
   resume,
+  shippingDetails,
+  priceDetails,
   disabled,
 }: {
   initial: SavedCartPage;
@@ -17,6 +19,8 @@ export function SavedCarts({
   accountName: (id: string) => string;
   warehouseName: (id: string) => string;
   resume: (accountId: string, warehouseId: string) => void;
+  shippingDetails?: (cartId: string, cartRevision: number) => void;
+  priceDetails?: (cartId: string, cartRevision: number) => void;
   disabled: boolean;
 }) {
   const prefix = useId();
@@ -173,6 +177,23 @@ export function SavedCarts({
                     >
                       Resume
                     </button>
+                    {priceDetails && (
+                      <button
+                        disabled={locked}
+                        onClick={() => priceDetails(c.id, c.revision)}
+                      >
+                        Selling price
+                      </button>
+                    )}
+                    {shippingDetails && (
+                      <button
+                        type="button"
+                        disabled={locked}
+                        onClick={() => shippingDetails(c.id, c.revision)}
+                      >
+                        Shipping terms
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

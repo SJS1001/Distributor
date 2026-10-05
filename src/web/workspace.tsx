@@ -156,7 +156,9 @@ export function WorkspaceNavigation({
               >
                 {destination === "Billing"
                   ? "Invoices & payments"
-                  : destination}
+                  : destination === "Overview"
+                    ? "Reports"
+                    : destination}
               </button>
             ))}
           <a className="customer-library-link" href="#products">

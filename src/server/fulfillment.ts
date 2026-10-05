@@ -971,6 +971,7 @@ export class Fulfillment {
             shipment.order_id,
             shipment.id,
             lines,
+            this.orders.shipping(actor, shipment.order_id),
           );
         this.store.run(
           "UPDATE fulfillment_shipments SET state='shipped',tracking=?,carrier=?,units=?,invoice_id=?,shipped_at=? WHERE id=?",

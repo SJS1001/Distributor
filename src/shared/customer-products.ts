@@ -1,5 +1,8 @@
+import type { PriceDisplay } from "./customer-pricing.ts";
 // Public order-entry projection. Base prices and other tiers stay internal.
 export type CustomerProduct = {
+  pricing?: PriceDisplay;
+  unavailableReason?: string;
   outOfStock: boolean;
   expectedAvailableOn: string | null;
   id: string;

@@ -1,4 +1,5 @@
 import { configuredMfaRoles } from "./mfa-policy.ts";
+import { configuredScannerLinks } from "./scanner-link-runtime.ts";
 import { configuredPilotSignIn } from "./pilot-sign-in.ts";
 import { createRuntimeApplication } from "./runtime-application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
@@ -66,6 +67,7 @@ const http = await createHttp(app, {
   quickbooksBrowser: configuredQuickBooksBrowser(app, origin),
   organizationQuickbooksBrowser,
   carriers: configuredCarriers(app),
+  scannerLinks: configuredScannerLinks(),
 });
 // Local application maintenance only. Startup also processes one batch; each
 // minute erases at most 100 expired enrollment bundles and terminalizes at most

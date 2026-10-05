@@ -1,0 +1,22 @@
+import { defineConfig } from "@playwright/test";
+export default defineConfig({
+  testDir: ".",
+  testMatch: [
+    "workflow-reports-browser-journey.ts",
+    "catalog-lifecycle-browser-journey.ts",
+  ],
+  workers: 1,
+  timeout: 60000,
+  use: {
+    baseURL: "http://127.0.0.1:3218",
+    headless: true,
+    trace: "retain-on-failure",
+  },
+  webServer: {
+    command: "tsx tests/workflow-reports-browser-server.ts",
+    cwd: new URL("..", import.meta.url).pathname,
+    url: "http://127.0.0.1:3218/api/health",
+    reuseExistingServer: false,
+    timeout: 30000,
+  },
+});

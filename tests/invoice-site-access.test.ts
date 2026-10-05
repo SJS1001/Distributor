@@ -164,6 +164,9 @@ test("new invoice issuance refuses an ungranted or void shipment before any nati
     retry(f, actor, { id: packed.id, invoiceId: "not-issued" }, order.id);
   const before = facts(f);
   denied(() => issue(otherSite));
+  // Valid native custody is not enough to create new money outside the
+  // handover transaction. Read-only retries above remain supported.
+  denied(() => issue(f.actor), "TRANSACTION", 409);
   assert.deepEqual(facts(f), before);
   assert.equal(f.app.billing.invoices(f.actor).length, 0);
   f.app.fulfillment.void(f.actor, "site-void", {

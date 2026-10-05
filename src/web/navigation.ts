@@ -34,6 +34,8 @@ export type Page = (typeof workspacePages)[number];
 export type NavigationIntent = {
   page: string;
   section?: string;
+  referenceFamily?: string;
+  referenceModel?: string;
   orderState?: OrderQueueState | "";
   orderReservation?: "overdue" | "";
   invoiceBalance?: InvoiceQueueState | "";
@@ -43,6 +45,25 @@ export type NavigationIntent = {
   countState?: CountQueueState | "";
 };
 const sections: Record<string, string[]> = {
+  Customers: [
+    "customer-accounts",
+    "customer-purchasing",
+    "customer-pricing",
+    "customer-providers",
+  ],
+  Account: [
+    "customer-accounts",
+    "customer-purchasing",
+    "customer-pricing",
+    "customer-providers",
+  ],
+  Returns: [
+    "returns-claims",
+    "returns-replacements",
+    "returns-manufacturers",
+    "returns-policy",
+  ],
+  Imports: ["imports-opening", "imports-masters", "imports-documents"],
   Orders: ["orders-queue", "orders-requests", "orders-shipments"],
   Inventory: [
     "inventory-stock",
@@ -73,6 +94,11 @@ export function readNavigation(hash: string): NavigationIntent {
     ? candidate!
     : "Overview";
   const route: NavigationIntent = { page };
+  if (page === "Shop") {
+    route.referenceFamily = identifier(query.get("referenceFamily"));
+    if (route.referenceFamily)
+      route.referenceModel = identifier(query.get("referenceModel"));
+  }
   const section = query.get("section");
   if (section && sections[page]?.includes(section)) route.section = section;
   const orderState = query.get("orders"),
@@ -102,6 +128,9 @@ export function readNavigation(hash: string): NavigationIntent {
 }
 export function navigationHash(intent: NavigationIntent) {
   const query = new URLSearchParams({ page: intent.page });
+  if (intent.referenceFamily)
+    query.set("referenceFamily", intent.referenceFamily);
+  if (intent.referenceModel) query.set("referenceModel", intent.referenceModel);
   if (intent.section) query.set("section", intent.section);
   if (intent.orderState) query.set("orders", intent.orderState);
   if (intent.orderReservation)
@@ -114,6 +143,8 @@ export function navigationHash(intent: NavigationIntent) {
   const safe = readNavigation(`#${query}`);
   const result = new URLSearchParams({ page: safe.page });
   for (const [key, value] of Object.entries({
+    referenceFamily: safe.referenceFamily,
+    referenceModel: safe.referenceModel,
     section: safe.section,
     orders: safe.orderState,
     reservation: safe.orderReservation,
@@ -146,7 +177,7 @@ export function authorizedPages(role: string) {
         ...(["admin", "finance"].includes(role) ? ["Reconciliation"] : []),
         ...(admin ? ["Imports", "Administration"] : []),
       ]
-    : ["Shop", "Orders", "Billing", "Account", "Returns"];
+    : ["Shop", "Orders", "Billing", "Overview", "Account", "Returns"];
 }
 export function authorizeNavigation(route: NavigationIntent, pages: string[]) {
   return pages.includes(route.page) ? route : { page: pages[0] ?? "Overview" };

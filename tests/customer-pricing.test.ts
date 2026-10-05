@@ -162,6 +162,8 @@ for (const region of ["CA", "US"] as const)
         sku: "EQ-1",
         name: "Synthetic equipment",
         serialized: 1,
+        outOfStock: false,
+        expectedAvailableOn: null,
         unit_price: 8199,
         unit_tax: 1066,
         tax_bp: 1300,

@@ -1,3 +1,9 @@
+import { SCANNER_LINK_SCHEMA } from "./scanner-link-schema.ts";
+import { ORDER_PRICE_OVERRIDES_DDL } from "./order-price-overrides-schema.ts";
+import { PRICE_AUTHORITY_DDL } from "./catalog-price-authority-schema.ts";
+import { CATALOG_REFERENCE_DDL } from "./catalog-reference-schema.ts";
+import { SHIPPING_TERMS_DDL } from "./shipping-terms-schema.ts";
+import { CUSTOMER_PRICING_DDL } from "./customer-pricing-schema.ts";
 import { PRODUCT_AVAILABILITY_DDL } from "./product-availability-schema.ts";
 import { PURCHASING_DDL } from "./purchasing-schema.ts";
 import { CATALOG_MEDIA_DDL } from "./catalog-media-schema.ts";
@@ -238,6 +244,19 @@ export async function upgradeSchema(
         copied.exec(PURCHASING_DDL);
         copied.exec(CATALOG_MEDIA_DDL);
         copied.exec(PRODUCT_AVAILABILITY_DDL);
+        copied.exec(
+          CUSTOMER_PRICING_DDL +
+            ";" +
+            SHIPPING_TERMS_DDL +
+            ";" +
+            CATALOG_REFERENCE_DDL +
+            ";" +
+            PRICE_AUTHORITY_DDL +
+            ";" +
+            ORDER_PRICE_OVERRIDES_DDL +
+            ";" +
+            SCANNER_LINK_SCHEMA.map((o) => o.sql).join(";"),
+        );
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -283,6 +302,20 @@ export async function upgradeSchema(
           copied.exec(CATALOG_MEDIA_DDL);
         }
         if (before.version! <= 25) copied.exec(PRODUCT_AVAILABILITY_DDL);
+        if (before.version! <= 26)
+          copied.exec(
+            CUSTOMER_PRICING_DDL +
+              ";" +
+              SHIPPING_TERMS_DDL +
+              ";" +
+              CATALOG_REFERENCE_DDL +
+              ";" +
+              PRICE_AUTHORITY_DDL +
+              ";" +
+              ORDER_PRICE_OVERRIDES_DDL +
+              ";" +
+              SCANNER_LINK_SCHEMA.map((o) => o.sql).join(";"),
+          );
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

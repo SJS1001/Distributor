@@ -1,3 +1,4 @@
+import { shippingSummary } from "../shared/shipping-terms.ts";
 import React, { useEffect, useState } from "react";
 import { command, request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
@@ -102,6 +103,7 @@ function RequestDetail({
               Submitted total: {displayMoney(value.total, value.currency)}
             </strong>
           </p>
+          <p>{shippingSummary(value.shipping, value.currency)}</p>
           <p>
             {value.allowBackorder
               ? "Backorders accepted"

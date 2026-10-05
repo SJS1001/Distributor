@@ -1,3 +1,4 @@
+import { ReferenceRequestSummary } from "./gree-reference-loader.tsx";
 import {
   lazy,
   Suspense,
@@ -6,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { readReference, referenceHref } from "./reference-context.ts";
 import { request } from "./api.ts";
 import "./public-site.css";
 import { ScannerPage } from "./scanner-page.tsx";
@@ -31,9 +33,9 @@ export function readPublicRoute(hash: string): PublicRoute {
   if (hash === "#products" || hash.startsWith("#products?")) return "products";
   if (hash.startsWith("#activate=") || hash === "#activate") return "activate";
   if (hash === "#scanner") return "scanner";
-  if (hash === "#apply") return "apply";
+  if (hash.split("?")[0] === "#apply") return "apply";
   if (hash === "#admin-sign-in") return "admin-sign-in";
-  if (hash === "#customer-sign-in") return "customer-sign-in";
+  if (hash.split("?")[0] === "#customer-sign-in") return "customer-sign-in";
   if (hash === "#sign-in") return "sign-in";
   return "home";
 }
@@ -49,6 +51,10 @@ export function PublicSite({
   login: ReactNode;
   workspaceHref?: string;
 }) {
+  const requestedReference = readReference(window.location.hash);
+  const applyHref = requestedReference
+    ? referenceHref("#apply", requestedReference)
+    : "#apply";
   const [config, setConfig] = useState<{ enabled: boolean } | null>(null);
   const [configError, setConfigError] = useState(false);
   useEffect(() => {
@@ -287,7 +293,10 @@ export function PublicSite({
               </div>
             }
           >
-            <GreeProductLibrary detail={route === "product"} />
+            <GreeProductLibrary
+              detail={route === "product"}
+              authenticated={!!workspaceHref}
+            />
           </Suspense>
         ) : route === "scanner" ? (
           <ScannerPage />
@@ -310,7 +319,8 @@ export function PublicSite({
                 ) : (
                   <>
                     Sign in with your approved business account. Applying for
-                    the first time? <a href="#apply">Start an application.</a>
+                    the first time?{" "}
+                    <a href={applyHref}>Start an application.</a>
                   </>
                 )}
               </p>
@@ -318,7 +328,12 @@ export function PublicSite({
                 ← Back to the entrance
               </a>
             </div>
-            <div className="public-form-card">{login}</div>
+            <div className="public-form-card">
+              {requestedReference && (
+                <ReferenceRequestSummary reference={requestedReference} />
+              )}{" "}
+              {login}
+            </div>
           </div>
         ) : route === "apply" ? (
           <div className="public-form-layout">
@@ -341,7 +356,7 @@ export function PublicSite({
             <div className="public-form-card">
               <h2>Business details</h2>
               {config?.enabled ? (
-                <ApplicationForm />
+                <ApplicationForm requestedReference={requestedReference} />
               ) : (
                 <p role="status">
                   {configError
@@ -401,7 +416,11 @@ const provinces = [
   ["SK", "Saskatchewan"],
   ["YT", "Yukon"],
 ];
-function ApplicationForm() {
+function ApplicationForm({
+  requestedReference,
+}: {
+  requestedReference: ReturnType<typeof readReference>;
+}) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [received, setReceived] = useState(false);
@@ -443,6 +462,7 @@ function ApplicationForm() {
               businessNumber: values.get("businessNumber") || undefined,
               notes: values.get("notes") || undefined,
               acknowledgment: true,
+              ...(requestedReference ? { requestedReference } : {}),
             }),
           });
           form.reset();
@@ -454,6 +474,9 @@ function ApplicationForm() {
         }
       }}
     >
+      {requestedReference && (
+        <ReferenceRequestSummary reference={requestedReference} />
+      )}
       <p className="public-form-helper">
         All fields are required unless marked optional.
       </p>

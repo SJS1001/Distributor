@@ -9,6 +9,19 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept } from "./fixtures.ts";
 const additions = [
+  "orders_cart_shipping",
+  "orders_shipping_snapshots",
+  "billing_shipping_snapshots",
+  "catalog_price_authority_history",
+  "catalog_price_approval_policy",
+  "catalog_reviewed_unit_cost",
+  "platform_scanner_links",
+  "orders_price_overrides",
+  "orders_price_override_snapshots",
+  "catalog_product_references",
+  "catalog_account_pricing",
+  "catalog_product_msrp",
+  "catalog_pricing_history",
   "catalog_product_availability",
   "catalog_resource_history",
   "catalog_resources",
@@ -85,20 +98,24 @@ for (const reports of [false, true])
     const receipt = await upgradeSchema(source, target, old.schemaHash, "CA");
     assert.equal(receipt.sourceVersion, 22);
     assert.equal(receipt.version, SCHEMA_VERSION);
-    assert.equal(SCHEMA_VERSION, 26);
+    assert.ok(SCHEMA_VERSION >= 27);
     assert.deepEqual(readFileSync(source), sourceBytes);
     assert.equal(business(target), before);
     assert.equal(inspectSchema(target).kind, "current");
     const app = new Application(target, "CA", { eventReports: reports });
     try {
       for (const table of additions) {
-        const owner = table.startsWith("orders_")
-          ? "orders"
-          : table.startsWith("enrollment_")
-            ? "enrollment"
-            : table.startsWith("catalog_")
-              ? "catalog"
-              : "inventory";
+        const owner = table.startsWith("platform_")
+          ? "platform"
+          : table.startsWith("billing_")
+            ? "billing"
+            : table.startsWith("orders_")
+              ? "orders"
+              : table.startsWith("enrollment_")
+                ? "enrollment"
+                : table.startsWith("catalog_")
+                  ? "catalog"
+                  : "inventory";
         assert.equal(
           app.database.owned(owner).get(`SELECT COUNT(*) AS n FROM ${table}`)!
             .n,

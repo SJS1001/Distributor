@@ -1,4 +1,5 @@
 import { Enrollment } from "./enrollment.ts";
+import { ScannerLinks } from "./scanner-link.ts";
 import { PlatformOfflineRefundReviewReader } from "./platform-offline-refund-review.ts";
 import { PlatformOfflineCarrierReviewReader } from "./platform-offline-carrier-review.ts";
 import { RestoreOfflineNativePhase } from "./restore-offline-native-phase.ts";
@@ -43,6 +44,7 @@ export class Application {
   carrierOfflineMemberReview!: CarrierOfflineMemberReview;
   identity!: Identity;
   enrollment!: Enrollment;
+  scannerLinks!: ScannerLinks;
   catalog!: Catalog;
   catalogMedia!: CatalogMedia;
   inventory!: Inventory;
@@ -201,6 +203,11 @@ export class Application {
             this.identity,
             security.providerEncryptionKey,
             security.startupMaintenance !== false,
+          );
+          this.scannerLinks = new ScannerLinks(
+            this.database,
+            this.identity,
+            this.platform,
           );
           this.catalog = new Catalog(
             this.database,

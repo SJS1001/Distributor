@@ -1,3 +1,9 @@
+import { OrderPriceOverrides } from "./order-price-overrides.ts";
+import { shippingTermsInitialize } from "./shipping-terms-schema.ts";
+import {
+  unspecifiedShipping,
+  type ShippingTerms,
+} from "../shared/shipping-terms.ts";
 import { purchasingInitialize } from "./purchasing-schema.ts";
 import type {
   OrderRequest,
@@ -106,6 +112,7 @@ type ReservationHistory = {
 };
 export class Orders {
   private store: Store;
+  readonly priceOverrides: OrderPriceOverrides;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -116,6 +123,14 @@ export class Orders {
     private procurement: Procurement,
   ) {
     this.store = database.owned("orders");
+    this.priceOverrides = new OrderPriceOverrides(
+      database,
+      platform,
+      identity,
+      catalog,
+      inventory,
+    );
+    this.store.migrate(shippingTermsInitialize("orders"));
     this.store.migrate(purchasingInitialize("orders"));
     this.store.migrate(incomingSupplyInitialize("orders"));
     this.store.migrate(`
@@ -335,6 +350,7 @@ export class Orders {
   private orderView(actor: Actor, order: Order) {
     return {
       ...order,
+      shipping: this.shipping(actor, order.id),
       lines: this.lines(actor, order.id),
       reservation: this.reservationStatus(actor, order.id),
     };
@@ -538,6 +554,139 @@ export class Orders {
       },
     );
   }
+  cartShipping(actor: Actor, cartId: string) {
+    actor = this.amendmentActor(actor, true);
+    const cart = this.store.get<Cart>(
+      "SELECT * FROM orders_carts WHERE org_id=? AND id=?",
+      actor.orgId,
+      text(cartId, "Cart", 128),
+    );
+    check(cart, "NOT_FOUND", "Cart not found.", 404);
+    this.identity.customer(actor, cart.account_id);
+    this.inventory.warehouse(actor, cart.warehouse_id);
+    const row = this.store.get<{ terms: string; cart_fingerprint: string }>(
+      "SELECT terms,cart_fingerprint FROM orders_cart_shipping WHERE org_id=? AND cart_id=? ORDER BY revision DESC LIMIT 1",
+      actor.orgId,
+      cart.id,
+    );
+    return {
+      cartRevision: cart.revision,
+      shipping:
+        row?.cart_fingerprint === digest(cart.lines)
+          ? (JSON.parse(row.terms) as ShippingTerms)
+          : unspecifiedShipping(),
+    };
+  }
+  setCartShipping(
+    actor: Actor,
+    key: string,
+    input: {
+      cartId: string;
+      cartRevision: number;
+      treatment: ShippingTerms["treatment"];
+      net: number;
+      tax: number;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "cart.shipping.set",
+      key,
+      input,
+      () => {
+        actor = this.amendmentActor(actor, false);
+        permit(actor, ["commercial"]);
+        this.cartShipping(actor, input.cartId);
+      },
+      () => {
+        const current = this.cartShipping(actor, input.cartId);
+        check(
+          current.cartRevision === input.cartRevision,
+          "REVISION",
+          "Cart changed; review shipping against the current cart.",
+        );
+        check(
+          ["included", "extra", "unspecified"].includes(input.treatment),
+          "VALIDATION",
+          "Choose shipping treatment.",
+          400,
+        );
+        const net = integer(input.net, "shipping net", 0, 1e12),
+          tax = integer(input.tax, "explicit shipping tax", 0, 1e12);
+        integer(net + tax, "shipping total", 0, 1e12);
+        check(
+          input.treatment === "extra" || (net === 0 && tax === 0),
+          "VALIDATION",
+          "Only extra shipping can have a separate amount or tax.",
+          400,
+        );
+        const revision = Number(
+          this.store.get(
+            "SELECT COALESCE(MAX(revision),0)+1 AS revision FROM orders_cart_shipping WHERE org_id=? AND cart_id=?",
+            actor.orgId,
+            input.cartId,
+          )!.revision,
+        );
+        const shipping: ShippingTerms = {
+          treatment: input.treatment,
+          net,
+          tax,
+          revision,
+          reason: text(
+            input.reason,
+            "Shipping terms and tax review evidence",
+            1000,
+          ),
+        };
+        this.store.run(
+          "INSERT INTO orders_cart_shipping VALUES(?,?,?,?,?,?,?,?)",
+          actor.orgId,
+          input.cartId,
+          input.cartRevision,
+          digest(
+            String(
+              this.store.get(
+                "SELECT lines FROM orders_carts WHERE org_id=? AND id=?",
+                actor.orgId,
+                input.cartId,
+              )!.lines,
+            ),
+          ),
+          revision,
+          JSON.stringify(shipping),
+          actor.id,
+          now(),
+        );
+        this.platform.audit(actor, "cart.shipping.set", input.cartId, {
+          shipping,
+          cartRevision: input.cartRevision,
+        });
+        return { cartRevision: input.cartRevision, shipping };
+      },
+    );
+  }
+  private quoteShipping(actor: Actor, quoteId: string): ShippingTerms {
+    const row = this.store.get<{ terms: string }>(
+      "SELECT terms FROM orders_shipping_snapshots WHERE org_id=? AND quote_id=?",
+      actor.orgId,
+      quoteId,
+    );
+    return row
+      ? (JSON.parse(row.terms) as ShippingTerms)
+      : unspecifiedShipping();
+  }
+  shipping(actor: Actor, orderId: string): ShippingTerms {
+    this.order(actor, orderId);
+    const row = this.store.get<{ terms: string }>(
+      "SELECT terms FROM orders_shipping_snapshots WHERE org_id=? AND order_id=?",
+      actor.orgId,
+      orderId,
+    );
+    return row
+      ? (JSON.parse(row.terms) as ShippingTerms)
+      : unspecifiedShipping();
+  }
   quote(
     actor: Actor,
     key: string,
@@ -578,6 +727,7 @@ export class Orders {
           "Cart changed; refresh before quoting.",
         );
         const customer = this.identity.customer(actor, String(cart.account_id));
+        const overrides = this.priceOverrides.resolve(actor, String(cart.id));
         const lines = (
           JSON.parse(String(cart.lines)) as {
             productId: string;
@@ -590,17 +740,26 @@ export class Orders {
             productId: l.productId,
             description: p.product.name,
             quantity: l.quantity,
-            unitPrice: p.unitPrice,
-            unitTax: tax(p.unitPrice, p.product.tax_bp),
+            unitPrice: overrides.get(l.productId)?.unitPrice ?? p.unitPrice,
+            unitTax: tax(
+              overrides.get(l.productId)?.unitPrice ?? p.unitPrice,
+              p.product.tax_bp,
+            ),
+            ...(overrides.has(l.productId)
+              ? { priceOverride: true, ordinaryUnitPrice: p.unitPrice }
+              : {}),
             taxBasisPoints: p.product.tax_bp,
           };
         });
         check(lines.length > 0, "VALIDATION", "Cart is empty.", 400);
+        const shipping = this.cartShipping(actor, input.cartId).shipping;
         const total = integer(
-            lines.reduce(
-              (s, l) => s + l.quantity * (l.unitPrice + l.unitTax),
-              0,
-            ),
+            shipping.net +
+              shipping.tax +
+              lines.reduce(
+                (s, l) => s + l.quantity * (l.unitPrice + l.unitTax),
+                0,
+              ),
             "quote total",
             0,
             1e12,
@@ -624,7 +783,18 @@ export class Orders {
             lines.map((l) => l.productId),
           ).hash,
         );
+        this.store.run(
+          "INSERT INTO orders_shipping_snapshots VALUES(?,?,?,?,?,?)",
+          actor.orgId,
+          quoteId,
+          input.cartId,
+          input.revision,
+          null,
+          JSON.stringify(shipping),
+        );
+        this.priceOverrides.capture(actor, quoteId, String(cart.id), overrides);
         return {
+          shipping,
           id: quoteId,
           total,
           currency: customer.currency,
@@ -744,6 +914,28 @@ export class Orders {
       "Backorder choice is required.",
       400,
     );
+    const shippingSnapshot = this.store.get<{
+      terms: string;
+      cart_id: string;
+      cart_revision: number;
+    }>(
+      "SELECT terms,cart_id,cart_revision FROM orders_shipping_snapshots WHERE org_id=? AND quote_id=?",
+      actor.orgId,
+      String(q.id),
+    );
+    const overrides = shippingSnapshot
+      ? this.priceOverrides.validate(actor, q, shippingSnapshot.cart_id)
+      : new Map<string, { unitPrice: number }>();
+    if (shippingSnapshot) {
+      const current = this.cartShipping(actor, shippingSnapshot.cart_id);
+      check(
+        current.cartRevision === shippingSnapshot.cart_revision &&
+          canonical(current.shipping) ===
+            canonical(JSON.parse(shippingSnapshot.terms)),
+        "SHIPPING_CHANGED",
+        "Cart or shipping terms changed; obtain and accept a fresh quote.",
+      );
+    }
     const customer = this.identity.customer(actor, String(q.account_id));
     check(!customer.held, "CREDIT_HOLD", "Account is on hold.");
     this.inventory.warehouse(actor, String(q.warehouse_id));
@@ -761,8 +953,12 @@ export class Orders {
     for (const line of lines) {
       const current = this.catalog.price(actor, line.productId, customer.id);
       check(
-        current.unitPrice === line.unitPrice &&
-          tax(current.unitPrice, current.product.tax_bp) === line.unitTax &&
+        (overrides.get(line.productId)?.unitPrice ?? current.unitPrice) ===
+          line.unitPrice &&
+          tax(
+            overrides.get(line.productId)?.unitPrice ?? current.unitPrice,
+            current.product.tax_bp,
+          ) === line.unitTax &&
           current.product.currency === q.currency,
         "PRICE_CHANGED",
         "Price or tax changed; obtain and accept a new quote.",
@@ -815,6 +1011,13 @@ export class Orders {
       Number(q.total),
       now(),
     );
+    this.store.run(
+      "UPDATE orders_shipping_snapshots SET order_id=? WHERE org_id=? AND quote_id=?",
+      orderId,
+      actor.orgId,
+      String(q.id),
+    );
+    this.priceOverrides.accepted(actor, String(q.id), orderId);
     for (const l of lines) {
       const allocated = this.inventory.reserve(
         actor,
@@ -923,6 +1126,7 @@ export class Orders {
       revision: Number(r.revision),
       status: String(r.status) as OrderRequestStatus,
       lines: JSON.parse(String(r.lines)),
+      shipping: this.quoteShipping(actor, String(r.quote_id)),
       total: Number(r.total),
       currency: String(r.currency),
       allowBackorder: r.allow_backorder === 1,
@@ -2203,6 +2407,17 @@ export class Orders {
             allocatedDelta,
           "Order quantity reduced: " + reason,
         );
+        if (
+          this.lines(actor, order.id).every((l) => l.canceled === l.quantity)
+        ) {
+          const shipping = this.shipping(actor, order.id);
+          if (shipping.net + shipping.tax > 0)
+            this.billing.releaseExposure(
+              actor,
+              order.id,
+              shipping.net + shipping.tax,
+            );
+        }
         this.refresh(actor, order.id);
         const amendmentId = id(),
           revision = order.revision + 1;
@@ -2312,6 +2527,16 @@ export class Orders {
             release,
           "Order cancellation: " + input.reason,
         );
+        const remaining = this.lines(actor, order.id);
+        if (remaining.every((l) => l.canceled === l.quantity)) {
+          const shipping = this.shipping(actor, order.id);
+          if (shipping.net + shipping.tax > 0)
+            this.billing.releaseExposure(
+              actor,
+              order.id,
+              shipping.net + shipping.tax,
+            );
+        }
         this.refresh(actor, order.id);
         this.platform.audit(actor, "order.cancel.reason", order.id, {
           reason: input.reason,

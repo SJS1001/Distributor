@@ -1,0 +1,65 @@
+export type SalesReportFilter = {
+  from: string;
+  to: string;
+  accountId?: string;
+};
+export type SalesTotals = {
+  currency: string;
+  invoiceCount: number;
+  productQuantity: number;
+  productNet: number;
+  shippingNet: number;
+  invoiceTax: number;
+  invoiceTotal: number;
+  creditCount: number;
+  creditedProductQuantity: number;
+  productCredits: number;
+  shippingCredits: number;
+  creditTax: number;
+  creditTotal: number;
+  netSales: number;
+  netTax: number;
+  netTotal: number;
+  payments: number;
+  refundsCompleted: number;
+  refundsPending: number;
+  refundsUnknown: number;
+};
+export type SalesReportEntry = {
+  id: string;
+  kind: "sale" | "credit" | "payment" | "refund";
+  date: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  accountId: string;
+  currency: string;
+  net: number;
+  tax: number;
+  total: number;
+  quantity?: number;
+  unitPrice?: number;
+  unitTax?: number;
+  productId?: string;
+  description?: string;
+  shipping?: boolean;
+  reason?: string;
+  refundState?: "pending" | "unknown" | "completed" | "rejected";
+  origin: "native" | "opening";
+};
+export type SalesReport = {
+  from: string;
+  to: string;
+  accountId: string | null;
+  generatedAt: string;
+  basis: string;
+  currencies: SalesTotals[];
+  daily: {
+    date: string;
+    currency: string;
+    invoiceNet: number;
+    creditNet: number;
+    payments: number;
+    refundsCompleted: number;
+  }[];
+  details: { items: SalesReportEntry[]; truncated: boolean; limit: 100 };
+};

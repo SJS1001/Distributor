@@ -895,7 +895,7 @@ function snapshot(path: string) {
 function legacy(path: string) {
   raw(path, (db) =>
     db.exec(
-      `DROP TABLE catalog_product_availability; DROP TABLE catalog_resource_history; DROP TABLE catalog_resources; DROP TABLE orders_review_quotes; DROP TABLE orders_review_history; DROP TABLE orders_review_requests; DROP TABLE catalog_entitlements; DROP TABLE catalog_account_policies; DROP TABLE catalog_product_policies; DROP TABLE enrollment_applications; DROP TABLE enrollment_limits; DROP TABLE orders_incoming_commitments; DROP TABLE orders_incoming_history; DROP TABLE inventory_incoming_holds; DROP TABLE integration_offline_checkout_paid; DROP TABLE integration_offline_original_leases; DROP TABLE integration_offline_canada_post_members; DROP TABLE integration_offline_original_cancellations; DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
+      `DROP TABLE orders_cart_shipping; DROP TABLE orders_shipping_snapshots; DROP TABLE billing_shipping_snapshots; DROP TABLE catalog_price_authority_history; DROP TABLE catalog_price_approval_policy; DROP TABLE catalog_reviewed_unit_cost; DROP TABLE platform_scanner_links; DROP TABLE orders_price_overrides; DROP TABLE orders_price_override_snapshots; DROP TABLE catalog_product_references; DROP TABLE catalog_account_pricing; DROP TABLE catalog_product_msrp; DROP TABLE catalog_pricing_history; DROP TABLE catalog_product_availability; DROP TABLE catalog_resource_history; DROP TABLE catalog_resources; DROP TABLE orders_review_quotes; DROP TABLE orders_review_history; DROP TABLE orders_review_requests; DROP TABLE catalog_entitlements; DROP TABLE catalog_account_policies; DROP TABLE catalog_product_policies; DROP TABLE enrollment_applications; DROP TABLE enrollment_limits; DROP TABLE orders_incoming_commitments; DROP TABLE orders_incoming_history; DROP TABLE inventory_incoming_holds; DROP TABLE integration_offline_checkout_paid; DROP TABLE integration_offline_original_leases; DROP TABLE integration_offline_canada_post_members; DROP TABLE integration_offline_original_cancellations; DROP TABLE integration_offline_failed_refunds; DROP TABLE platform_offline_head; DROP TABLE platform_offline_receipts; DROP TABLE platform_offline_journal; DROP TABLE platform_offline_generations; DROP TABLE platform_restore_releases; DROP TABLE inventory_quantity_corrections; DROP TABLE inventory_valuation_policies; DROP TABLE inventory_valuations; DROP TABLE inventory_valuation_positions; DROP TABLE inventory_value_effects; DROP TABLE inventory_value_splits; DROP TABLE integration_ledger_revocations; DROP TABLE integration_ledger_authorizations; DROP TABLE integration_stock_journal_observations; DROP TABLE integration_stock_journal_references; DROP TABLE integration_stock_journals; DROP TABLE iam_ledger_choices; DROP TABLE iam_ledger_disclosure_current; DROP TABLE iam_ledger_disclosures; DROP TABLE integration_cost_retry_outcomes; DROP TABLE integration_cost_retry_references; DROP TABLE integration_cost_correction_retries; DROP TABLE integration_cost_correction_outcomes; DROP TABLE integration_cost_correction_references; DROP TABLE integration_cost_corrections; DROP TABLE integration_cost_policies; DROP TABLE procurement_supplier_changes; DROP TABLE fulfillment_coverage; DROP TABLE warranty_claim_coverage; DROP TABLE integration_credit_cancellations; DROP TABLE integration_credential_revocations; DROP TABLE integration_canada_post_members; DROP TABLE integration_canada_post_groups; DROP TABLE ${metadata}`,
     ),
   );
 }
@@ -906,6 +906,19 @@ function conservedUpgrade(
 ) {
   const after = snapshot(path);
   for (const name of [
+    "orders_cart_shipping",
+    "orders_shipping_snapshots",
+    "billing_shipping_snapshots",
+    "catalog_price_authority_history",
+    "catalog_price_approval_policy",
+    "catalog_reviewed_unit_cost",
+    "platform_scanner_links",
+    "orders_price_overrides",
+    "orders_price_override_snapshots",
+    "catalog_product_references",
+    "catalog_account_pricing",
+    "catalog_product_msrp",
+    "catalog_pricing_history",
     "catalog_product_availability",
     "catalog_resource_history",
     "catalog_resources",
