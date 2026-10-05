@@ -179,23 +179,27 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
 }
 export function CustomerPurchasingRules({
   accounts,
+  selectedOnly = false,
 }: {
+  selectedOnly?: boolean;
   accounts: { id: string; name: string }[];
 }) {
   const [id, setId] = useState(accounts[0]?.id ?? "");
   return (
     <section className="panel">
       <h2>Customer purchasing rules</h2>
-      <label>
-        Customer for purchasing rules
-        <select value={id} onChange={(e) => setId(e.target.value)}>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!selectedOnly && (
+        <label>
+          Customer for purchasing rules
+          <select value={id} onChange={(e) => setId(e.target.value)}>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {id ? (
         <CustomerPolicy key={id} accountId={id} />
       ) : (

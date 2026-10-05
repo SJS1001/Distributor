@@ -52,7 +52,9 @@ test("reviewed cost, limits, recoverable offers, independent exception approval 
     .getByRole("button", { name: "Close product management", exact: true })
     .click();
   await navigateWorkspace(page, "Customers");
-  await page.getByRole("tab", { name: "Pricing", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Price approval settings", exact: true })
+    .click();
   await page
     .locator("summary")
     .filter({ hasText: "Price override approval rules" })

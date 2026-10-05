@@ -1363,3 +1363,7 @@
   width: auto;
   margin-top: 0;
 }
+
+.public-access-paths.is-signed-in {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}

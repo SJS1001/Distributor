@@ -42,10 +42,12 @@ export function WorkspaceBreadcrumbs({
   pages,
   customer,
   onNavigate,
+  customerName,
 }: {
   route: NavigationIntent;
   pages: string[];
   customer: boolean;
+  customerName?: string;
   onNavigate: (intent: NavigationIntent) => void;
 }) {
   const homePage = customer ? "Shop" : "Overview";
@@ -79,10 +81,24 @@ export function WorkspaceBreadcrumbs({
         ...route,
         section: undefined,
         orderId: undefined,
+        customerId: undefined,
+        customerTab: undefined,
       }),
     });
   }
-  const section = route.section && sectionNames[route.section];
+  if (route.customerId) {
+    crumbs.push({
+      label: customerName ?? "Customer record",
+      href: navigationHash({ ...route, customerTab: "overview" }),
+    });
+    if (route.customerTab && route.customerTab !== "overview")
+      crumbs.push({
+        label: route.customerTab[0]!.toUpperCase() + route.customerTab.slice(1),
+        href: navigationHash(route),
+      });
+  }
+  const section =
+    !route.customerId && route.section && sectionNames[route.section];
   if (section && section !== label)
     crumbs.push({
       label: section,

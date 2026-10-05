@@ -1,0 +1,123 @@
+.customer-record {
+  min-width: 0;
+}
+.customer-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 0;
+}
+.customer-record-header h2 {
+  margin: 0.2rem 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  overflow-wrap: anywhere;
+}
+.customer-key-facts {
+  display: flex;
+  gap: 2rem;
+  margin: 0;
+}
+.customer-key-facts dt,
+.customer-detail-facts dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.customer-key-facts dd {
+  margin: 0;
+  font-weight: 700;
+}
+.customer-status {
+  font-weight: 600;
+  color: #166534;
+}
+.customer-status.held {
+  color: #9a3412;
+}
+.customer-directory-tools {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.customer-directory-tools label {
+  max-width: 26rem;
+  flex: 1;
+}
+.customer-name-link {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.customer-detail-facts {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.customer-detail-facts dd {
+  margin: 0.25rem 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.customer-record .page-sections {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+  scroll-padding-inline: 1rem;
+}
+.customer-record .page-sections button {
+  flex: none;
+  white-space: nowrap;
+}
+.customer-contact-list,
+.customer-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+.customer-contact-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.customer-contact-list p {
+  margin: 0.3rem 0;
+}
+.customer-history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.customer-history-list small {
+  grid-column: 1/-1;
+}
+@media (max-width: 600px) {
+  .customer-record-header {
+    align-items: start;
+    flex-direction: column;
+  }
+  .customer-key-facts {
+    gap: 1.5rem;
+  }
+  .customer-directory-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .customer-contact-list li {
+    flex-direction: column;
+  }
+  .customer-detail-facts {
+    grid-template-columns: 1fr;
+  }
+  .customer-directory .table-wrap {
+    overflow-x: auto;
+  }
+  .customer-record .panel {
+    min-width: 0;
+  }
+}

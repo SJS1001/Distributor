@@ -6,6 +6,10 @@ test("staff notes recover a failed read and mobile staff navigation stays readab
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   await navigateWorkspace(page, "Customers");
+  await page
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
   let failRead = true;
   await page.route("**/api/notes/customer/*", async (route) => {
     if (failRead) {
@@ -53,7 +57,9 @@ test("staff notes recover a failed read and mobile staff navigation stays readab
   });
 });
 async function login(page: Page, email = "admin@example.test") {
-  await page.goto("/#admin-sign-in");
+  await page.goto(
+    email.startsWith("notes-buyer") ? "/#customer-sign-in" : "/#admin-sign-in",
+  );
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })
@@ -65,6 +71,10 @@ async function login(page: Page, email = "admin@example.test") {
 }
 async function notes(page: Page) {
   await navigateWorkspace(page, "Customers");
+  await page
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await page
     .locator("summary")
     .filter({ hasText: /^Staff notes$/ })

@@ -7,7 +7,7 @@ import { fixture, accept, ship } from "./fixtures.ts";
 import { Application } from "../src/server/application.ts";
 import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
-import frozen from "./schema-version-twenty-seven.json" with { type: "json" };
+import frozen from "./schema-version-twenty-eight.json" with { type: "json" };
 function raw<T>(path: string, fn: (db: DatabaseSync) => T) {
   const db = new DatabaseSync(path);
   try {
@@ -17,7 +17,7 @@ function raw<T>(path: string, fn: (db: DatabaseSync) => T) {
   }
 }
 for (const profile of frozen.profiles)
-  test(`frozen schema27 upgrades additively to current preserving every existing fact; reports=${profile.eventReports}`, async (t) => {
+  test(`frozen schema28 upgrades additively to current preserving every existing fact; reports=${profile.eventReports}`, async (t) => {
     const f = fixture(t, { eventReports: profile.eventReports });
     const order = accept(f);
     ship(f, order.id);
@@ -27,8 +27,33 @@ for (const profile of frozen.profiles)
       revision: 0,
       reason: "Synthetic migration evidence",
     });
-    const source = join(f.path, "..", "source27.db"),
-      target = join(f.path, "..", "target28.db");
+    const note = f.app.notes.add(f.actor, "migration-note", {
+      kind: "customer",
+      recordId: f.buyer,
+      body: "Historical staff annotation",
+    });
+    const reviewerUser = f.app.identity.createUser(
+      f.actor,
+      "migration-reviewer",
+      {
+        name: "Reviewer",
+        email: "reviewer@example.test",
+        password: "synthetic-reviewer-password",
+        role: "commercial",
+        sites: [],
+      },
+    );
+    const reviewer = f.app.identity.currentActor({
+      ...f.actor,
+      id: reviewerUser.id,
+    });
+    const verified = f.app.notes.verify(reviewer, "migration-verify", {
+      kind: "customer",
+      recordId: f.buyer,
+      noteId: note.id,
+    });
+    const source = join(f.path, "..", "source28.db"),
+      target = join(f.path, "..", "target29.db");
     const tables = profile.schema
       .filter((o) => o.type === "table" && o.name !== "platform_schema_version")
       .map((o) => o.name);
@@ -60,7 +85,7 @@ for (const profile of frozen.profiles)
       assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
       assert.equal(schemaFingerprint(db), profile.hash);
       db.prepare(
-        "INSERT INTO platform_schema_version VALUES(1,27,?,?,?,?)",
+        "INSERT INTO platform_schema_version VALUES(1,28,?,?,?,?)",
       ).run(
         profile.hash,
         Number(profile.eventReports),
@@ -71,7 +96,7 @@ for (const profile of frozen.profiles)
     const bytes = readFileSync(source),
       before = rows(source);
     assert.deepEqual(before, seed);
-    assert.equal(inspectSchema(source).version, 27);
+    assert.equal(inspectSchema(source).version, 28);
     assert.throws(
       () =>
         new Application(source, "CA", { eventReports: profile.eventReports }),
@@ -79,7 +104,7 @@ for (const profile of frozen.profiles)
     );
     assert.deepEqual(readFileSync(source), bytes);
     const receipt = await upgradeSchema(source, target, profile.hash, "CA");
-    assert.equal(receipt.sourceVersion, 27);
+    assert.equal(receipt.sourceVersion, 28);
     assert.equal(receipt.version, SCHEMA_VERSION);
     assert.equal(SCHEMA_VERSION, 29);
     assert.deepEqual(rows(target), before);
@@ -89,7 +114,7 @@ for (const profile of frozen.profiles)
       "2026-10-05T00:00:00.000Z",
     );
     raw(target, (db) => {
-      for (const table of ["notes_records", "notes_verifications"])
+      for (const table of ["iam_customer_contacts"])
         assert.equal(
           db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n,
           0,
@@ -104,13 +129,41 @@ for (const profile of frozen.profiles)
       eventReports: profile.eventReports,
     });
     try {
-      const input = {
-        kind: "customer" as const,
-        recordId: f.buyer,
-        body: "New staff-only annotation after upgrade",
-      };
-      app.notes.add(f.actor, "after-upgrade", input);
-      assert.equal(app.notes.list(f.actor, input).items[0]!.body, input.body);
+      assert.equal(
+        app.notes.list(f.actor, { kind: "customer", recordId: f.buyer })
+          .items[0]!.id,
+        note.id,
+      );
+      assert.deepEqual(
+        app.notes.list(f.actor, { kind: "customer", recordId: f.buyer })
+          .items[0],
+        verified,
+      );
+      assert.throws(
+        () =>
+          app.database
+            .owned("notes")
+            .run("UPDATE notes_records SET body='altered'"),
+        /append-only/,
+      );
+      assert.throws(
+        () =>
+          app.database.owned("notes").run("DELETE FROM notes_verifications"),
+        /append-only/,
+      );
+      const contact = app.identity.contacts.save(f.actor, "after-upgrade", {
+        accountId: f.buyer,
+        expectedRevision: 0,
+        name: "New contact",
+        title: "",
+        email: "",
+        phone: "",
+        archived: false,
+      });
+      assert.equal(
+        app.identity.contacts.list(f.actor, f.buyer).items[0]!.id,
+        contact.id,
+      );
     } finally {
       app.close();
     }

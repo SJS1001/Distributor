@@ -207,6 +207,7 @@ export class Orders {
     after?: string,
     state?: OrderQueueState,
     reservation?: "overdue",
+    accountId?: string,
   ) {
     return this.database.transaction(() => {
       actor = this.orderReader(actor);
@@ -217,6 +218,17 @@ export class Orders {
         400,
       );
       const scope = this.orderScope(actor);
+      if (accountId !== undefined) {
+        check(
+          text(accountId, "Customer", 128) === accountId,
+          "VALIDATION",
+          "Use the exact customer ID.",
+          400,
+        );
+        this.identity.customer(actor, accountId);
+        scope.where += " AND account_id=?";
+        scope.params.push(accountId);
+      }
       const cursor =
         after === undefined
           ? undefined

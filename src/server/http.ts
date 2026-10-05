@@ -716,6 +716,22 @@ export function commands(
       schema: obj({ name: str, tier: str, creditLimit: num }),
       run: (a, k, p) => app.identity.createCustomer(a, k, p),
     },
+    "account.contact.save": {
+      schema: obj(
+        {
+          accountId: { type: "string", minLength: 1, maxLength: 128 },
+          contactId: { type: "string", minLength: 1, maxLength: 128 },
+          expectedRevision: { type: "integer", minimum: 0, maximum: 1e9 },
+          name: { type: "string", minLength: 1, maxLength: 200 },
+          title: { type: "string", maxLength: 200 },
+          email: { type: "string", maxLength: 254 },
+          phone: { type: "string", maxLength: 80 },
+          archived: bool,
+        },
+        ["contactId"],
+      ),
+      run: (a, k, p) => app.identity.contacts.save(a, k, p),
+    },
     "account.hold": {
       schema: obj({ accountId: str, held: bool, reason: str }),
       run: (a, k, p) => app.identity.setHold(a, k, p),
@@ -2325,6 +2341,24 @@ export async function createHttp(app: Application, options: HttpOptions) {
   );
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get<{ Params: { accountId: string } }>(
+    "/api/accounts/:accountId/contacts",
+    {
+      schema: {
+        params: obj({
+          accountId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        querystring: obj({}),
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.identity.contacts.list(
+        actor(request),
+        request.params.accountId,
+      );
+    },
+  );
+  http.get<{ Params: { accountId: string } }>(
     "/api/catalog/purchasing/:accountId",
     { schema: { params: obj({ accountId: str }) } },
     async (r) => app.catalog.purchasingPolicy(actor(r), r.params.accountId),
@@ -2487,6 +2521,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
       after?: string;
       state?: OrderQueueState;
       reservation?: "overdue";
+      accountId?: string;
     };
   }>(
     "/api/orders/page",
@@ -2497,8 +2532,9 @@ export async function createHttp(app: Application, options: HttpOptions) {
             after: { type: "string", minLength: 1, maxLength: 128 },
             state: choice(...orderQueueStates),
             reservation: choice("overdue"),
+            accountId: { type: "string", minLength: 1, maxLength: 128 },
           },
-          ["after", "state", "reservation"],
+          ["after", "state", "reservation", "accountId"],
         ),
       },
     },
@@ -2508,6 +2544,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.query.after,
         request.query.state,
         request.query.reservation,
+        request.query.accountId,
       ),
   );
 
@@ -3326,7 +3363,13 @@ export async function createHttp(app: Application, options: HttpOptions) {
         .send(result.bytes);
     },
   );
-  http.get<{ Querystring: { after?: string; state?: InvoiceQueueState } }>(
+  http.get<{
+    Querystring: {
+      after?: string;
+      state?: InvoiceQueueState;
+      accountId?: string;
+    };
+  }>(
     "/api/billing/invoices/page",
     {
       schema: {
@@ -3334,8 +3377,9 @@ export async function createHttp(app: Application, options: HttpOptions) {
           {
             after: { type: "string", minLength: 1, maxLength: 512 },
             state: choice(...invoiceQueueStates),
+            accountId: { type: "string", minLength: 1, maxLength: 128 },
           },
-          ["after", "state"],
+          ["after", "state", "accountId"],
         ),
       },
     },
@@ -3344,18 +3388,26 @@ export async function createHttp(app: Application, options: HttpOptions) {
   http.get("/api/billing/payments", async (request) =>
     app.billing.refunds.payments(actor(request)),
   );
-  http.get<{ Querystring: { after?: string } }>(
+  http.get<{ Querystring: { after?: string; accountId?: string } }>(
     "/api/billing/payments/page",
     {
       schema: {
         querystring: obj(
-          { after: { type: "string", minLength: 1, maxLength: 128 } },
-          ["after"],
+          {
+            after: { type: "string", minLength: 1, maxLength: 128 },
+            accountId: { type: "string", minLength: 1, maxLength: 128 },
+          },
+          ["after", "accountId"],
         ),
       },
     },
     async (request) =>
-      app.billing.paymentHistory.page(actor(request), request.query.after),
+      app.billing.paymentHistory.page(
+        actor(request),
+        request.query.after,
+        undefined,
+        request.query.accountId,
+      ),
   );
   http.get<{ Params: { invoiceId: string }; Querystring: { after?: string } }>(
     "/api/billing/invoices/:invoiceId/payments/page",

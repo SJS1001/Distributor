@@ -278,7 +278,7 @@ test("HTTP payment pages authenticate, forbid unexpected queries, return no-stor
       `?after=${"x".repeat(129)}`,
       "?after=a&after=b",
       "?limit=100",
-      "?accountId=other",
+      "?unknown=other",
     ])
       assert.equal(
         (await http.inject({ url: endpoint + query, headers })).statusCode,

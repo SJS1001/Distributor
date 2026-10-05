@@ -270,7 +270,9 @@ export function PublicSite({
                   Everything you need to get to work.
                 </h2>
               </div>
-              <div className="public-access-paths">
+              <div
+                className={`public-access-paths${signedIn ? " is-signed-in" : ""}`}
+              >
                 {sessionAudience === "staff" && (
                   <a className="public-scanner-link" href="#scanner">
                     Barcode scanner <span aria-hidden="true">↗</span>
@@ -411,6 +413,12 @@ export function PublicSite({
                   </>
                 )}
               </p>
+              {sessionAudience === "staff" && route === "customer-sign-in" && (
+                <p>
+                  You are signed in to staff operations. Log in with an approved
+                  customer account to see account pricing.
+                </p>
+              )}
               <a className="public-text-link" href="#home">
                 ← Back to the entrance
               </a>

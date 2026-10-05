@@ -31,9 +31,23 @@ export class BillingPaymentHistory {
       );
     });
   }
-  page(actor: Actor, after?: string, invoiceId?: string): PaymentPage {
+  page(
+    actor: Actor,
+    after?: string,
+    invoiceId?: string,
+    accountId?: string,
+  ): PaymentPage {
     return this.database.transaction(() => {
       actor = this.reader(actor);
+      if (accountId !== undefined) {
+        check(
+          text(accountId, "Customer", 128) === accountId,
+          "VALIDATION",
+          "Use the exact customer ID.",
+          400,
+        );
+        this.identity.customer(actor, accountId);
+      }
       if (invoiceId !== undefined) {
         invoiceId = text(invoiceId, "Invoice", 128);
         check(
@@ -51,10 +65,11 @@ export class BillingPaymentHistory {
         after === undefined
           ? undefined
           : this.store.get<{ id: string; created_at: string }>(
-              `SELECT p.id,p.created_at FROM billing_payments p JOIN billing_invoices i ON i.org_id=p.org_id AND i.id=p.invoice_id WHERE p.org_id=? AND p.id=?${invoiceId ? " AND p.invoice_id=?" : ""}`,
+              `SELECT p.id,p.created_at FROM billing_payments p JOIN billing_invoices i ON i.org_id=p.org_id AND i.id=p.invoice_id WHERE p.org_id=? AND p.id=?${invoiceId ? " AND p.invoice_id=?" : ""}${accountId ? " AND i.account_id=?" : ""}`,
               actor.orgId,
               text(after, "Payment cursor", 128),
               ...(invoiceId ? [invoiceId] : []),
+              ...(accountId ? [accountId] : []),
             );
       check(
         after === undefined || cursor,
@@ -63,9 +78,10 @@ export class BillingPaymentHistory {
         400,
       );
       const rows = this.store.all<PaymentSummary>(
-        `SELECT p.id,p.invoice_id,p.amount,p.provider,p.external_ref,p.created_at,i.number AS invoiceNumber,i.currency FROM billing_payments p JOIN billing_invoices i ON i.org_id=p.org_id AND i.id=p.invoice_id WHERE p.org_id=?${invoiceId ? " AND p.invoice_id=?" : ""}${cursor ? " AND (p.created_at<? OR (p.created_at=? AND p.id<?))" : ""} ORDER BY p.created_at DESC,p.id DESC LIMIT 21`,
+        `SELECT p.id,p.invoice_id,p.amount,p.provider,p.external_ref,p.created_at,i.number AS invoiceNumber,i.currency FROM billing_payments p JOIN billing_invoices i ON i.org_id=p.org_id AND i.id=p.invoice_id WHERE p.org_id=?${invoiceId ? " AND p.invoice_id=?" : ""}${accountId ? " AND i.account_id=?" : ""}${cursor ? " AND (p.created_at<? OR (p.created_at=? AND p.id<?))" : ""} ORDER BY p.created_at DESC,p.id DESC LIMIT 21`,
         actor.orgId,
         ...(invoiceId ? [invoiceId] : []),
+        ...(accountId ? [accountId] : []),
         ...(cursor ? [cursor.created_at, cursor.created_at, cursor.id] : []),
       );
       return {

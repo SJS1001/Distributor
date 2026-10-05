@@ -2,7 +2,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 
 async function login(page: Page, email = "admin@example.test") {
-  await page.goto("/#admin-sign-in");
+  await page.goto(
+    email.startsWith("notes-buyer") ? "/#customer-sign-in" : "/#admin-sign-in",
+  );
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })
@@ -24,6 +26,10 @@ async function signOut(page: Page) {
 }
 async function openNotes(page: Page) {
   await navigateWorkspace(page, "Customers");
+  await page
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await page
     .locator("summary")
     .filter({ hasText: /^Staff notes$/ })

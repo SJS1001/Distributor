@@ -398,8 +398,10 @@ function CustomerEditor({
 }
 export function CustomerPricingControls({
   accounts,
+  selectedOnly = false,
   recoveryScope,
 }: {
+  selectedOnly?: boolean;
   accounts: { id: string; name: string; currency: string }[];
   recoveryScope: string;
 }) {
@@ -412,16 +414,18 @@ export function CustomerPricingControls({
         Choose the customer, agree their MSRP multiplier and decide how their
         prices appear.
       </p>
-      <label>
-        Customer for pricing
-        <select value={id} onChange={(e) => setId(e.target.value)}>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!selectedOnly && (
+        <label>
+          Customer for pricing
+          <select value={id} onChange={(e) => setId(e.target.value)}>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {account ? (
         <CustomerEditor
           key={`${recoveryScope}:${id}`}

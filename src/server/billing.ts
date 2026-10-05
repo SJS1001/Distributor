@@ -594,7 +594,11 @@ export class Billing {
   }
   invoicePage(
     actor: Actor,
-    input: { after?: string; state?: InvoiceQueueState } = {},
+    input: {
+      after?: string;
+      state?: InvoiceQueueState;
+      accountId?: string;
+    } = {},
   ) {
     return this.database.transaction(() => {
       actor = this.current(actor, [
@@ -605,6 +609,15 @@ export class Billing {
         "support",
       ]);
       const state = input.state ?? null;
+      if (input.accountId !== undefined) {
+        check(
+          text(input.accountId, "Customer", 128) === input.accountId,
+          "VALIDATION",
+          "Use the exact customer ID.",
+          400,
+        );
+        this.identity.customer(actor, input.accountId);
+      }
       check(
         state === null || invoiceQueueStates.includes(state),
         "VALIDATION",
@@ -629,8 +642,13 @@ export class Billing {
         }
         check(
           Array.isArray(cursor) &&
-            cursor.length === 3 &&
-            cursor[0] === 1 &&
+            ((input.accountId === undefined &&
+              cursor.length === 3 &&
+              cursor[0] === 1) ||
+              (input.accountId !== undefined &&
+                cursor.length === 4 &&
+                cursor[0] === 2 &&
+                cursor[3] === input.accountId)) &&
             cursor[1] === state &&
             typeof cursor[2] === "string" &&
             cursor[2].length > 0 &&
@@ -641,6 +659,13 @@ export class Billing {
         );
         // A payment or credit may change an anchor's balance; its custody still applies.
         anchor = this.invoice(actor, cursor[2]);
+        check(
+          input.accountId === undefined ||
+            anchor.account_id === input.accountId,
+          "CURSOR",
+          "Invoice cursor is unavailable for this customer.",
+          400,
+        );
       }
       let where =
         state === "unpaid"
@@ -655,6 +680,10 @@ export class Billing {
         actor.role === "buyer" ? 1 : 0,
         actor.accountId,
       ] as SQLInputValue[];
+      if (input.accountId !== undefined) {
+        where += " AND account_id=?";
+        parameters.push(input.accountId);
+      }
       if (anchor) {
         where += " AND (created_at<? OR (created_at=? AND id<?))";
         parameters.push(anchor.created_at, anchor.created_at, anchor.id);
@@ -670,9 +699,13 @@ export class Billing {
         items,
         next:
           rows.length > 20
-            ? Buffer.from(JSON.stringify([1, state, items[19]!.id])).toString(
-                "base64url",
-              )
+            ? Buffer.from(
+                JSON.stringify(
+                  input.accountId === undefined
+                    ? [1, state, items[19]!.id]
+                    : [2, state, items[19]!.id, input.accountId],
+                ),
+              ).toString("base64url")
             : null,
       };
     });

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 async function login(page: Page, buyer = false) {
-  await page.goto("/#admin-sign-in");
+  await page.goto(buyer ? "/#customer-sign-in" : "/#admin-sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill(buyer ? "pricing-buyer@example.test" : "admin@example.test");
@@ -15,6 +15,9 @@ async function login(page: Page, buyer = false) {
 }
 async function pricing(page: Page, editable = true) {
   await navigateWorkspace(page, "Customers");
+  await page
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
   await page.getByRole("tab", { name: "Pricing", exact: true }).click();
   if (editable)
     await expect(page.getByLabel("Price calculation")).toBeEnabled();

@@ -1,3 +1,4 @@
+import { CustomerDirectory, CustomerRecord } from "./customer-record.tsx";
 import { WorkspaceBreadcrumbs } from "./workspace-breadcrumbs.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import { PriceOverridesEditor } from "./price-overrides.tsx";
@@ -243,16 +244,19 @@ function App() {
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({});
   const page = route.page;
+  const customerPricingSignIn =
+    publicRoute === "customer-sign-in" && actor?.role !== "buyer";
   useEffect(() => {
     if (
       actor &&
       data &&
       !publicHome &&
+      !customerPricingSignIn &&
       publicRoute !== "activate" &&
       !["scanner", "products", "product"].includes(publicRoute)
     )
       document.title = `${actor.role === "buyer" && page === "Overview" ? "Reports" : page} · dstrbtr`;
-  }, [actor, data, page, publicRoute, publicHome]);
+  }, [actor, data, page, publicRoute, publicHome, customerPricingSignIn]);
   const traversal = useRef<(destination: NavigationIntent) => void>(() => {});
   const setPage = (destination: string) => {
     const next = { page: destination };
@@ -276,6 +280,7 @@ function App() {
     if (
       !actor ||
       publicHome ||
+      customerPricingSignIn ||
       ["activate", "scanner", "products", "product"].includes(publicRoute)
     )
       return;
@@ -327,7 +332,14 @@ function App() {
       window.removeEventListener("popstate", locationChanged);
       window.removeEventListener("hashchange", locationChanged);
     };
-  }, [actor?.orgId, actor?.id, actor?.role, publicRoute, publicHome]);
+  }, [
+    actor?.orgId,
+    actor?.id,
+    actor?.role,
+    publicRoute,
+    publicHome,
+    customerPricingSignIn,
+  ]);
   const claimQueue = useClaimQueue(
     data?.claims,
     data?.claimNext,
@@ -531,7 +543,7 @@ function App() {
   const loginEdited = useRef(false);
   useEffect(() => {
     if (
-      actor ||
+      (actor && !customerPricingSignIn) ||
       nativeDemo ||
       !["admin-sign-in", "customer-sign-in"].includes(publicRoute)
     )
@@ -564,7 +576,7 @@ function App() {
         setPassword((value) => (value === prefilled!.password ? "" : value));
       }
     };
-  }, [actor, nativeDemo, publicRoute]);
+  }, [actor, nativeDemo, publicRoute, customerPricingSignIn]);
   const refresh = async (
     signal?: AbortSignal,
     options: { preserveQuantitySelection?: boolean } = {},
@@ -1854,7 +1866,13 @@ function App() {
             setCsrf(s.csrf);
             setPasswordChangeRequired(s.passwordChangeRequired);
             setMfaEnrollmentRequired(s.mfaEnrollmentRequired);
+            setData(null);
+            setExtra({});
             setActor(s.actor);
+            if (customerPricingSignIn && s.actor.role !== "buyer")
+              setError(
+                "Use an approved customer account to see account pricing. Staff credentials open staff operations.",
+              );
             setPassword("");
             setLoginCode("");
             setMfaRequired(false);
@@ -1931,6 +1949,7 @@ function App() {
   );
   if (
     publicHome ||
+    customerPricingSignIn ||
     ["activate", "scanner", "products", "product"].includes(publicRoute)
   )
     return (
@@ -2098,6 +2117,190 @@ function App() {
     setRoute(next);
   };
 
+  const customerTermsActions = (a: Item) => (
+    <div className="actions">
+      {can("finance") &&
+        button(a.held ? "Clear hold" : "Apply hold", () =>
+          simple("Finance hold", [reason], "account.hold", (v) => ({
+            ...v,
+            accountId: a.id,
+            held: !a.held,
+          })),
+        )}
+      {can("commercial", "finance", "support", "buyer") &&
+        button("Acceptance history", () => {
+          providerHistoryOpener.current = document.activeElement as HTMLElement;
+          setProviderHistoryAccount(a.id);
+        })}
+      {can("commercial", "buyer") &&
+        button("Residency choice", () =>
+          open(
+            "Choose data residency",
+            [
+              {
+                name: "region",
+                label: "Application storage region",
+                options: [
+                  { value: "CA", label: "Canada" },
+                  { value: "US", label: "United States" },
+                ],
+                value: data.organization.region,
+              },
+              {
+                name: "mode",
+                label: "Processor policy",
+                options: [
+                  {
+                    value: "strict",
+                    label: "Strict regional residency",
+                  },
+                  {
+                    value: "provider-exceptions",
+                    label: "Accept selected processor exceptions",
+                  },
+                ],
+                value: a.residency_mode,
+              },
+              ...providerChoices
+                .filter((p) =>
+                  data.providerDisclosures.some(
+                    (d: Item) => d.provider === p.id,
+                  ),
+                )
+                .map(({ id, label }): Field => ({
+                  name: id,
+                  label: `Allow ${label} processing outside the storage region`,
+                  type: "checkbox",
+                  value:
+                    JSON.parse(a.provider_exceptions).includes(id) &&
+                    a.providerReviews.some(
+                      (r: Item) => r.provider === id && r.current === 1,
+                    ),
+                })),
+              ...(actor.role === "buyer"
+                ? []
+                : [
+                    {
+                      name: "representative",
+                      label: "Authorized customer representative",
+                      optional: true,
+                      help: "Required when staff records a customer exception.",
+                    },
+                    {
+                      name: "evidenceRef",
+                      label: "External customer acceptance evidence",
+                      type: "textarea" as const,
+                      optional: true,
+                      help: "Reference the customer acceptance of these exact terms; a staff acknowledgment alone is insufficient.",
+                    },
+                  ]),
+              {
+                name: "acknowledgment",
+                label: "Acknowledgment of reviewed processor terms",
+                type: "textarea",
+              },
+            ],
+            (v) =>
+              command("account.residency", {
+                accountId: a.id,
+                region: v.region,
+                mode: v.mode,
+                providers: providerNames.filter((p) => v[p]),
+                ...(providerNames.some((p) => v[p])
+                  ? {
+                      acceptance: {
+                        basis: actor.role === "buyer" ? "buyer" : "recorded",
+                        ...(actor.role === "buyer"
+                          ? {}
+                          : {
+                              representative: v.representative,
+                              evidenceRef: v.evidenceRef,
+                            }),
+                        disclosures: providerNames
+                          .filter((p) => v[p])
+                          .map((provider) => ({
+                            provider,
+                            disclosureId: data.providerDisclosures.find(
+                              (d: Item) => d.provider === provider,
+                            ).id,
+                          })),
+                      },
+                    }
+                  : {}),
+                version: a.residency_version,
+                acknowledgment: v.acknowledgment,
+              }),
+            <DisclosureReview disclosures={data.providerDisclosures} />,
+          ),
+        )}
+    </div>
+  );
+  const editCustomerBilling = (p: Item) =>
+    open(
+      "Edit billing details",
+      [
+        {
+          name: "name",
+          label: "Billing name",
+          value: p.name,
+        },
+        {
+          name: "address",
+          label: "Billing address",
+          type: "textarea",
+          value: p.address,
+          optional: true,
+        },
+        {
+          name: "taxRegistration",
+          label: "Tax registration",
+          value: p.taxRegistration,
+          optional: true,
+        },
+        ...(p.accountId === null
+          ? []
+          : [
+              {
+                name: "termsChoice",
+                label: "Terms basis",
+                value: p.termDays === null ? "unknown" : "configured",
+                options: [
+                  {
+                    value: "unknown",
+                    label: "Not recorded",
+                  },
+                  {
+                    value: "configured",
+                    label: "Specified calendar days",
+                  },
+                ],
+              },
+              {
+                name: "termDays",
+                label: "Calendar days",
+                type: "number" as const,
+                value: p.termDays ?? 0,
+                min: 0,
+                max: 365,
+              },
+            ]),
+        reason,
+      ],
+      (v) =>
+        command("billing.profile", {
+          accountId: p.accountId,
+          name: v.name,
+          address: v.address,
+          taxRegistration: v.taxRegistration,
+          termDays:
+            p.accountId === null || v.termsChoice === "unknown"
+              ? null
+              : v.termDays,
+          version: p.version,
+          reason: v.reason,
+        }),
+    );
+
   return (
     <div className={staff ? "shell" : "shell customer-shell"}>
       <a
@@ -2125,6 +2328,11 @@ function App() {
           route={route}
           pages={pages}
           customer={!staff}
+          customerName={
+            route.customerId
+              ? data.accounts.find((a: Item) => a.id === route.customerId)?.name
+              : undefined
+          }
           onNavigate={navigate}
         />
         <header className="workspace-header">
@@ -6274,32 +6482,75 @@ function App() {
             </PageSection>
           </PageSections>
         )}
-        {(page === "Customers" || (page === "Account" && !staff)) && (
+        {page === "Customers" &&
+          route.customerId &&
+          (data.accounts.find((a: Item) => a.id === route.customerId) ? (
+            <CustomerRecord
+              key={route.customerId}
+              account={data.accounts.find(
+                (a: Item) => a.id === route.customerId,
+              )}
+              tab={route.customerTab}
+              onTab={(customerTab) => updateRoute({ customerTab })}
+              onBack={() =>
+                navigate({ page: "Customers", section: "customer-accounts" })
+              }
+              role={actor.role}
+              actorId={actor.id}
+              recoveryScope={`${actor.orgId}:${actor.id}`}
+              terms={
+                <>
+                  {customerTermsActions(
+                    data.accounts.find((a: Item) => a.id === route.customerId),
+                  )}
+                  {providerHistoryAccount === route.customerId && (
+                    <ProviderHistory
+                      key={`${route.customerId}:${eventViewEpoch}`}
+                      account={data.accounts.find(
+                        (a: Item) => a.id === route.customerId,
+                      )}
+                      close={() => {
+                        setProviderHistoryAccount(null);
+                        providerHistoryOpener.current?.focus();
+                      }}
+                    />
+                  )}
+                </>
+              }
+              billingEpoch={eventViewEpoch}
+              onNavigate={navigate}
+              editBilling={(p) => editCustomerBilling(p)}
+            />
+          ) : (
+            <section className="panel">
+              <h2>Customer unavailable</h2>
+              <p>This customer is unavailable in your current workspace.</p>
+              <button onClick={() => navigate({ page: "Customers" })}>
+                All customers
+              </button>
+            </section>
+          ))}
+        {((page === "Customers" && !route.customerId) ||
+          (page === "Account" && !staff)) && (
           <PageSections
             label="Customer workspace sections"
             selectedSection={route.section ?? "customer-accounts"}
             selectSection={(section) => updateRoute({ section })}
             items={[
               { id: "customer-accounts", label: "Accounts" },
-              ...(staff && can("commercial")
-                ? [{ id: "customer-purchasing", label: "Purchasing access" }]
-                : []),
+
               ...(admin
                 ? [
-                    { id: "customer-pricing", label: "Pricing" },
+                    {
+                      id: "customer-pricing",
+                      label: "Price approval settings",
+                    },
                     { id: "customer-providers", label: "Provider settings" },
                   ]
                 : []),
             ]}
           >
-            <PageSection id="customer-purchasing">
-              <CustomerPurchasingRules accounts={data.accounts} />
-            </PageSection>
             <PageSection id="customer-pricing">
-              <CustomerPricingControls
-                accounts={data.accounts}
-                recoveryScope={`${actor.orgId}:${actor.id}`}
-              />
               {actor.role === "admin" && (
                 <PriceApprovalPolicyEditor
                   recoveryScope={`${actor.orgId}:${actor.id}`}
@@ -6307,228 +6558,120 @@ function App() {
               )}
             </PageSection>
             <PageSection id="customer-accounts">
-              {!staff && (
-                <button onClick={() => navigate({ page: "Returns" })}>
-                  Returns and warranty requests
-                </button>
-              )}
-              <p>
-                Each processor exception allows processing outside the
-                application storage region. Review the applicable terms before
-                accepting. Carrier services require separate setup and
-                qualification.
-              </p>
-              <div className="actions">
-                {can("commercial") &&
-                  button("Add customer", () =>
-                    simple(
-                      "Add customer account",
-                      [
-                        { name: "name", label: "Customer name" },
-                        {
-                          name: "tier",
-                          label: "Price tier",
-                          value: "standard",
-                        },
-                        {
-                          name: "creditLimit",
-                          label: "Credit limit in cents",
-                          type: "number",
-                        },
-                      ],
-                      "account.create",
-                    ),
+              {staff ? (
+                <CustomerDirectory
+                  accounts={data.accounts}
+                  onNavigate={navigate}
+                  actions={
+                    <div className="actions">
+                      {can("commercial") &&
+                        button("Add customer", () =>
+                          simple(
+                            "Add customer account",
+                            [
+                              { name: "name", label: "Customer name" },
+                              {
+                                name: "tier",
+                                label: "Price tier",
+                                value: "standard",
+                              },
+                              {
+                                name: "creditLimit",
+                                label: "Credit limit in cents",
+                                type: "number",
+                              },
+                            ],
+                            "account.create",
+                          ),
+                        )}
+                    </div>
+                  }
+                />
+              ) : (
+                <>
+                  {" "}
+                  {!staff && (
+                    <button onClick={() => navigate({ page: "Returns" })}>
+                      Returns and warranty requests
+                    </button>
                   )}
-              </div>
-
-              {table(
-                [
-                  "Customer",
-                  "Tier",
-                  "Credit limit",
-                  "Hold",
-                  "Residency",
-                  "Actions",
-                ],
-                data.accounts,
-                (a: Item) => [
-                  a.name,
-                  a.tier,
-                  money(a.credit_limit, a.currency),
-                  a.held ? "On hold" : "Clear",
-                  `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
-                    .filter(
-                      (p) =>
-                        JSON.parse(a.provider_exceptions).includes(p) &&
-                        !a.providerReviews.some(
-                          (r: Item) => r.provider === p && r.current === 1,
-                        ),
-                    )
-                    .map(
-                      (p) =>
-                        ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
-                    )
-                    .join("")}`,
+                  <p>
+                    Each processor exception allows processing outside the
+                    application storage region. Review the applicable terms
+                    before accepting. Carrier services require separate setup
+                    and qualification.
+                  </p>
                   <div className="actions">
-                    {staff && (
-                      <RecordNotes
-                        kind="customer"
-                        recordId={a.id}
-                        actorId={actor.id}
-                        recoveryScope={`${actor.orgId}:${actor.id}`}
-                      />
-                    )}
-                    {can("finance") &&
-                      button(a.held ? "Clear hold" : "Apply hold", () =>
+                    {can("commercial") &&
+                      button("Add customer", () =>
                         simple(
-                          "Finance hold",
-                          [reason],
-                          "account.hold",
-                          (v) => ({
-                            ...v,
-                            accountId: a.id,
-                            held: !a.held,
-                          }),
-                        ),
-                      )}
-                    {can("commercial", "finance", "support", "buyer") &&
-                      button("Acceptance history", () => {
-                        providerHistoryOpener.current =
-                          document.activeElement as HTMLElement;
-                        setProviderHistoryAccount(a.id);
-                      })}
-                    {can("commercial", "buyer") &&
-                      button("Residency choice", () =>
-                        open(
-                          "Choose data residency",
+                          "Add customer account",
                           [
+                            { name: "name", label: "Customer name" },
                             {
-                              name: "region",
-                              label: "Application storage region",
-                              options: [
-                                { value: "CA", label: "Canada" },
-                                { value: "US", label: "United States" },
-                              ],
-                              value: data.organization.region,
+                              name: "tier",
+                              label: "Price tier",
+                              value: "standard",
                             },
                             {
-                              name: "mode",
-                              label: "Processor policy",
-                              options: [
-                                {
-                                  value: "strict",
-                                  label: "Strict regional residency",
-                                },
-                                {
-                                  value: "provider-exceptions",
-                                  label: "Accept selected processor exceptions",
-                                },
-                              ],
-                              value: a.residency_mode,
-                            },
-                            ...providerChoices
-                              .filter((p) =>
-                                data.providerDisclosures.some(
-                                  (d: Item) => d.provider === p.id,
-                                ),
-                              )
-                              .map(({ id, label }): Field => ({
-                                name: id,
-                                label: `Allow ${label} processing outside the storage region`,
-                                type: "checkbox",
-                                value:
-                                  JSON.parse(a.provider_exceptions).includes(
-                                    id,
-                                  ) &&
-                                  a.providerReviews.some(
-                                    (r: Item) =>
-                                      r.provider === id && r.current === 1,
-                                  ),
-                              })),
-                            ...(actor.role === "buyer"
-                              ? []
-                              : [
-                                  {
-                                    name: "representative",
-                                    label: "Authorized customer representative",
-                                    optional: true,
-                                    help: "Required when staff records a customer exception.",
-                                  },
-                                  {
-                                    name: "evidenceRef",
-                                    label:
-                                      "External customer acceptance evidence",
-                                    type: "textarea" as const,
-                                    optional: true,
-                                    help: "Reference the customer acceptance of these exact terms; a staff acknowledgment alone is insufficient.",
-                                  },
-                                ]),
-                            {
-                              name: "acknowledgment",
-                              label:
-                                "Acknowledgment of reviewed processor terms",
-                              type: "textarea",
+                              name: "creditLimit",
+                              label: "Credit limit in cents",
+                              type: "number",
                             },
                           ],
-                          (v) =>
-                            command("account.residency", {
-                              accountId: a.id,
-                              region: v.region,
-                              mode: v.mode,
-                              providers: providerNames.filter((p) => v[p]),
-                              ...(providerNames.some((p) => v[p])
-                                ? {
-                                    acceptance: {
-                                      basis:
-                                        actor.role === "buyer"
-                                          ? "buyer"
-                                          : "recorded",
-                                      ...(actor.role === "buyer"
-                                        ? {}
-                                        : {
-                                            representative: v.representative,
-                                            evidenceRef: v.evidenceRef,
-                                          }),
-                                      disclosures: providerNames
-                                        .filter((p) => v[p])
-                                        .map((provider) => ({
-                                          provider,
-                                          disclosureId:
-                                            data.providerDisclosures.find(
-                                              (d: Item) =>
-                                                d.provider === provider,
-                                            ).id,
-                                        })),
-                                    },
-                                  }
-                                : {}),
-                              version: a.residency_version,
-                              acknowledgment: v.acknowledgment,
-                            }),
-                          <DisclosureReview
-                            disclosures={data.providerDisclosures}
-                          />,
+                          "account.create",
                         ),
                       )}
-                  </div>,
-                ],
-              )}
-              {providerHistoryAccount &&
-                can("commercial", "finance", "support", "buyer") &&
-                data.accounts.some(
-                  (a: Item) => a.id === providerHistoryAccount,
-                ) && (
-                  <ProviderHistory
-                    key={`${providerHistoryAccount}:${eventViewEpoch}`}
-                    account={data.accounts.find(
+                  </div>
+                  {table(
+                    [
+                      "Customer",
+                      "Tier",
+                      "Credit limit",
+                      "Hold",
+                      "Residency",
+                      "Actions",
+                    ],
+                    data.accounts,
+                    (a: Item) => [
+                      a.name,
+                      a.tier,
+                      money(a.credit_limit, a.currency),
+                      a.held ? "On hold" : "Clear",
+                      `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
+                        .filter(
+                          (p) =>
+                            JSON.parse(a.provider_exceptions).includes(p) &&
+                            !a.providerReviews.some(
+                              (r: Item) => r.provider === p && r.current === 1,
+                            ),
+                        )
+                        .map(
+                          (p) =>
+                            ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
+                        )
+                        .join("")}`,
+                      customerTermsActions(a),
+                    ],
+                  )}
+                  {providerHistoryAccount &&
+                    can("commercial", "finance", "support", "buyer") &&
+                    data.accounts.some(
                       (a: Item) => a.id === providerHistoryAccount,
+                    ) && (
+                      <ProviderHistory
+                        key={`${providerHistoryAccount}:${eventViewEpoch}`}
+                        account={data.accounts.find(
+                          (a: Item) => a.id === providerHistoryAccount,
+                        )}
+                        close={() => {
+                          setProviderHistoryAccount(null);
+                          providerHistoryOpener.current?.focus();
+                        }}
+                      />
                     )}
-                    close={() => {
-                      setProviderHistoryAccount(null);
-                      providerHistoryOpener.current?.focus();
-                    }}
-                  />
-                )}
+                </>
+              )}
             </PageSection>
             <PageSection id="customer-providers">
               {admin && (

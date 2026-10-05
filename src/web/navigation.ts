@@ -31,9 +31,20 @@ export const workspacePages = [
   "Administration",
 ] as const;
 export type Page = (typeof workspacePages)[number];
+export const customerTabs = [
+  "overview",
+  "history",
+  "terms",
+  "pricing",
+  "notes",
+  "contacts",
+] as const;
+export type CustomerTab = (typeof customerTabs)[number];
 export type NavigationIntent = {
   page: string;
   section?: string;
+  customerId?: string;
+  customerTab?: CustomerTab;
   referenceFamily?: string;
   referenceModel?: string;
   productId?: string;
@@ -102,8 +113,16 @@ export function readNavigation(hash: string): NavigationIntent {
     if (route.referenceFamily)
       route.referenceModel = identifier(query.get("referenceModel"));
   }
+  if (page === "Customers") {
+    route.customerId = identifier(query.get("customer"));
+    const tab = query.get("customerTab");
+    if (route.customerId && customerTabs.includes(tab as CustomerTab))
+      route.customerTab = tab as CustomerTab;
+  }
   const section = query.get("section");
   if (section && sections[page]?.includes(section)) route.section = section;
+  if (page === "Customers" && route.section === "customer-purchasing")
+    route.section = "customer-accounts";
   const orderState = query.get("orders"),
     invoiceBalance = query.get("invoices"),
     stockView = query.get("stock");
@@ -131,6 +150,8 @@ export function readNavigation(hash: string): NavigationIntent {
 }
 export function navigationHash(intent: NavigationIntent) {
   const query = new URLSearchParams({ page: intent.page });
+  if (intent.customerId) query.set("customer", intent.customerId);
+  if (intent.customerTab) query.set("customerTab", intent.customerTab);
   if (intent.productId) query.set("product", intent.productId);
   if (intent.referenceFamily)
     query.set("referenceFamily", intent.referenceFamily);
@@ -147,6 +168,8 @@ export function navigationHash(intent: NavigationIntent) {
   const safe = readNavigation(`#${query}`);
   const result = new URLSearchParams({ page: safe.page });
   for (const [key, value] of Object.entries({
+    customer: safe.customerId,
+    customerTab: safe.customerTab,
     product: safe.productId,
     referenceFamily: safe.referenceFamily,
     referenceModel: safe.referenceModel,

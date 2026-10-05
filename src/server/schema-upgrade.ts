@@ -1,3 +1,4 @@
+import { CUSTOMER_CONTACTS_DDL } from "./customer-contacts-schema.ts";
 import { RECORD_NOTES_DDL } from "./record-notes-schema.ts";
 import { SCANNER_LINK_SCHEMA } from "./scanner-link-schema.ts";
 import { ORDER_PRICE_OVERRIDES_DDL } from "./order-price-overrides-schema.ts";
@@ -259,6 +260,7 @@ export async function upgradeSchema(
             SCANNER_LINK_SCHEMA.map((o) => o.sql).join(";"),
         );
         copied.exec(RECORD_NOTES_DDL);
+        copied.exec(CUSTOMER_CONTACTS_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -319,6 +321,7 @@ export async function upgradeSchema(
               SCANNER_LINK_SCHEMA.map((o) => o.sql).join(";"),
           );
         if (before.version! <= 27) copied.exec(RECORD_NOTES_DDL);
+        if (before.version! <= 28) copied.exec(CUSTOMER_CONTACTS_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

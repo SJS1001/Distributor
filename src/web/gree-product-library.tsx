@@ -337,19 +337,13 @@ function GreeProductDetail({
             <a
               className="public-primary"
               href={referenceHref(
-                customerAuthenticated
-                  ? "#page=Shop"
-                  : authenticated
-                    ? "#page=Overview"
-                    : "#customer-sign-in",
+                customerAuthenticated ? "#page=Shop" : "#customer-sign-in",
                 { familyId: product.id, modelId: modelId || null },
               )}
             >
               {customerAuthenticated
-                ? "View reviewed purchasing matches ↗"
-                : authenticated
-                  ? "Open staff workspace ↗"
-                  : "Sign in for pricing & availability ↗"}
+                ? "View account pricing ↗"
+                : "Log in to see pricing"}
             </a>
             {!authenticated && (
               <a
@@ -546,19 +540,13 @@ function GreeProductDetail({
         <a
           className="public-primary"
           href={referenceHref(
-            customerAuthenticated
-              ? "#page=Shop"
-              : authenticated
-                ? "#page=Overview"
-                : "#customer-sign-in",
+            customerAuthenticated ? "#page=Shop" : "#customer-sign-in",
             { familyId: product.id, modelId: modelId || null },
           )}
         >
-          {authenticated
-            ? customerAuthenticated
-              ? "Open your trade account ↗"
-              : "Open staff workspace ↗"
-            : "Sign in to your trade account ↗"}
+          {customerAuthenticated
+            ? "View account pricing ↗"
+            : "Log in to see pricing"}
         </a>
       </div>
     </article>

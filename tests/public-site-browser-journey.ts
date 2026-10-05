@@ -712,7 +712,9 @@ test("signed-in buyer and administrator can browse the library and return to the
     ["pilot-buyer@example.test", "synthetic-buyer-password", "Shop"],
     ["admin@example.test", "long-test-only-password", "Overview"],
   ]) {
-    await page.goto("/#customer-sign-in");
+    await page.goto(
+      heading === "Overview" ? "/#admin-sign-in" : "/#customer-sign-in",
+    );
     await page.getByLabel("Email", { exact: true }).fill(email!);
     await page.getByLabel("Password", { exact: true }).fill(password!);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -774,7 +776,9 @@ test("public navigation follows the actual customer or staff session and logout 
       "Staff workspace",
     ],
   ]) {
-    await page.goto("/#customer-sign-in");
+    await page.goto(
+      heading === "Overview" ? "/#admin-sign-in" : "/#customer-sign-in",
+    );
     await page.getByLabel("Email", { exact: true }).fill(email!);
     await page.getByLabel("Password", { exact: true }).fill(password!);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -1079,4 +1083,153 @@ test("public catalog breadcrumb aligns with content at desktop and phone widths"
       fullPage: true,
     });
   }
+});
+
+test("public pricing entry preserves equipment for guests and staff and reaches buyer pricing", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/#products");
+  await page.locator(".gree-product-card").first().click();
+  const pricing = page.getByRole("link", {
+    name: "Log in to see pricing",
+    exact: true,
+  });
+  await expect(pricing).toHaveCount(2);
+  const href = await pricing.first().getAttribute("href");
+  expect(href).toMatch(/^#customer-sign-in\?referenceFamily=/);
+  await page.screenshot({
+    path: testInfo.outputPath("guest-product-pricing.png"),
+    fullPage: true,
+  });
+  await pricing.first().click();
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(
+    new RegExp(href!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"),
+  );
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("pilot-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("synthetic-buyer-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#workspace-title")).toHaveText("Shop");
+  const reference = new URLSearchParams(href!.split("?")[1]).get(
+    "referenceFamily",
+  );
+  await expect(page).toHaveURL(new RegExp(`referenceFamily=${reference}`));
+  await page.goto("/#home");
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const container = await page.locator(".public-access-paths").boundingBox();
+    const card = await page.locator(".public-customer").boundingBox();
+    expect(Math.abs(container!.width - card!.width)).toBeLessThan(2);
+    await page.screenshot({
+      path: testInfo.outputPath(`buyer-card-${width}.png`),
+      fullPage: true,
+    });
+  }
+  await page.goto("/#products");
+  await page.locator(".gree-product-card").first().click();
+  await expect(pricing).toHaveCount(0);
+  const buyerPricing = page
+    .locator(".gree-detail-actions")
+    .getByRole("link", { name: "View account pricing", exact: false });
+  await expect(buyerPricing).toHaveAttribute(
+    "href",
+    /^#page=Shop&referenceFamily=/,
+  );
+  await page
+    .getByRole("navigation", { name: "Public navigation", exact: true })
+    .getByRole("button", { name: "Sign out", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Public navigation", exact: true })
+      .getByRole("link", { name: "Customer sign in", exact: false }),
+  ).toBeVisible();
+  await page.goto("/#admin-sign-in");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#workspace-title")).toHaveText("Overview");
+  await page.goto("/#customer-sign-in");
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Public navigation", exact: true })
+    .getByRole("link", { name: "Staff workspace", exact: true })
+    .click();
+  await expect(page.locator("#workspace-title")).toHaveText("Overview");
+  await page.goto("/#products");
+  await page.locator(".gree-product-card").first().click();
+  await expect(pricing).toHaveCount(2);
+  await expect(
+    page
+      .locator(".gree-detail")
+      .getByRole("link", { name: "Open staff workspace", exact: false }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("staff-product-pricing.png"),
+    fullPage: true,
+  });
+  await pricing.first().click();
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("You are signed in to staff operations.", { exact: false }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Use an approved customer account" })
+      .first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  expect(
+    (await (await page.request.get("/api/session")).json()).actor.role,
+  ).toBe("admin");
+  const customerEntry = page.url();
+  await page
+    .getByRole("navigation", { name: "Public navigation", exact: true })
+    .getByRole("link", { name: "Staff workspace", exact: true })
+    .click();
+  await expect(page.locator("#workspace-title")).toHaveText("Overview");
+  await page.goto(customerEntry);
+  await expect(
+    page.getByRole("heading", { name: "Customer sign in.", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("pilot-buyer@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("synthetic-buyer-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#workspace-title")).toHaveText("Shop");
+  await expect(page).toHaveURL(new RegExp(`referenceFamily=${reference}`));
+  expect(
+    (await (await page.request.get("/api/session")).json()).actor.role,
+  ).toBe("buyer");
 });

@@ -104,3 +104,7 @@ Screenshots were inspected. Private evidence is retained in `local-evidence/poli
 - Existing bundle-size advisory and broader infrastructure residency, recovery-time and recovery-point qualification remain open. Owner-authorized public pre-filled accounts remain suitable only for the fictional pilot.
 
 These five reviews and their identified fixes are complete; they do not certify every product gate or readiness for real customer data. Three existing Codex subagents assisted; no new cloud session, CI runner, PR or merge was used.
+
+## Owner follow-up: presentation was not accepted
+
+After the five-pass release, the owner reported that the presentation looked worse and identified the public product action saying "Open staff workspace" while staff were signed in. The five passes above verified the recorded functional paths; they did not establish owner acceptance of visual quality or correct separation of public product intent from staff session navigation. Calling them complete must not imply that the requested design outcome was accepted. The public customer-pricing entry and dedicated, tabbed staff customer records are the next corrective change, tracked in `docs/CUSTOMER-RECORDS.md` and the handoff.

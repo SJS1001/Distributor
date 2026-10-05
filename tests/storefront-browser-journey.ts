@@ -2,8 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createCanvas } from "@napi-rs/canvas";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 async function login(page: Page, buyer: boolean) {
-  // Choosing the other entrance must not change the account's authenticated role.
-  await page.goto(buyer ? "/#admin-sign-in" : "/#customer-sign-in");
+  await page.goto(buyer ? "/#customer-sign-in" : "/#admin-sign-in");
   await page
     .getByLabel("Email", { exact: true })
     .fill(buyer ? "shop-buyer@example.test" : "admin@example.test");
@@ -327,8 +326,9 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
     .click();
   await navigateWorkspace(page, "Customers");
   await page
-    .getByRole("tab", { name: "Purchasing access", exact: true })
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
     .click();
+  await page.getByRole("tab", { name: "Terms", exact: true }).click();
   await page
     .getByLabel("Catalog access", { exact: true })
     .selectOption("selected");
@@ -405,8 +405,9 @@ test("revoked saved products require explicit removal before replacing a cart", 
   await login(page, false);
   await navigateWorkspace(page, "Customers");
   await page
-    .getByRole("tab", { name: "Purchasing access", exact: true })
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
     .click();
+  await page.getByRole("tab", { name: "Terms", exact: true }).click();
   await page
     .getByLabel("Catalog access", { exact: true })
     .selectOption("selected");
