@@ -13,6 +13,41 @@ async function login(page: Page, buyer = false) {
     buyer ? "Shop" : "Overview",
   );
 }
+test("discarding a rejected shipping change clears its obsolete conflict", async ({
+  page,
+}) => {
+  await login(page);
+  await navigateWorkspace(page, "Orders");
+  await page
+    .getByRole("button", { name: "Shipping terms", exact: true })
+    .click();
+  const editor = page.getByRole("region", { name: "Cart shipping terms" });
+  await editor.getByLabel("Shipping treatment").selectOption("included");
+  await editor
+    .getByLabel("Shipping terms and tax review evidence")
+    .fill("Synthetic stale revision review");
+  await page.route("**/api/commands/cart.shipping.set", (route) =>
+    route.fulfill({
+      status: 409,
+      json: {
+        code: "CONFLICT",
+        message: "Cart changed; review current shipping terms.",
+      },
+    }),
+  );
+  await editor
+    .getByRole("button", { name: "Save reviewed shipping terms" })
+    .click();
+  await expect(editor.getByRole("alert")).toContainText("Cart changed");
+  await editor
+    .getByRole("button", { name: "Discard rejected shipping change" })
+    .click();
+  await expect(editor.getByLabel("Shipping treatment")).toBeEnabled();
+  await expect(editor.getByRole("alert")).toHaveCount(0);
+  await expect(
+    editor.getByRole("button", { name: "Retry saved shipping change" }),
+  ).toHaveCount(0);
+});
 test("staff review survives lost response and reload; buyer sees exact extra shipping before acceptance", async ({
   page,
   browser,

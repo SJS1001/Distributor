@@ -649,10 +649,10 @@ test("manufacturer library filters, model specifications and document tabs survi
       .getByLabel("Search product families")
       .fill(product.models[1].manufacturerModel);
     await expect(
-      page.locator(`.gree-product-card[href="#product=${product.id}"]`),
+      page.locator(`.gree-product-card[href^="#product=${product.id}&"]`),
     ).toBeVisible();
     await page
-      .locator(`.gree-product-card[href="#product=${product.id}"]`)
+      .locator(`.gree-product-card[href^="#product=${product.id}&"]`)
       .click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       product.title,
@@ -948,10 +948,135 @@ test("public breadcrumbs provide a clear current page and product category retur
   ).toBeVisible();
   await expect(
     breadcrumb.getByRole("link", { name: "Products", exact: true }),
-  ).toHaveAttribute("href", "#products");
+  ).toHaveAttribute("href", "#products?category=rtu");
   await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText(
     await page.getByRole("heading", { level: 1 }).innerText(),
   );
-  await breadcrumb.locator('a[href="#products?category=rtu"]').click();
+  await breadcrumb
+    .getByRole("link", { name: "Rooftop Units", exact: true })
+    .click();
   await expect(page.locator(".gree-product-card")).toHaveCount(2);
+});
+
+test("public product navigation preserves filters, history and keyboard orientation without false missing products", async ({
+  page,
+}) => {
+  await page.goto("/#products");
+  const search = page.getByRole("searchbox", {
+    name: "Search product families",
+  });
+  await search.fill("Unix");
+  await expect(search).toBeFocused();
+  await page.reload();
+  await expect(search).toHaveValue("Unix");
+  await page.evaluate(() => {
+    const observed = window as typeof window & { missingProducts?: string[] };
+    observed.missingProducts = [];
+    new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node.textContent?.includes("Product not found"))
+            observed.missingProducts!.push(node.textContent);
+    }).observe(document.querySelector(".public-main")!, {
+      childList: true,
+      subtree: true,
+    });
+  });
+  const card = page.locator(".gree-product-card").first();
+  const title = await card.locator("h3").innerText();
+  await card.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".gree-detail h1")).toHaveText(title);
+  await expect(page.locator(".public-main")).toBeFocused();
+  await page.goBack();
+  await expect(search).toHaveValue("Unix");
+  await page.goForward();
+  await expect(page.locator(".gree-detail h1")).toHaveText(title);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { missingProducts?: string[] })
+          .missingProducts,
+    ),
+  ).toEqual([]);
+  await page.reload();
+  await expect(page.locator(".gree-detail h1")).toHaveText(title);
+  await page
+    .getByRole("navigation", { name: "Breadcrumb", exact: true })
+    .getByRole("link", { name: "Products", exact: true })
+    .click();
+  await expect(search).toHaveValue("Unix");
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { missingProducts?: string[] })
+          .missingProducts || [],
+    ),
+  ).toEqual([]);
+});
+
+test("administration tab and breadcrumb survive back forward reload and direct links", async ({
+  page,
+}) => {
+  await page.goto("/#admin-sign-in");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("long-test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#workspace-title")).toHaveText("Overview");
+  await navigateWorkspace(page, "Administration", "Trade applications");
+  const selected = page.getByRole("tab", {
+    name: "Trade applications",
+    exact: true,
+  });
+  const trail = page.getByRole("navigation", {
+    name: "Workspace breadcrumb",
+    exact: true,
+  });
+  await expect(page).toHaveURL(/section=admin-applications/);
+  await expect(trail.locator('[aria-current="page"]')).toHaveText(
+    "Trade applications",
+  );
+  await page.reload();
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+  await page
+    .getByRole("tab", { name: "Staff and buyer access", exact: true })
+    .click();
+  await page.goBack();
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+  await page.goForward();
+  await expect(trail.locator('[aria-current="page"]')).toHaveText(
+    "Staff and buyer access",
+  );
+  await page.goto("/#page=Administration&section=admin-applications");
+  await expect(selected).toHaveAttribute("aria-selected", "true");
+});
+
+test("public catalog breadcrumb aligns with content at desktop and phone widths", async ({
+  page,
+}, testInfo) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/#products");
+    const trail = page.getByRole("navigation", {
+      name: "Breadcrumb",
+      exact: true,
+    });
+    await expect(trail).toBeVisible();
+    const breadcrumbBox = await trail.boundingBox();
+    const headingBox = await page
+      .locator(".gree-library-heading")
+      .boundingBox();
+    expect(breadcrumbBox!.x).toBeCloseTo(headingBox!.x, 0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`pass1-catalog-${width}.png`),
+      fullPage: true,
+    });
+  }
 });

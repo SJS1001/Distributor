@@ -16,3 +16,5 @@
 !docs/RUNTIME.md
 !docs/licenses/
 !docs/licenses/**
+# macOS metadata is not an application build input.
+**/.DS_Store

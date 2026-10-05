@@ -892,7 +892,11 @@ function App() {
     setNotice(message);
     setError("");
     setCsrf("");
-    sessionStorage.clear();
+    // Older note attempts migrate when their record mounts. Keep them through
+    // sign-out from public pages so an uncertain command never loses its key.
+    for (const key of Object.keys(sessionStorage)) {
+      if (!key.startsWith("distributor-notes:")) sessionStorage.removeItem(key);
+    }
   };
   const [signOutPending, setSignOutPending] = useState(false);
   const signOut = () => {
@@ -2217,7 +2221,13 @@ function App() {
           !staff &&
           (data.accounts[0] ? (
             <Storefront
-              key={`${actor.id}:${extra.cartRefresh}`}
+              key={`${actor.id}:${data.accounts[0].id}`}
+              refreshKey={extra.cartRefresh}
+              productId={route.productId}
+              selectProduct={(productId) => updateRoute({ productId })}
+              resumeCart={() =>
+                navigate({ page: "Orders", section: "orders-queue" })
+              }
               accountId={data.accounts[0].id}
               accountName={data.accounts[0].name}
               reference={
@@ -7335,6 +7345,8 @@ function App() {
         {page === "Administration" && admin && (
           <PageSections
             label="Administration sections"
+            selectedSection={route.section ?? "admin-access"}
+            selectSection={(section) => updateRoute({ section })}
             items={[
               { id: "admin-access", label: "Staff and buyer access" },
               { id: "admin-applications", label: "Trade applications" },

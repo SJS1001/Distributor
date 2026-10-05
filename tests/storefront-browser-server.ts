@@ -27,6 +27,16 @@ f.app.catalog.create(f.actor, "part", {
   unitPrice: 2500,
   taxBasisPoints: 1300,
 });
+if (process.env.STOREFRONT_DISCOVERY === "1")
+  for (let index = 0; index < 21; index++) {
+    f.app.catalog.create(f.actor, `bulk-page-${index}`, {
+      sku: `AA-${String(index).padStart(2, "0")}`,
+      name: `Synthetic bulk item ${index}`,
+      serialized: false,
+      unitPrice: 1000,
+      taxBasisPoints: 1300,
+    });
+  }
 const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3216",
   secureCookies: false,

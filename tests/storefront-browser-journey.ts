@@ -322,7 +322,13 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
     .getByRole("button", { name: "Save product purchasing rule" })
     .click();
   await expect(page.getByText("Product purchasing rule saved.")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Close product management", exact: true })
+    .click();
   await navigateWorkspace(page, "Customers");
+  await page
+    .getByRole("tab", { name: "Purchasing access", exact: true })
+    .click();
   await page
     .getByLabel("Catalog access", { exact: true })
     .selectOption("selected");
@@ -378,9 +384,9 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
       .click();
     await expect(document.getByText(/retired · Version/)).toBeVisible();
     await buyer.reload();
-    await buyer
-      .getByRole("button", { name: "View Synthetic equipment", exact: true })
-      .click();
+    await expect(
+      buyer.getByRole("heading", { name: "Synthetic equipment", exact: true }),
+    ).toBeVisible();
     await buyer.getByRole("tab", { name: "Documents", exact: true }).click();
     await expect(
       buyer.getByRole("link", {
@@ -398,6 +404,9 @@ test("revoked saved products require explicit removal before replacing a cart", 
 }) => {
   await login(page, false);
   await navigateWorkspace(page, "Customers");
+  await page
+    .getByRole("tab", { name: "Purchasing access", exact: true })
+    .click();
   await page
     .getByLabel("Catalog access", { exact: true })
     .selectOption("selected");
@@ -596,6 +605,15 @@ test("global product availability persists, hides customer access and restores b
       "Restore customer product browsing with availability advice",
     );
     await buyer.reload();
+    await expect(
+      buyer
+        .locator(".sf-detail-summary")
+        .getByText("Out of stock", { exact: true }),
+    ).toBeVisible();
+    await buyer
+      .getByRole("navigation", { name: "Product breadcrumb", exact: true })
+      .getByRole("button", { name: "Shop", exact: true })
+      .click();
     await expect(card.getByText("Out of stock", { exact: true })).toBeVisible();
     await expect(card.locator("time")).toHaveAttribute(
       "datetime",

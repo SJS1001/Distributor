@@ -2431,7 +2431,15 @@ export async function createHttp(app: Application, options: HttpOptions) {
     async (request) =>
       app.catalog.customerProducts(actor(request), request.query.accountId),
   );
-  http.get<{ Querystring: { accountId: string; after?: string; q?: string } }>(
+  http.get<{
+    Querystring: {
+      accountId: string;
+      after?: string;
+      q?: string;
+      category?: string;
+      productId?: string;
+    };
+  }>(
     "/api/catalog/customer-products/page",
     {
       schema: {
@@ -2440,8 +2448,10 @@ export async function createHttp(app: Application, options: HttpOptions) {
             accountId: { type: "string", minLength: 1, maxLength: 128 },
             after: { type: "string", minLength: 1, maxLength: 128 },
             q: { type: "string", maxLength: 120 },
+            category: { type: "string", enum: ["serialized", "bulk"] },
+            productId: { type: "string", minLength: 1, maxLength: 128 },
           },
-          ["after", "q"],
+          ["after", "q", "category", "productId"],
         ),
       },
     },
@@ -2451,6 +2461,8 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.query.accountId,
         request.query.after,
         request.query.q,
+        request.query.category,
+        request.query.productId,
       ),
   );
   http.get<{ Querystring: { accountId: string; warehouseId: string } }>(

@@ -240,3 +240,7 @@ internal delivery service. Physical iPhone behavior remains to be qualified; see
 ## Pricing and workflow upgrade, 2026-10-05
 
 Current pilot source is `d65610e`, schema27, image `workflow27-20261005` on the same Toronto Machine. See the [pricing/workflow release receipt](evidence/LIVE-PRICING-WORKFLOWS-2026-10-05.md) for the encrypted restore,806-row conservation check, live browser proof and retained rollback pair. The optional internal scanner relay is implemented but unconfigured; [delivery setup](SCANNER-LINK-DELIVERY.md) describes the boundary.
+
+## Navigation and notes upgrade, 2026-10-05
+
+Source `a5ca594`, schema28, image `notes28-20261005` supersedes the pricing release above on the same Toronto Machine. See [navigation/notes release receipt](evidence/LIVE-NAVIGATION-NOTES-2026-10-05.md) for backup restoration,837-row conservation and live read-only checks. Five subsequent review/fix passes are tracked [here](evidence/FIVE-PASS-POLISH-2026-10-05.md).

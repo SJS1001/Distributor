@@ -1,11 +1,18 @@
 .record-notes {
-  min-width: 0;
+  min-width: min(16rem, calc(100vw - 5rem));
   max-width: 42rem;
   width: 100%;
 }
 .record-notes summary {
   cursor: pointer;
   font-weight: 600;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 12px 0;
+}
+.record-notes summary:focus-visible {
+  outline: 2px solid var(--accent, #1476b8);
+  outline-offset: 3px;
 }
 .record-notes-content {
   padding: 0.75rem;

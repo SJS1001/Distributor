@@ -1189,12 +1189,22 @@ small {
   }
   .workspace-sidebar .sidebar-bottom {
     flex-direction: row;
+    flex-wrap: wrap;
+    gap: 12px;
     justify-content: space-between;
     align-items: center;
     margin-top: 15px;
     padding-top: 12px;
   }
+  .workspace-sidebar .sidebar-resource-link {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+  .workspace-sidebar .user-identity {
+    flex: 1 1 180px;
+  }
   .workspace-sidebar .sidebar-bottom button {
+    flex: 0 0 auto;
     margin: 0;
     min-height: 40px;
     padding: 9px 13px;

@@ -172,6 +172,7 @@ export function ShippingTermsEditor({
                   localStorage.removeItem(storageKey);
                   setAttempt(null);
                   setRejected(false);
+                  setError("");
                   setEpoch((v) => v + 1);
                 } catch (e) {
                   setError((e as Error).message);

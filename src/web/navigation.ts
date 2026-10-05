@@ -36,6 +36,7 @@ export type NavigationIntent = {
   section?: string;
   referenceFamily?: string;
   referenceModel?: string;
+  productId?: string;
   orderState?: OrderQueueState | "";
   orderReservation?: "overdue" | "";
   invoiceBalance?: InvoiceQueueState | "";
@@ -45,6 +46,7 @@ export type NavigationIntent = {
   countState?: CountQueueState | "";
 };
 const sections: Record<string, string[]> = {
+  Administration: ["admin-access", "admin-applications"],
   Customers: [
     "customer-accounts",
     "customer-purchasing",
@@ -95,6 +97,7 @@ export function readNavigation(hash: string): NavigationIntent {
     : "Overview";
   const route: NavigationIntent = { page };
   if (page === "Shop") {
+    route.productId = identifier(query.get("product"));
     route.referenceFamily = identifier(query.get("referenceFamily"));
     if (route.referenceFamily)
       route.referenceModel = identifier(query.get("referenceModel"));
@@ -128,6 +131,7 @@ export function readNavigation(hash: string): NavigationIntent {
 }
 export function navigationHash(intent: NavigationIntent) {
   const query = new URLSearchParams({ page: intent.page });
+  if (intent.productId) query.set("product", intent.productId);
   if (intent.referenceFamily)
     query.set("referenceFamily", intent.referenceFamily);
   if (intent.referenceModel) query.set("referenceModel", intent.referenceModel);
@@ -143,6 +147,7 @@ export function navigationHash(intent: NavigationIntent) {
   const safe = readNavigation(`#${query}`);
   const result = new URLSearchParams({ page: safe.page });
   for (const [key, value] of Object.entries({
+    product: safe.productId,
     referenceFamily: safe.referenceFamily,
     referenceModel: safe.referenceModel,
     section: safe.section,

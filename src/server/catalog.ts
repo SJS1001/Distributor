@@ -1194,6 +1194,8 @@ export class Catalog {
     accountId: string,
     after?: string,
     query = "",
+    category = "",
+    productId?: string,
   ): CustomerProductPage {
     return this.database.transaction(() => {
       actor = this.catalogActor(actor, ["commercial", "buyer"]);
@@ -1207,6 +1209,14 @@ export class Catalog {
         "Catalog search must be at most 120 characters.",
         400,
       );
+      check(
+        ["", "serialized", "bulk"].includes(category),
+        "VALIDATION",
+        "Choose a supported product category.",
+        400,
+      );
+      const selectedId =
+        productId === undefined ? "" : text(productId, "Product ID", 128);
       const search = query.trim();
       const cursor =
         after === undefined
@@ -1236,6 +1246,7 @@ export class Catalog {
         `SELECT p.id,p.sku,p.name,p.serialized,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
          FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
          WHERE p.org_id=? AND p.active=1 AND ${this.entitlementPredicate()} AND ${this.priceablePredicate()} AND (?='' OR instr(lower(p.sku),lower(?))>0 OR instr(lower(p.name),lower(?))>0)
+         AND (?='' OR p.serialized=?) AND (?='' OR p.id=?)
          ${cursor ? "AND (p.sku>? OR (p.sku=? AND p.id>?))" : ""}
          ORDER BY p.sku,p.id LIMIT 21`,
         customer.tier,
@@ -1245,6 +1256,10 @@ export class Catalog {
         search,
         search,
         search,
+        category,
+        category === "serialized" ? 1 : 0,
+        selectedId,
+        selectedId,
         ...(cursor ? [cursor.sku, cursor.sku, cursor.id] : []),
       );
       const items = rows.slice(0, 20).map((product) => {

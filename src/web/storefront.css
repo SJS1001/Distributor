@@ -831,3 +831,21 @@
     scroll-behavior: auto !important;
   }
 }
+
+.sf-product-breadcrumb,
+.sf-cart-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-block: 1rem;
+}
+.sf-product-breadcrumb {
+  overflow-wrap: anywhere;
+}
+.sf-cart-entry {
+  justify-content: space-between;
+}
+.sf-cart-entry p {
+  margin: 0;
+}

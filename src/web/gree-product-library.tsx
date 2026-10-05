@@ -1,5 +1,5 @@
 import { referenceHref } from "./reference-context.ts";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import catalogData from "./gree-catalog-data.json" with { type: "json" };
 import "./gree-product-library.css";
 
@@ -25,6 +25,17 @@ export const greeProducts = catalogData.products as GreeProduct[];
 export const greeCategories = catalogData.categories;
 export const productHref = (product: GreeProduct) =>
   `#product=${encodeURIComponent(product.id)}`;
+function currentHash() {
+  return window.location.hash;
+}
+function subscribeHash(update: () => void) {
+  window.addEventListener("hashchange", update);
+  window.addEventListener("popstate", update);
+  return () => {
+    window.removeEventListener("hashchange", update);
+    window.removeEventListener("popstate", update);
+  };
+}
 export function ProductImage({
   product,
   className,
@@ -55,23 +66,30 @@ export function GreeProductLibrary({
   authenticated?: boolean;
   customerAuthenticated?: boolean;
 }) {
-  const [hash, setHash] = useState(window.location.hash);
+  const hash = useSyncExternalStore(subscribeHash, currentHash);
+  const routeHash = hash.split("?")[0];
   useEffect(() => {
-    const update = () => {
-      setHash(window.location.hash);
-      document.querySelector<HTMLElement>(".public-main")?.focus();
-      window.scrollTo(0, 0);
-    };
-    window.addEventListener("hashchange", update);
-    return () => window.removeEventListener("hashchange", update);
-  }, []);
-  const categoryFromHash =
-    new URLSearchParams(hash.split("?")[1] || "").get("category") || "all";
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState(categoryFromHash);
-  useEffect(() => {
-    setCategory(categoryFromHash);
-  }, [categoryFromHash]);
+    document.querySelector<HTMLElement>(".public-main")?.focus();
+    window.scrollTo(0, 0);
+  }, [routeHash]);
+  const filters = new URLSearchParams(hash.split("?")[1] || "");
+  const query = filters.get("query") || "";
+  const category = filters.get("category") || "all";
+  const updateFilters = (
+    next: { query?: string; category?: string },
+    replace = false,
+  ) => {
+    const params = new URLSearchParams();
+    const nextCategory = next.category ?? category;
+    const nextQuery = next.query ?? query;
+    if (nextCategory !== "all") params.set("category", nextCategory);
+    if (nextQuery) params.set("query", nextQuery);
+    const destination = `#products${params.size ? `?${params}` : ""}`;
+    if (replace) {
+      history.replaceState(null, "", destination);
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    } else window.location.hash = destination;
+  };
   const selectedId = (() => {
     try {
       return decodeURIComponent(
@@ -132,7 +150,9 @@ export function GreeProductLibrary({
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) =>
+              updateFilters({ query: event.target.value }, true)
+            }
             placeholder="Search by name or equipment type"
           />
         </label>
@@ -140,7 +160,9 @@ export function GreeProductLibrary({
           Product category
           <select
             value={category}
-            onChange={(event) => setCategory(event.target.value)}
+            onChange={(event) =>
+              updateFilters({ category: event.target.value })
+            }
           >
             <option value="all">All products</option>
             {greeCategories.map((item) => (
@@ -159,7 +181,7 @@ export function GreeProductLibrary({
         {visible.map((product) => (
           <a
             className="gree-product-card"
-            href={productHref(product)}
+            href={`${productHref(product)}&library=${encodeURIComponent(hash)}`}
             key={product.id}
           >
             <div className="gree-card-image">
@@ -181,8 +203,7 @@ export function GreeProductLibrary({
           <p>Try another name or category.</p>
           <button
             onClick={() => {
-              setQuery("");
-              setCategory("all");
+              updateFilters({ query: "", category: "all" });
             }}
           >
             Clear filters
@@ -237,6 +258,10 @@ function GreeProductDetail({
   authenticated: boolean;
   customerAuthenticated: boolean;
 }) {
+  const library = new URLSearchParams(window.location.hash.slice(1)).get(
+    "library",
+  );
+  const libraryHref = library?.startsWith("#products?") ? library : "#products";
   const [imageIndex, setImageIndex] = useState(0);
   const [tab, setTab] = useState("overview");
   const image = product.images[imageIndex];
@@ -263,7 +288,7 @@ function GreeProductDetail({
       <nav className="gree-breadcrumb" aria-label="Breadcrumb">
         <a href="#home">Home</a>
         <span aria-hidden="true">/</span>
-        <a href="#products">Products</a>
+        <a href={libraryHref}>Products</a>
         <span aria-hidden="true">/</span>
         <a
           href={`#products?category=${encodeURIComponent(product.categoryId)}`}

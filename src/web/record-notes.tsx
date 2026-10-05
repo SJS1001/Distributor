@@ -31,23 +31,55 @@ export function RecordNotes({
   const storageKey = `distributor-notes:${recoveryScope}:${kind}:${recordId}`;
   const [saved] = useState(() => {
     try {
-      const raw = sessionStorage.getItem(storageKey);
-      if (!raw) return { attempt: null as Attempt | null, error: "" };
-      const a = JSON.parse(raw) as Attempt;
-      if (
-        raw.length > 30000 ||
-        !/^[a-f0-9-]{36}$/.test(a.key) ||
-        a.payload?.kind !== kind ||
-        a.payload.recordId !== recordId ||
-        !(
-          (a.command === "notes.add" &&
-            typeof a.payload.body === "string" &&
-            a.payload.body.trim()) ||
-          (a.command === "notes.verify" && typeof a.payload.noteId === "string")
+      const read = (raw: string | null): Attempt | null => {
+        if (raw === null) return null;
+        if (raw.length > 30000) throw Error();
+        const a = JSON.parse(raw) as Attempt;
+        if (
+          typeof a.key !== "string" ||
+          !/^[a-f0-9-]{36}$/.test(a.key) ||
+          Object.keys(a).some(
+            (k) => !["key", "command", "payload"].includes(k),
+          ) ||
+          a.payload?.kind !== kind ||
+          a.payload.recordId !== recordId ||
+          !(
+            (a.command === "notes.add" &&
+              typeof a.payload.body === "string" &&
+              a.payload.body.length <= 4000 &&
+              a.payload.body.trim() &&
+              Object.keys(a.payload).every((k) =>
+                ["kind", "recordId", "body"].includes(k),
+              )) ||
+            (a.command === "notes.verify" &&
+              typeof a.payload.noteId === "string" &&
+              a.payload.noteId.length <= 128 &&
+              a.payload.noteId.trim() &&
+              Object.keys(a.payload).every((k) =>
+                ["kind", "recordId", "noteId"].includes(k),
+              ))
+          )
         )
+          throw Error();
+        return a;
+      };
+      const durableRaw = localStorage.getItem(storageKey),
+        legacyRaw = sessionStorage.getItem(storageKey),
+        durable = read(durableRaw),
+        legacy = read(legacyRaw);
+      // Never overwrite either unresolved attempt if old and new storage disagree.
+      if (
+        durable &&
+        legacy &&
+        JSON.stringify(durable) !== JSON.stringify(legacy)
       )
         throw Error();
-      return { attempt: a, error: "" };
+      if (legacy) {
+        // Persist before removing the same-tab copy; a failed migration stays locked.
+        if (!durable) localStorage.setItem(storageKey, legacyRaw!);
+        sessionStorage.removeItem(storageKey);
+      }
+      return { attempt: durable ?? legacy, error: "" };
     } catch {
       return {
         attempt: null,
@@ -62,6 +94,7 @@ export function RecordNotes({
     [attempt, setAttempt] = useState(saved.attempt),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(saved.error),
+    [storageError, setStorageError] = useState(""),
     [notice, setNotice] = useState("");
   const path = `/api/notes/${kind}/${encodeURIComponent(recordId)}`;
   async function load(after?: string) {
@@ -83,6 +116,7 @@ export function RecordNotes({
             }
           : result,
       );
+      setError(saved.error);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -96,16 +130,48 @@ export function RecordNotes({
     setBusy(true);
     setError("");
     setNotice("");
+    const serialized = JSON.stringify(next);
+    function ownsSavedAttempt() {
+      const raw = localStorage.getItem(storageKey);
+      if (raw !== null && JSON.stringify(JSON.parse(raw)) !== serialized) {
+        setStorageError(
+          "Another saved note attempt exists for this record. Reload to recover it before making changes.",
+        );
+        return false;
+      }
+      return true;
+    }
+    function clearSavedAttempt() {
+      try {
+        if (!ownsSavedAttempt()) return false;
+        localStorage.removeItem(storageKey);
+        setAttempt(null);
+        return true;
+      } catch {
+        setStorageError(
+          "Browser storage is unavailable. Restore it and reload before resolving this note attempt.",
+        );
+        return false;
+      }
+    }
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify(next));
+      try {
+        // A mounted second tab may not know that another tab saved an attempt.
+        if (!ownsSavedAttempt()) return;
+        localStorage.setItem(storageKey, serialized);
+      } catch {
+        setStorageError(
+          "Browser storage is unavailable. Restore it and reload before resolving this note attempt.",
+        );
+        return;
+      }
       setAttempt(next);
       await request(`/api/commands/${next.command}`, {
         method: "POST",
         headers: { "idempotency-key": next.key },
         body: JSON.stringify(next.payload),
       });
-      sessionStorage.removeItem(storageKey);
-      setAttempt(null);
+      if (!clearSavedAttempt()) return;
       if (next.command === "notes.add") setBody("");
       setNotice(
         next.command === "notes.add"
@@ -117,17 +183,16 @@ export function RecordNotes({
       if (
         e instanceof RequestError &&
         e.status < 500 &&
-        ![408, 429].includes(e.status)
+        ![401, 403, 408, 429].includes(e.status)
       ) {
-        sessionStorage.removeItem(storageKey);
-        setAttempt(null);
+        if (!clearSavedAttempt()) return;
       }
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  const locked = busy || !!attempt || !!saved.error || !page;
+  const locked = busy || !!attempt || !!saved.error || !!storageError || !page;
   return (
     <details
       className="record-notes"
@@ -142,6 +207,7 @@ export function RecordNotes({
             person's review.
           </p>
           {error && <p role="alert">{error}</p>}
+          {storageError && <p role="alert">{storageError}</p>}
           {notice && <p role="status">{notice}</p>}
           {attempt && (
             <section aria-label="Pending note attempt">
@@ -155,7 +221,7 @@ export function RecordNotes({
               )}
               <button
                 type="button"
-                disabled={busy || !!saved.error}
+                disabled={busy || !!saved.error || !!storageError}
                 onClick={() => void send(attempt)}
               >
                 Retry saved note attempt

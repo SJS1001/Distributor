@@ -1,5 +1,57 @@
 import { test, expect, type Page } from "@playwright/test";
 import { navigateWorkspace } from "./workspace-navigation.ts";
+test("staff notes recover a failed read and mobile staff navigation stays readable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  await navigateWorkspace(page, "Customers");
+  let failRead = true;
+  await page.route("**/api/notes/customer/*", async (route) => {
+    if (failRead) {
+      failRead = false;
+      await route.fulfill({
+        status: 503,
+        json: { message: "Temporary notes outage" },
+      });
+    } else await route.continue();
+  });
+  const panel = page.locator(".record-notes").first();
+  const summary = panel.locator("summary");
+  await summary.focus();
+  await page.keyboard.press("Enter");
+  await expect(panel.getByRole("alert")).toContainText(
+    "Temporary notes outage",
+  );
+  await panel
+    .getByRole("button", { name: "Retry loading staff notes" })
+    .click();
+  await expect(panel.getByLabel("New staff note")).toBeEnabled();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  expect((await summary.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await panel.boundingBox())!.width).toBeGreaterThanOrEqual(240);
+  for (const width of [360, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    const identity = page.locator(".user-identity");
+    expect((await identity.boundingBox())!.width).toBeGreaterThanOrEqual(180);
+    for (const link of await page.locator(".sidebar-resource-link").all()) {
+      expect((await link.boundingBox())!.width).toBeGreaterThanOrEqual(130);
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: "local-evidence/notes-release-20261005/pass3-admin-phone.png",
+  });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "local-evidence/notes-release-20261005/pass3-admin-header-phone.png",
+  });
+});
 async function login(page: Page, email = "admin@example.test") {
   await page.goto("/#admin-sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);

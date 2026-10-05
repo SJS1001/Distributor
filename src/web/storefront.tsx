@@ -7,7 +7,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { PageSection, PageSections } from "./workspace.tsx";
-import type { CustomerProduct } from "../shared/customer-products.ts";
+import type {
+  CustomerProduct,
+  CustomerProductPage,
+} from "../shared/customer-products.ts";
 import type { CatalogResource } from "../shared/catalog-media.ts";
 import "./storefront.css";
 
@@ -173,9 +176,13 @@ export function ProductDetail({
     );
   return (
     <section className="sf-detail">
-      <button className="sf-back" onClick={back}>
-        <Arrow back /> Back to products
-      </button>
+      <nav className="sf-product-breadcrumb" aria-label="Product breadcrumb">
+        <button className="sf-back" onClick={back}>
+          <Arrow back /> Shop
+        </button>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{product.name}</span>
+      </nav>
       <div className="sf-detail-top">
         <div className="sf-gallery">
           <div className="sf-gallery-image">
@@ -348,42 +355,110 @@ export function ProductDetail({
     </section>
   );
 }
+function FocusedProduct({
+  accountId,
+  productId,
+  back,
+  prepare,
+}: {
+  accountId: string;
+  productId: string;
+  back: () => void;
+  prepare: (product: CustomerProduct) => void;
+}) {
+  const [product, setProduct] = useState<CustomerProduct | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setProduct(null);
+    setError("");
+    void request<CustomerProductPage>(
+      `/api/catalog/customer-products/page?accountId=${encodeURIComponent(accountId)}&productId=${encodeURIComponent(productId)}`,
+      { signal: controller.signal },
+    )
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        if (page.items[0]) setProduct(page.items[0]);
+        else
+          setError(
+            "This product is unavailable in your current approved catalog.",
+          );
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted)
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "Product could not be loaded.",
+          );
+      });
+    return () => controller.abort();
+  }, [accountId, productId, attempt]);
+  if (product)
+    return (
+      <ProductDetail
+        key={product.id}
+        product={product}
+        back={back}
+        prepare={() => prepare(product)}
+      />
+    );
+  return (
+    <section aria-label="Selected product">
+      <button className="sf-back" onClick={back}>
+        Return to Shop
+      </button>
+      {error ? (
+        <>
+          <p role="alert">{error}</p>
+          <button onClick={() => setAttempt((value) => value + 1)}>
+            Retry product
+          </button>
+        </>
+      ) : (
+        <p role="status">Checking current product access and pricing…</p>
+      )}
+    </section>
+  );
+}
 function ProductResults({
   accountId,
   search,
   category,
   prepare,
   filters,
+  productId,
+  selectProduct,
 }: {
   accountId: string;
   search: string;
   category: string;
   prepare: (product: CustomerProduct) => void;
   filters: React.ReactNode;
+  productId?: string;
+  selectProduct: (productId?: string) => void;
 }) {
   const rows = usePages<CustomerProduct>(
-      `/api/catalog/customer-products/page?accountId=${encodeURIComponent(accountId)}&q=${encodeURIComponent(search)}`,
+      `/api/catalog/customer-products/page?accountId=${encodeURIComponent(accountId)}&q=${encodeURIComponent(search)}${category ? `&category=${encodeURIComponent(category)}` : ""}`,
     ),
-    [selected, setSelected] = useState<CustomerProduct | null>(null),
     [featuredIndex, setFeaturedIndex] = useState(0);
   const triggers = useRef(new Map<string, HTMLButtonElement>()),
     returnTo = useRef<{ key: string; scroll: number } | null>(null);
   useEffect(() => {
-    if (!selected && returnTo.current) {
+    if (!productId && returnTo.current) {
       triggers.current
         .get(returnTo.current.key)
         ?.focus({ preventScroll: true });
       window.scrollTo({ top: returnTo.current.scroll, behavior: "instant" });
       returnTo.current = null;
     }
-  }, [selected]);
-  const products = rows.items.filter(
-      (p) => !category || !!p.serialized === (category === "serialized"),
-    ),
+  }, [productId]);
+  const products = rows.items,
     featured = products[featuredIndex % Math.max(1, products.length)];
   function select(product: CustomerProduct, key: string) {
     returnTo.current = { key, scroll: window.scrollY };
-    setSelected(product);
+    selectProduct(product.id);
   }
   function trigger(key: string) {
     return (element: HTMLButtonElement | null) => {
@@ -391,12 +466,14 @@ function ProductResults({
       else triggers.current.delete(key);
     };
   }
-  if (selected)
+  if (productId)
     return (
-      <ProductDetail
-        product={selected}
-        back={() => setSelected(null)}
-        prepare={() => prepare(selected)}
+      <FocusedProduct
+        key={`${accountId}:${productId}`}
+        accountId={accountId}
+        productId={productId}
+        back={() => selectProduct(undefined)}
+        prepare={prepare}
       />
     );
   return (
@@ -512,7 +589,7 @@ function ProductResults({
         {rows.loaded && !rows.busy && !products.length && (
           <div className="sf-empty">
             {search || category
-              ? "No matching products in the loaded catalog. Try another search or load the next page."
+              ? "No matching products. Try another search or category."
               : "Your approved catalog is not available yet. Contact your distributor to arrange product access."}
           </div>
         )}
@@ -545,7 +622,15 @@ export function Storefront({
   accountId,
   accountName,
   prepare,
+  productId,
+  selectProduct,
+  resumeCart,
+  refreshKey,
 }: {
+  refreshKey?: string;
+  productId?: string;
+  selectProduct: (productId?: string) => void;
+  resumeCart: () => void;
   accountId: string;
   accountName: string;
   reference?: ReferenceRequest;
@@ -563,7 +648,7 @@ export function Storefront({
       searchInput.current?.focus();
       restoreSearchFocus.current = false;
     }
-  }, [query]);
+  }, [query, category]);
   const filters = (
     <form
       className="sf-search"
@@ -604,7 +689,10 @@ export function Storefront({
         <select
           aria-label="Category"
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          onChange={(e) => {
+            restoreSearchFocus.current = true;
+            setCategory(e.target.value);
+          }}
         >
           <option value="">All products</option>
           <option value="serialized">Serialized equipment</option>
@@ -625,14 +713,24 @@ export function Storefront({
           prepare={prepare}
         />
       )}
-      <ManufacturerCollection />
+      {!productId && (
+        <div className="sf-cart-entry">
+          <p>Your saved order quantities are available in Orders.</p>
+          <button className="sf-primary" onClick={resumeCart}>
+            Resume a saved cart
+          </button>
+        </div>
+      )}
+      {!productId && <ManufacturerCollection />}
       <p className="sf-account-context">
         Curated for <strong>{accountName}</strong>
         <span>Approved products & account pricing</span>
       </p>
       <ProductResults
-        key={`${accountId}:${query}`}
+        key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
         accountId={accountId}
+        productId={productId}
+        selectProduct={selectProduct}
         search={query}
         category={category}
         prepare={prepare}
