@@ -85,3 +85,14 @@ The owner requested completion of code-level wiring and correctness checks while
 Owner direction: focus on the real Canadian application, defer the demo/MVP, use Fly.io for one or two testers, and combine the website, login and contractor purchase application at the GoDaddy-registered dstrbtr.ca. The owner approved the proposed US$10–15 monthly pilot estimate and domain setup, superseding the earlier no-deployment restriction for this bounded installation. One Toronto Machine and persistent volume are deployed; no scale-out, remote builder or CI is configured. This is a pilot infrastructure choice, not formal production acceptance or an assurance that every ancillary processing location is Canadian.
 
 Enrollment follows the recommended staff-approved B2B policy: applications do not create buyers; an administrator reauthenticates to approve explicit commercial terms and issues a private, expiring, single-use activation link. Invitations are handed over manually; no email service or verified email ownership is claimed. The real store contains no demonstration customers/products. See [Fly runbook](FLY-CANADA.md), [enrollment policy](ENROLLMENT.md) and [launch receipt](evidence/LIVE-CANADA-LAUNCH-2026-10-05.md). Revisit hosting, capacity, backup custody, residency and enrollment delivery before valuable customer data or wider release. All task/product gates retain their independent acceptance requirements.
+
+
+## Public test-pilot administrator login — 2026-10-05
+
+The owner explicitly chose pre-filled credentials for the current pilot after
+being told that visitors would receive full administrator access, including data
+and user changes. A separate demo was offered and declined; the owner confirmed
+that this installation does not yet hold real information. Apply this as an
+explicit, default-disabled runtime setting only. Do not change the administrator
+password or silently provision a different database/account. Revisit and remove
+public access before real data, as documented in [Fly configuration](FLY-CANADA.md).

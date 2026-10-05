@@ -3197,3 +3197,13 @@ Final index verification: all852 tracked inputs from the853-entry frozen manifes
 2026-10-05 — Redesign source frozen after two refinements: added early mobile application/sign-in links and repaired query-remount keyboard focus. Final build/typecheck, public browser6/6, storefront browser3/3, workspace-location2/2 and scoped formatting/diff pass. Independent review found no role/activation/resource boundary regression; sole search-focus finding repaired and browser assertion passes. Desktop customer billing navigation and desktop/phone screenshots inspected. No physical iPhone claim. Preparing existing Canadian code-only release, same schema25/backend/resources; pre-release encrypted backup requested. Fly status --json unsupported (read-only check), corrected to machines list --json; no runtime mutation from that error.
 
 2026-10-05T18:03Z — Redesign source committed5f62ba6 and deployed by local-only Fly build to same Toronto Machine; healthy1/1. Image digestc19045ca488664707f0239c73b4133d614c78ee85cb69588ab0504c908c3b34f; all340live source files equal frozen committed manifest3070eac52f139a66c1d6f343181239b09c904333d14c929cac2d33feafffc413. No schema/backend/provider change. Fresh encrypted schema25backup downloaded and restored locally; four copied sessions invalidated/providerhold set, live database untouched. Live34HTTP/adminbrowser/public three-entrance desktop+phone checks pass; signed out. Initial local image comparison failed because temporary tag absent/registry pull unauthenticated; replaced with successful direct live source comparison. Receipt docs/evidence/LIVE-PORTAL-REDESIGN-2026-10-05.md retains limits. Bot identity/write freshly confirmed; normal source/documentation push next. No PR/merge/CI. Current buyer-password live journey and physical iPhone remain unverified; no universal product completion claim.
+
+
+2026-10-05 — Owner explicitly approved public pre-filled existing administrator
+credentials for the sample pilot after disclosure of full administrator access;
+separate demo declined. Added default-disabled runtime pilot config and admin-door
+prefill, preserving ordinary authentication and empty customer sign-in. Source
+TypeScript/build, two backend tests and eight public-browser scenarios pass.
+Runtime values remain outside Git/build assets; endpoint deliberately publishes
+them only when enabled. Preparing existing Toronto code-only deployment, same
+schema25; no CI/PR/merge. New pre-release encrypted backup initiated.

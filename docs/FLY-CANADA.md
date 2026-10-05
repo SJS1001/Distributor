@@ -90,8 +90,9 @@ access to the application volume.
 
 Bootstrap the empty store using the existing native CLI through a protected SSH
 session, executing as `node` in `/app`, with the chosen organization name and
-administrator email. Send the initial password through protected stdin, not
-command arguments, logs, checked-in environment files or a permanent Fly secret.
+administrator email. Send the initial bootstrap password through protected stdin, not
+command arguments, logs or checked-in environment files. The later owner-approved
+public test sign-in exception is described below.
 Do not use `npm run demo`, copy a workstation database, or leave the default
 synthetic organization/email. Confirm populated-store bootstrap refuses reuse.
 See [user access](USER-ACCESS.md) for adding the second tester and required
@@ -185,3 +186,31 @@ remote builder, scheduled worker or scale-out is configured.
 ## Storefront upgrade, 2026-10-05
 
 Schema 25 and the four storefront features are now active on the same Toronto Machine. The [storefront release receipt](evidence/LIVE-STOREFRONT-2026-10-05.md) records the exact image, encrypted archive restore, source-preserving clone checks, sample access grants, live verification and retained schema-24 rollback pair. Earlier schema-23/24 receipts above remain historical; use the current image/schema pair when operating the pilot.
+
+
+## Temporary public administrator pre-fill — 2026-10-05
+
+The owner explicitly approved filling the existing pilot administrator email and
+password for every visitor at `/#admin-sign-in`, because this installation is
+being used with sample data. Testers only click **Sign in**. This intentionally
+grants public access to the existing administrator account, including data and
+user-account changes; it is not a separate isolated or read-only demo.
+
+Runtime configuration is disabled by default. Enable only with
+`PUBLIC_PILOT_ADMIN_SIGN_IN=true` and both `PUBLIC_PILOT_ADMIN_EMAIL` and
+`PUBLIC_PILOT_ADMIN_PASSWORD`. The pilot deployment supplies these through Fly
+configuration; credential values stay out of Git and compiled assets. While
+enabled, the unauthenticated `/api/pilot-sign-in` response deliberately publishes
+those credentials with `Cache-Control: no-store`. Configuration storage does not
+make them private after enabling this feature. Normal password, MFA, role, Origin
+and session checks still apply. A changed password must also update the runtime
+value, or pre-filled login fails normally.
+
+Customer and legacy sign-in do not auto-fill this account. Changing entrances
+clears automatically filled values; a delayed response does not overwrite a
+tester's manual edits. Failure to load configuration leaves ordinary login usable.
+
+Before adding real data, disable `PUBLIC_PILOT_ADMIN_SIGN_IN` and redeploy/restart,
+remove both credential configuration values, rotate the now-public administrator
+password, and revoke existing sessions using the native security controls. Merely
+hiding the UI is insufficient. No real-data readiness is asserted by this option.

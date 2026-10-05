@@ -1,6 +1,80 @@
 import { test, expect } from "@playwright/test";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 
+test("pilot administrator prefill signs in without typing; customer entrance stays blank", async ({
+  page,
+}) => {
+  await page.route("**/api/pilot-sign-in", (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        email: "admin@example.test",
+        password: "long-test-only-password",
+      },
+    }),
+  );
+  await page.goto("/#admin-sign-in");
+  await expect(page.getByLabel("Email", { exact: true })).toHaveValue(
+    "admin@example.test",
+  );
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue(
+    "long-test-only-password",
+  );
+  await page.evaluate(() => {
+    location.hash = "#customer-sign-in";
+  });
+  await expect(page.getByLabel("Email", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await page.evaluate(() => {
+    location.hash = "#admin-sign-in";
+  });
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue(
+    "long-test-only-password",
+  );
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+});
+
+test("slow pilot prefill does not overwrite typed credentials or fill another entrance", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/pilot-sign-in", async (route) => {
+    await ready;
+    await route.fulfill({
+      json: {
+        enabled: true,
+        email: "admin@example.test",
+        password: "long-test-only-password",
+      },
+    });
+  });
+  await page.goto("/#admin-sign-in");
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("my-account@example.test");
+  const response = page.waitForResponse("**/api/pilot-sign-in");
+  release();
+  await response;
+  await expect(page.getByLabel("Email", { exact: true })).toHaveValue(
+    "my-account@example.test",
+  );
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await page.evaluate(() => {
+    location.hash = "#customer-sign-in";
+  });
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+});
+
 test("public site: mobile application, approval boundary and sign-in navigation", async ({
   page,
 }) => {

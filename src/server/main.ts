@@ -1,4 +1,5 @@
 import { configuredMfaRoles } from "./mfa-policy.ts";
+import { configuredPilotSignIn } from "./pilot-sign-in.ts";
 import { createRuntimeApplication } from "./runtime-application.ts";
 import { configuredEventReports } from "./report-runtime.ts";
 import { createHttp } from "./http.ts";
@@ -48,6 +49,7 @@ const organizationQuickbooksBrowser = configuredOrganizationQuickBooksBrowser(
 );
 const http = await createHttp(app, {
   origin,
+  publicPilotSignIn: configuredPilotSignIn(),
   secureCookies,
   enrollmentOrganizationId: process.env.ENROLLMENT_ORGANIZATION_ID || undefined,
   enrollmentFlyProxy:

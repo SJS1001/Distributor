@@ -1687,6 +1687,8 @@ export function commands(
 }
 export type HttpOptions = {
   origin: string;
+  /** Owner-authorized public sample-pilot access; never enable for real data. */
+  publicPilotSignIn?: { email: string; password: string };
   /** Trusted host selection; never populated from a request. */
   enrollmentOrganizationId?: string;
   enrollmentFlyProxy?: boolean;
@@ -1768,7 +1770,10 @@ export async function createHttp(app: Application, options: HttpOptions) {
         403,
       );
     const requestPath = request.url.split("?")[0];
-    if (request.method === "GET" && requestPath === "/api/enrollment/config")
+    if (
+      request.method === "GET" &&
+      ["/api/enrollment/config", "/api/pilot-sign-in"].includes(requestPath!)
+    )
       return;
     if (
       request.method === "POST" &&
@@ -1874,6 +1879,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
   }));
   http.get("/api/enrollment/config", async () =>
     app.enrollment.config(options.enrollmentOrganizationId),
+  );
+  http.get("/api/pilot-sign-in", async () =>
+    options.publicPilotSignIn
+      ? { enabled: true, ...options.publicPilotSignIn }
+      : { enabled: false },
   );
   const enrollmentString = (maximum: number, minimum = 1): Schema => ({
     type: "string",

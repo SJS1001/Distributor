@@ -469,6 +469,35 @@ function App() {
     [password, setPassword] = useState(""),
     [loginCode, setLoginCode] = useState(""),
     [mfaRequired, setMfaRequired] = useState(false);
+  const [pilotPrefilled, setPilotPrefilled] = useState(false);
+  const loginEdited = useRef(false);
+  useEffect(() => {
+    if (actor || nativeDemo || publicRoute !== "admin-sign-in") return;
+    let cancelled = false;
+    let prefilled: { email: string; password: string } | undefined;
+    loginEdited.current = false;
+    void request<
+      { enabled: false } | { enabled: true; email: string; password: string }
+    >("/api/pilot-sign-in")
+      .then((config) => {
+        if (cancelled || loginEdited.current || !config.enabled) return;
+        prefilled = config;
+        setEmail(config.email);
+        setPassword(config.password);
+        setPilotPrefilled(true);
+      })
+      .catch(() => {
+        // Ordinary manual sign-in remains available if pilot config cannot load.
+      });
+    return () => {
+      cancelled = true;
+      setPilotPrefilled(false);
+      if (prefilled) {
+        setEmail((value) => (value === prefilled!.email ? "" : value));
+        setPassword((value) => (value === prefilled!.password ? "" : value));
+      }
+    };
+  }, [actor, nativeDemo, publicRoute]);
   const refresh = async (
     signal?: AbortSignal,
     options: { preserveQuantitySelection?: boolean } = {},
@@ -1709,7 +1738,11 @@ function App() {
       ) : (
         <h2>Account credentials</h2>
       )}
-      <p>Enter the email and password for your account.</p>
+      <p>
+        {pilotPrefilled
+          ? "Test administrator details are filled in. Click Sign in to explore the sample pilot."
+          : "Enter the email and password for your account."}
+      </p>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -1747,7 +1780,11 @@ function App() {
             autoComplete="username"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              loginEdited.current = true;
+              setPilotPrefilled(false);
+              setEmail(e.target.value);
+            }}
           />
         </label>
         <label>
@@ -1757,7 +1794,11 @@ function App() {
             autoComplete="current-password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              loginEdited.current = true;
+              setPilotPrefilled(false);
+              setPassword(e.target.value);
+            }}
           />
         </label>
         {mfaRequired && (
