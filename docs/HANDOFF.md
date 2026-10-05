@@ -3269,3 +3269,43 @@ fresh availability browser/typecheck/build pass. Earlier harness output collisio
 fixture grant failure and historical schema-fixture failures retained in ignored
 logs. No live changes yet; local-only candidate image and protected clone upgrade
 next. No PR/merge/CI. Source frozen across all three delegated lanes.
+
+2026-10-05 — Frozen source8476731 committed; local-only image built/pushed as
+registry.fly.io/distributor-ca-sjs1001:gree-availability-8476731, digest
+b1724b29016f7c4157a44649b62ac1db29d0a211b2b14d26aef60596fe293112.
+Existing machine817052c44d9028 entering maintenance sleep before protected backup
+and schema26 clone review. One existing Toronto volume/machine retained; no CI.
+
+2026-10-05 — First backup attempt correctly refused a mode0755 target directory
+(RECOVERY_PATH); no archive was created. Preserved failure log, changed only the
+new backup directory to0700 and retried. Live application remains in maintenance;
+original schema25 untouched.
+
+2026-10-05 — Fresh encrypted schema25 archive downloaded; isolated restore under
+the actual previous image passed with network disabled. Candidate image update
+started on existing machine, retaining maintenance sleep. Clone/row comparison
+and activation remain pending.
+
+2026-10-05T18:59Z — Candidate schema26 clone verification passed: all173 old business
+tables and768 rows byte-for-value equal, source database hash unchanged, integrity
+and foreign keys clean. Reports-enabled CA schema26 fingerprint
+923836374fa791ad2c39d3060b13cda2e93e64ac40fa6a401ed474d56f6f05e3.
+Reviewed clone activation now proceeding; original retained in private rollback
+directory. Stage receipt stored in ignored evidence and on the existing volume.
+
+2026-10-05T19:00Z — Reviewed schema26 activated; source25 retained. Candidate
+8476731 deployed on the existing Toronto machine using the normal application
+command; Fly reports good state. Live browser role/routes/documents/control and
+exact356-source-file verification now running. No new machines, CI or PRs.
+
+2026-10-05T19:02Z — Final live1440/390 customer/admin sign-in, role isolation,
+manufacturer documents, admin availability controls, library reload/return and
+logout passed with zero page errors. All356 frozen runtime source/package files
+match; existing Toronto machine HTTP health passes. Homepage manufacturer images
+explicitly decoded before final screenshots. Initial mobile harness omitted Menu
+expansion; corrected and rerun successfully, failure retained. Native availability
+mutations verified locally; live verification did not change product settings.
+Receipt: docs/evidence/LIVE-GREE-AVAILABILITY-2026-10-05.md. Docs verification:
+441 Markdown/2181 links pass. Source commit8476731 deployed; evidence commit/push
+next. No CI/PR/merge. Public manufacturer library remains separate from fictional
+saleable catalog; real-device Safari and internal email/SMS remain unqualified.
