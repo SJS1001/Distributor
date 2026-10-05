@@ -1,0 +1,21 @@
+# Claude Desktop Code assignment — native demo completion pass
+
+Status: prepared, not dispatched. The owner requested Code workflow and Ultra mode. Verify the actual available model and effort controls before starting; do not silently label another setting Ultra. Use the current local Distributor checkout because its latest source has not been pushed.
+
+## Prompt
+
+Work in `/Users/stevensmith/Documents/Distributor`. Complete one finite native-demo coverage and wiring repair pass against the existing application scope. Read `AGENTS.md`, `README.md`, `docs/PLAN.md`, `docs/DECISIONS.md`, the latest entries in `docs/HANDOFF.md`, `docs/REMAINING-WORK.md`, `docs/NATIVE-DEMO.md`, `docs/DEMO-FUNCTIONALITY-MATRIX.md`, and `docs/ACCEPTANCE-EVIDENCE-MAP.md` first. Expected starting HEAD is `3e1e87eb0a5cc3051db6539a26db66ba85ed2d4f` or its documentation-only successor. Verify actual Git status and source before editing.
+
+You are not alone in this checkout. Preserve other edits. Your ownership is `src/demo/`, demo-focused tests, and a new `docs/evidence/CLAUDE-DEMO-COMPLETION-PASS.md` report. Inspect the native server/UI as needed. For a demonstrated defect outside your ownership, report the exact file, behavior and proposed repair for coordinator assignment rather than editing concurrently. Do not edit the task/handoff/status documents owned by the coordinator. Do not change branches or stage/commit anyone else's files.
+
+The native demo already reuses the real React frontend, Application and HTTP handlers. It has fictional Stripe checkout/refund outcomes, carrier labels/manifests and a QuickBooks document/payment ledger. Do not build a second application or duplicate those completed adapters.
+
+Trace the existing onboarding/role entry and incoming receipt → allocation → pick/pack → handover → invoice → payment/accounting paths, including returns/refunds, to identify concrete broken connections. Review the known demo omissions: OAuth/company authorization, hosted card entry/decline presentation, cost/stock journal transport, email, and protected operator workflows. Produce a source-referenced ledger for each: already represented, demonstrated defect, safe demo-only adapter needed for an existing operation, or authentic-input/operator-only limitation. Distinguish absence of seeded data from absence of functionality.
+
+Repair demonstrated defects and add bounded offline demo adapters only where needed to represent an already implemented and authorized native operation. Preserve native authorization, residency-choice withdrawals, independent-review requirements, idempotency, accounting/stock invariants and browser isolation. Never weaken production security, make live provider calls, add public operator authority, fabricate credentials or claim genuine vendor behavior from a simulation. If completion depends on an unspecified business policy or authentic provider/host contract, document the precise missing input and stop that item.
+
+Run only meaningful focused direct workstation checks for changed behavior plus typecheck/build when appropriate. Keep checks in the foreground or wait for completion in the same turn. Record tested source/version, commands, actual results and limitations; retain failures and corrections. Route registration, source reuse and old test receipts are not universal acceptance. All formal product gates remain unverified unless their actual required evidence is independently supplied.
+
+No PRs or merges, no pushes, no CI/runners/workflows, no deployments, no account/credential/permission changes, no OPUS/UB integration, no broad dependency upgrades, no deferred issue implementation, and no production registration redesign. No nested agents, recurring routines, reminders, `send_later` or CI monitoring. Preserve the nested `sites-demo/`, generated caches and private evidence without staging or publishing them.
+
+When the bounded pass is complete, return changed files, findings repaired, exact check outcomes, and unresolved items with concrete owners/inputs. Write the report within your assigned path. Leave code changes available for coordinator review and stop. Do not say the entire system is production-ready or an exact universal replica.
