@@ -18,12 +18,12 @@ gates or substitute for external qualification.
 | Specification-to-code blind-spot review | Independent audit agent | Source audit complete: docs/WORKFLOW-GAP-AUDIT-2026-10-05.md; six gaps implemented; external qualification limits remain explicit |
 | Reviewed wholesale cost and reasoned price overrides with separate exception approval | Pricing backend, shipping and interface agents | Deployed; cost/limits/history/one-off lifecycle and MFA fix verified; final buyer browser check passed, including no cost/margin/reason disclosure |
 | Scanner link through internal email/SMS | Parent + independent reviewer | Adapter/HTTP/UI implemented; local browser lost-response and validation recovery passed; independent security/retry review and nine backend tests passed. Live provider remains unconfigured |
-| Session-aware public navigation, breadcrumbs and private verified staff notes | Navigation, notes and parent integration | Deployed in a5ca594/schema28; guest/customer/admin live checks and independent note verification covered; five-pass follow-up corrections pending final release |
+| Session-aware public navigation, breadcrumbs and private verified staff notes | Navigation, notes and parent integration | Deployed in fa48391/schema28; guest/customer/admin live checks and independent note verification covered; all five follow-up review/fix passes complete and live |
 | Manufacturer reference to saleable model continuity | Pricing backend + interface | Explicit mappings, current native purchasing restrictions and sign-in context implemented; backend/browser checks passed. No fabricated mapping of sample SKUs |
 
 Three Codex subagents completed their assigned work with explicit responsibilities. No
 separate cloud session is claimed. Current deployed release is source
-`a5ca594`, schema28. See the [navigation and notes release receipt](evidence/LIVE-NAVIGATION-NOTES-2026-10-05.md) for database conservation, exact image and live checks. The [five-pass polish review](evidence/FIVE-PASS-POLISH-2026-10-05.md) tracks subsequent local corrections and their deployment status.
+`fa48391`, schema28. See the [navigation and notes release receipt](evidence/LIVE-NAVIGATION-NOTES-2026-10-05.md) for database conservation, exact image and live checks. The [five-pass polish review](evidence/FIVE-PASS-POLISH-2026-10-05.md) records all five completed passes, their deployed corrections and final live verification.
 
 Completion must record source version, checks actually run and outcomes. Actual
 provider credentials, contractual/carrier inputs, real-device evidence and host

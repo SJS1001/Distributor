@@ -244,3 +244,8 @@ Current pilot source is `d65610e`, schema27, image `workflow27-20261005` on the 
 ## Navigation and notes upgrade, 2026-10-05
 
 Source `a5ca594`, schema28, image `notes28-20261005` supersedes the pricing release above on the same Toronto Machine. See [navigation/notes release receipt](evidence/LIVE-NAVIGATION-NOTES-2026-10-05.md) for backup restoration,837-row conservation and live read-only checks. Five subsequent review/fix passes are tracked [here](evidence/FIVE-PASS-POLISH-2026-10-05.md).
+
+
+## Five-pass polish release, 2026-10-05
+
+Source `fa48391`, schema28, image `polish28-20261005` supersedes notes28 on the same Toronto Machine. Digest: `sha256:010d3013ada2ad079e5506b22466c8da3e26cee02519a4f1f5b66186f957e68c`. Local and deployed checks matched395 tracked source/package files; database integrity and foreign-key checks passed, and HTTP health is good. No schema migration was required. Previous `notes28-20261005` image and its encrypted restore-verified backup remain retained for recovery. Final desktop/phone-width guest/customer/admin checks passed. See the [completed five-pass review](evidence/FIVE-PASS-POLISH-2026-10-05.md) for exact evidence, historical failed harness checks and remaining qualification.

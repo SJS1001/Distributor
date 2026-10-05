@@ -1,6 +1,6 @@
 # Five-pass pilot review
 
-Owner requested five iterative reviews after the navigation/notes update is live. Status: initial release a5ca594/schema28 verified live; Passes 1–4 reviewed; final integration/deployment pending. Each pass records evidence and fixes; external provider and physical-device qualification remain explicit. No CI, PR or merge authorized.
+Owner requested five iterative reviews after the navigation/notes update is live. Status: all five passes complete; final source `fa48391`/schema28 deployed and verified live on 5 October 2026. Pass-specific pending statements below describe their historical checkpoints; Pass 5 records the final outcome. Each pass records evidence and fixes; external provider and physical-device qualification remain explicit. No CI, PR or merge authorized.
 
 1. **Navigation and orientation:** guest/customer/staff entry points, breadcrumbs, back/forward/reload, mobile layout, keyboard focus. Fix broken paths and misleading state.
 2. **Customer purchasing:** approved product discovery, pricing presentation, cart/quote/order, invoices and reports. Compare visible flows with implemented permissions and specifications; exercise synthetic mutations locally.
@@ -78,6 +78,29 @@ Limits: workstation Chromium with synthetic accounts/data and intercepted respon
 
 ## Pass 5 — Integrated polish
 
-Passes 1–4 are incorporated into a frozen source snapshot. Final public navigation **19/19** and workspace navigation **5/5** passed. Typecheck, full formatting, planning structure and whitespace checks passed. Full backend regression **6,049/6,049 passed**, with no failures, skips or cancellations (166.0s). The local Linux AMD64 image built successfully and matched all 395 source/package hashes; deployed identity checks remain pending. Container input now excludes macOS `.DS_Store` metadata; the source/package manifest contains 395 tracked files.
+Passes 1–4 are incorporated into a frozen source snapshot. Final public navigation **19/19** and workspace navigation **5/5** passed. Typecheck, full formatting, planning structure and whitespace checks passed. Full backend regression **6,049/6,049 passed**, with no failures, skips or cancellations (166.0s). The local Linux AMD64 image built successfully and matched all 395 source/package hashes; the deployed machine also matched those same 395 hashes. Container input now excludes macOS `.DS_Store` metadata; the source/package manifest contains 395 tracked files.
 
-Final activation and live verification will be recorded below; this intermediate checkpoint is not a deployment or completion claim.
+Final release **`fa48391`** is pushed to the owner-authorized GitHub branch and live at **https://dstrbtr.ca**. Image `registry.fly.io/distributor-ca-sjs1001:polish28-20261005` has digest `sha256:010d3013ada2ad079e5506b22466c8da3e26cee02519a4f1f5b66186f957e68c`. It runs on existing Toronto (`yyz`) Machine `817052c44d9028`. This code-only update retains schema28, fingerprint `ed47b3bea6faceab704b36d4b3a159014294996a630b9cb3880a961305c53bff`. Read-only database checks returned `quick_check=ok`, zero foreign-key violations and region CA. The machine is started and HTTP health passes. The prior notes28 image and encrypted, restored backup remain available; no new migration was required.
+
+Final live read-only Chromium verification, begun at **2026-10-05T20:34:41.643Z**, passed at **1440 × 900 and 390 × 900**:
+
+- Guests see application/sign-in entries, have no workspace/account-pricing links, and session/dashboard reads return401.
+- Customers and administrators have correct public navigation, working sign-out and restored guest state after reload. Customer account pricing remains authenticated.
+- Public category/search filters survive URL history, reload and product breadcrumb return; keyboard product entry and product history work.
+- Administration tabs survive history/reload with matching breadcrumbs. Phone staff identity and resource controls remain readable.
+- Customer product selections survive direct URL reload, Back/Forward and Shop breadcrumb return under current approved-catalog access.
+- All five staff note histories (customer, product, order, shipment, invoice) are readable by the authorized administrator. Buyers have no notes interface; captured staff-history paths deny buyer reads with403.
+- Both widths reported zero JavaScript page errors, no horizontal page overflow and zero attempted business writes. Only normal login/logout changed live state. Note creation, independent verification, shipping and order mutations are proven by the local synthetic checks above, not by live record modification.
+
+Screenshots were inspected. Private evidence is retained in `local-evidence/polish-release-20261005/`: full/backend and browser logs, image build/push/deployment logs, deployed source and database receipts, and `live-verification.json`, `live-verification.log`, `verify-live.mjs` and screenshots. Two failed final harness receipts remain as `live-verification-failed-label.*` and `live-verification-failed-menu.*`: one used an exact wrapped-label locator instead of the actual category combobox role; the other expected “Menu” after expansion changed it to “Close menu”. Corrected selectors passed without production-source changes.
+
+### Remaining qualification and bounded limitations
+
+- Internal email/SMS relay is implemented but has no configured live provider; QR links and device composers remain available.
+- Stripe, QuickBooks and live carrier credentials, commercial terms and end-to-end provider qualification remain outstanding.
+- Phone-width Chromium checks do not qualify a physical iPhone, Safari or camera scanning.
+- Workspace preferences and pending note recovery use browser-local storage, not cross-device synchronization; storage scope is not encryption, and the stale-tab guard is not a general atomic cross-tab transaction.
+- Shop product links persist through reload; Shop category/search filters remain mounted-view state. No invented manufacturer-to-SKU mappings were added.
+- Existing bundle-size advisory and broader infrastructure residency, recovery-time and recovery-point qualification remain open. Owner-authorized public pre-filled accounts remain suitable only for the fictional pilot.
+
+These five reviews and their identified fixes are complete; they do not certify every product gate or readiness for real customer data. Three existing Codex subagents assisted; no new cloud session, CI runner, PR or merge was used.
