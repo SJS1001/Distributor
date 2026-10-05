@@ -140,7 +140,9 @@ Fly secret; protected initial administrator details and key custody are in the
 ignored local `private-data/fly-ca/` directory. The administrator identity and initial password are retained only in that private directory; neither is published in repository documentation.
 Move keys/password into the owner's durable password vault and select a new
 private administrator password in the Security page. No automated mail provider
-or recovery email is configured. The real pilot starts empty, without demo data.
+or recovery email is configured. The real pilot initially launched empty. The owner
+subsequently authorized [Gree sample data in this pilot](GREE-PILOT-SAMPLE.md);
+its stock, prices, customers and commercial records are explicitly fictional.
 
 ## Enrollment ingress and upgrades
 

@@ -12,6 +12,8 @@ The latest source-bound focused receipt records 28 provider/gateway tests, one b
 
 ## Prioritized checklist
 
+Current customer-access review identified a concrete missing requirement beyond the earlier bounded baseline audit: **per-customer product purchasing approval**. Buyer login, own-account ordering and tier pricing exist, but approved buyers can currently purchase all active products. Add staff-managed product entitlements with an explicit default policy; enforce them in catalog visibility and backend cart, quote and order acceptance, including direct API requests, stale quotes and revocation. Verify cross-account isolation and approved/denied product cases. Do not describe account approval or price tiers as product authorization. See the [Gree pilot access findings](GREE-PILOT-SAMPLE.md).
+
 | Order | Work and existing task coverage | Status / responsible party | Completion evidence |
 | --- | --- | --- | --- |
 | 1 | Finish the native demo coverage ledger and repair demonstrated wiring defects. Trace onboarding, roles, incoming allocation, shipping, billing, returns and provider outcomes from UI to native handler. Assess the known simulation omissions below. D-007–D-036 as applicable. | Deferred by owner in favour of the real Canadian app; historical Claude brief not launched. | Every omission has a source reference and disposition; actual defects repaired with focused checks. No claim of universal parity from route counts. |
