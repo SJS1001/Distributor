@@ -58,3 +58,7 @@ The following sequence now has local source implementation and focused verificat
 The resource service/HTTP checks passed 9/9; the family-reference helper and existing business-seed checks bring that bounded run to 11/11. These tests cover malformed/oversized uploads, draft/publish/edit/retire, idempotency, account isolation, fresh entitlement revocation, safe delivery, PDF active-object removal and a coherent SQLite copy. They do not establish universal workflow, actual iPhone Safari, live backup recovery or host containment qualification.
 
 The research collected eight family image entries and 92 technical document links. See [library and download limitations](catalog/README.md). The optional Gree helper publishes only eight official manufacturer family-page references, clearly labelled as unverified for exact model/capacity/voltage. No Gree binary is automatically imported or redistributed. Model/revision matching and redistribution rights remain gaps. The four-feature increment is deployed; no product gate is verified.
+
+## Public portal and customer layout
+
+The subsequent [design release](evidence/LIVE-PORTAL-REDESIGN-2026-10-05.md) supplies a dedicated customer masthead/navigation, illustrated featured equipment, product cards and detail/resource views. Public `/#customer-sign-in`, `/#admin-sign-in` and `/#apply` provide the three entrances; legacy `/#sign-in` remains supported. Server authentication determines the role regardless of entrance. Desktop and phone-width Chromium were checked; actual iPhone Safari remains a separate device check.
