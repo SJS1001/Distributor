@@ -118,7 +118,9 @@ export function WorkspaceNavigation({
           >
             dstrbtr<span>.</span>
           </button>
-          <span className="customer-trade-label">Your trade counter</span>
+          <span className="customer-trade-label">
+            GREE equipment · Trade portal
+          </span>
           <div className="customer-identity">
             <strong>{name}</strong>
             <span>{organization}</span>
@@ -157,6 +159,9 @@ export function WorkspaceNavigation({
                   : destination}
               </button>
             ))}
+          <a className="customer-library-link" href="#products">
+            GREE product library <span aria-hidden="true">↗</span>
+          </a>
         </nav>
       </header>
     );
@@ -219,6 +224,16 @@ export function WorkspaceNavigation({
         })}
       </nav>
       <div className="sidebar-bottom">
+        <a className="sidebar-resource-link" href="#products">
+          <WorkspaceIcon name="Catalog" />
+          <span>GREE product library</span>
+          <span aria-hidden="true">↗</span>
+        </a>
+        <a className="sidebar-resource-link" href="#scanner">
+          <WorkspaceIcon name="Inventory" />
+          <span>Phone scanner</span>
+          <span aria-hidden="true">↗</span>
+        </a>
         <div className="user-identity">
           <span className="user-avatar" aria-hidden="true">
             {name.slice(0, 1).toUpperCase()}

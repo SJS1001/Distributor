@@ -397,6 +397,14 @@ const noticeProduct = f.app.catalog.create(f.actor, "notice-product", {
   unitPrice: 10000,
   taxBasisPoints: 1300,
 }).id;
+f.app.catalog.setPurchasingPolicy(f.actor, "noticeBuyer-catalog", {
+  accountId: noticeBuyer,
+  mode: "selected",
+  requiresReview: false,
+  productIds: [noticeProduct],
+  revision: 0,
+  reason: "Explicit synthetic browser fixture purchasing permission",
+});
 const noticePo = f.app.procurement.create(f.actor, "notice-po", {
   supplierId: f.supplier,
   warehouseId: f.w1,
@@ -491,6 +499,14 @@ const checkoutProduct = f.app.catalog.create(f.actor, "checkout-product", {
   unitPrice: 10000,
   taxBasisPoints: 1300,
 }).id;
+f.app.catalog.setPurchasingPolicy(f.actor, "checkoutBuyer-catalog", {
+  accountId: checkoutBuyer,
+  mode: "selected",
+  requiresReview: false,
+  productIds: [checkoutProduct],
+  revision: 0,
+  reason: "Explicit synthetic browser fixture purchasing permission",
+});
 const checkoutPo = f.app.procurement.create(f.actor, "checkout-po", {
   supplierId: f.supplier,
   warehouseId: f.w1,
@@ -694,6 +710,14 @@ const carrierPo = f.app.procurement.create(f.actor, "carrier-browser-po", {
   warehouseId: f.w1,
   lines: [{ productId: carrierProduct, quantity: 2, unitCost: 1000 }],
 }).id;
+f.app.catalog.setPurchasingPolicy(f.actor, "carrierBuyer-catalog", {
+  accountId: carrierBuyer,
+  mode: "selected",
+  requiresReview: false,
+  productIds: [carrierProduct],
+  revision: 0,
+  reason: "Explicit synthetic browser fixture purchasing permission",
+});
 f.app.procurement.receive(f.actor, "carrier-browser-stock", {
   poId: carrierPo,
   lineId: String(

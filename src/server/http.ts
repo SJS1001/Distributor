@@ -1333,6 +1333,19 @@ export function commands(
       }),
       run: (a, k, p) => app.catalog.setPurchasingPolicy(a, k, p),
     },
+    "catalog.product-availability.set": {
+      schema: obj({
+        productId: str,
+        hidden: bool,
+        outOfStock: bool,
+        expectedAvailableOn: {
+          anyOf: [{ type: "string", maxLength: 10 }, { type: "null" }],
+        },
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setProductAvailability(a, k, p),
+    },
     "catalog.product-purchasing.set": {
       schema: obj({
         productId: str,
@@ -1735,7 +1748,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'"],
-        imgSrc: ["'self'", "data:"],
+        imgSrc: ["'self'", "data:", "https://cdn.shopify.com"],
         connectSrc: ["'self'"],
         frameAncestors: ["'none'"],
       },
@@ -2112,6 +2125,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
     "/api/catalog/purchasing/:accountId",
     { schema: { params: obj({ accountId: str }) } },
     async (r) => app.catalog.purchasingPolicy(actor(r), r.params.accountId),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/availability",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.catalog.productAvailability(actor(r), r.params.id),
   );
   http.get<{ Params: { id: string } }>(
     "/api/catalog/products/:id/purchasing",

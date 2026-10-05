@@ -1,0 +1,126 @@
+.availability-editor {
+  padding: 18px;
+  border: 1px solid #c8d8e7;
+  border-radius: 8px;
+  background: #f7faff;
+}
+.availability-editor > p {
+  color: #526479;
+}
+.availability-editor fieldset {
+  display: grid;
+  gap: 13px;
+  min-width: 0;
+}
+.availability-editor .availability-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+}
+.availability-editor .availability-checkbox input {
+  width: auto;
+  margin-top: 4px;
+  flex: 0 0 auto;
+}
+.availability-editor .availability-legend {
+  font-weight: 600;
+}
+.availability-compact {
+  width: 270px;
+  padding: 12px;
+}
+.availability-compact textarea {
+  min-height: 55px;
+}
+.product-availability-message {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: #546273;
+}
+.product-out-of-stock {
+  display: inline-flex;
+  padding: 5px 9px;
+  border: 1px solid #dfb670;
+  border-radius: 4px;
+  background: #fff3da;
+  color: #795113;
+  font-weight: 700;
+}
+.storefront .sf-showcase .product-availability-message {
+  color: #dce8f3;
+}
+.availability-editor.availability-compact {
+  width: 220px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+.availability-compact > p:first-of-type,
+.availability-compact .availability-legend {
+  display: none;
+}
+.availability-compact fieldset {
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.availability-compact label,
+.availability-compact input {
+  margin: 0;
+}
+.availability-compact .availability-checkbox {
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.35;
+}
+.availability-compact .availability-checkbox input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+}
+.availability-compact .availability-date {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  line-height: 1.25;
+}
+.availability-compact input[type="date"] {
+  width: 136px;
+  min-height: 36px;
+  padding: 5px;
+  font-size: 12px;
+}
+.availability-compact .actions {
+  margin-top: 8px;
+}
+.availability-compact
+  label:has(input:not([type="checkbox"]):not([type="date"])) {
+  margin-top: 8px;
+}
+.catalog-maintenance-table td:last-child .actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 164px;
+}
+.catalog-maintenance-table td:last-child .actions button {
+  padding: 8px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+  white-space: normal;
+}
+.catalog-maintenance-table td:last-child .actions button:first-child,
+.catalog-maintenance-table td:last-child .actions button:last-child {
+  grid-column: 1 / -1;
+}

@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { request } from "./api.ts";
 import "./public-site.css";
 import { ScannerPage } from "./scanner-page.tsx";
+import preview from "./gree-catalog-preview.json" with { type: "json" };
+const GreeProductLibrary = lazy(() =>
+  import("./gree-product-library.tsx").then((module) => ({
+    default: module.GreeProductLibrary,
+  })),
+);
 
 export type PublicRoute =
+  | "products"
+  | "product"
   | "scanner"
   | "home"
   | "sign-in"
@@ -12,6 +27,8 @@ export type PublicRoute =
   | "apply"
   | "activate";
 export function readPublicRoute(hash: string): PublicRoute {
+  if (hash.startsWith("#product=")) return "product";
+  if (hash === "#products" || hash.startsWith("#products?")) return "products";
   if (hash.startsWith("#activate=") || hash === "#activate") return "activate";
   if (hash === "#scanner") return "scanner";
   if (hash === "#apply") return "apply";
@@ -21,128 +38,16 @@ export function readPublicRoute(hash: string): PublicRoute {
   return "home";
 }
 
-function EquipmentDrawing() {
-  return (
-    <figure className="public-equipment">
-      <div className="public-drawing-label">
-        <span>HEATING / COOLING</span>
-        <span>TRADE SUPPLY</span>
-      </div>
-      <svg
-        viewBox="0 0 560 410"
-        role="img"
-        aria-label="Original illustration of an outdoor heat pump and an indoor wall unit"
-      >
-        <defs>
-          <pattern
-            id="public-grille"
-            width="7"
-            height="7"
-            patternUnits="userSpaceOnUse"
-          >
-            <path d="M0 0V7" stroke="#8695a0" strokeWidth="1" />
-          </pattern>
-          <radialGradient id="public-fan">
-            <stop stopColor="#293f51" />
-            <stop offset="1" stopColor="#112635" />
-          </radialGradient>
-        </defs>
-        <path
-          d="M20 357H540M50 40V380M510 40V380"
-          stroke="#c5c6bf"
-          strokeWidth="1"
-          strokeDasharray="3 7"
-        />
-        <path
-          d="M89 76L421 59L468 84L135 103Z"
-          fill="#ecebe4"
-          stroke="#657481"
-        />
-        <path
-          d="M89 76V132Q89 147 109 149L420 133V59"
-          fill="#f9f8f1"
-          stroke="#657481"
-        />
-        <path d="M420 59L468 84V139L420 133Z" fill="#c4ccc9" stroke="#657481" />
-        <path
-          d="M112 129L399 115M112 136L399 122"
-          stroke="#617787"
-          strokeWidth="3"
-        />
-        <path d="M127 96L180 93" stroke="#a34f2b" strokeWidth="3" />
-        <path
-          d="M388 133V165Q388 178 406 183L452 201"
-          fill="none"
-          stroke="#a34f2b"
-          strokeWidth="3"
-        />
-        <path
-          d="M103 206L357 179L439 211L184 243Z"
-          fill="#e8e8e1"
-          stroke="#536b7b"
-        />
-        <path d="M103 206V337L357 318V179Z" fill="#f9f8f1" stroke="#536b7b" />
-        <path
-          d="M357 179L439 211V349L357 318Z"
-          fill="url(#public-grille)"
-          stroke="#536b7b"
-        />
-        <path
-          d="M103 337L184 373L439 349L357 318Z"
-          fill="#a8b6bc"
-          stroke="#536b7b"
-        />
-        <path
-          d="M126 342V357L157 370V351M376 349V365L409 362V352"
-          fill="#172f43"
-        />
-        <circle
-          cx="225"
-          cy="261"
-          r="62"
-          fill="url(#public-fan)"
-          stroke="#697f8a"
-          strokeWidth="5"
-        />
-        <g fill="#81949d" stroke="#142d40" strokeWidth="2">
-          <path d="M225 261C184 250 167 232 185 217C209 208 229 231 225 261Z" />
-          <path d="M225 261C234 220 252 203 268 222C278 246 254 266 225 261Z" />
-          <path d="M225 261C266 271 283 289 265 305C241 314 220 291 225 261Z" />
-          <path d="M225 261C215 302 197 319 181 300C172 276 196 256 225 261Z" />
-        </g>
-        <g fill="none" stroke="#abb9bf" opacity=".65">
-          <circle cx="225" cy="261" r="52" />
-          <circle cx="225" cy="261" r="42" />
-          <circle cx="225" cy="261" r="31" />
-          <path d="M164 261H286M225 200V322" />
-        </g>
-        <circle cx="225" cy="261" r="11" fill="#e6e9e3" />
-        <path
-          d="M119 225L147 222M119 233L147 230"
-          stroke="#a34f2b"
-          strokeWidth="3"
-        />
-        <path
-          d="M37 188H81M37 184V192M81 184V192M478 226V329M474 226H482M474 329H482"
-          stroke="#a34f2b"
-        />
-      </svg>
-      <figcaption>
-        <span>Equipment for the work ahead.</span>
-        <span>Illustration / not a product specification</span>
-      </figcaption>
-    </figure>
-  );
-}
-
 export function PublicSite({
   route,
   activationToken,
   login,
+  workspaceHref,
 }: {
   route: PublicRoute;
   activationToken: string;
   login: ReactNode;
+  workspaceHref?: string;
 }) {
   const [config, setConfig] = useState<{ enabled: boolean } | null>(null);
   const [configError, setConfigError] = useState(false);
@@ -161,7 +66,7 @@ export function PublicSite({
     document.title =
       route === "home"
         ? "dstrbtr · Canadian HVAC trade"
-        : `${route === "scanner" ? "Barcode scanner" : route === "apply" ? "Apply for a trade account" : route === "activate" ? "Activate your account" : route === "admin-sign-in" ? "Administration sign in" : "Customer sign in"} · dstrbtr`;
+        : `${route === "products" || route === "product" ? "GREE product library" : route === "scanner" ? "Barcode scanner" : route === "apply" ? "Apply for a trade account" : route === "activate" ? "Activate your account" : route === "admin-sign-in" ? "Administration sign in" : "Customer sign in"} · dstrbtr`;
     document.querySelector<HTMLElement>(".public-main")?.focus();
     window.scrollTo(0, 0);
   }, [route]);
@@ -181,12 +86,23 @@ export function PublicSite({
       >
         Skip to content
       </a>
+      <div className="public-utility">
+        <span>Canadian HVAC trade supply</span>
+        <a href="#apply">Become a trade customer →</a>
+      </div>
       <header className="public-header">
         <a href="#home" className="public-wordmark" aria-label="dstrbtr home">
           dstrbtr<span className="public-brand-dot">.</span>
         </a>
-        <span className="public-header-descriptor">HVAC / CANADIAN TRADE</span>
+        <span className="public-header-descriptor">
+          HEATING & COOLING
+          <br />
+          FOR THE CANADIAN TRADE
+        </span>
         <nav aria-label="Public navigation">
+          <a href="#products">Products</a>
+          <a href="#apply">Trade application</a>
+          {workspaceHref && <a href={workspaceHref}>My workspace</a>}
           <a href="#customer-sign-in">
             Customer sign in <span aria-hidden="true">↗</span>
           </a>
@@ -198,37 +114,101 @@ export function PublicSite({
           <>
             <section className="public-hero">
               <div className="public-hero-copy">
-                <p className="public-eyebrow">FOR CANADIAN HVAC CONTRACTORS</p>
-                <h1>HVAC supply for the Canadian trade.</h1>
+                <p className="public-eyebrow">GREE HEATING & COOLING SYSTEMS</p>
+                <h1>
+                  Comfort starts
+                  <br />
+                  with the right system.
+                </h1>
                 <p className="public-lead">
-                  Equipment, account pricing and order details. A dedicated
-                  workspace for your next installation, service call or
-                  replacement.
+                  Explore equipment for your next installation. Product
+                  information, technical documents and a trade account built
+                  around your business.
                 </p>
-                <div
-                  className="public-hero-actions"
-                  aria-label="Customer access"
-                >
-                  <a href="#customer-sign-in" className="public-primary">
+                <div className="public-hero-actions">
+                  <a href="#products" className="public-primary">
+                    Explore products <span aria-hidden="true">→</span>
+                  </a>
+                  <a href="#customer-sign-in" className="public-apply-link">
                     Customer sign in <span aria-hidden="true">↗</span>
                   </a>
-                  <a href="#apply" className="public-apply-link">
-                    Apply for a trade account <span aria-hidden="true">↗</span>
-                  </a>
                 </div>
-                <p className="public-caption">
-                  Business purchasing · Approved trade accounts
-                </p>
+                <div className="public-hero-assurance">
+                  <span>Residential & commercial</span>
+                  <span>Manufacturer documentation</span>
+                </div>
               </div>
-              <EquipmentDrawing />
+              <a
+                className="public-equipment-feature"
+                href={`#product=${encodeURIComponent(preview.products[0]?.id || "")}`}
+              >
+                <div className="public-feature-brand">
+                  GREE <span>HEATING & COOLING</span>
+                </div>
+                <img
+                  src={preview.products[0]?.imageUrl}
+                  alt={preview.products[0]?.title || "GREE heat pump system"}
+                  fetchPriority="high"
+                />
+                <div className="public-feature-caption">
+                  <div>
+                    <small>FEATURED SYSTEM</small>
+                    <strong>{preview.products[0]?.title}</strong>
+                  </div>
+                  <span aria-hidden="true">↗</span>
+                </div>
+              </a>
+            </section>
+            <div className="public-equipment-strip">
+              <span>DUCTLESS MINI-SPLITS</span>
+              <span>CENTRAL HEAT PUMPS</span>
+              <span>COMMERCIAL SYSTEMS</span>
+              <a href="#products">View the full range →</a>
+            </div>
+            <section className="public-products-section">
+              <div className="public-section-heading">
+                <div>
+                  <p className="public-eyebrow">
+                    EQUIPMENT FOR EVERY APPLICATION
+                  </p>
+                  <h2>Find your system.</h2>
+                </div>
+                <a href="#products">
+                  Browse all products <span aria-hidden="true">→</span>
+                </a>
+              </div>
+              <div className="public-category-grid">
+                {preview.categories.map((category) => (
+                  <a
+                    key={category.id}
+                    className="public-category-card"
+                    href={`#products?category=${encodeURIComponent(category.id)}`}
+                  >
+                    <div>
+                      <img
+                        src={category.imageUrl}
+                        alt={category.title}
+                        loading="lazy"
+                      />
+                    </div>
+                    <h3>
+                      {category.title}
+                      <span aria-hidden="true">→</span>
+                    </h3>
+                    <p>{category.count} product families</p>
+                  </a>
+                ))}
+              </div>
             </section>
             <section
               className="public-access"
               aria-labelledby="public-access-title"
             >
               <div className="public-access-heading">
-                <p className="public-eyebrow">YOUR WAY IN</p>
-                <h2 id="public-access-title">Start here.</h2>
+                <p className="public-eyebrow">YOUR TRADE WORKSPACE</p>
+                <h2 id="public-access-title">
+                  Everything you need to get to work.
+                </h2>
               </div>
               <div className="public-access-paths">
                 <a
@@ -276,16 +256,17 @@ export function PublicSite({
               <div>
                 <p className="public-eyebrow">ACCOUNT ACCESS</p>
                 <h2>
-                  Your business.
+                  Product knowledge.
                   <br />
-                  Your purchasing terms.
+                  Business confidence.
                 </h2>
               </div>
               <div>
                 <p>
-                  Your approved account determines the equipment, pricing and
-                  purchasing options available to you. Sign in to view product
-                  details, supporting documents and your order history.
+                  Browse the public manufacturer library to compare equipment,
+                  view product photography and download supporting documents.
+                  Your approved account gives you the equipment, pricing and
+                  purchasing options available to your business.
                 </p>
                 <p>
                   New to dstrbtr? Applications are reviewed before access is
@@ -298,6 +279,16 @@ export function PublicSite({
               </div>
             </section>
           </>
+        ) : route === "products" || route === "product" ? (
+          <Suspense
+            fallback={
+              <div className="public-library-loading" role="status">
+                Loading the product library…
+              </div>
+            }
+          >
+            <GreeProductLibrary detail={route === "product"} />
+          </Suspense>
         ) : route === "scanner" ? (
           <ScannerPage />
         ) : signIn ? (
@@ -382,7 +373,11 @@ export function PublicSite({
         <a className="public-wordmark" href="#home">
           dstrbtr<span className="public-brand-dot">.</span>
         </a>
-        <p>Canadian HVAC trade · Business purchasing by approved account</p>
+        <p>
+          Canadian HVAC trade
+          <br />
+          Equipment information · Business purchasing by approved account
+        </p>
         <a href="#admin-sign-in">
           Administration entrance <span aria-hidden="true">↗</span>
         </a>

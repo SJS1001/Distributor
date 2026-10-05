@@ -1,0 +1,71 @@
+{
+  "productCount": 56,
+  "documentCount": 117,
+  "products": [
+    {
+      "id": "11146997039271",
+      "title": "Unix ECO",
+      "category": "Central Ducted Systems",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/UNIX-ECO.png?v=1787070419",
+      "categoryId": "ducted-central-heat-pump"
+    },
+    {
+      "id": "8555077337255",
+      "title": "Clivia R32",
+      "category": "Single Zone Mini Splits",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/CLIVIA-R32.png?v=1753473991",
+      "categoryId": "mini-splits"
+    },
+    {
+      "id": "7134927847591",
+      "title": "Crossover",
+      "category": "Single Zone Mini Splits",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/products/CROSSOVER.png?v=1755797844",
+      "categoryId": "mini-splits"
+    },
+    {
+      "id": "7630041022631",
+      "title": "Vita",
+      "category": "Single Zone Mini Splits",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/products/KIT-VITA.jpg?v=1755797555",
+      "categoryId": "mini-splits"
+    },
+    {
+      "id": "4010021617746",
+      "title": "Extreme",
+      "category": "Single Zone Mini Splits",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/products/extreme-product.png?v=1755798682",
+      "categoryId": "mini-splits"
+    }
+  ],
+  "categories": [
+    {
+      "id": "mini-splits",
+      "title": "Single Zone Mini Splits",
+      "productId": "8559064711335",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/CROSSOVER-R32.png?v=1753467204",
+      "count": 10
+    },
+    {
+      "id": "ducted-central-heat-pump",
+      "title": "Central Ducted Systems",
+      "productId": "11146997039271",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/UNIX-ECO.png?v=1787070419",
+      "count": 3
+    },
+    {
+      "id": "multi-zone-mini-splits",
+      "title": "Multi-zone Mini-Splits",
+      "productId": "8560814719143",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/FREEMATCH-M-SERIES-R32.png?v=1753900942",
+      "count": 3
+    },
+    {
+      "id": "rtu",
+      "title": "Rooftop Units",
+      "productId": "8757970403495",
+      "imageUrl": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-RTU-R32.png?v=1770411339",
+      "count": 2
+    }
+  ]
+}

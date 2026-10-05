@@ -1,3 +1,4 @@
+import { PRODUCT_AVAILABILITY_DDL } from "./product-availability-schema.ts";
 import { PURCHASING_DDL } from "./purchasing-schema.ts";
 import { CATALOG_MEDIA_DDL } from "./catalog-media-schema.ts";
 import { ENROLLMENT_DDL } from "./enrollment-schema.ts";
@@ -236,6 +237,7 @@ export async function upgradeSchema(
         copied.exec(ENROLLMENT_DDL);
         copied.exec(PURCHASING_DDL);
         copied.exec(CATALOG_MEDIA_DDL);
+        copied.exec(PRODUCT_AVAILABILITY_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -280,6 +282,7 @@ export async function upgradeSchema(
           copied.exec(PURCHASING_DDL);
           copied.exec(CATALOG_MEDIA_DDL);
         }
+        if (before.version! <= 25) copied.exec(PRODUCT_AVAILABILITY_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

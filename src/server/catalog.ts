@@ -1,3 +1,8 @@
+import { PRODUCT_AVAILABILITY_INITIALIZE } from "./product-availability-schema.ts";
+import type {
+  ProductAvailability,
+  ProductAvailabilityInput,
+} from "../shared/product-availability.ts";
 import { purchasingInitialize } from "./purchasing-schema.ts";
 import type {
   PurchasingPolicy,
@@ -57,6 +62,7 @@ export class Catalog {
   ) {
     this.store = database.owned("catalog");
     this.store.migrate(purchasingInitialize("catalog"));
+    this.store.migrate(PRODUCT_AVAILABILITY_INITIALIZE);
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS catalog_products(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,sku TEXT NOT NULL,name TEXT NOT NULL,serialized INTEGER NOT NULL CHECK(serialized IN(0,1)),unit_price INTEGER NOT NULL CHECK(unit_price>=0),tax_bp INTEGER NOT NULL CHECK(tax_bp BETWEEN 0 AND 10000),currency TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,sku)) STRICT;
       CREATE TABLE IF NOT EXISTS catalog_prices(org_id TEXT NOT NULL,product_id TEXT NOT NULL,tier TEXT NOT NULL,unit_price INTEGER NOT NULL CHECK(unit_price>=0),PRIMARY KEY(org_id,product_id,tier)) STRICT;
@@ -248,7 +254,106 @@ export class Catalog {
       },
     );
   }
+  private availability(orgId: string, productId: string): ProductAvailability {
+    const row = this.store.get<{
+      hidden: number;
+      out_of_stock: number;
+      expected_available_on: string | null;
+      revision: number;
+    }>(
+      "SELECT hidden,out_of_stock,expected_available_on,revision FROM catalog_product_availability WHERE org_id=? AND product_id=?",
+      orgId,
+      productId,
+    );
+    return {
+      productId,
+      hidden: !!row?.hidden,
+      outOfStock: !!row?.out_of_stock,
+      expectedAvailableOn: row?.expected_available_on ?? null,
+      revision: row?.revision ?? 0,
+    };
+  }
+  productAvailability(actor: Actor, productId: string): ProductAvailability {
+    actor = this.catalogActor(actor, ["admin"]);
+    this.product(actor, text(productId, "Product ID", 128));
+    return this.availability(actor.orgId, productId);
+  }
+  setProductAvailability(
+    actor: Actor,
+    key: string,
+    input: ProductAvailabilityInput,
+  ) {
+    return this.platform.command(
+      actor,
+      "catalog.product-availability.set",
+      key,
+      input,
+      () => {
+        actor = this.catalogActor(actor, ["admin"]);
+        this.product(actor, text(input.productId, "Product ID", 128));
+      },
+      () => {
+        integer(
+          input.revision,
+          "Availability revision",
+          0,
+          Number.MAX_SAFE_INTEGER - 1,
+        );
+        check(
+          typeof input.hidden === "boolean" &&
+            typeof input.outOfStock === "boolean",
+          "VALIDATION",
+          "Choose visibility and availability status.",
+          400,
+        );
+        const date = input.expectedAvailableOn;
+        check(
+          date === null ||
+            (typeof date === "string" &&
+              /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+              Number.isFinite(Date.parse(date + "T00:00:00Z")) &&
+              new Date(date + "T00:00:00Z").toISOString().slice(0, 10) ===
+                date),
+          "VALIDATION",
+          "Expected availability must be a valid YYYY-MM-DD date or null.",
+          400,
+        );
+        const reason = text(input.reason, "Reason", 1000);
+        const before = this.availability(actor.orgId, input.productId);
+        check(
+          before.revision === input.revision,
+          "REVISION",
+          "Product availability changed; reload before saving.",
+        );
+        this.store.run(
+          "INSERT INTO catalog_product_availability VALUES(?,?,?,?,?,?) ON CONFLICT(org_id,product_id) DO UPDATE SET hidden=excluded.hidden,out_of_stock=excluded.out_of_stock,expected_available_on=excluded.expected_available_on,revision=excluded.revision",
+          actor.orgId,
+          input.productId,
+          Number(input.hidden),
+          Number(input.outOfStock),
+          date,
+          input.revision + 1,
+        );
+        const availability = this.availability(actor.orgId, input.productId);
+        this.platform.audit(
+          actor,
+          "catalog.product-availability.changed",
+          input.productId,
+          { before, availability, reason },
+        );
+        return availability;
+      },
+    );
+  }
+  private availabilityDisplay(orgId: string, productId: string) {
+    const { outOfStock, expectedAvailableOn } = this.availability(
+      orgId,
+      productId,
+    );
+    return { outOfStock, expectedAvailableOn };
+  }
   private eligible(actor: Actor, accountId: string, productId: string) {
+    if (this.availability(actor.orgId, productId).hidden) return false;
     return !!this.store.get(
       `SELECT 1 AS eligible FROM catalog_account_policies a WHERE a.org_id=? AND a.account_id=? AND (a.mode='all' OR (a.mode='selected' AND EXISTS(SELECT 1 FROM catalog_entitlements e WHERE e.org_id=a.org_id AND e.account_id=a.account_id AND e.product_id=?)))`,
       actor.orgId,
@@ -257,7 +362,7 @@ export class Catalog {
     );
   }
   private entitlementPredicate() {
-    return `EXISTS(SELECT 1 FROM catalog_account_policies a WHERE a.org_id=p.org_id AND a.account_id=? AND (a.mode='all' OR (a.mode='selected' AND EXISTS(SELECT 1 FROM catalog_entitlements e WHERE e.org_id=a.org_id AND e.account_id=a.account_id AND e.product_id=p.id))))`;
+    return `NOT EXISTS(SELECT 1 FROM catalog_product_availability v WHERE v.org_id=p.org_id AND v.product_id=p.id AND v.hidden=1) AND EXISTS(SELECT 1 FROM catalog_account_policies a WHERE a.org_id=p.org_id AND a.account_id=? AND (a.mode='all' OR (a.mode='selected' AND EXISTS(SELECT 1 FROM catalog_entitlements e WHERE e.org_id=a.org_id AND e.account_id=a.account_id AND e.product_id=p.id))))`;
   }
   authorizePurchase(actor: Actor, accountId: string, productId: string) {
     actor = this.catalogActor(actor, ["commercial", "buyer"]);
@@ -403,7 +508,7 @@ export class Catalog {
   }
   private descriptor(p: Product): CatalogProduct {
     const { org_id: _orgId, ...product } = p;
-    return product;
+    return { ...product, availability: this.availability(p.org_id, p.id) };
   }
   lifecycleHistory(
     actor: Actor,
@@ -563,7 +668,9 @@ export class Catalog {
         actor,
         text(accountId, "Customer ID", 128),
       );
-      const products = this.store.all<Omit<CustomerProduct, "unit_tax">>(
+      const products = this.store.all<
+        Omit<CustomerProduct, "unit_tax" | "outOfStock" | "expectedAvailableOn">
+      >(
         `SELECT p.id,p.sku,p.name,p.serialized,
          COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
          FROM catalog_products p LEFT JOIN catalog_prices t
@@ -581,6 +688,7 @@ export class Catalog {
         );
         return {
           ...product,
+          ...this.availabilityDisplay(actor.orgId, product.id),
           unit_tax: tax(product.unit_price, product.tax_bp),
         };
       });
@@ -620,7 +728,9 @@ export class Catalog {
         "Catalog cursor is unavailable in your current scope.",
         400,
       );
-      const rows = this.store.all<Omit<CustomerProduct, "unit_tax">>(
+      const rows = this.store.all<
+        Omit<CustomerProduct, "unit_tax" | "outOfStock" | "expectedAvailableOn">
+      >(
         `SELECT p.id,p.sku,p.name,p.serialized,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
          FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
          WHERE p.org_id=? AND p.active=1 AND ${this.entitlementPredicate()} AND (?='' OR instr(lower(p.sku),lower(?))>0 OR instr(lower(p.name),lower(?))>0)
@@ -642,6 +752,7 @@ export class Catalog {
         );
         return {
           ...product,
+          ...this.availabilityDisplay(actor.orgId, product.id),
           unit_tax: tax(product.unit_price, product.tax_bp),
         };
       });
@@ -677,7 +788,12 @@ export class Catalog {
         "Saved product is no longer available to this account; remove it from the cart.",
         403,
       );
-    const rows = this.store.all<Omit<SelectedCustomerProduct, "unit_tax">>(
+    const rows = this.store.all<
+      Omit<
+        SelectedCustomerProduct,
+        "unit_tax" | "outOfStock" | "expectedAvailableOn"
+      >
+    >(
       `SELECT p.id,p.sku,p.name,p.serialized,p.active,COALESCE(t.unit_price,p.unit_price) AS unit_price,p.tax_bp,p.currency
        FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
        WHERE p.org_id=? AND p.id IN (${ids.map(() => "?").join(",")}) ORDER BY p.sku,p.id`,
@@ -697,7 +813,11 @@ export class Catalog {
         "CURRENCY",
         "Cross-currency ordering is not supported.",
       );
-      return { ...product, unit_tax: tax(product.unit_price, product.tax_bp) };
+      return {
+        ...product,
+        ...this.availabilityDisplay(actor.orgId, product.id),
+        unit_tax: tax(product.unit_price, product.tax_bp),
+      };
     });
   }
   productBySku(actor: Actor, sku: string) {

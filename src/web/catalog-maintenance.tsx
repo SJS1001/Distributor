@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ProductAvailabilityEditor } from "./product-availability.tsx";
 import { CatalogResourceWorkspace } from "./catalog-resources.tsx";
 import { usePages } from "./billing-inbox.tsx";
 import type {
@@ -12,6 +13,7 @@ const priceFormatters = {
 };
 type Actions = {
   canManage: boolean;
+  canManageAvailability: boolean;
   busy: boolean;
   review: (id: string, active: boolean) => void;
   history: (id: string) => void;
@@ -40,7 +42,7 @@ function Products({
         </p>
       )}
       <div className="table-wrap">
-        <table>
+        <table className="catalog-maintenance-table">
           <thead>
             <tr>
               {[
@@ -50,6 +52,7 @@ function Products({
                 "Base price",
                 "Tax",
                 "Status",
+                "Customer availability",
                 "Actions",
               ].map((label) => (
                 <th key={label}>{label}</th>
@@ -69,6 +72,15 @@ function Products({
                 </td>
                 <td>{p.tax_bp / 100}%</td>
                 <td>{p.active === 1 ? "Active" : "Retired"}</td>
+                <td>
+                  {actions.canManageAvailability && (
+                    <ProductAvailabilityEditor
+                      productId={p.id}
+                      compact
+                      initial={p.availability}
+                    />
+                  )}
+                </td>
                 <td>
                   {actions.canManage && (
                     <div className="actions">
@@ -137,6 +149,7 @@ export function CatalogMaintenance(actions: Actions) {
         <CatalogResourceWorkspace
           key={product.id}
           product={product}
+          canManageAvailability={actions.canManageAvailability}
           close={() => setProduct(null)}
         />
       )}

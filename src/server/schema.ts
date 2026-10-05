@@ -1,3 +1,4 @@
+import { PRODUCT_AVAILABILITY_SCHEMA } from "./product-availability-schema.ts";
 import { PURCHASING_SCHEMA } from "./purchasing-schema.ts";
 import { CATALOG_MEDIA_SCHEMA } from "./catalog-media-schema.ts";
 import { ENROLLMENT_SCHEMA } from "./enrollment-schema.ts";
@@ -31,7 +32,7 @@ import { CANADA_POST_SCHEMA } from "./canada-post-schema.ts";
 import { QUICKBOOKS_REVOCATION_SCHEMA } from "./quickbooks-revocation-schema.ts";
 import { ACCOUNTING_CANCELLATION_SCHEMA } from "./accounting-cancellation-schema.ts";
 
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 export const SCHEMA_TABLE = "platform_schema_version";
 // This DDL is part of the frozen v1 schema identity. Changing it requires a new version.
 export const SCHEMA_DDL =
@@ -743,9 +744,54 @@ const profiles = baseline.schemas.map((profile) => {
                 : 0,
       ),
     ),
+    versionTwentyFiveHash: fingerprint(
+      [
+        ...previous,
+        ...PURCHASING_SCHEMA,
+        ...CATALOG_MEDIA_SCHEMA,
+        ...ENROLLMENT_SCHEMA,
+        ...INCOMING_SUPPLY_SCHEMA,
+        ...INTEGRATION_OFFLINE_ORIGINAL_LEASE_SCHEMA,
+        ...INTEGRATION_OFFLINE_CHECKOUT_PAID_SCHEMA,
+        ...INTEGRATION_OFFLINE_CANADA_POST_SCHEMA,
+        ...INTEGRATION_OFFLINE_ORIGINAL_SCHEMA,
+        ...INTEGRATION_OFFLINE_REFUND_SCHEMA,
+        ...RESTORE_OFFLINE_SCHEMA,
+        ...INVENTORY_VALUATION_SCHEMA,
+        ...INVENTORY_QUANTITY_SCHEMA,
+        ...RESTORE_ACTIVATION_SCHEMA,
+        ...CANADA_POST_SCHEMA,
+        ...QUICKBOOKS_REVOCATION_SCHEMA,
+        ...ACCOUNTING_CANCELLATION_SCHEMA,
+        ...CLAIM_COVERAGE_SCHEMA,
+        ...SHIPMENT_COVERAGE_SCHEMA,
+        ...SUPPLIER_AVAILABILITY_SCHEMA,
+        ...COST_CORRECTION_SCHEMA.filter(
+          (o) => o.name !== "integration_cost_correction_once",
+        ),
+        ...COST_CORRECTION_CHAIN_SCHEMA,
+        ...COST_CORRECTION_OUTCOME_SCHEMA,
+        ...COST_CORRECTION_RETRY_SCHEMA,
+        ...ORGANIZATION_RESIDENCY_SCHEMA,
+        ...STOCK_JOURNAL_SCHEMA,
+        ...ORGANIZATION_AUTHORIZATION_SCHEMA,
+        ...ORGANIZATION_REVOCATION_SCHEMA,
+      ].sort((a, b) =>
+        a.type < b.type
+          ? -1
+          : a.type > b.type
+            ? 1
+            : a.name < b.name
+              ? -1
+              : a.name > b.name
+                ? 1
+                : 0,
+      ),
+    ),
     currentHash: fingerprint(
       [
         ...previous,
+        ...PRODUCT_AVAILABILITY_SCHEMA,
         ...PURCHASING_SCHEMA,
         ...CATALOG_MEDIA_SCHEMA,
         ...ENROLLMENT_SCHEMA,
@@ -808,6 +854,9 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
       initializedAt: null,
     };
   const current = profiles.find((p) => p.currentHash === schemaHash);
+  const versionTwentyFive = profiles.find(
+    (p) => p.versionTwentyFiveHash === schemaHash,
+  );
   const versionTwentyFour = profiles.find(
     (p) => p.versionTwentyFourHash === schemaHash,
   );
@@ -860,6 +909,7 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
   const versionThree = profiles.find((p) => p.versionThreeHash === schemaHash);
   const versionTwo = profiles.find((p) => p.versionTwoHash === schemaHash);
   const previous =
+    versionTwentyFive ??
     versionTwentyFour ??
     versionTwentyThree ??
     versionTwentyTwo ??
@@ -924,6 +974,86 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
     row.version ===
       (current
         ? SCHEMA_VERSION
+        : versionTwentyFive
+          ? 25
+          : versionTwentyFour
+            ? 24
+            : versionTwentyThree
+              ? 23
+              : versionTwentyTwo
+                ? 22
+                : versionTwentyOne
+                  ? 21
+                  : versionTwenty
+                    ? 20
+                    : versionNineteen
+                      ? 19
+                      : versionEighteen
+                        ? 18
+                        : versionSeventeen
+                          ? 17
+                          : versionSixteen
+                            ? 16
+                            : versionFifteen
+                              ? 15
+                              : versionFourteen
+                                ? 14
+                                : versionThirteen
+                                  ? 13
+                                  : versionTwelve
+                                    ? 12
+                                    : versionEleven
+                                      ? 11
+                                      : versionTen
+                                        ? 10
+                                        : versionNine
+                                          ? 9
+                                          : versionEight
+                                            ? 8
+                                            : versionSeven
+                                              ? 7
+                                              : versionSix
+                                                ? 6
+                                                : versionFive
+                                                  ? 5
+                                                  : versionFour
+                                                    ? 4
+                                                    : versionThree
+                                                      ? 3
+                                                      : versionTwo
+                                                        ? 2
+                                                        : 1),
+    "SCHEMA_VERSION",
+    "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
+  );
+  check(
+    row.schema_hash === schemaHash &&
+      row.event_reports === Number((current ?? previous)!.eventReports),
+    "SCHEMA_DRIFT",
+    "Schema receipt does not match the exact stored profile.",
+  );
+  check(
+    (row.region === "CA" || row.region === "US") &&
+      (region === null || region === row.region),
+    "SCHEMA_REGION",
+    "Schema receipt and organization regions differ.",
+  );
+  check(
+    typeof row.initialized_at === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+        row.initialized_at,
+      ) &&
+      Number.isFinite(Date.parse(row.initialized_at)) &&
+      new Date(row.initialized_at).toISOString() === row.initialized_at,
+    "SCHEMA_VERSION",
+    "Schema receipt timestamp is invalid.",
+  );
+  return {
+    kind: current ? "current" : "previous",
+    version: current
+      ? SCHEMA_VERSION
+      : versionTwentyFive
+        ? 25
         : versionTwentyFour
           ? 24
           : versionTwentyThree
@@ -970,83 +1100,7 @@ export function inspectConnection(db: DatabaseSync): SchemaInspection {
                                                     ? 3
                                                     : versionTwo
                                                       ? 2
-                                                      : 1),
-    "SCHEMA_VERSION",
-    "Unsupported schema version; upgrades and downgrades require an explicitly supported procedure.",
-  );
-  check(
-    row.schema_hash === schemaHash &&
-      row.event_reports === Number((current ?? previous)!.eventReports),
-    "SCHEMA_DRIFT",
-    "Schema receipt does not match the exact stored profile.",
-  );
-  check(
-    (row.region === "CA" || row.region === "US") &&
-      (region === null || region === row.region),
-    "SCHEMA_REGION",
-    "Schema receipt and organization regions differ.",
-  );
-  check(
-    typeof row.initialized_at === "string" &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
-        row.initialized_at,
-      ) &&
-      Number.isFinite(Date.parse(row.initialized_at)) &&
-      new Date(row.initialized_at).toISOString() === row.initialized_at,
-    "SCHEMA_VERSION",
-    "Schema receipt timestamp is invalid.",
-  );
-  return {
-    kind: current ? "current" : "previous",
-    version: current
-      ? SCHEMA_VERSION
-      : versionTwentyFour
-        ? 24
-        : versionTwentyThree
-          ? 23
-          : versionTwentyTwo
-            ? 22
-            : versionTwentyOne
-              ? 21
-              : versionTwenty
-                ? 20
-                : versionNineteen
-                  ? 19
-                  : versionEighteen
-                    ? 18
-                    : versionSeventeen
-                      ? 17
-                      : versionSixteen
-                        ? 16
-                        : versionFifteen
-                          ? 15
-                          : versionFourteen
-                            ? 14
-                            : versionThirteen
-                              ? 13
-                              : versionTwelve
-                                ? 12
-                                : versionEleven
-                                  ? 11
-                                  : versionTen
-                                    ? 10
-                                    : versionNine
-                                      ? 9
-                                      : versionEight
-                                        ? 8
-                                        : versionSeven
-                                          ? 7
-                                          : versionSix
-                                            ? 6
-                                            : versionFive
-                                              ? 5
-                                              : versionFour
-                                                ? 4
-                                                : versionThree
-                                                  ? 3
-                                                  : versionTwo
-                                                    ? 2
-                                                    : 1,
+                                                      : 1,
     schemaHash,
     eventReports: (current ?? previous)!.eventReports,
     region: row.region,

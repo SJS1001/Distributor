@@ -1,5 +1,7 @@
 // Public order-entry projection. Base prices and other tiers stay internal.
 export type CustomerProduct = {
+  outOfStock: boolean;
+  expectedAvailableOn: string | null;
   id: string;
   sku: string;
   name: string;

@@ -1,0 +1,1560 @@
+{
+  "retrievedOn": "2026-10-05T18:41:00.827847+00:00",
+  "status": "Official public catalogue reference; not purchasing inventory",
+  "rights": "Owner explicitly authorized reuse of Gree product information, images and documents on 2026-10-05. No broader third-party reuse licence asserted.",
+  "productCount": 56,
+  "variantCount": 270,
+  "imageCount": 77,
+  "documentAssociations": 166,
+  "uniqueDocumentCount": 117,
+  "collections": [
+    {
+      "id": "air-purifier",
+      "title": "Air Purifiers",
+      "sourceUrl": "https://www.gree.ca/collections/air-purifier",
+      "productIds": []
+    },
+    {
+      "id": "air-to-water",
+      "title": "Air-to-Water Systems",
+      "sourceUrl": "https://www.gree.ca/collections/air-to-water",
+      "productIds": ["7693932200103"]
+    },
+    {
+      "id": "ducted-central-heat-pump",
+      "title": "Central Ducted Systems",
+      "sourceUrl": "https://www.gree.ca/collections/ducted-central-heat-pump",
+      "productIds": ["8555073896615", "11146997039271", "4391568900233"]
+    },
+    {
+      "id": "dehumidifier",
+      "title": "Dehumidifiers",
+      "sourceUrl": "https://www.gree.ca/collections/dehumidifier",
+      "productIds": ["4357237112969"]
+    },
+    {
+      "id": "hydronics-heat-pumps",
+      "title": "Hydronics Heat Pumps",
+      "sourceUrl": "https://www.gree.ca/collections/hydronics-heat-pumps",
+      "productIds": ["7693932200103"]
+    },
+    {
+      "id": "indoor-units-all-match-r32",
+      "title": "Indoor Units - All Match R32",
+      "sourceUrl": "https://www.gree.ca/collections/indoor-units-all-match-r32",
+      "productIds": [
+        "8560949723303",
+        "8560876355751",
+        "8560965681319",
+        "8560966729895",
+        "8560967123111",
+        "8757189247143",
+        "8757189214375",
+        "8756984709287",
+        "8757189312679"
+      ]
+    },
+    {
+      "id": "indoor-units-free-match",
+      "title": "Indoor Units - Free Match",
+      "sourceUrl": "https://www.gree.ca/collections/indoor-units-free-match",
+      "productIds": [
+        "7686188335271",
+        "7686187483303",
+        "7686187843751",
+        "7686188859559",
+        "7686187384999",
+        "7686187942055",
+        "7686187876519",
+        "7686187778215"
+      ]
+    },
+    {
+      "id": "indoor-units-vrf",
+      "title": "Indoor Units - VRF",
+      "sourceUrl": "https://www.gree.ca/collections/indoor-units-vrf",
+      "productIds": [
+        "4698112524425",
+        "4698115833993",
+        "4698110460041",
+        "4698108887177",
+        "4698114228361",
+        "8365539492007",
+        "4770036023433"
+      ]
+    },
+    {
+      "id": "light-commercial",
+      "title": "Light Commercial",
+      "sourceUrl": "https://www.gree.ca/collections/light-commercial",
+      "productIds": [
+        "8757970403495",
+        "8220009955495",
+        "8757971353767",
+        "8210304696487",
+        "4698112524425",
+        "4698115833993",
+        "4698110460041",
+        "4698108887177",
+        "4698114228361",
+        "8365539492007",
+        "4770036023433",
+        "11138682749095"
+      ]
+    },
+    {
+      "id": "multi-zone-mini-splits",
+      "title": "Multi-zone Mini-Splits",
+      "sourceUrl": "https://www.gree.ca/collections/multi-zone-mini-splits",
+      "productIds": ["8560814719143", "7631939010727", "7411012468903"]
+    },
+    {
+      "id": "old-product",
+      "title": "Old Products",
+      "sourceUrl": "https://www.gree.ca/collections/old-product",
+      "productIds": []
+    },
+    {
+      "id": "mobile-air-conditioner",
+      "title": "Portable Air Conditioners",
+      "sourceUrl": "https://www.gree.ca/collections/mobile-air-conditioner",
+      "productIds": ["7933402546343", "4010307223634", "7933386227879"]
+    },
+    {
+      "id": "professional-products",
+      "title": "Professional Products",
+      "sourceUrl": "https://www.gree.ca/collections/professional-products",
+      "productIds": [
+        "8757971353767",
+        "8757970403495",
+        "8757189312679",
+        "8757189247143",
+        "8757189214375",
+        "8756984709287",
+        "8560967123111",
+        "8560966729895",
+        "8560965681319",
+        "8560949723303",
+        "8560876355751",
+        "8560814719143",
+        "8559064711335",
+        "8555080384679",
+        "8555077337255",
+        "8555074814119",
+        "8555073896615",
+        "8365539492007",
+        "8220009955495",
+        "8215361847463",
+        "8210304696487",
+        "8020601602215",
+        "7693932200103",
+        "7686188859559",
+        "7686188335271",
+        "7686187942055",
+        "7686187876519",
+        "7686187843751",
+        "7686187778215",
+        "7686187384999",
+        "7631939010727",
+        "7630041022631",
+        "7411012468903",
+        "7134927847591",
+        "4770036023433",
+        "4698114228361",
+        "4698112524425",
+        "4698110460041",
+        "4698108887177",
+        "4391568900233",
+        "4010259742802",
+        "4010172547154",
+        "4010142957650",
+        "11138682749095",
+        "11146997039271"
+      ]
+    },
+    {
+      "id": "ptacs-and-ttws",
+      "title": "PTACs",
+      "sourceUrl": "https://www.gree.ca/collections/ptacs-and-ttws",
+      "productIds": ["8215361847463", "4010172547154", "4010177757266"]
+    },
+    {
+      "id": "r32",
+      "title": "R32",
+      "sourceUrl": "https://www.gree.ca/collections/r32",
+      "productIds": [
+        "8555074814119",
+        "8559064711335",
+        "8555077337255",
+        "8555078746279",
+        "8555080384679",
+        "8560949723303",
+        "8560876355751",
+        "8560965681319",
+        "8560966729895",
+        "8560967123111",
+        "8757189247143",
+        "8757189214375",
+        "8756984709287",
+        "8757189312679",
+        "8560814719143",
+        "8555073896615",
+        "7693932200103",
+        "8215361847463",
+        "4010172547154",
+        "4010177757266",
+        "8757970403495"
+      ]
+    },
+    {
+      "id": "r410a",
+      "title": "R410A",
+      "sourceUrl": "https://www.gree.ca/collections/r410a",
+      "productIds": [
+        "7630041022631",
+        "7134927847591",
+        "4010021617746",
+        "8020601602215",
+        "4010142957650",
+        "7631939010727",
+        "7411012468903",
+        "7686188335271",
+        "7686187483303",
+        "7686187843751",
+        "7686188859559",
+        "7686187384999",
+        "7686187778215",
+        "7686187942055",
+        "7686187876519",
+        "4391568900233",
+        "8220009955495",
+        "8210304696487",
+        "4698112524425",
+        "4698115833993",
+        "4698110460041",
+        "4698108887177",
+        "4698114228361",
+        "8365539492007",
+        "4770036023433",
+        "8757971353767",
+        "11138682749095",
+        "11146997039271"
+      ]
+    },
+    {
+      "id": "residential-mini-splits",
+      "title": "Residential Mini-Splits",
+      "sourceUrl": "https://www.gree.ca/collections/residential-mini-splits",
+      "productIds": [
+        "8555074814119",
+        "8559064711335",
+        "8555077337255",
+        "8555078746279",
+        "8555080384679",
+        "8560814719143",
+        "8560949723303",
+        "8560876355751",
+        "8560965681319",
+        "8560966729895",
+        "8560967123111",
+        "8757189247143",
+        "8757189214375",
+        "8756984709287",
+        "8757189312679",
+        "7630041022631",
+        "7134927847591",
+        "4010021617746",
+        "8020601602215",
+        "4010142957650",
+        "7631939010727",
+        "7686188335271",
+        "7686187483303",
+        "7686187843751",
+        "7686188859559",
+        "7686187942055",
+        "7686187876519",
+        "7686187778215",
+        "7686187384999",
+        "7411012468903"
+      ]
+    },
+    {
+      "id": "rtu",
+      "title": "Rooftop Units",
+      "sourceUrl": "https://www.gree.ca/collections/rtu",
+      "productIds": ["8757970403495", "8220009955495"]
+    },
+    {
+      "id": "window-air-conditionners-air-purifiers-dehumidifiers",
+      "title": "Room Air Conditioners and Dehumidifiers",
+      "sourceUrl": "https://www.gree.ca/collections/window-air-conditionners-air-purifiers-dehumidifiers",
+      "productIds": [
+        "7933402546343",
+        "4010307223634",
+        "7933386227879",
+        "4010259742802",
+        "6646092365991",
+        "6654804394151",
+        "4357237112969"
+      ]
+    },
+    {
+      "id": "mini-splits",
+      "title": "Single Zone Mini Splits",
+      "sourceUrl": "https://www.gree.ca/collections/mini-splits",
+      "productIds": [
+        "8555074814119",
+        "8559064711335",
+        "8555077337255",
+        "8555078746279",
+        "8555080384679",
+        "7630041022631",
+        "7134927847591",
+        "4010021617746",
+        "4010142957650",
+        "8020601602215"
+      ]
+    },
+    {
+      "id": "mini-gmv",
+      "title": "VRF Systems",
+      "sourceUrl": "https://www.gree.ca/collections/mini-gmv",
+      "productIds": ["8757971353767", "11138682749095", "8210304696487"]
+    },
+    {
+      "id": "window-air-conditioner",
+      "title": "Window Air Conditioners",
+      "sourceUrl": "https://www.gree.ca/collections/window-air-conditioner",
+      "productIds": ["4010259742802", "6654804394151", "6646092365991"]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.gree.ca/collections.json?limit=250",
+      "sha256": "bddf6cdaf9210773f7691c952932b71ad1c358543b34002736139728ecb53d51",
+      "bytes": 4932
+    },
+    {
+      "url": "https://www.gree.ca/collections/air-purifier/products.json?limit=250&page=1",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/air-to-water/products.json?limit=250&page=1",
+      "sha256": "19d0536ba970eadd54ba8b7afeab6308d82733822e71e9ce04804352d28e7f3d",
+      "bytes": 3000
+    },
+    {
+      "url": "https://www.gree.ca/collections/air-to-water/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/dehumidifier/products.json?limit=250&page=1",
+      "sha256": "c2e5000581869ae49e664d73437e55ba261a4d62d422d068950dc4eeb9f4c699",
+      "bytes": 2824
+    },
+    {
+      "url": "https://www.gree.ca/collections/dehumidifier/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/ducted-central-heat-pump/products.json?limit=250&page=1",
+      "sha256": "1ec2e8af5f2d326163b04b6900ee5b50e1de50f753a4ae113806ea4569143e09",
+      "bytes": 22754
+    },
+    {
+      "url": "https://www.gree.ca/collections/ducted-central-heat-pump/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/hydronics-heat-pumps/products.json?limit=250&page=1",
+      "sha256": "19d0536ba970eadd54ba8b7afeab6308d82733822e71e9ce04804352d28e7f3d",
+      "bytes": 3000
+    },
+    {
+      "url": "https://www.gree.ca/collections/hydronics-heat-pumps/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/indoor-units-all-match-r32/products.json?limit=250&page=1",
+      "sha256": "cda4ddd3b24e357208c5a133c11cdbc486e43d98d518683ca186cf5b88863b57",
+      "bytes": 42579
+    },
+    {
+      "url": "https://www.gree.ca/collections/indoor-units-all-match-r32/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/indoor-units-free-match/products.json?limit=250&page=1",
+      "sha256": "87afd6f354f060807604b9d768a5aad7c840ec202cd4e2f52afa764aafb9dabc",
+      "bytes": 26302
+    },
+    {
+      "url": "https://www.gree.ca/collections/indoor-units-free-match/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/indoor-units-vrf/products.json?limit=250&page=1",
+      "sha256": "ba9e82785a6e6c1229c9ccba43a78e53565aea44a89704b2513a4c93aa0d0563",
+      "bytes": 27683
+    },
+    {
+      "url": "https://www.gree.ca/collections/indoor-units-vrf/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/light-commercial/products.json?limit=250&page=1",
+      "sha256": "f1a9b6e56996a5ffbfd03a4ecf458c4efed0d225272cd92af4fe65f551a05406",
+      "bytes": 46219
+    },
+    {
+      "url": "https://www.gree.ca/collections/light-commercial/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/mini-gmv/products.json?limit=250&page=1",
+      "sha256": "d67c44047e5f20f7205913907b3efb2548696e1019d32e9a9558e0a83593e0f4",
+      "bytes": 10687
+    },
+    {
+      "url": "https://www.gree.ca/collections/mini-gmv/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/mini-splits/products.json?limit=250&page=1",
+      "sha256": "1b98f0a8aad690b4709e9b4b427760247e75da95dbf54c2c1799b390cb920309",
+      "bytes": 55740
+    },
+    {
+      "url": "https://www.gree.ca/collections/mini-splits/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/mobile-air-conditioner/products.json?limit=250&page=1",
+      "sha256": "538b3132dd622c6fcd52dc550186bd8d574cd9abde8e2ec48bb8f231615142b4",
+      "bytes": 8231
+    },
+    {
+      "url": "https://www.gree.ca/collections/mobile-air-conditioner/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/multi-zone-mini-splits/products.json?limit=250&page=1",
+      "sha256": "0f7a7239ae47002a841b6ed3b34f2a32580f70aaf92135af95867a0435386141",
+      "bytes": 15987
+    },
+    {
+      "url": "https://www.gree.ca/collections/multi-zone-mini-splits/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/old-product/products.json?limit=250&page=1",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/professional-products/products.json?limit=250&page=1",
+      "sha256": "d49933d004ab7efd58507b43c1c17c8b3fd3215c2da3a71da62a12798c8c297c",
+      "bytes": 215505
+    },
+    {
+      "url": "https://www.gree.ca/collections/professional-products/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/ptacs-and-ttws/products.json?limit=250&page=1",
+      "sha256": "e9a246110425a3bbd2eafd07b4d18e653375c12696a399bb4cb60e66d32c2d46",
+      "bytes": 21248
+    },
+    {
+      "url": "https://www.gree.ca/collections/ptacs-and-ttws/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/r32/products.json?limit=250&page=1",
+      "sha256": "43a15e9a8ff39ea38a594b419dc931764d2f3d78e7d054eea5cbfc6c91fb7247",
+      "bytes": 116761
+    },
+    {
+      "url": "https://www.gree.ca/collections/r32/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/r410a/products.json?limit=250&page=1",
+      "sha256": "ff4a6cb53429118c20c46730545b4ba99be6ccc2a57d64b89bfc299723dee2b9",
+      "bytes": 116984
+    },
+    {
+      "url": "https://www.gree.ca/collections/r410a/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/residential-mini-splits/products.json?limit=250&page=1",
+      "sha256": "fd23ce2c24244d1c70c93c4f83fbdd007334f8e2c813a1bdcc89f997a1d844ef",
+      "bytes": 140566
+    },
+    {
+      "url": "https://www.gree.ca/collections/residential-mini-splits/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/rtu/products.json?limit=250&page=1",
+      "sha256": "93495931de8bfb15676a3fdb8be2a0b7ae7e31480afb44c13f6590826ed10a83",
+      "bytes": 7877
+    },
+    {
+      "url": "https://www.gree.ca/collections/rtu/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/window-air-conditioner/products.json?limit=250&page=1",
+      "sha256": "cf89addc1e539427fc48f97aec9c144c582c7891ccbbd2ead0dcecb59a448fcc",
+      "bytes": 12187
+    },
+    {
+      "url": "https://www.gree.ca/collections/window-air-conditioner/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/collections/window-air-conditionners-air-purifiers-dehumidifiers/products.json?limit=250&page=1",
+      "sha256": "5e5c87352bfc7d52eb5d005918a696320d88d0d29532d42126e8dcd50038fe4d",
+      "bytes": 23214
+    },
+    {
+      "url": "https://www.gree.ca/collections/window-air-conditionners-air-purifiers-dehumidifiers/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/pages/professionnal-documents",
+      "sha256": "870dadcf675ec29c7e589cdd7e283894141b3c170592e872c9f18412f1d0c226",
+      "bytes": 147578
+    },
+    {
+      "url": "https://www.gree.ca/products.json?limit=250&page=1",
+      "sha256": "89383d66c1d76d5d8f15c2c968ee17820bd7210ecf840520a401fa876f1e38e6",
+      "bytes": 256931
+    },
+    {
+      "url": "https://www.gree.ca/products.json?limit=250&page=2",
+      "sha256": "86d8b086af0fc30d06856e218fcfdb6b803f91b45f50b1b753d8deac627fc054",
+      "bytes": 15
+    },
+    {
+      "url": "https://www.gree.ca/products/4-way-cassette-type",
+      "sha256": "0f509c5acc1fb40c3f0aab9fa337b0fca70e0d39a304b4dae707119e6512d0d1",
+      "bytes": 326171
+    },
+    {
+      "url": "https://www.gree.ca/products/air-handler-type",
+      "sha256": "a7c822ef6a1403d10fc821d9758004e33d9ac34a89fd6ab3184f2b75e60296bd",
+      "bytes": 321576
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-1-way-ceiling-cassettes",
+      "sha256": "a05939112e42cdadd726eb8880c23826200a54a2d98913996d4974b5ba407488",
+      "bytes": 255605
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-8-way-ceiling-cassettes",
+      "sha256": "2c97469e23cfaf739726818ae08e192fe370f8c025d6424311ab7535479b1929",
+      "bytes": 282103
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-floor-consoles",
+      "sha256": "59517d399a24924fe9fdc728700fe55d910437c7290cc1b37dc553d9d64bd7f2",
+      "bytes": 242385
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-floor-standing-units",
+      "sha256": "7dcf6345d67d6b617d4503d403ba37bbbbe266486c05225c97707c1fef8ec883",
+      "bytes": 217089
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-high-static-pressure-ducts",
+      "sha256": "0be0a56f0780d7aed520b3bb0edbfdb65fd63b6da21371e0b8da7915ef13c522",
+      "bytes": 283012
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-wall-mounted-units-clivia",
+      "sha256": "fae08e367c944d4f88dc3027cf1e7b5a3022ff4448eb191ffa859adb4281f4e5",
+      "bytes": 254034
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-wall-mounted-units-crossover",
+      "sha256": "9c430ff853a62fcf298dfae97ebf07fa8f4816fcc449aa6cca9012c77609c909",
+      "bytes": 254227
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-wall-mounted-units-extreme",
+      "sha256": "282d5424f75675f2fb50db287e6564e67a8c0f74efa4dbc7f94ad547c5921bc4",
+      "bytes": 254200
+    },
+    {
+      "url": "https://www.gree.ca/products/all-match-r32-wall-mounted-units-vita",
+      "sha256": "7ed7ad5e2d74a8b932ffa7757ae8e2591a199bc2040d59ae7113f4208c999994",
+      "bytes": 313791
+    },
+    {
+      "url": "https://www.gree.ca/products/aomi",
+      "sha256": "9a0fca54d0a1d4ec1ca94ce980b93fe88dad39109d5c68745ccdc12672254b88",
+      "bytes": 245149
+    },
+    {
+      "url": "https://www.gree.ca/products/aovia",
+      "sha256": "b8fad5e2f2927b38c4746b60187102fb18f9800c717d49d8eb2f896dc92025af",
+      "bytes": 244836
+    },
+    {
+      "url": "https://www.gree.ca/products/chalet",
+      "sha256": "c877d6663d374567f15574d3e836612f8a5f6cf3f6f7f2a62185dca4d0e67e56",
+      "bytes": 271685
+    },
+    {
+      "url": "https://www.gree.ca/products/chalet-1",
+      "sha256": "0a6ab96bde062361d0ead9fc5105950ed7fdde878f264cd892b3b5c3b2c96102",
+      "bytes": 269525
+    },
+    {
+      "url": "https://www.gree.ca/products/clivia-r32",
+      "sha256": "54de21d895b5adeef647e35ca5d27f0a7fb1130c0947f9980c2fd4da85625d2d",
+      "bytes": 373058
+    },
+    {
+      "url": "https://www.gree.ca/products/console-type",
+      "sha256": "3d84e724fe0c5b7985b23a5d66c573ed236ed837a7df987298dc366aad0eb427",
+      "bytes": 250776
+    },
+    {
+      "url": "https://www.gree.ca/products/crossover-r32",
+      "sha256": "857af774fd0fa43696cf8c13798451607adbdfb62e91270a9d37da9af60b11b9",
+      "bytes": 373216
+    },
+    {
+      "url": "https://www.gree.ca/products/crossover-series",
+      "sha256": "bac8ddfc9cd29277c0a18a1b15123b6fca02ac6c4dc22a448409013fadfc1e6c",
+      "bytes": 380941
+    },
+    {
+      "url": "https://www.gree.ca/products/ducted-central-heat-pump",
+      "sha256": "7f706eb37be3871ce0030f907c9ae8c9ca91337499853035ff25df3915061c54",
+      "bytes": 506741
+    },
+    {
+      "url": "https://www.gree.ca/products/extreme-r32",
+      "sha256": "ca2b4846d45131200664ab495e390c7870d7b1c7b3c5226821455370e49baf17",
+      "bytes": 373146
+    },
+    {
+      "url": "https://www.gree.ca/products/extreme-series",
+      "sha256": "009cdde13e39b8384d8ffb796ba14946fc7ce8d99ac09aa6838ad9ed2431e08a",
+      "bytes": 382287
+    },
+    {
+      "url": "https://www.gree.ca/products/free-match-extreme",
+      "sha256": "cdf16cc0339e6f3dd93ed7f5319f3c5785951a1b89eec8ed77b4623193fc4309",
+      "bytes": 319556
+    },
+    {
+      "url": "https://www.gree.ca/products/free-match-m-series",
+      "sha256": "6b8cd5c001def270eb8e0357669c9ec31885f0962ba4d1f7ae2c645e96c29f32",
+      "bytes": 345710
+    },
+    {
+      "url": "https://www.gree.ca/products/free-match-m-series-r32",
+      "sha256": "0a3f06e1b99fa86df69a63dd14dad5cdd62a290411b9ff558d1d10654c0d45cd",
+      "bytes": 398275
+    },
+    {
+      "url": "https://www.gree.ca/products/gmv-wall-mounted-types-b4b",
+      "sha256": "2846e973d9fb4f9a2ace804676f213781493be97896bc9900a68e42986c979a2",
+      "bytes": 261945
+    },
+    {
+      "url": "https://www.gree.ca/products/gmv6",
+      "sha256": "843b2f30135f0034c081acade4be86fbc0032f54187384d47d297faf50f14069",
+      "bytes": 294563
+    },
+    {
+      "url": "https://www.gree.ca/products/gmv6-heat-recovery",
+      "sha256": "1d54d78ecc2d28e485a4d6653d7634bacde52d497f7d305d299976682f5de838",
+      "bytes": 294552
+    },
+    {
+      "url": "https://www.gree.ca/products/gmv6-heat-recovery-220v",
+      "sha256": "289ebb6f7549885ae799036fbe811dd2069c5df6d61e71b9e5920a8da1337924",
+      "bytes": 294847
+    },
+    {
+      "url": "https://www.gree.ca/products/high-esp-duct-type",
+      "sha256": "54ddd2368f91374063abb9102d6ab8d1b5014c596d5cdb85a97e745a3f5198f6",
+      "bytes": 276736
+    },
+    {
+      "url": "https://www.gree.ca/products/horizontal",
+      "sha256": "88f7dfaa0f9b0f22fdf0a380d2f0bb9e38110bfd4fe8f5df57bfc1d0a6f4f743",
+      "bytes": 331684
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-ceiling-cassettes",
+      "sha256": "e9cf5bf3c3420885a5ddd6ab205d6f6319f9519c018899470794a06b0d490ca0",
+      "bytes": 240274
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-crossover-wall-mounted-units",
+      "sha256": "01f8182be52634284a1fd8b51c00230a65934c4a0388b358173b339cf4ff5826",
+      "bytes": 209028
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-extreme-wall-mounted-units",
+      "sha256": "e5df57768f55b36ef5d7e8bd49a4ad972e66edf27d5c8aa792b733ff533b5650",
+      "bytes": 208876
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-high-static-slim-ducts",
+      "sha256": "3cd738991792e9d474b50f1f47d7d64c893d99e3b18b4424f39cdba1695f7355",
+      "bytes": 254229
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-lomo-23-wall-mounted-units",
+      "sha256": "b6862ca3a94dc294d6e36ad631f77e0155ff8341561dee52b3a5862d79722d92",
+      "bytes": 208334
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-low-static-slim-ducts",
+      "sha256": "1a449ea749616217a3eaa4c1683c6262749cec86a196b6b636f113186098cb90",
+      "bytes": 266621
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-mini-floor-consoles",
+      "sha256": "cdb5c4d2d895d38ee9d51c58ec3b3b2f4c9e5eada41bb9d158874a8ef0729580",
+      "bytes": 240320
+    },
+    {
+      "url": "https://www.gree.ca/products/indoor-units-vita-wall-mounted-units",
+      "sha256": "9b25062e05d600feab1f425d44ccb8faa9b206c499bc1caa9a73a7acbe284bbb",
+      "bytes": 278430
+    },
+    {
+      "url": "https://www.gree.ca/products/lomo-20-series",
+      "sha256": "419bebd4140b1d3185e72b8f825793645bbb52f597af3cf50c4bf6ebaca592fd",
+      "bytes": 305944
+    },
+    {
+      "url": "https://www.gree.ca/products/lomo-23-series",
+      "sha256": "17e252d32e65198e235a1df2603f682f316251e9263af7ab81971029a37c8be8",
+      "bytes": 414010
+    },
+    {
+      "url": "https://www.gree.ca/products/low-esp-duct-type",
+      "sha256": "80524489e69eed7eb2a62f3493ab07134eee9a6d19f99df262f93f71a38daf28",
+      "bytes": 276415
+    },
+    {
+      "url": "https://www.gree.ca/products/ptac",
+      "sha256": "a1eac218e9a5f7da7de3f9cecdee4059cbea6bf79e064e01490a25c1576b5476",
+      "bytes": 500541
+    },
+    {
+      "url": "https://www.gree.ca/products/ptac-inverter",
+      "sha256": "29d9586714662c46b2f53b1c74e97d2721a4f1010e5484818bd9d55e942bd418",
+      "bytes": 335917
+    },
+    {
+      "url": "https://www.gree.ca/products/rooftop-r32",
+      "sha256": "f3cf2f29f5cb85a46c8b126ccfe098eaf4bdd8e6bcc4fbc4a84d89a57ab689df",
+      "bytes": 244512
+    },
+    {
+      "url": "https://www.gree.ca/products/rooftop-unit",
+      "sha256": "2c43206a954da21ff8762d992f77080d90064984961e844beaf3b727e7d391c8",
+      "bytes": 323761
+    },
+    {
+      "url": "https://www.gree.ca/products/shiny",
+      "sha256": "79f39e316573645921c8f50e96325fb0196df45ada97d1321cc4e56f5b09dd96",
+      "bytes": 248146
+    },
+    {
+      "url": "https://www.gree.ca/products/super-silent",
+      "sha256": "bf5a5e77f118ac75789aea3a10be821cba5201ef19040fa8802c83993e34c23c",
+      "bytes": 248110
+    },
+    {
+      "url": "https://www.gree.ca/products/ttw",
+      "sha256": "efd2d7f662cfbb5d80aa2a8d77a9371a0bb3564c728e59624094712cc3069826",
+      "bytes": 305245
+    },
+    {
+      "url": "https://www.gree.ca/products/unix-eco",
+      "sha256": "2ab781601f77fb36dcfede3fcf0ae0c06bf5509b276ff2ba03a378a0942a1595",
+      "bytes": 581402
+    },
+    {
+      "url": "https://www.gree.ca/products/unix-r32",
+      "sha256": "7a32214bb81d91fd255bb74839ea95f019693e33fd2cff7418eb3a6fa653ddde",
+      "bytes": 509335
+    },
+    {
+      "url": "https://www.gree.ca/products/versati-iv-air-to-water-monobloc",
+      "sha256": "93e5641de101cd44bb62c24536eb0ebf5f085530d46d0286e8fbe6b153e35c28",
+      "bytes": 267354
+    },
+    {
+      "url": "https://www.gree.ca/products/vita-r32",
+      "sha256": "cd7e144330482d7fb7903ba774a122c9384d5c40936e43be9cb01450e87ae78b",
+      "bytes": 449240
+    },
+    {
+      "url": "https://www.gree.ca/products/vita-series",
+      "sha256": "ddac334a6a6ae8975d9b3f6ff00dcf0e2785616a858cd79efb182d0e0cf6e6ed",
+      "bytes": 587423
+    },
+    {
+      "url": "https://www.gree.ca/products/wall-mounted-type",
+      "sha256": "5aa3de08acbcc581ad932cbb01abdef364e4e05ad6454dd61e6dd3b9b6429607",
+      "bytes": 263960
+    },
+    {
+      "url": "https://www.gree.ca/products/x-match-r32",
+      "sha256": "6605afa3ca7a9890fc71630a8ef23986fa1da8fe815cdf21e604687216e7b61d",
+      "bytes": 302715
+    }
+  ],
+  "gaps": [
+    "Professional technical document page is access-controlled for unauthenticated requests; no authentication bypass attempted. Public product-page and variant document links are included.",
+    "All unique published document URLs were HTTP HEAD checked; results retained. Binary manuals were not mirrored or content/model/revision qualified.",
+    "This is all public Shopify product pages at retrieval, including older collections. Prices, stock, availability and purchase SKUs are intentionally not imported.",
+    "Product specifications at top level describe the first source variant; models retain each source variant specification and document association."
+  ],
+  "productsWithoutDescriptions": ["air-handler-type"],
+  "productsWithoutDocuments": [],
+  "productsWithoutSpecifications": [
+    "indoor-units-lomo-23-wall-mounted-units",
+    "indoor-units-extreme-wall-mounted-units",
+    "indoor-units-crossover-wall-mounted-units"
+  ],
+  "documentHttpChecks": [
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-1WAY-CASSETTES-EN.pdf?v=1750359103",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2308838"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-1WAY-CASSETTES-FR.pdf?v=1750359103",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2310884"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-8WAY-CASSETTES-EN.pdf?v=1750359114",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2352784"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-8WAY-CASSETTES-FR.pdf?v=1750359114",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2354579"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-CONSOLES-EN.pdf?v=1750359133",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2594245"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-CONSOLES-FR.pdf?v=1750359134",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2595776"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-FLOOR-STANDING-EN.pdf?v=1750359146",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2327262"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ALLMATCH-R32-FLOOR-STANDING-FR.pdf?v=1750359147",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2328395"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ATW-VERSATI-IV-EN-WEB.pdf?v=1728334020",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2300647"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-ATW-VERSATI-IV-FR-WEB.pdf?v=1728334021",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2301730"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-DH-CHALET-EN.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2487489"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MONOBLOC-ROOFTOP-EN-WEB.pdf?v=1728333890",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2229495"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MONOBLOC-ROOFTOP-FR-WEB.pdf?v=1728333889",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2229378"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MONOBLOC-ROOFTOP-R32-EN.pdf?v=1781189429",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3190296"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MONOBLOC-ROOFTOP-R32-FR.pdf?v=1781189429",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3193564"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-EXTREME-EN-WEB.pdf?v=1728332004",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2387982"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-EXTREME-FR-WEB.pdf?v=1728332005",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2416656"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-M-SERIES-EN-WEB.pdf?v=1728400070",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2830662"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-M-SERIES-FR-WEB.pdf?v=1728400071",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2812762"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-R32-COMBINAISON-EN.pdf?v=1750359083",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2121160"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-R32-COMBINAISON-FR.pdf?v=1750359084",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2124339"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-R32-EN.pdf?v=1750359030",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2774003"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-MULTI-ZONE-FREEMATCH-R32-FR.pdf?v=1750359030",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2776450"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-PAC-AOMI-EN-WEB.pdf?v=1708708325",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2306946"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-PAC-AOMI-FR-WEB.pdf?v=1708708326",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2306598"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-PAC-AOVIA-EN-WEB.pdf?v=1708708332",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1432740"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-PAC-AOVIA-FR-WEB.pdf?v=1708708332",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1434665"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-PAC-SHINY-EN.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1291461"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-PAC-SHINY-FR.pdf?v=1658863538",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1309792"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-CLIVIA-R32-EN.pdf?v=1750437149",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2578258"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-CLIVIA-R32-FR.pdf?v=1750437150",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2580825"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-CROSSOVER-EN-WEB.pdf?v=1728331619",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1937762"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-CROSSOVER-FR-WEB.pdf?v=1728331620",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1936033"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-CROSSOVER-R32-EN.pdf?v=1750359046",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2174248"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-CROSSOVER-R32-FR.pdf?v=1750359047",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2177085"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-EXTREME-EN-WEB.pdf?v=1728331873",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2485733"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-EXTREME-FR-WEB.pdf?v=1728331874",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2488715"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-EXTREME-R32-EN.pdf?v=1750359056",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2922913"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-EXTREME-R32-FR.pdf?v=1750359057",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2926372"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-LOMO20-EN-WEB.pdf?v=1728326687",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1532089"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-LOMO20-FR-WEB.pdf?v=1728326688",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1533381"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-LOMO23-EN-WEB.pdf?v=1721148468",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1797385"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-LOMO23-FR-WEB.pdf?v=1721148469",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1817731"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-VITA-EN-WEB.pdf?v=1728330926",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2949748"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-VITA-FR-WEB.pdf?v=1728330927",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2954029"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-VITA-R32-EN.pdf?v=1750359064",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2289223"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-VITA-R32-FR.pdf?v=1750359065",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2291931"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-XMATCH-R32-EN.pdf?v=1750359072",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2771691"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SIMPLE-ZONE-XMATCH-R32-FR.pdf?v=1750359073",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2777058"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-CENTRAL-UNIX-ECO-EN.pdf?v=1787068661",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2720772"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-CENTRAL-UNIX-ECO-FR.pdf?v=1787068661",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2723676"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-CENTRAL-UNIX-EN-WEB.pdf?v=1728333963",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3523011"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-CENTRAL-UNIX-FR-WEB.pdf?v=1728333964",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3528553"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-CENTRAL-UNIX-R32-EN.pdf?v=1753388819",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "4095784"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-CENTRAL-UNIX-R32-FR.pdf?v=1753295802",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "4100092"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-PTAC-R32-INVERTER-EN.pdf?v=1765561556",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2252234"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-PTAC-R32-INVERTER-FR.pdf?v=1765561556",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2257776"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-PTAC-R32-MINI-EN.pdf?v=1773680947",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2579691"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-PTAC-R32-MINI-FR.pdf?v=1771259474",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2581281"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-PTAC-R32-STANDARD-EN.pdf?v=1765561567",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2420723"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-PTAC-R32-STANDARD-FR.pdf?v=1765561568",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2424657"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-VRF-GMV6-EN.pdf?v=1787770897",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2711181"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-VRF-GMV6-FR.pdf?v=1787770897",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2714188"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-VRF-GMV6-HR-EN.pdf?v=1787765258",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3176004"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-VRF-GMV6-HR-FR.pdf?v=1787765258",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3179702"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-VRF-IDU-EN-WEB.pdf?v=1728400359",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3455432"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-SYSTEME-VRF-IDU-FR-WEB.pdf?v=1728400360",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3459434"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-WAC-CHALET-EN.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3311644"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-WAC-CHALET-FR.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3314609"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-WAC-CURVE-EN-WEB.pdf?v=1728402934",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "6404735"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-WAC-CURVE-FR-WEB.pdf?v=1728402935",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "6408441"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-WAC-TRANQUILITY-EN.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1374031"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-BROCHURE-WAC-TRANQUILITY-FR.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1383328"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-ALLMATCH-R32-1WAY-CASSETTES-EN-WEB.pdf?v=1753903499",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1121263"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-ALLMATCH-R32-1WAY-CASSETTES-FR-WEB.pdf?v=1753903499",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1178352"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-ALLMATCH-R32-8WAY-CASSETTES-EN-WEB.pdf?v=1753902471",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1010050"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-ALLMATCH-R32-8WAY-CASSETTES-FR-WEB.pdf?v=1753902471",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1069803"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-ALLMATCH-R32-CONSOLES-EN-WEB.pdf?v=1753904275",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1722615"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-ALLMATCH-R32-CONSOLES-FR-WEB.pdf?v=1753904275",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2123256"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-AOMI-10K-EN-WEB.pdf?v=1708708865",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "9124555"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-AOMI-10K-FR-WEB.pdf?v=1708708867",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "9121758"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-AOVIA-6K-EN-WEB.pdf?v=1708708587",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "8000991"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-AOVIA-6K-FR-WEB.pdf?v=1708708587",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "8043099"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-CLIVIA-R32-EN.pdf?v=1753474017",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "897974"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-CLIVIA-R32-FR.pdf?v=1753474017",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "941186"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-CROSSOVER-EN-WEB.pdf?v=1688589416",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "772263"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-CROSSOVER-FR-WEB.pdf?v=1688589416",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "793651"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-CROSSOVER-R32-EN-WEB.pdf?v=1753467217",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "898185"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-CROSSOVER-R32-FR-WEB.pdf?v=1753467217",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "942484"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-DH-CHALET-EN-WEB.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2516965"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-DH-CHALET-FR-WEB.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "2542058"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-EXTREME-EN.pdf?v=1679595201",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3933538"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-EXTREME-FR.pdf?v=1679595201",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "4333045"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-EXTREME-R32-EN-WEB.pdf?v=1753466027",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1507464"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-EXTREME-R32-FR-WEB.pdf?v=1753466028",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1549571"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-LOMO20-EN.pdf",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1355322"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-LOMO20-FR.pdf?v=1712072647",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1373075"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-LOMO23-EN-WEB.pdf?v=1679595201",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "11275707"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-LOMO23-FR-WEB.pdf?v=1679595201",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "11268534"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-PTAC-EN-WEB.pdf?v=1717526807",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3735454"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-PTAC-FR-WEB.pdf?v=1717526808",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3682682"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-PTAC-INVERTER-EN-WEB.pdf?v=1717528162",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3505779"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-PTAC-INVERTER-FR-WEB.pdf?v=1717528163",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "3467953"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-SHINY-5K-6K-8K-EN.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "13755891"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-SHINY-5K-6K-8K-FR.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "13693239"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-TRANQUILITY-8K-EN-WEB.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "7238211"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-TRANQUILITY-8K-FR-WEB.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "7282699"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-TTW-EN-WEB.pdf?v=1717527069",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1998808"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-TTW-FR-WEB.pdf?v=1717527070",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1963059"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-UNIX-EN.pdf?v=1700582853",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "644549"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-UNIX-FR.pdf?v=1700582853",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "692879"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-VITA-EN-WEB.pdf?v=1688589447",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "937807"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-VITA-FR-WEB.pdf?v=1688589447",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "961679"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-VITA-R32-EN-WEB.pdf?v=1753468129",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "886306"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-VITA-R32-FR-WEB.pdf?v=1753468130",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "925144"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-WAC-CHALET-10K-12K-EN-WEB.pdf?v=1679595224",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "1298052"
+    },
+    {
+      "url": "https://cdn.shopify.com/s/files/1/0253/4775/2018/files/GREE-USER-MANUAL-XMATCH-R32-EN-WEB.pdf?v=1753465280",
+      "status": 200,
+      "contentType": "application/pdf",
+      "bytes": "886356"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import {
   useResources,
   displayMoney,
 } from "./storefront.tsx";
+import { ProductAvailabilityEditor } from "./product-availability.tsx";
 import { ProductPurchasingRules } from "./purchasing-rules.tsx";
 import {
   catalogImageMaxBytes,
@@ -34,73 +35,81 @@ function MetadataFields({
   change: (value: ResourceMetadata) => void;
 }) {
   return (
-    <>
-      <label>
-        Resource title
-        <input
-          required
-          maxLength={160}
-          value={value.title}
-          onChange={(e) => change({ ...value, title: e.target.value })}
-        />
-      </label>
-      {value.kind === "image" && (
+    <div className="resource-metadata">
+      <div className="resource-field-group">
+        <h4>Identify the resource</h4>
+        <p>Name it clearly and specify the equipment it applies to.</p>
         <label>
-          Alternative text
+          Resource title
           <input
             required
-            maxLength={500}
-            value={value.altText ?? ""}
-            onChange={(e) => change({ ...value, altText: e.target.value })}
+            maxLength={160}
+            value={value.title}
+            onChange={(e) => change({ ...value, title: e.target.value })}
           />
         </label>
-      )}
-      <label>
-        Applicable models
-        <input
-          maxLength={500}
-          value={value.models ?? ""}
-          onChange={(e) => change({ ...value, models: e.target.value })}
-        />
-      </label>
-      <label>
-        Language
-        <input
-          maxLength={40}
-          value={value.language ?? ""}
-          onChange={(e) => change({ ...value, language: e.target.value })}
-        />
-      </label>
-      <label>
-        Document revision
-        <input
-          maxLength={100}
-          value={value.revision ?? ""}
-          onChange={(e) => change({ ...value, revision: e.target.value })}
-        />
-      </label>
-      <label>
-        Source and provenance
-        <input
-          maxLength={1000}
-          value={value.source ?? ""}
-          onChange={(e) => change({ ...value, source: e.target.value })}
-        />
-      </label>
-      <label>
-        Display position
-        <input
-          type="number"
-          min={0}
-          max={9999}
-          required
-          value={value.position ?? 0}
-          onChange={(e) =>
-            change({ ...value, position: Number(e.target.value) })
-          }
-        />
-      </label>
-    </>
+        {value.kind === "image" && (
+          <label>
+            Alternative text
+            <input
+              required
+              maxLength={500}
+              value={value.altText ?? ""}
+              onChange={(e) => change({ ...value, altText: e.target.value })}
+            />
+          </label>
+        )}
+        <label>
+          Applicable models
+          <input
+            maxLength={500}
+            value={value.models ?? ""}
+            onChange={(e) => change({ ...value, models: e.target.value })}
+          />
+        </label>
+      </div>
+      <div className="resource-field-group">
+        <h4>Edition &amp; source</h4>
+        <p>Keep the language, revision and publisher reference together.</p>
+        <label>
+          Language
+          <input
+            maxLength={40}
+            value={value.language ?? ""}
+            onChange={(e) => change({ ...value, language: e.target.value })}
+          />
+        </label>
+        <label>
+          Document revision
+          <input
+            maxLength={100}
+            value={value.revision ?? ""}
+            onChange={(e) => change({ ...value, revision: e.target.value })}
+          />
+        </label>
+        <label>
+          Source and provenance
+          <input
+            maxLength={1000}
+            value={value.source ?? ""}
+            onChange={(e) => change({ ...value, source: e.target.value })}
+          />
+        </label>
+        <label>
+          Display position
+          <input
+            type="number"
+            min={0}
+            max={9999}
+            required
+            value={value.position ?? 0}
+            onChange={(e) =>
+              change({ ...value, position: Number(e.target.value) })
+            }
+          />
+        </label>
+      </div>
+    </div>
   );
 }
 function ResourceEditor({
@@ -433,13 +442,15 @@ function ResourceCollection({
 }
 export function CatalogResourceWorkspace({
   product,
+  canManageAvailability,
   close,
 }: {
   product: CatalogProduct;
+  canManageAvailability: boolean;
   close: () => void;
 }) {
   return (
-    <section className="panel">
+    <section className="panel catalog-product-manager">
       <div className="actions">
         <h2>
           {product.sku} · {product.name}
@@ -457,6 +468,12 @@ export function CatalogResourceWorkspace({
       >
         <PageSection id="catalog-details">
           <h3>Product details</h3>
+          {canManageAvailability && (
+            <ProductAvailabilityEditor
+              productId={product.id}
+              initial={product.availability}
+            />
+          )}
           <dl>
             <dt>SKU</dt>
             <dd>{product.sku}</dd>

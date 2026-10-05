@@ -1,4 +1,6 @@
+import type { ProductAvailability } from "./product-availability.ts";
 export type CatalogProduct = {
+  availability?: ProductAvailability;
   id: string;
   sku: string;
   name: string;

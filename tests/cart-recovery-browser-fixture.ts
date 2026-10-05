@@ -45,6 +45,15 @@ export async function cartRecoveryBrowser(after: (fn: () => void) => void) {
       tier: "standard",
       creditLimit: 1000000,
     }).id;
+    f.app.catalog.setPurchasingPolicy(f.actor, `cart-policy-${name}`, {
+      accountId: account,
+      mode: "all",
+      requiresReview: false,
+      productIds: [],
+      revision: 0,
+      reason:
+        "Explicit synthetic cart recovery catalog access including test-created products",
+    });
     f.app.identity.createUser(f.actor, `cart-user-${name}`, {
       name: `Cart recovery ${name}`,
       email: `cart-${name}@example.test`,

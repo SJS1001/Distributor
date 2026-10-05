@@ -483,3 +483,145 @@ test("revoked saved products require explicit removal before replacing a cart", 
     await context.close();
   }
 });
+
+test("global product availability persists, hides customer access and restores badges", async ({
+  page,
+  browser,
+}) => {
+  await login(page, false);
+  await navigateWorkspace(page, "Catalog");
+  const row = page.getByRole("row").filter({
+    has: page.getByRole("button", { name: "Manage PART-2", exact: true }),
+  });
+  const editor = row.locator(".availability-editor");
+  await expect(
+    editor.getByLabel("Temporarily hide from all customers"),
+  ).toBeVisible();
+  const productId = (await editor.getAttribute("aria-label"))!.replace(
+    "Customer availability for ",
+    "",
+  );
+  async function save(hidden: boolean, reason: string) {
+    await editor
+      .getByLabel("Temporarily hide from all customers")
+      .setChecked(hidden);
+    await editor.getByLabel("Show out-of-stock badge").check();
+    await editor
+      .getByLabel("Expected availability date (optional)")
+      .fill("2026-11-01");
+    await editor.getByLabel("Reason for availability change").fill(reason);
+    const response = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/commands/catalog.product-availability.set") &&
+        r.request().method() === "POST",
+    );
+    await editor
+      .getByRole("button", { name: "Save availability", exact: true })
+      .click();
+    expect((await response).ok()).toBe(true);
+    await expect(editor.getByRole("status")).toHaveText(
+      "Availability saved for all customers.",
+    );
+    await expect(
+      editor.getByLabel("Temporarily hide from all customers"),
+    ).toBeEnabled();
+  }
+  await save(false, "Publish supplier availability advice for all customers");
+  await page.reload();
+  await expect(editor.getByLabel("Show out-of-stock badge")).toBeChecked();
+  await expect(
+    editor.getByLabel("Expected availability date (optional)"),
+  ).toHaveValue("2026-11-01");
+  await page.screenshot({
+    path: "/tmp/distributor-availability-catalog-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: "/tmp/distributor-availability-catalog-mobile.png",
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+  ).toBe(false);
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  try {
+    const buyer = await context.newPage();
+    await login(buyer, true);
+    const card = buyer.locator(".sf-card").filter({
+      has: buyer.getByRole("heading", {
+        name: "Synthetic replacement part",
+        exact: true,
+      }),
+    });
+    await expect(card.getByText("Out of stock", { exact: true })).toBeVisible();
+    await expect(card.locator("time")).toHaveText("Nov 1, 2026");
+    await card
+      .getByRole("button", {
+        name: "View Synthetic replacement part",
+        exact: true,
+      })
+      .click();
+    await expect(
+      buyer
+        .locator(".sf-detail-summary")
+        .getByText("Out of stock", { exact: true }),
+    ).toBeVisible();
+    await buyer.screenshot({
+      path: "/tmp/distributor-availability-customer-mobile.png",
+      fullPage: true,
+    });
+    await save(true, "Temporarily hide this product from every customer");
+    await page.reload();
+    await expect(
+      editor.getByLabel("Temporarily hide from all customers"),
+    ).toBeChecked();
+    await buyer.reload();
+    await expect(
+      buyer.getByRole("button", {
+        name: "View Synthetic replacement part",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const direct = await buyer.request.get(
+      `/api/catalog/products/${encodeURIComponent(productId)}/resources`,
+    );
+    expect(direct.status()).toBeGreaterThanOrEqual(400);
+    await save(
+      false,
+      "Restore customer product browsing with availability advice",
+    );
+    await buyer.reload();
+    await expect(card.getByText("Out of stock", { exact: true })).toBeVisible();
+    await expect(card.locator("time")).toHaveAttribute(
+      "datetime",
+      "2026-11-01",
+    );
+    expect(
+      await buyer.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+    ).toBe(false);
+  } finally {
+    await context.close();
+    // Leave the shared synthetic fixture visible and clear this test's advisory.
+    await editor.getByLabel("Temporarily hide from all customers").uncheck();
+    await editor.getByLabel("Show out-of-stock badge").uncheck();
+    await editor.getByLabel("Expected availability date (optional)").fill("");
+    await editor
+      .getByLabel("Reason for availability change")
+      .fill(
+        "Restore synthetic availability fixture after browser verification",
+      );
+    await editor
+      .getByRole("button", { name: "Save availability", exact: true })
+      .click();
+    await expect(editor.getByRole("status")).toHaveText(
+      "Availability saved for all customers.",
+    );
+  }
+});

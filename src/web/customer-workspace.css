@@ -1,17 +1,17 @@
 .customer-shell {
-  --ink: #18333e;
+  --ink: #102d50;
   --muted: #5c6d73;
-  --accent: #a45d38;
-  --border: #d8ddd9;
+  --accent: #0067b9;
+  --border: #dce5ef;
   display: block;
-  background: #f7f5ef;
+  background: #f5f8fc;
   color: var(--ink);
   min-height: 100vh;
 }
 .customer-header {
   display: block;
   margin: 0;
-  background: #18333e;
+  background: #102d50;
   color: #fff;
   padding: 0 max(24px, calc((100vw - 1280px) / 2));
 }
@@ -32,7 +32,7 @@
   font-weight: 800;
 }
 .customer-wordmark span {
-  color: #e5ab80;
+  color: #77c8ff;
 }
 .customer-trade-label {
   color: #d4dfdf;
@@ -81,7 +81,7 @@
   background: transparent;
 }
 .customer-header nav button[aria-current] {
-  border-bottom-color: #e5ab80;
+  border-bottom-color: #77c8ff;
   background: transparent;
   color: #fff;
 }
@@ -104,7 +104,7 @@
   color: var(--ink);
 }
 .customer-shell .workspace-header .eyebrow {
-  color: #76543f;
+  color: #0067b9;
 }
 .customer-shell .workspace-header .page-description {
   color: #5c6d73;
@@ -113,7 +113,7 @@
   color: #5c6d73;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid #d8ddd9;
+  border-bottom: 1px solid #dce5ef;
   border-radius: 0;
   padding: 0 0 14px;
   margin-bottom: 24px;
@@ -144,11 +144,11 @@
   min-height: 44px;
 }
 .customer-shell :focus-visible {
-  outline: 3px solid #a45d38;
+  outline: 3px solid #0067b9;
   outline-offset: 3px;
 }
 .customer-header :focus-visible {
-  outline-color: #f2c49f;
+  outline-color: #b6e5ff;
 }
 @media (max-width: 760px) {
   .customer-header {

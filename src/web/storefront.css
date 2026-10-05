@@ -1,9 +1,9 @@
 .storefront {
-  --sf-ink: #18333e;
+  --sf-ink: #102d50;
   --sf-muted: #596a70;
-  --sf-paper: #f7f5ef;
-  --sf-line: #dcded7;
-  --sf-copper: #a45d38;
+  --sf-paper: #f5f8fc;
+  --sf-line: #dce5ef;
+  --sf-copper: #0067b9;
   color: var(--sf-ink);
   padding-bottom: 36px;
 }
@@ -26,7 +26,7 @@
   opacity: 0.4;
 }
 .storefront :is(button, input, select, a):focus-visible {
-  outline: 3px solid #a45d38;
+  outline: 3px solid #0067b9;
   outline-offset: 4px;
 }
 .storefront h2,
@@ -72,9 +72,9 @@
   grid-template-columns: 1fr 1fr;
   min-height: 405px;
   overflow: hidden;
-  border: 1px solid #d6ddd8;
+  border: 1px solid #dce5ef;
   border-radius: 5px;
-  background: #e9efeb;
+  background: #eaf3fb;
 }
 .storefront .sf-showcase-copy {
   position: relative;
@@ -133,7 +133,7 @@
 }
 .storefront .sf-showcase-link:hover {
   border-bottom-color: var(--sf-copper);
-  color: #804221;
+  color: #004d91;
 }
 .storefront .sf-showcase-media {
   position: relative;
@@ -141,7 +141,7 @@
   align-items: center;
   justify-content: center;
   padding: 50px 25px;
-  background: radial-gradient(ellipse at center, #f9faf6 0%, #e9efeb 70%);
+  background: #fff;
 }
 .storefront .sf-showcase-marker {
   position: absolute;
@@ -354,13 +354,13 @@
 .storefront .sf-card:hover,
 .storefront .sf-card:focus-within {
   border-color: #9eafa7;
-  box-shadow: 0 5px 16px #18333e0a;
+  box-shadow: 0 5px 16px #102d500a;
 }
 .storefront .sf-card-media {
   height: 218px;
   padding: 19px;
-  border-bottom: 1px solid #e4e7df;
-  background: #f0f3ee;
+  border-bottom: 1px solid #e2eaf3;
+  background: #f4f8fc;
 }
 .storefront .sf-card-media .product-placeholder svg {
   max-height: 135px;
@@ -411,7 +411,7 @@
   margin: 22px 0 0;
   padding: 12px 0;
   border: 0;
-  border-top: 1px solid #e2e6e0;
+  border-top: 1px solid #e2eaf3;
   border-radius: 0;
   background: transparent;
   color: var(--sf-ink);
@@ -420,7 +420,7 @@
   text-align: left;
 }
 .storefront .sf-card-link:hover {
-  color: #804221;
+  color: #004d91;
 }
 .storefront .sf-more {
   display: block;
@@ -434,7 +434,7 @@
   font-size: 13px;
 }
 .storefront .sf-more:hover {
-  background: #e9efeb;
+  background: #eaf3fb;
 }
 .storefront .sf-empty {
   padding: 28px;
@@ -459,7 +459,7 @@
   font-weight: 600;
 }
 .storefront .sf-back:hover {
-  color: #804221;
+  color: #004d91;
 }
 .storefront .sf-detail-top {
   display: grid;
@@ -473,9 +473,9 @@
   align-items: center;
   justify-content: center;
   padding: 25px;
-  border: 1px solid #dce4dc;
+  border: 1px solid #dce5ef;
   border-radius: 4px;
-  background: #ecf1ea;
+  background: #f1f7fc;
 }
 .storefront .sf-gallery-controls {
   display: flex;
@@ -541,8 +541,8 @@
   text-align: left;
 }
 .storefront .sf-purchase-panel .sf-primary:hover {
-  background: #854927;
-  border-color: #854927;
+  background: #004d91;
+  border-color: #004d91;
 }
 .storefront .sf-purchase-note {
   margin: 15px 0 0;
@@ -639,9 +639,9 @@
   justify-content: center;
   width: 45px;
   height: 52px;
-  border: 1px solid #e3d8c8;
+  border: 1px solid #c9dff2;
   border-radius: 3px;
-  background: #f9f5ed;
+  background: #edf6ff;
   color: var(--sf-copper);
 }
 .storefront .sf-documents a {
@@ -710,7 +710,7 @@
   .storefront .sf-showcase-media {
     min-height: 240px;
     padding: 30px 25px;
-    border-top: 1px solid #d5dfd6;
+    border-top: 1px solid #dce5ef;
   }
   .storefront .sf-showcase-marker {
     top: 15px;

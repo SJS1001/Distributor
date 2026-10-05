@@ -1,3 +1,4 @@
+import { ManufacturerCollection } from "./manufacturer-collection.tsx";
 import { Storefront } from "./storefront.tsx";
 import { CustomerPurchasingRules } from "./purchasing-rules.tsx";
 import { OrderRequests } from "./order-requests.tsx";
@@ -130,6 +131,7 @@ import type {
 } from "../shared/catalog-lifecycle.ts";
 import "./style.css";
 import "./customer-workspace.css";
+import "./equipment-workspace.css";
 const OperationsHealthPanel = deferredPage("Operations health", async () => {
   const module = await import("./operations-health.tsx");
   return { default: module.OperationsHealthPanel };
@@ -234,7 +236,7 @@ function App() {
       actor &&
       data &&
       publicRoute !== "activate" &&
-      publicRoute !== "scanner"
+      !["scanner", "products", "product"].includes(publicRoute)
     )
       document.title = `${page} · dstrbtr`;
   }, [actor, data, page, publicRoute]);
@@ -258,10 +260,18 @@ function App() {
     previousOrder.current = route.orderId;
   }, [route.orderId, page]);
   useEffect(() => {
-    if (!actor || publicRoute === "activate" || publicRoute === "scanner")
+    if (
+      !actor ||
+      ["activate", "scanner", "products", "product"].includes(publicRoute)
+    )
       return;
     const locationChanged = () => {
-      if (readPublicRoute(window.location.hash) === "scanner") return;
+      if (
+        ["scanner", "products", "product"].includes(
+          readPublicRoute(window.location.hash),
+        )
+      )
+        return;
       if (appliedHash.current === window.location.hash) return;
       appliedHash.current = window.location.hash;
       traversal.current(readNavigation(window.location.hash));
@@ -1625,6 +1635,8 @@ function App() {
                         unit_tax: 0,
                         tax_bp: 0,
                         currency: data!.organization.currency,
+                        outOfStock: false,
+                        expectedAvailableOn: null,
                         active: 0,
                       };
                 }),
@@ -1672,6 +1684,8 @@ function App() {
                       unit_tax: 0,
                       tax_bp: 0,
                       currency: data!.organization.currency,
+                      outOfStock: false,
+                      expectedAvailableOn: null,
                       active: 0,
                     };
               });
@@ -1851,10 +1865,17 @@ function App() {
       </form>
     </section>
   );
-  if (publicRoute === "activate" || publicRoute === "scanner")
+  if (["activate", "scanner", "products", "product"].includes(publicRoute))
     return (
       <PublicSite
         route={publicRoute}
+        workspaceHref={
+          actor
+            ? navigationHash({
+                page: actor.role === "buyer" ? "Shop" : "Overview",
+              })
+            : undefined
+        }
         activationToken={activationToken}
         login={loginForm}
       />
@@ -4147,6 +4168,7 @@ function App() {
         )}
         {page === "Catalog" && (
           <>
+            <ManufacturerCollection staff />
             <div className="actions">
               {can("commercial") &&
                 button("Add product", () =>
@@ -4180,6 +4202,7 @@ function App() {
             <CatalogMaintenance
               key={eventViewEpoch}
               canManage={can("commercial")}
+              canManageAvailability={actor.role === "admin"}
               busy={busy}
               review={reviewProductActivity}
               history={(id) =>

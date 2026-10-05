@@ -1,3 +1,5 @@
+import { AvailabilityBadge } from "./product-availability.tsx";
+import { ManufacturerCollection } from "./manufacturer-collection.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
@@ -128,6 +130,7 @@ function ProductCard({
       <div className="sf-card-body">
         <p className="sf-sku">{product.sku}</p>
         <h3>{product.name}</h3>
+        <AvailabilityBadge product={product} />
         <div className="sf-card-price">
           <strong>{displayMoney(product.unit_price, product.currency)}</strong>
           <span>per unit</span>
@@ -212,6 +215,7 @@ function ProductDetail({
           <h2 tabIndex={-1} ref={heading}>
             {product.name}
           </h2>
+          <AvailabilityBadge product={product} />
           <div className="sf-purchase-panel">
             <p className="sf-price-label">Your account price</p>
             <p className="sf-detail-price">
@@ -421,6 +425,7 @@ function ProductResults({
             >
               <p className="sf-sku">{featured.sku}</p>
               <h2>{featured.name}</h2>
+              <AvailabilityBadge product={featured} />
               <p className="sf-showcase-price">
                 {displayMoney(featured.unit_price, featured.currency)}{" "}
                 <span>/ unit · before tax</span>
@@ -612,6 +617,7 @@ export function Storefront({
   );
   return (
     <div className="storefront">
+      <ManufacturerCollection />
       <p className="sf-account-context">
         Curated for <strong>{accountName}</strong>
         <span>Approved products & account pricing</span>

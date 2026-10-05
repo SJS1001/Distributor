@@ -115,7 +115,9 @@ test("public site: mobile application, approval boundary and sign-in navigation"
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "HVAC supply for the Canadian trade." }),
+    page.getByRole("heading", {
+      name: /Comfort starts.*with the right system/,
+    }),
   ).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
   await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 390);
@@ -612,4 +614,124 @@ test("bundled camera decoder reads a real QR frame without native BarcodeDetecto
   await expect(
     page.getByLabel("Barcode or serial number", { exact: true }),
   ).toHaveValue("GREE-SAMPLE-CAMERA-001");
+});
+
+test("manufacturer library filters, model specifications and document tabs survive deep links", async ({
+  page,
+}) => {
+  const catalog = JSON.parse(
+    await (
+      await import("node:fs/promises")
+    ).readFile(
+      new URL("../src/web/gree-catalog-data.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const product = catalog.products.find(
+    (p: any) =>
+      p.models.length > 1 &&
+      p.models[1].manufacturerModel &&
+      p.models[1].specifications.length,
+  );
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/#products");
+    const response = await page.request.get("/");
+    expect(response.headers()["content-security-policy"]).toContain(
+      "img-src 'self' data: https://cdn.shopify.com",
+    );
+    await expect(page.locator(".gree-product-card")).toHaveCount(
+      catalog.products.length,
+    );
+    await page
+      .getByLabel("Search product families")
+      .fill(product.models[1].manufacturerModel);
+    await expect(
+      page.locator(`.gree-product-card[href="#product=${product.id}"]`),
+    ).toBeVisible();
+    await page
+      .locator(`.gree-product-card[href="#product=${product.id}"]`)
+      .click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      product.title,
+    );
+    await page
+      .getByLabel("Model configuration")
+      .selectOption(product.models[1].id);
+    await expect(page.locator(".gree-model-selector p")).toContainText(
+      product.models[1].manufacturerModel,
+    );
+    await page.locator(".gree-specification-details summary").click();
+    await expect(page.locator(".gree-specifications > div")).toHaveCount(
+      product.models[1].specifications.length,
+    );
+    await page.getByRole("tab", { name: /Documents/ }).click();
+    await expect(page.locator(".gree-document-groups a")).toHaveCount(
+      product.documents.length,
+    );
+    for (const doc of product.documents)
+      await expect(
+        page.locator(`.gree-document-groups a[href="${doc.url}"]`).first(),
+      ).toHaveAttribute("rel", "noreferrer");
+    await expect(page.getByLabel("Model configuration")).toBeHidden();
+    await page.getByRole("tab", { name: /Documents/ }).press("ArrowLeft");
+    await expect(
+      page.getByRole("tab", { name: "Overview", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      product.title,
+    );
+    await expect(page.locator("body")).toHaveJSProperty("scrollWidth", width);
+    await page.goto("/#products?category=rtu");
+    await expect(page.locator(".gree-product-card")).toHaveCount(2);
+    await page
+      .getByLabel("Search product families")
+      .fill("no-such-equipment-xyz");
+    await expect(
+      page.getByRole("heading", { name: "No matching products" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page.locator(".gree-product-card")).toHaveCount(
+      catalog.products.length,
+    );
+  }
+  await page.goto("/#product=%invalid");
+  await expect(
+    page.getByRole("heading", { name: "Product not found" }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("signed-in buyer and administrator can browse the library and return to their own workspace", async ({
+  page,
+}) => {
+  for (const [email, password, heading] of [
+    ["pilot-buyer@example.test", "synthetic-buyer-password", "Shop"],
+    ["admin@example.test", "long-test-only-password", "Overview"],
+  ]) {
+    await page.goto("/#customer-sign-in");
+    await page.getByLabel("Email", { exact: true }).fill(email!);
+    await page.getByLabel("Password", { exact: true }).fill(password!);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page.locator("#workspace-title")).toHaveText(heading!);
+    await page.getByRole("link", { name: /GREE product library/ }).click();
+    await expect(page).toHaveURL(/#products$/);
+    await page.locator(".gree-product-card").first().click();
+    await page.reload();
+    await expect(page.locator(".gree-detail")).toBeVisible();
+    await page.getByRole("link", { name: "My workspace", exact: true }).click();
+    await expect(page.locator("#workspace-title")).toHaveText(heading!);
+    const signedOut = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/logout") && response.status() === 200,
+    );
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await signedOut;
+    await expect(
+      page.getByRole("button", { name: "Sign out", exact: true }),
+    ).toBeHidden();
+  }
 });

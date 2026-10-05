@@ -9,6 +9,7 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept } from "./fixtures.ts";
 const additions = [
+  "catalog_product_availability",
   "catalog_resource_history",
   "catalog_resources",
   "orders_review_quotes",
@@ -84,7 +85,7 @@ for (const reports of [false, true])
     const receipt = await upgradeSchema(source, target, old.schemaHash, "CA");
     assert.equal(receipt.sourceVersion, 22);
     assert.equal(receipt.version, SCHEMA_VERSION);
-    assert.equal(SCHEMA_VERSION, 25);
+    assert.equal(SCHEMA_VERSION, 26);
     assert.deepEqual(readFileSync(source), sourceBytes);
     assert.equal(business(target), before);
     assert.equal(inspectSchema(target).kind, "current");

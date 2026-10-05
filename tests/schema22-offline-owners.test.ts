@@ -9,6 +9,7 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture } from "./fixtures.ts";
 const laterTables = [
+  "catalog_product_availability",
   "catalog_resource_history",
   "catalog_resources",
   "orders_review_quotes",

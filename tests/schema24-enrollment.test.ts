@@ -73,7 +73,7 @@ for (const profile of frozen.profiles)
     const receipt = await upgradeSchema(source, target, profile.hash, "CA");
     assert.equal(receipt.sourceVersion, 23);
     assert.equal(receipt.version, SCHEMA_VERSION);
-    assert.equal(SCHEMA_VERSION, 25);
+    assert.equal(SCHEMA_VERSION, 26);
     assert.equal(inspectSchema(target).kind, "current");
     assert.equal(
       inspectSchema(target).initializedAt,
