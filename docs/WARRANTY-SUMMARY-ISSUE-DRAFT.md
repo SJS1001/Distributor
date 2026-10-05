@@ -1,6 +1,6 @@
 # Deferred issue draft: scoped warranty dashboard summary
 
-Status: proposal only; no `Warranty.claimSummary(actor)` contract was implemented. Read-only search of all issues in SJS1001/Distributor for `claimSummary OR warranty aggregate` returned no matches on 2026-10-05. This is not proof that differently named issues do not overlap. Existing category-navigation and analytics issues should be checked before intake.
+Status: tracked in [Distributor issue #4](https://github.com/SJS1001/Distributor/issues/4); implementation deferred. No `Warranty.claimSummary(actor)` contract was implemented. All three pre-existing issues were read on 2026-10-05; none covers this aggregate.
 
 Suggested title: Add a permission-scoped warranty summary for the dashboard
 
@@ -19,6 +19,8 @@ The proposed aggregate is a new shared contract and extends the dashboard baseli
 - Use a typed dashboard contract and permission-filtered UI with honest labels and an accessible path to the corresponding queue. Do not show a global total when the available data are only a sample.
 - Record the tested source, focused security/accuracy evidence and measured query behavior for agreed representative volume before acceptance.
 
-## Publication status
+## Issue intake and source publication status
 
-No GitHub mutation or global account switch was attempted. The default profile returned SJS1001, but a subsequently identified existing profile authenticates as sjsmithbot. That profile reports pull=true and push=false for Distributor. A fresh issue listing found only issues #1 (saved filters/history), #2 (category tabs) and #3 (bundle splitting); none covers this aggregate. The exact proposal remains a draft: coordination input does not independently authorize a new external issue. No implementation or access change was made. Issue intake remains separate from delivery of the already authorized source snapshot.
+Created [issue #4](https://github.com/SJS1001/Distributor/issues/4) on 2026-10-05 with source, impact, acceptance criteria and explicit implementation deferral. Immediately before POST `/repos/SJS1001/Distributor/issues`, GET `/user` verified `sjsmithbot` through the existing designated profile. Subsequent GET verified the open issue, author and exact body. No access or global authentication changes were made.
+
+The owner's standing scope-control mandate authorizes searching and creating/reusing tracking issues for work outside the frozen baseline. The earlier statement that intake lacked authority was incorrect: the existing mandate applies, without authorizing the aggregate implementation. Source publication remains separately blocked by the bot's recorded repository `push:false`; that permission did not prevent issue creation. No source push, PR, merge, CI or deployment occurred.
