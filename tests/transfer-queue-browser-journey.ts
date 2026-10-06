@@ -15,6 +15,10 @@ async function login(
   email = "transfer-queue@example.test",
   initialCount = 20,
 ) {
+  // Sign-out finishes asynchronously. Requesting the sign-in route while the
+  // workspace is still open is treated as workspace navigation, so wait for
+  // the signed-out page before asking for the sign-in form.
+  await expect(page.locator("#workspace-title")).toHaveCount(0);
   await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page

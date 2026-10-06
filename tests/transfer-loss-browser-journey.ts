@@ -25,6 +25,10 @@ const recovery = (page: Page, kind: Kind) =>
 const nav = (page: Page, name: string) =>
   navigateWorkspace(page, name, name === "Inventory" ? "Transfers" : undefined);
 async function login(page: Page, email = "loss@example.test") {
+  // Sign-out finishes asynchronously. Requesting the sign-in route while the
+  // workspace is still open is treated as workspace navigation, so wait for
+  // the signed-out page before asking for the sign-in form.
+  await expect(page.locator("#workspace-title")).toHaveCount(0);
   await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
@@ -522,9 +526,8 @@ for (const kind of ["loss", "recovery"] as const) {
     await send(page, kind);
     await arrived;
     await page.reload();
-    await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
-    ).toBeVisible();
+    // Reload restores the signed-in workspace location rather than Overview.
+    await expect(page.locator("#workspace-title")).toHaveText("Inventory");
     release();
     await nav(page, "Inventory");
     await expect(d(page, kind)).toHaveCount(0);
@@ -586,6 +589,9 @@ for (const kind of ["loss", "recovery"] as const) {
       };
       await update("warehouse", `revoke-${kind}`);
       await page.unroute(pattern(kind));
+      // The access change ended this page's session; reopen the page so it
+      // observes the signed-out state before signing in with current authority.
+      await page.reload();
       await login(page);
       await expect(recovery(page, kind)).toHaveCount(0);
       await expect(
@@ -600,6 +606,9 @@ for (const kind of ["loss", "recovery"] as const) {
       expect(await evidence(page, kind)).toEqual(original);
       expect(await snapshot(other.page)).toEqual(before);
       await update("admin", `restore-${kind}`);
+      // The access change ended this page's session; reopen the page so it
+      // observes the signed-out state before signing in with current authority.
+      await page.reload();
       await login(page);
       await review(page, kind);
       await retry(page, kind);
