@@ -137,7 +137,8 @@ export function readNavigation(hash: string): NavigationIntent {
   if (page === "Billing") {
     if (invoiceQueueStates.includes(invoiceBalance as InvoiceQueueState))
       route.invoiceBalance = invoiceBalance as InvoiceQueueState;
-    route.invoiceId = identifier(query.get("invoice"));
+    const invoiceId = identifier(query.get("invoice"));
+    if (invoiceId) route.invoiceId = invoiceId;
   }
   if (page === "Inventory") {
     if (stockQueueViews.includes(stockView as StockQueueView))
