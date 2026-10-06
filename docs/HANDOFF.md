@@ -38,7 +38,24 @@ Limits:
 - Visual acceptance remains the owner's.
 - Open product question: a server-ended session whose reply is lost keeps the stale workspace until a full page load.
 - No PR, merge or CI run.
-- Deployment status is recorded below this entry, once deployed.
+- Deployment status is recorded below.
+
+Deployment, 2026-10-06 04:09 UTC:
+
+- **Image and machine.** Code-only release of source `bd41544` to the existing Toronto pilot: machine `817052c44d9028`, version 12. Image `registry.fly.io/distributor-ca-sjs1001:polish29-20261006`, digest `sha256:0196cfe5bae05686489ca12fbf3df803687ef5b1c808896c99a10a1fa77d1fd0`.
+- **Build.** Local only, with `--ha=false --strategy immediate`. No schema change and no migration.
+- **Rollback image.** The previous image `customers29b-20261005` is retained.
+- **Live checks.**
+  - All 409 tracked source and package files match the machine.
+  - Schema 29 keeps fingerprint `5593a454…62e6`, region CA.
+  - The database integrity check returned ok, with 0 foreign-key violations.
+  - HTTP health is 200, and the Fly health check passes.
+- **Read-only live capture.**
+  - Covers guest, administrator and customer views at 1440px and 390px: public home and products, Overview, Orders, Purchasing, invoice detail, customer record, sign-out, customer Shop, Invoices and Orders.
+  - It used the owner-approved pre-filled sample sign-in.
+  - It recorded 0 page errors and 0 business writes.
+  - The screenshots are private, under `local-evidence/release-20261006/`.
+- **Observed after deploy.** A staff member who signs out lands on the generic sign-in form, which is titled "Customer sign in", rather than the Administration entrance. This is a candidate follow-up and is not yet changed.
 
 ## Native MVP representation and incoming supply — 2026-10-05
 

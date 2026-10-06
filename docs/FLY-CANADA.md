@@ -249,3 +249,9 @@ Source `a5ca594`, schema28, image `notes28-20261005` supersedes the pricing rele
 ## Five-pass polish release, 2026-10-05
 
 Source `fa48391`, schema28, image `polish28-20261005` supersedes notes28 on the same Toronto Machine. Digest: `sha256:010d3013ada2ad079e5506b22466c8da3e26cee02519a4f1f5b66186f957e68c`. Local and deployed checks matched395 tracked source/package files; database integrity and foreign-key checks passed, and HTTP health is good. No schema migration was required. Previous `notes28-20261005` image and its encrypted restore-verified backup remain retained for recovery. Final desktop/phone-width guest/customer/admin checks passed. See the [completed five-pass review](evidence/FIVE-PASS-POLISH-2026-10-05.md) for exact evidence, historical failed harness checks and remaining qualification.
+
+## UI polish and invoice detail release, 2026-10-06
+
+Source `bd41544`, schema 29, image `polish29-20261006` supersedes `customers29b-20261005` on the same Toronto Machine. Digest `sha256:0196cfe5bae05686489ca12fbf3df803687ef5b1c808896c99a10a1fa77d1fd0`. This code-only release has no migration.
+
+All 409 tracked source and package files matched the machine. Database integrity and foreign-key checks passed, and health is 200. The previous image is retained for rollback. Verification and limits are in the 2026-10-06 HANDOFF entry.
