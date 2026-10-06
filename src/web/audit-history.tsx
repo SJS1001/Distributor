@@ -3,14 +3,11 @@ import { usePages } from "./billing-inbox.tsx";
 import "./operations-lane.css";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Long generated ids are shortened for scanning; the full value stays available.
-function ShortId({ value }: { value: string }) {
+// Generated ids stay complete so every user can read and copy them; they wrap
+// inside the cell instead of widening the table.
+function RecordId({ value }: { value: string }) {
   if (!uuid.test(value)) return <>{value}</>;
-  return (
-    <code className="ops-id" title={value} aria-label={value}>
-      {value.slice(0, 8)}
-    </code>
-  );
+  return <code className="ops-id">{value}</code>;
 }
 function RecordedTime({ value }: { value: string }) {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(value);
@@ -53,7 +50,7 @@ export function AuditHistory() {
       </h2>
       <p>
         Newest recorded entries appear first. Use Refresh to include new
-        activity. Hover or focus a short ID to see it in full.
+        activity.
       </p>
       {rows.error && (
         <p role="alert" className="error">
@@ -83,13 +80,13 @@ export function AuditHistory() {
                     <RecordedTime value={row.created_at} />
                   </td>
                   <td>
-                    <ShortId value={row.actor_id} />
+                    <RecordId value={row.actor_id} />
                   </td>
                   <td>
                     <code className="ops-action">{row.action}</code>
                   </td>
                   <td>
-                    <ShortId value={row.reference} />
+                    <RecordId value={row.reference} />
                   </td>
                 </tr>
               ))}
