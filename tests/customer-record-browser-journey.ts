@@ -87,7 +87,12 @@ test("dedicated record routes, six tabs, selected pricing, terms, notes and comp
   await page.getByRole("button", { name: "Save contact", exact: true }).click();
   await expect(page.getByText("Contact saved.", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Morgan Buyer", { exact: true })).toBeVisible();
+  // The Overview summary card also names the primary contact.
+  await expect(
+    page
+      .getByRole("tabpanel", { name: "Contacts" })
+      .getByText("Morgan Buyer", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await page.getByText("Staff notes", { exact: true }).click();
   await expect(page.getByText(/Private to authorized staff/)).toBeVisible();
