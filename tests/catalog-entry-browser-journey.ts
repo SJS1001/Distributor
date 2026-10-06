@@ -1,4 +1,7 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import {
+  expectBuyerLanding,
+  navigateBuyerWorkspace,
+} from "./commerce-browser-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3140",
   pattern = "**/api/catalog/customer-products/page?*";
@@ -11,9 +14,9 @@ async function login(page: Page) {
     .getByLabel("Password", { exact: true })
     .fill("long-test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  // Buyers land on Shop; order preparation starts from their Reports page.
+  await expectBuyerLanding(page);
+  await navigateBuyerWorkspace(page, "Overview");
 }
 async function prepare(page: Page) {
   await page
@@ -117,7 +120,7 @@ test("browser: paged catalog preserves saved off-page quantities, literal search
     ["Paged product 20", 1],
     ["Paged product 44", 3],
   ]);
-  await navigateWorkspace(page, "Orders", "Orders");
+  await navigateBuyerWorkspace(page, "Orders", "Orders");
   await expect(
     page.getByRole("button", {
       name: "Amend quantity: Paged product 44",
@@ -130,9 +133,10 @@ test("browser: paged catalog preserves saved off-page quantities, literal search
       exact: true,
     }),
   ).toBeVisible();
+  // Reload restores the buyer's last workspace location.
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Orders", exact: true }),
   ).toBeVisible();
   await prepare(page);
   await expect(last).toHaveValue("3");
@@ -218,7 +222,7 @@ test("browser: saved cart pages preserve failed continuation and resume the sele
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  await navigateWorkspace(page, "Orders", "Orders");
+  await navigateBuyerWorkspace(page, "Orders", "Orders");
   const section = page.getByRole("region", {
     name: "Saved carts",
     exact: true,

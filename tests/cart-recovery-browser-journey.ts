@@ -1,4 +1,9 @@
 import { navigateWorkspace } from "./workspace-navigation.ts";
+import {
+  expectBuyerLanding,
+  expectSignedOut,
+  navigateBuyerWorkspace,
+} from "./commerce-browser-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:3139";
@@ -18,9 +23,15 @@ async function login(page: Page, name: string) {
   const response = page.waitForResponse((r) => r.url().endsWith("/api/login"));
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   const csrf = (await (await response).json()).csrf as string;
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  if (name === "admin")
+    await expect(
+      page.getByRole("heading", { name: "Overview", exact: true }),
+    ).toBeVisible();
+  else {
+    // Buyers land on Shop; their order preparation starts from Reports.
+    await expectBuyerLanding(page);
+    await navigateBuyerWorkspace(page, "Overview");
+  }
   return csrf;
 }
 async function prepare(page: Page) {
@@ -212,7 +223,7 @@ test("browser: cart recovery resolves a lost save before submitting edited quant
     .click();
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Reports", exact: true }),
   ).toBeVisible();
   await prepare(page);
   await expect(page.getByLabel(quantityLabel, { exact: true })).toHaveValue(
@@ -670,8 +681,9 @@ test("browser: individual unavailable item reviews and active removals preserve 
   expect(errors).toEqual([]);
 });
 
-async function ordersPage(page: Page) {
-  await navigateWorkspace(page, "Orders", "Orders");
+async function ordersPage(page: Page, staff = false) {
+  if (staff) await navigateWorkspace(page, "Orders", "Orders");
+  else await navigateBuyerWorkspace(page, "Orders", "Orders");
   await expect(
     page.getByRole("heading", { name: "Orders", exact: true }),
   ).toBeVisible();
@@ -748,11 +760,9 @@ test("browser: durable cart save survives reload and sign-in without overwriting
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Sign in", exact: true }),
-  ).toBeVisible();
+  await expectSignedOut(page);
   const csrf = await login(page, "admin");
-  await ordersPage(page);
+  await ordersPage(page, true);
   await expect(
     page.getByRole("button", {
       name: "Review retained cart save",
@@ -857,7 +867,7 @@ test("browser: malformed and unwritable cart recovery storage refuse transport",
   expect(await carts(page)).toEqual([]);
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Reports", exact: true }),
   ).toBeVisible();
   await page.evaluate(() => {
     Object.defineProperty(navigator, "locks", { value: undefined });
@@ -879,9 +889,8 @@ test("browser: competing cart tabs cannot replace or transport a retained save w
   await login(page, "tabs");
   const other = await context.newPage();
   await other.goto(origin);
-  await expect(
-    other.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  await expectBuyerLanding(other);
+  await navigateBuyerWorkspace(other, "Overview");
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;

@@ -2,6 +2,7 @@ import {
   navigateAccounting,
   navigateWorkspace,
 } from "./workspace-navigation.ts";
+import { expectSignedOut } from "./commerce-browser-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const endpoint = "/api/quickbooks/organization/revocation";
 async function login(page: Page, origin: string, email = "admin@example.test") {
@@ -99,6 +100,9 @@ for (const [region, port] of [
       restored.getByText("Disabled credential revision: 2", { exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    // Sign-out completes before the next sign-in; from a restored workspace
+    // location it lands on the public site.
+    await expectSignedOut(page);
     await login(page, `http://127.0.0.1:${port}`, "finance@example.test");
     const fresh = await panel(page);
     await fresh
