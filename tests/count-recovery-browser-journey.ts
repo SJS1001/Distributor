@@ -5,7 +5,12 @@ import { stockFactsDashboard } from "./stock-browser-facts.ts";
 import type { CountKind } from "../src/web/count-review.tsx";
 const origin = "http://127.0.0.1:3165";
 async function login(page: Page) {
-  await page.goto(origin + "/#sign-in");
+  // Same-document navigation to a sign-in route is only meaningful once the
+  // previous principal has been fully signed out.
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
+  await page.goto(origin + "/#admin-sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -200,9 +205,10 @@ test.describe("retained count recovery", () => {
             await route.fulfill({ response });
           });
           await page.reload();
-          await expect(
-            page.getByRole("heading", { name: "Overview", exact: true }),
-          ).toBeVisible();
+          // Reload restores the signed-in workspace location.
+          await expect(page.locator("#workspace-title")).toHaveText(
+            "Inventory",
+          );
           await navigateWorkspace(page, "Inventory", "Cycle counts");
         } else {
           await dialog
@@ -214,11 +220,14 @@ test.describe("retained count recovery", () => {
             await page
               .getByRole("button", { name: "Sign out", exact: true })
               .click();
+            // Sign-out returns to the signed-out public site.
             await expect(
-              page.getByRole("heading", {
-                name: "Sign in to your workspace",
-                exact: true,
-              }),
+              page
+                .getByRole("navigation", {
+                  name: "Public navigation",
+                  exact: true,
+                })
+                .getByRole("link", { name: "Administration", exact: true }),
             ).toBeVisible();
             await login(page);
           }
@@ -567,9 +576,7 @@ test.describe("retained count recovery", () => {
     const before = await (await page.request.get("/api/dashboard")).json();
     const counts = await (await page.request.get("/api/counts")).json();
     await page.reload();
-    await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
-    ).toBeVisible();
+    await expect(page.locator("#workspace-title")).toHaveText("Inventory");
     await inventory(page);
     await page
       .getByRole("button", {
