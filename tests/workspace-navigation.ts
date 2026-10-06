@@ -25,6 +25,9 @@ export async function navigateWorkspace(
   destination: string,
   section?: string,
 ) {
+  await expect(page.locator("#workspace-title")).toBeVisible();
+  if (await page.locator("header.customer-header").isVisible())
+    return navigateCustomerWorkspace(page, destination, section);
   const category = categories[destination];
   if (!category)
     throw new Error(`Unknown workspace destination: ${destination}`);
@@ -56,6 +59,75 @@ export async function navigateWorkspace(
       .getByRole("tablist", { name: `${destination} sections`, exact: true })
       .getByRole("tab", { name: section, exact: true })
       .click();
+}
+
+// Buyers use the trade-portal header, which lists pages directly (no staff
+// categories) and labels Billing and Overview for customers.
+const customerLabels: Record<string, string> = {
+  Billing: "Invoices & payments",
+  Overview: "Reports",
+  // A buyer's own customer record is their Account page.
+  Customers: "Account",
+};
+export async function navigateCustomerWorkspace(
+  page: Page,
+  destination: string,
+  section?: string,
+) {
+  const label = customerLabels[destination] ?? destination;
+  await expect(page.locator("#workspace-title")).toBeVisible();
+  if (destination === "Returns") {
+    // Returns is not a header page for buyers; Account links to it.
+    await navigateCustomerWorkspace(page, "Account");
+    await page
+      .getByRole("button", {
+        name: "Returns and warranty requests",
+        exact: true,
+      })
+      .click();
+  } else {
+    const link = page
+      .locator("#customer-navigation")
+      .getByRole("button", { name: label, exact: true });
+    if (!(await link.isVisible())) {
+      const menu = page.getByRole("button", { name: "Menu", exact: true });
+      if (await menu.isVisible()) await menu.click();
+    }
+    await link.click();
+  }
+  await expect(page.locator("#workspace-title")).toHaveText(label);
+  if (section)
+    await page
+      .getByRole("tablist", { name: `${destination} sections`, exact: true })
+      .getByRole("tab", { name: section, exact: true })
+      .click();
+}
+
+// The public entrance offers sign-in links only while no session is active.
+export async function expectSignedOut(page: Page) {
+  await expect(
+    page
+      .getByRole("navigation", { name: "Public navigation", exact: true })
+      .getByRole("link", { name: "Administration", exact: true }),
+  ).toBeVisible();
+}
+
+// Where sign-out lands depends on whether the page reloaded while signed in:
+// without a reload the public route used to sign in (for example #sign-in) is
+// kept and its form shows again; after a reload at a workspace hash the public
+// route resets to the marketing home. That reload dependence is an open owner
+// question, not asserted here. Both destinations show the public navigation, so
+// follow its visible sign-in link (a hash change, not a reload) to reach the
+// form either way while in-page state handling stays under test.
+export async function openSignIn(page: Page, audience: "customer" | "staff") {
+  await page
+    .getByRole("navigation", { name: "Public navigation", exact: true })
+    .getByRole("link", {
+      name: audience === "customer" ? "Customer sign in" : "Administration",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
 }
 
 export async function navigateAccounting(

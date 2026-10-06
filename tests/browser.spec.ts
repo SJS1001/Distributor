@@ -1,7 +1,9 @@
 import {
   navigateWorkspace,
   navigateAccounting,
+  expectSignedOut,
   openStockActions,
+  openSignIn,
   openVisibleRowActions,
   withRowActions,
 } from "./workspace-navigation.ts";
@@ -6548,8 +6550,9 @@ test("browser: stock cost reviews survive lost replies and separate immutable do
       .getByLabel("Password", { exact: true })
       .fill("long-notice-test-password");
     await buyer.getByRole("button", { name: "Sign in", exact: true }).click();
+    // Buyers land on their Shop workspace rather than the staff Overview.
     await expect(
-      buyer.getByRole("heading", { name: "Overview", exact: true }),
+      buyer.getByRole("heading", { name: "Shop", exact: true }),
     ).toBeVisible();
     await nav(buyer, "Billing", "Invoices");
     await expect(
@@ -6626,6 +6629,15 @@ test("browser: confirmed cash refunds queue one accounting expense and zero-cash
     serials: [],
     bin: "REFUND",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -7179,6 +7191,15 @@ test("browser: short picks retry once, retain paged history after failure, and i
     bin: "SHORT-BIN",
     quarantine: false,
   });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: accountId,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [productId],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
+  });
   const cart = await cmd("cart.save", {
     accountId,
     warehouseId,
@@ -7245,7 +7266,7 @@ test("browser: short picks retry once, retain paged history after failure, and i
   ).json();
   expect(initialReports.items).toHaveLength(1);
   await expect(orderRow).toContainText(
-    "25 ordered / 23 reserved / 0 shipped / 0 canceled",
+    "25 ordered · 23 reserved · 0 shipped · 0 canceled",
   );
   const after = await snapshot(),
     stock = after.stock.filter((u: any) => u.product_id === productId);
@@ -7328,7 +7349,7 @@ test("browser: short picks retry once, retain paged history after failure, and i
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(orderRow).toContainText(
-    "25 ordered / 0 reserved / 1 shipped / 24 canceled",
+    "25 ordered · 0 reserved · 1 shipped · 24 canceled",
   );
   const final = await snapshot();
   expect(
@@ -7415,6 +7436,15 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
     serials: ["EVD-SERIAL"],
     bin: "EVD",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -7645,6 +7675,7 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await openSignIn(page, "customer");
   await page
     .getByLabel("Email", { exact: true })
     .fill("evidence-buyer@example.test");
@@ -7742,6 +7773,15 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     serials: ["RSH-OLD", "RSH-NEW", "RSH-SPARE"],
     bin: "REP",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -8063,6 +8103,7 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     currentPassword: "long-test-only-password",
   });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await openSignIn(page, "customer");
   await page
     .getByLabel("Email", { exact: true })
     .fill("shipping-buyer@example.test");
@@ -8158,6 +8199,15 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     serials: ["DSH-OLD", "DSH-NEW", "DSH-SPARE"],
     bin: "REP",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -8365,6 +8415,7 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     currentPassword: "long-test-only-password",
   });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await openSignIn(page, "customer");
   await page
     .getByLabel("Email", { exact: true })
     .fill("delivery-browser-buyer@example.test");
@@ -8460,6 +8511,15 @@ test("browser: shipment pages retain rows after failure and discard continuation
     serials: [],
     bin: "PAGES",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -8683,10 +8743,7 @@ test("browser: shipment pages retain rows after failure and discard continuation
         page.getByRole("button", { name: "Refresh", exact: true }),
       ).toBeEnabled();
       await expect(panel.locator("tbody tr")).toHaveCount(20);
-    } else
-      await expect(
-        page.getByRole("button", { name: "Sign in", exact: true }),
-      ).toBeVisible();
+    } else await expectSignedOut(page);
     const delivered = page.waitForResponse((r) =>
       r.url().includes("/api/shipments/page?after="),
     );
@@ -8724,6 +8781,8 @@ test("browser: event diagnostics preserve pages and exact reviewed retries witho
     p: Page,
     email: string,
     password = "long-event-test-password",
+    // Staff land on Overview; buyers land on their Shop workspace.
+    home = "Overview",
   ) => {
     p.on("pageerror", (e) => errors.push(e.message));
     await p.goto("/#sign-in");
@@ -8731,7 +8790,7 @@ test("browser: event diagnostics preserve pages and exact reviewed retries witho
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   await login(page, "event-admin@example.test");
@@ -8952,15 +9011,28 @@ test("browser: event diagnostics preserve pages and exact reviewed retries witho
       buyer,
       "refund-buyer@example.test",
       "long-notice-test-password",
+      "Shop",
     );
-    await nav(buyer, "Security");
+    // The trade portal lists customer pages only; staff system pages such as
+    // Event reporting are absent rather than hidden behind a category.
+    const buyerNavigation = buyer.getByRole("navigation", {
+      name: "Workspace",
+      exact: true,
+    });
     await expect(
-      buyer
-        .getByRole("navigation", {
-          name: "System & controls pages",
-          exact: true,
-        })
-        .getByRole("button", { name: "Event reporting", exact: true }),
+      buyerNavigation.getByRole("button", { name: "Shop", exact: true }),
+    ).toBeVisible();
+    await expect(
+      buyerNavigation.getByRole("button", {
+        name: "System & controls",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      buyerNavigation.getByRole("button", {
+        name: "Event reporting",
+        exact: true,
+      }),
     ).toHaveCount(0);
     expect((await buyer.request.get(endpoint)).status()).toBe(403);
     expect(
@@ -9024,7 +9096,8 @@ test("browser: customers review immutable provider terms, stale consent stops, a
   browser,
 }) => {
   const errors: string[] = [];
-  const login = async (p: Page, email: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (p: Page, email: string, home = "Overview") => {
     p.on("pageerror", (e) => errors.push(e.message));
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
@@ -9033,7 +9106,7 @@ test("browser: customers review immutable provider terms, stale consent stops, a
       .fill("long-test-only-password");
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
     await nav(p, "Customers");
   };
@@ -9044,7 +9117,7 @@ test("browser: customers review immutable provider terms, stale consent stops, a
     }),
     buyerPage = await context.newPage();
   try {
-    await login(buyerPage, "named-carriers@example.test");
+    await login(buyerPage, "named-carriers@example.test", "Shop");
     const account = (
       await (await buyerPage.request.get("/api/dashboard")).json()
     ).accounts[0];
@@ -9228,7 +9301,8 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  const login = async (p: Page, email: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (p: Page, email: string, home = "Overview") => {
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
@@ -9236,11 +9310,11 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
       .fill("long-test-only-password");
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
     await nav(p, "Customers");
   };
-  await login(page, "history-buyer@example.test");
+  await login(page, "history-buyer@example.test", "Shop");
   const before = await stockFactsDashboard(page);
   const account = before.accounts[0];
   const versionsUrl = `/api/accounts/${account.id}/provider-acceptance-versions`;
@@ -9444,7 +9518,7 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
     const otherContext = await browser.newContext();
     try {
       const other = await otherContext.newPage();
-      await login(other, "empty-history@example.test");
+      await login(other, "empty-history@example.test", "Shop");
       expect((await other.request.get(versionsUrl)).status()).toBe(403);
       expect((await other.request.get(acceptanceUrl)).status()).toBe(403);
       await other
@@ -9582,7 +9656,8 @@ test("browser: phone order amendments retain accepted money, retry lost response
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const login = async (email: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (email: string, home = "Overview") => {
     await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page
@@ -9590,7 +9665,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
       .fill("long-test-only-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
+      page.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   const cmd = async (name: string, data: unknown) => {
@@ -9622,6 +9697,15 @@ test("browser: phone order amendments retain accepted money, retry lost response
     taxBasisPoints: 1300,
   });
   const warehouseId = (await dashboard()).warehouses[0].id;
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
+  });
   const cart = await cmd("cart.save", {
     accountId: account.id,
     warehouseId,
@@ -9644,12 +9728,20 @@ test("browser: phone order amendments retain accepted money, retry lost response
     page.getByRole("button", { name: "Refresh", exact: true }),
   ).toBeEnabled();
   await nav(page, "Orders", "Orders");
+  // Buyers' order queues omit the (redundant) customer name, so locate the
+  // row by its order for both staff and buyer views.
   const row = page
     .getByRole("row")
-    .filter({ hasText: "Synthetic amendment phone customer" })
+    .filter({
+      has: page.getByRole("button", {
+        name: `Open order ${accepted.id}`,
+        exact: true,
+      }),
+    })
     .filter({
       has: page.locator('summary[aria-label^="Actions for order"]'),
     });
+  await expect(row).toContainText("Synthetic amendment phone customer");
   const history = page.getByRole("region", {
     name: "Order amendment history",
     exact: true,
@@ -9706,7 +9798,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
   await page.unroute("**/api/commands/order.amend");
-  await expect(row).toContainText("2 ordered / 0 reserved");
+  await expect(row).toContainText("2 ordered · 0 reserved");
   const amended = (await dashboard()).orders.find(
     (o: any) => o.id === accepted.id,
   );
@@ -9751,7 +9843,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
-  await login("amendment-phone@example.test");
+  await login("amendment-phone@example.test", "Shop");
   await nav(page, "Orders", "Orders");
   await expect(
     page.locator('summary[aria-label^="Actions for order"]'),
@@ -9873,7 +9965,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
     .getByRole("button", { name: "Save amendment", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
-  await expect(row).toContainText("1 ordered / 0 reserved");
+  await expect(row).toContainText("1 ordered · 0 reserved");
   records = await (
     await page.request.get(`/api/orders/${accepted.id}/amendments`)
   ).json();
@@ -9899,7 +9991,8 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const login = async (email: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (email: string, home = "Overview") => {
     await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page
@@ -9907,7 +10000,7 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
       .fill("long-test-only-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
+      page.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   const cmd = async (name: string, data: unknown) => {
@@ -9964,6 +10057,15 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
       bin: `RESERVATION-${i}`,
       quarantine: false,
     });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
+  });
   const cart = await cmd("cart.save", {
     accountId: account.id,
     warehouseId,
@@ -9995,12 +10097,20 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
     page.getByRole("button", { name: "Refresh", exact: true }),
   ).toBeEnabled();
   await nav(page, "Orders", "Orders");
+  // Buyers' order queues omit the (redundant) customer name, so locate the
+  // row by its order for both staff and buyer views.
   const row = page
     .getByRole("row")
-    .filter({ hasText: "Synthetic reservation phone customer" })
+    .filter({
+      has: page.getByRole("button", {
+        name: `Open order ${accepted.id}`,
+        exact: true,
+      }),
+    })
     .filter({
       has: page.locator('summary[aria-label^="Actions for order"]'),
     });
+  await expect(row).toContainText("Synthetic reservation phone customer");
   await openStockActions(row);
   const opener = row.getByRole("button", {
     name: "View reservation history",
@@ -10131,7 +10241,7 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   expect(keys[0]).toBe(keys[1]);
   expect(payloads[0]).toEqual(payloads[1]);
   await page.unroute("**/api/commands/order.reservation.expire");
-  await expect(row).toContainText("2 ordered / 1 reserved");
+  await expect(row).toContainText("2 ordered · 1 reserved");
   order = (await dashboard()).orders.find((o: any) => o.id === accepted.id);
   expect(order.total).toBe(original.total);
   expect(order.lines[0]).toMatchObject({
@@ -10184,14 +10294,16 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
       currentPassword: "long-test-only-password",
     });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await login("reservation-other@example.test");
+  await expectSignedOut(page);
+  await login("reservation-other@example.test", "Shop");
   expect(
     (
       await page.request.get(`/api/orders/${accepted.id}/reservations`)
     ).status(),
   ).toBe(403);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await login("reservation-buyer@example.test");
+  await expectSignedOut(page);
+  await login("reservation-buyer@example.test", "Shop");
   await nav(page, "Orders", "Orders");
   await expect(row).toContainText("Reservation deadline:");
   await openStockActions(row);
@@ -10296,7 +10408,8 @@ test("browser: phone checkout replacement reviews partial balance and retries a 
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const login = async (p: Page, email: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (p: Page, email: string, home = "Overview") => {
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
@@ -10304,7 +10417,7 @@ test("browser: phone checkout replacement reviews partial balance and retries a 
       .fill("long-test-only-password");
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   await login(page, "admin@example.test");
@@ -10464,7 +10577,7 @@ test("browser: phone checkout replacement reviews partial balance and retries a 
   });
   try {
     const buyer = await buyerContext.newPage();
-    await login(buyer, "checkout-buyer@example.test");
+    await login(buyer, "checkout-buyer@example.test", "Shop");
     await nav(buyer, "Billing", "Provider activity");
     const buyerRows = buyer
       .getByRole("row")
@@ -10781,6 +10894,11 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
       },
     });
     expect(grant.status()).toBe(200);
+    // The reviewed access change ends the reader's sessions. The restored
+    // workspace hash makes the next sign-in a same-document navigation, so
+    // reload to observe the ended session before signing in again.
+    await reader.reload();
+    await expectSignedOut(reader);
     await login(reader, "carrier-reader@example.test");
     const permitted = await reader.request.get(
       `/api/shipments/${shipment.id}/carrier`,
@@ -10826,8 +10944,9 @@ test("browser: phone checkout history pages frozen observations, preserves retri
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    // Every account signed in here is a buyer, which lands on Shop.
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: "Shop", exact: true }),
     ).toBeVisible();
   };
   await login(page, "checkout-buyer@example.test");
@@ -11329,8 +11448,10 @@ test("browser: cash refund pages and on-demand history retain failed pages and c
     .getByLabel("Password", { exact: true })
     .fill("long-notice-test-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  // Sign-out leaves the workspace location at Overview, which the buyer
+  // restores under its customer label, Reports.
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Reports", exact: true }),
   ).toBeVisible();
   const ownRefundId = initial.items[0].id;
   expect((await page.request.get("/api/billing/refunds/page")).status()).toBe(
@@ -11420,6 +11541,8 @@ test("browser: required role MFA blocks workspace, retries and cancels setup rea
   await page
     .getByRole("button", { name: "Back to sign in", exact: true })
     .click();
+  // Same reload-dependent sign-out destination as the shipment journeys.
+  await openSignIn(page, "staff");
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
@@ -11464,11 +11587,9 @@ test("browser: required role MFA blocks workspace, retries and cancels setup rea
   await panel
     .getByRole("button", { name: "Enable authenticator", exact: true })
     .click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   expect((await page.request.get("/api/dashboard")).status()).toBe(401);
   expect(workspaceReads).toEqual([]);
@@ -11540,11 +11661,9 @@ test("browser: required MFA recovery renewal keeps the factor, cancels stale res
   await panel
     .getByRole("button", { name: "Enable authenticator", exact: true })
     .click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   await login(old[0]);
   await expect(
@@ -11615,11 +11734,9 @@ test("browser: required MFA recovery renewal keeps the factor, cancels stale res
   await prepare.click();
   await signedOutRead;
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   release();
   await expect(newCodes).toHaveCount(0);
@@ -11779,11 +11896,9 @@ test("browser: required MFA recovery renewal keeps the factor, cancels stale res
   await renewal
     .getByRole("button", { name: "Confirm replacement codes", exact: true })
     .click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Recovery codes replaced.", { exact: false }),
@@ -11844,11 +11959,9 @@ test("browser: required MFA authenticator replacement verifies both factors, can
   await panel
     .getByRole("button", { name: "Enable authenticator", exact: true })
     .click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   await login(old[0]);
   await expect(
@@ -11922,11 +12035,9 @@ test("browser: required MFA authenticator replacement verifies both factors, can
   await prepare.click();
   await signedOutRead;
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   release();
   await expect(newCodes).toHaveCount(0);
@@ -12104,11 +12215,9 @@ test("browser: required MFA authenticator replacement verifies both factors, can
   await renewal
     .getByRole("button", { name: "Confirm new authenticator", exact: true })
     .click();
+  // Outside the native demo, the sign-in form is headed "Account credentials".
   await expect(
-    page.getByRole("heading", {
-      name: "Sign in to your workspace",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Account credentials", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Authenticator replaced.", { exact: false }),
@@ -12130,7 +12239,8 @@ test("browser: recorded payment pages preserve USD without dashboard invoices, r
     errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  const login = async (email: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (email: string, home = "Overview") => {
     await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page
@@ -12138,7 +12248,7 @@ test("browser: recorded payment pages preserve USD without dashboard invoices, r
       .fill("long-test-only-password");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
+      page.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   await login("admin@example.test");
@@ -12287,7 +12397,10 @@ test("browser: recorded payment pages preserve USD without dashboard invoices, r
     await (await page.request.get(origin + "/api/billing/payments")).json(),
   ).toEqual(paymentsBefore);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await login("payment-pages-buyer@example.test");
+  // Sign-out completes asynchronously; navigating to sign-in before it lands
+  // would race the still-active workspace location handling.
+  await expectSignedOut(page);
+  await login("payment-pages-buyer@example.test", "Shop");
   expect(
     (await page.request.get(origin + "/api/billing/payments/page")).status(),
   ).toBe(403);
@@ -12457,9 +12570,23 @@ test("browser: invoice refund payment selection pages, retries and cancels befor
   await aborted;
   release();
   await page.unroute(firstPattern);
+  // Dashboard reports are stamped with their request time ("as of"); every
+  // other dashboard fact must be unchanged by the abandoned selection.
+  const withoutReportTime = (value: any): any =>
+    Array.isArray(value)
+      ? value.map(withoutReportTime)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .filter(([key]) => key !== "asOf" && key !== "agingAsOf")
+              .map(([key, item]) => [key, withoutReportTime(item)]),
+          )
+        : value;
   expect(
-    await (await page.request.get(origin + "/api/dashboard")).json(),
-  ).toEqual(before);
+    withoutReportTime(
+      await (await page.request.get(origin + "/api/dashboard")).json(),
+    ),
+  ).toEqual(withoutReportTime(before));
   expect(
     await (await page.request.get(origin + "/api/billing/payments")).json(),
   ).toEqual(beforePayments);
@@ -12514,7 +12641,12 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  const login = async (email: string, password = "long-test-only-password") => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (
+    email: string,
+    password = "long-test-only-password",
+    home = "Overview",
+  ) => {
     await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
@@ -12524,7 +12656,7 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     const csrf = (await (await reply).json()).csrf;
     await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
+      page.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
     return csrf;
   };
@@ -12570,6 +12702,15 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
     serials: ["COV-S1", "COV-S2"],
     bin: "A",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -12740,7 +12881,12 @@ test("browser: sold coverage is on demand, retries, clears serial changes, cance
     await opener.click();
     await select.selectOption({ label: "COV-S2" });
   }
-  await login("coverage-browser@example.test", "long-user-test-password");
+  await expectSignedOut(page);
+  await login(
+    "coverage-browser@example.test",
+    "long-user-test-password",
+    "Shop",
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
   await opener.click();
@@ -12820,6 +12966,15 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
     serials: ["DEC-SERIAL", "DEC-SERIAL2"],
     bin: "DEC",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -13089,8 +13244,10 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
     .getByLabel("Password", { exact: true })
     .fill("long-decision-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  // Sign-out leaves the workspace location at Overview, which the buyer
+  // restores under its customer label, Reports.
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Reports", exact: true }),
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
@@ -13124,13 +13281,14 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  const login = async (email: string, password: string) => {
+  // Staff land on Overview; buyers land on their Shop workspace.
+  const login = async (email: string, password: string, home = "Overview") => {
     await page.goto("/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
+      page.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   await login("admin@example.test", "long-test-only-password");
@@ -13180,6 +13338,15 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
     serials,
     bin: "SS-PAGE",
     quarantine: false,
+  });
+  // Purchasing access is explicit per customer; grant only this synthetic product.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const cart = await cmd("cart.save", {
     accountId: account.id,
@@ -13232,7 +13399,12 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
     currentPassword: "long-test-only-password",
   });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await login("sold-search-buyer@example.test", "long-user-test-password");
+  await expectSignedOut(page);
+  await login(
+    "sold-search-buyer@example.test",
+    "long-user-test-password",
+    "Shop",
+  );
   const buyerDashboard = await (
     await page.request.get("/api/dashboard")
   ).json();
@@ -13390,7 +13562,12 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
     await nav(page, "Returns");
     await opener.click();
   }
-  await login("sold-search-buyer@example.test", "long-user-test-password");
+  await expectSignedOut(page);
+  await login(
+    "sold-search-buyer@example.test",
+    "long-user-test-password",
+    "Shop",
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
   await page
@@ -13474,9 +13651,11 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
       await page
         .getByRole("button", { name: "Menu", exact: true })
         .press("Enter");
+      // The trade portal menu lists customer pages; Reports is the buyer's
+      // Overview page.
       await page
         .getByRole("navigation", { name: "Workspace" })
-        .getByRole("button", { name: "Workspace", exact: true })
+        .getByRole("button", { name: "Reports", exact: true })
         .press("Enter");
     } else
       await page
