@@ -255,21 +255,23 @@ export function InvoiceDetail({
                 <tbody>
                   {invoice.lines.map((l: Item) => (
                     <tr key={l.id}>
-                      <td>
+                      <td data-label="Description">
                         {l.description}
                         {l.kind === "shipping" && <small> · Shipping</small>}
                         {l.credited_quantity > 0 && (
                           <small> · {l.credited_quantity} credited</small>
                         )}
                       </td>
-                      <td className="numeric">{l.quantity}</td>
-                      <td className="numeric">
+                      <td className="numeric" data-label="Quantity">
+                        {l.quantity}
+                      </td>
+                      <td className="numeric" data-label="Unit price">
                         {formatMoney(l.unit_price, currency)}
                       </td>
-                      <td className="numeric">
+                      <td className="numeric" data-label="Unit tax">
                         {formatMoney(l.unit_tax, currency)}
                       </td>
-                      <td className="numeric">
+                      <td className="numeric" data-label="Line total">
                         {formatMoney(
                           l.quantity * (l.unit_price + l.unit_tax),
                           currency,

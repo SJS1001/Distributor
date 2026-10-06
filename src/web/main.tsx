@@ -1832,7 +1832,9 @@ function App() {
             {rows.map((r, index) => (
               <tr key={r.id ?? index}>
                 {cells(r).map((cell, i) => (
-                  <td key={i}>{cell}</td>
+                  <td key={i} data-label={columns[i]}>
+                    {cell}
+                  </td>
                 ))}
               </tr>
             ))}
@@ -2665,7 +2667,9 @@ function App() {
               <div hidden={!!route.orderId}>
                 {table(
                   [
-                    "Customer / order",
+                    // A buyer only sees their own account, so the customer
+                    // name is redundant in their order queue.
+                    staff ? "Customer / order" : "Order",
                     "Warehouse",
                     "Lines",
                     "Status",
@@ -2674,8 +2678,10 @@ function App() {
                   orderQueue.items,
                   (o: Item) => [
                     <>
-                      <strong>{accountName(o.account_id)}</strong>
-                      <small>{shippingSummary(o.shipping, currency)}</small>
+                      {staff && <strong>{accountName(o.account_id)}</strong>}
+                      {staff && (
+                        <small>{shippingSummary(o.shipping, currency)}</small>
+                      )}
                       <button
                         type="button"
                         className="record-link"
@@ -2688,6 +2694,9 @@ function App() {
                       >
                         Open order <code>{o.id.slice(0, 8)}</code>
                       </button>
+                      {!staff && (
+                        <small>{shippingSummary(o.shipping, currency)}</small>
+                      )}
                     </>,
                     warehouseName(o.warehouse_id),
                     o.lines.map((l: Item) => (
@@ -5004,7 +5013,9 @@ function App() {
                   onFilter={(invoiceBalance) => updateRoute({ invoiceBalance })}
                 />
                 {table(
-                  ["Invoice", "Customer", "Total", "Balance", "Actions"],
+                  staff
+                    ? ["Invoice", "Customer", "Total", "Balance", "Actions"]
+                    : ["Invoice", "Total", "Balance", "Actions"],
                   invoiceQueue.items,
                   (i: Item) => [
                     <>
@@ -5049,7 +5060,7 @@ function App() {
                         </small>
                       )}
                     </>,
-                    accountName(i.account_id),
+                    ...(staff ? [accountName(i.account_id)] : []),
                     <>
                       {money(i.total, i.currency)}
                       <small>{shippingSummary(i.shipping, i.currency)}</small>
@@ -6899,7 +6910,10 @@ function App() {
                 <>
                   {" "}
                   {!staff && (
-                    <button onClick={() => navigate({ page: "Returns" })}>
+                    <button
+                      className="secondary"
+                      onClick={() => navigate({ page: "Returns" })}
+                    >
                       Returns and warranty requests
                     </button>
                   )}
@@ -7765,7 +7779,7 @@ function App() {
             <h2>Your sign-in security</h2>
             <p>
               {extra.security?.email} · {extra.security?.sessions ?? 0} active{" "}
-              {extra.security?.sessions === 1 ? "session" : "sessions"}.
+              {(extra.security?.sessions ?? 0) === 1 ? "session" : "sessions"}.
               Password changes end every session.
             </p>
             <div className="ops-security-grid">

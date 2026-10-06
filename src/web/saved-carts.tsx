@@ -76,6 +76,11 @@ export function SavedCarts({
     }
   };
   const locked = disabled || busy;
+  // A single-account viewer (a buyer) gains nothing from a customer column.
+  const multipleAccounts = accounts.length > 1;
+  const columns = multipleAccounts
+    ? ["Customer", "Warehouse", "Items", "Actions"]
+    : ["Warehouse", "Items", "Actions"];
   return (
     <section aria-label="Saved carts">
       <h2>Saved carts</h2>
@@ -164,7 +169,7 @@ export function SavedCarts({
           <table>
             <thead>
               <tr>
-                {["Customer", "Warehouse", "Items", "Actions"].map((h) => (
+                {columns.map((h) => (
                   <th key={h}>{h}</th>
                 ))}
               </tr>
@@ -172,13 +177,17 @@ export function SavedCarts({
             <tbody>
               {page.items.map((c) => (
                 <tr key={c.id}>
-                  <td>{accountName(c.account_id)}</td>
-                  <td>{warehouseName(c.warehouse_id)}</td>
-                  <td>
+                  {multipleAccounts && (
+                    <td data-label="Customer">{accountName(c.account_id)}</td>
+                  )}
+                  <td data-label="Warehouse">
+                    {warehouseName(c.warehouse_id)}
+                  </td>
+                  <td data-label="Items">
                     {c.products} {c.products === 1 ? "product" : "products"} ·{" "}
                     {c.units} {c.units === 1 ? "unit" : "units"}
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <div className="actions">
                       <button
                         type="button"

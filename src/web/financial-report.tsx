@@ -303,7 +303,10 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
                           : "Sales after credits"}
                       </span>
                       <strong>{money(totals.netSales, currency)}</strong>
-                      <small>Before tax · {totals.invoiceCount} invoices</small>
+                      <small>
+                        Before tax · {totals.invoiceCount}{" "}
+                        {totals.invoiceCount === 1 ? "invoice" : "invoices"}
+                      </small>
                     </div>
                     <div>
                       <span>Credits issued</span>
@@ -314,7 +317,10 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
                         )}
                       </strong>
                       <small>
-                        Before tax · {totals.creditCount} credit notes
+                        Before tax · {totals.creditCount}{" "}
+                        {totals.creditCount === 1
+                          ? "credit note"
+                          : "credit notes"}
                       </small>
                     </div>
                     <div>
