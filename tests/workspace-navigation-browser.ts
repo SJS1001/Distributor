@@ -189,7 +189,8 @@ test("browser: Inventory sub-tabs retain recovery through pending and failed que
 }) => {
   const { transferArrivalBrowser } =
     await import("./transfer-arrival-browser-fixture.ts");
-  const { navigateWorkspace } = await import("./workspace-navigation.ts");
+  const { navigateWorkspace, withRowActions } =
+    await import("./workspace-navigation.ts");
   const cleanup: (() => void)[] = [];
   const http = await transferArrivalBrowser((fn) => cleanup.push(fn));
   const origin = "http://127.0.0.1:3161";
@@ -209,9 +210,11 @@ test("browser: Inventory sub-tabs retain recovery through pending and failed que
       name: "Transfer queue",
       exact: true,
     });
-    await queue
-      .getByRole("row")
-      .filter({ hasText: "ARRIVAL-1" })
+    await (
+      await withRowActions(
+        queue.getByRole("row").filter({ hasText: "ARRIVAL-1" }),
+      )
+    )
       .getByRole("button", { name: "Receive transfer", exact: true })
       .click();
     const dialog = page.getByRole("dialog", {

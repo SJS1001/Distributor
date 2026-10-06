@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { transferQueueStates } from "../src/shared/transfer-queue.ts";
 const origin = "http://127.0.0.1:3160",
   pattern = "**/api/transfers/page?*";
@@ -84,7 +84,11 @@ test("browser: phone transfer pages replace twenty rows, retry the exact cursor 
   );
   await expect(q.locator("tbody tr")).toHaveCount(0);
   await expect(
-    q.getByRole("button", { name: "Receive transfer", exact: true }),
+    q.getByRole("button", {
+      name: "Receive transfer",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   await expect(
     q.getByRole("button", { name: "Retry transfer queue", exact: true }),
@@ -130,7 +134,9 @@ test("browser: phone transfer pages replace twenty rows, retry the exact cursor 
   const row = q
     .getByRole("row")
     .filter({ has: page.getByTitle(target.id, { exact: true }) });
-  await row
+  await (
+    await withRowActions(row)
+  )
     .getByRole("button", { name: "Receive transfer", exact: true })
     .click();
   await page.getByLabel("Units arriving", { exact: true }).fill("1");
@@ -244,7 +250,7 @@ test("browser: transfer support filters all live custody states and retries fail
     ).json();
     await q.getByLabel("Transfer state", { exact: true }).selectOption(state);
     await expect(q.getByRole("status")).toHaveText(
-      `${expected.items.length} transfers on this page · Page 1`,
+      `${expected.items.length} ${expected.items.length === 1 ? "transfer" : "transfers"} on this page · Page 1`,
     );
     await expect(q.locator("tbody tr")).toHaveCount(expected.items.length);
     expect(
@@ -253,13 +259,25 @@ test("browser: transfer support filters all live custody states and retries fail
         .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("title"))),
     ).toEqual(expected.items.map((t: any) => t.id));
     await expect(
-      q.getByRole("button", { name: "Receive transfer", exact: true }),
+      q.getByRole("button", {
+        name: "Receive transfer",
+        exact: true,
+        includeHidden: true,
+      }),
     ).toHaveCount(0);
     await expect(
-      q.getByRole("button", { name: "Approve transit loss", exact: true }),
+      q.getByRole("button", {
+        name: "Approve transit loss",
+        exact: true,
+        includeHidden: true,
+      }),
     ).toHaveCount(0);
     await expect(
-      q.getByRole("button", { name: "Recover lost stock", exact: true }),
+      q.getByRole("button", {
+        name: "Recover lost stock",
+        exact: true,
+        includeHidden: true,
+      }),
     ).toHaveCount(0);
   }
   await q
@@ -269,7 +287,7 @@ test("browser: transfer support filters all live custody states and retries fail
     "reconciled-with-loss",
   );
   await expect(q.getByRole("status")).toHaveText(
-    "1 transfers on this page · Page 1",
+    "1 transfer on this page · Page 1",
   );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(q.getByLabel("Transfer state", { exact: true })).toHaveValue("");

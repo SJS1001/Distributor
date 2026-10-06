@@ -1,6 +1,6 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import { reviewDuringInventoryLoad } from "./transfer-review-loading.ts";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 
 const origin = "http://127.0.0.1:3163";
 type Kind = "loss" | "recovery";
@@ -134,6 +134,9 @@ async function enter(
           })
           .last()
       : row(page, sku);
+  // Transit-loss approval sits in the row Actions disclosure; recovery stays
+  // beside the loss evidence it acts on.
+  if (kind === "loss") await withRowActions(target);
   await target
     .getByRole("button", {
       name: kind === "loss" ? "Approve transit loss" : "Recover lost stock",
@@ -589,6 +592,7 @@ for (const kind of ["loss", "recovery"] as const) {
         row(page, "LOSS-7").getByRole("button", {
           name: kind === "loss" ? "Approve transit loss" : "Recover lost stock",
           exact: true,
+          includeHidden: true,
         }),
       ).toHaveCount(0);
       const refused = await post(page, command(kind), a.key, a.payload, 403);

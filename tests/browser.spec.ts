@@ -2,6 +2,7 @@ import {
   navigateWorkspace,
   navigateAccounting,
   openStockActions,
+  openVisibleRowActions,
   withRowActions,
 } from "./workspace-navigation.ts";
 import "./workspace-navigation-browser.ts";
@@ -1646,7 +1647,9 @@ test("browser: partial transfer retries preserve transit stock and separate dama
     [1, "damaged", "BROWSER-TRANSFER-DAMAGE", 1],
     [1, "quarantine", "BROWSER-TRANSFER-QUARANTINE", 0],
   ] as const) {
-    await transfer
+    await (
+      await withRowActions(transfer)
+    )
       .getByRole("button", { name: "Receive transfer", exact: true })
       .click();
     await expect(
@@ -1687,7 +1690,11 @@ test("browser: partial transfer retries preserve transit stock and separate dama
     transfer.getByRole("cell", { name: "received", exact: true }),
   ).toBeVisible();
   await expect(
-    transfer.getByRole("button", { name: "Receive transfer", exact: true }),
+    transfer.getByRole("button", {
+      name: "Receive transfer",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   const dashboard = await stockFactsDashboard(page);
   const product = dashboard.products.find((p: any) => p.sku === "TR-1");
@@ -1740,7 +1747,11 @@ test("browser: two site-limited operators dispatch and scan a serial without des
     "1 dispatched · 0 received · 1 in transit",
   );
   await expect(
-    transfer.getByRole("button", { name: "Receive transfer", exact: true }),
+    transfer.getByRole("button", {
+      name: "Receive transfer",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   const sourceDashboard = await (
     await page.request.get("/api/dashboard")
@@ -1753,7 +1764,9 @@ test("browser: two site-limited operators dispatch and scan a serial without des
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await login("destination@example.test");
   await nav(page, "Inventory", "Transfers");
-  await transfer
+  await (
+    await withRowActions(transfer)
+  )
     .getByRole("button", { name: "Receive transfer", exact: true })
     .click();
   await page
@@ -1881,6 +1894,7 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Orders", "Shipments");
+  await openVisibleRowActions(page);
   await page
     .getByRole("button", { name: "Confirm collection", exact: true })
     .click();
@@ -2185,7 +2199,9 @@ test("browser: split packing retries once, void releases holds, and each handove
     page.getByRole("row").filter({
       has: page.getByRole("cell", { name: destination, exact: true }),
     });
-  await row("Split collection two")
+  await (
+    await withRowActions(row("Split collection two"))
+  )
     .getByRole("button", { name: "Void packing", exact: true })
     .click();
   await page
@@ -2210,7 +2226,9 @@ test("browser: split packing retries once, void releases holds, and each handove
     "Split collection one",
     "Split collection replacement",
   ]) {
-    await row(destination)
+    await (
+      await withRowActions(row(destination))
+    )
       .getByRole("button", { name: "Confirm collection", exact: true })
       .click();
     await page
@@ -2307,7 +2325,9 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
       await route.abort("failed");
     } else await route.continue();
   });
-  await tr
+  await (
+    await withRowActions(tr)
+  )
     .getByRole("button", { name: "Approve transit loss", exact: true })
     .click();
   await page
@@ -2334,7 +2354,9 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
   await expect(tr).toContainText(
     "BROWSER-LOSS-1 · 2 loss approved · 2 unrecovered",
   );
-  await tr
+  await (
+    await withRowActions(tr)
+  )
     .getByRole("button", { name: "Receive transfer", exact: true })
     .click();
   await expect(page.getByLabel("Units arriving", { exact: true })).toHaveValue(
@@ -2354,7 +2376,11 @@ test("browser: administrator reconciles missing transfer stock and recovers foun
     tr.getByRole("cell", { name: "reconciled-with-loss", exact: true }),
   ).toBeVisible();
   await expect(
-    tr.getByRole("button", { name: "Receive transfer", exact: true }),
+    tr.getByRole("button", {
+      name: "Receive transfer",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   for (const [condition, ref, remaining] of [
     ["quarantine", "BROWSER-FOUND-1", 1],
@@ -2457,7 +2483,9 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await next(page);
   await nav(page, "Inventory", "Cycle counts");
   const count = page.getByRole("row").filter({ hasText: "BROWSER-COUNT" });
-  await count
+  await (
+    await withRowActions(count)
+  )
     .getByRole("button", { name: "Record observation", exact: true })
     .click();
   await page.getByLabel("Physical units observed", { exact: true }).fill("5");
@@ -2467,7 +2495,11 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await next(page);
   await expect(count).toContainText("submitted");
   await expect(
-    count.getByRole("button", { name: "Approve count", exact: true }),
+    count.getByRole("button", {
+      name: "Approve count",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   await findLot();
   await expect(lot.locator(".stock-quantities > span")).toHaveText([
@@ -2489,7 +2521,9 @@ test("browser: warehouse count observation survives reload, administrator retry 
       await route.abort("failed");
     } else await route.continue();
   });
-  await count
+  await (
+    await withRowActions(count)
+  )
     .getByRole("button", { name: "Approve count", exact: true })
     .click();
   await page
@@ -2516,7 +2550,9 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await next(page);
   await nav(page, "Inventory", "Cycle counts");
   const stale = page.getByRole("row").filter({ hasText: "BROWSER-STALE" });
-  await stale
+  await (
+    await withRowActions(stale)
+  )
     .getByRole("button", { name: "Record observation", exact: true })
     .click();
   await page.getByLabel("Physical units observed", { exact: true }).fill("4");
@@ -2535,7 +2571,9 @@ test("browser: warehouse count observation survives reload, administrator retry 
     .fill("Inspection changed stock after count cutoff");
   await next(page);
   await nav(page, "Inventory", "Cycle counts");
-  await stale
+  await (
+    await withRowActions(stale)
+  )
     .getByRole("button", { name: "Approve count", exact: true })
     .click();
   await page
@@ -2549,7 +2587,9 @@ test("browser: warehouse count observation survives reload, administrator retry 
     .getByRole("dialog")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
-  await stale
+  await (
+    await withRowActions(stale)
+  )
     .getByRole("button", { name: "Reject count", exact: true })
     .click();
   await page
@@ -6825,7 +6865,9 @@ test("browser: serial loss review and recovery retain history, retry once and re
   const reviewRow = panel
     .getByRole("row")
     .filter({ hasText: "CUSTODY-UI-MISSING" });
-  await reviewRow
+  await (
+    await withRowActions(reviewRow)
+  )
     .getByRole("button", { name: "Approve serial loss", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toContainText("original stock value");
@@ -6844,7 +6886,9 @@ test("browser: serial loss review and recovery retain history, retry once and re
     .getByRole("button", { name: "Load more custody reviews", exact: true })
     .click();
   await expect(reviewRow).toContainText("approved");
-  await reviewRow
+  await (
+    await withRowActions(reviewRow)
+  )
     .getByRole("button", { name: "Recover serial", exact: true })
     .click();
   await page.getByLabel("Scan recovered serial", { exact: true }).fill(serial);
@@ -7100,9 +7144,11 @@ test("browser: short picks retry once, retain paged history after failure, and i
   ).toHaveLength(23);
   await history.getByRole("button", { name: "Close", exact: true }).click();
   await nav(page, "Orders", "Shipments");
-  await page
-    .getByRole("row")
-    .filter({ hasText: "Short-pick actual collection" })
+  await (
+    await withRowActions(
+      page.getByRole("row").filter({ hasText: "Short-pick actual collection" }),
+    )
+  )
     .getByRole("button", { name: "Confirm collection", exact: true })
     .click();
   await page
@@ -8012,7 +8058,9 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     reference: string,
     evidence: string,
   ) => {
-    await row
+    await (
+      await withRowActions(row)
+    )
       .getByRole("button", { name: "Record delivery outcome", exact: true })
       .click();
     await page
@@ -8087,6 +8135,7 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     name: "View delivery history",
     exact: true,
   });
+  await openStockActions(row);
   await opener.click();
   const dialog = page.getByRole("dialog", {
     name: "Shipment delivery history",
@@ -8139,7 +8188,11 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(row).toContainText("Delivery: delivered · v24");
   await expect(
-    row.getByRole("button", { name: "Record delivery outcome", exact: true }),
+    row.getByRole("button", {
+      name: "Record delivery outcome",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   expect(facts(await dashboard())).toEqual(facts(before));
   await cmd("user.create", {
@@ -8163,8 +8216,13 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
   await nav(page, "Orders", "Shipments");
   await expect(row).toContainText("Delivery: delivered · v24");
   await expect(
-    row.getByRole("button", { name: "Record delivery outcome", exact: true }),
+    row.getByRole("button", {
+      name: "Record delivery outcome",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
+  await openStockActions(row);
   await opener.click();
   await expect(dialog).toContainText("v2 · lost");
   await expect(dialog).not.toContainText("Private");
@@ -10360,7 +10418,9 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
     return row;
   };
   const row = await showCarrierRow(page);
-  await row
+  await (
+    await withRowActions(row)
+  )
     .getByRole("button", { name: "Review carrier booking", exact: true })
     .click();
   const review = page.getByRole("region", {
@@ -10506,7 +10566,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   expect(history.map((b: any) => b.state)).toEqual(["canceled", "pending"]);
   await page.reload();
   await (
-    await showCarrierRow(page)
+    await withRowActions(await showCarrierRow(page))
   )
     .getByRole("button", { name: "Review carrier booking", exact: true })
     .click();
@@ -10576,7 +10636,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
       [first.id, second.id],
     );
     await (
-      await showCarrierRow(reader)
+      await withRowActions(await showCarrierRow(reader))
     )
       .getByRole("button", { name: "Review carrier booking", exact: true })
       .click();

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { reviewDuringInventoryLoad } from "./transfer-review-loading.ts";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 
 const origin = "http://127.0.0.1:3161";
 const pattern = "**/api/commands/transfer.receive";
@@ -44,7 +44,9 @@ async function enter(
   quantity = 2,
   serial = "",
 ) {
-  await row(page, sku)
+  await (
+    await withRowActions(row(page, sku))
+  )
     .getByRole("button", { name: "Receive transfer", exact: true })
     .click();
   await d(page)

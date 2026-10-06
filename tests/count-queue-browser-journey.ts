@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { countQueueStates } from "../src/shared/count-queue.ts";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3164",
   pattern = "**/api/counts/page?*";
 function queue(page: Page) {
@@ -63,7 +63,11 @@ test("browser: phone count pages replace twenty rows, retry exact cursors and re
   await expect(q.getByRole("alert")).toHaveText("Synthetic count page failure");
   await expect(q.locator("tbody tr")).toHaveCount(0);
   await expect(
-    q.getByRole("button", { name: "Record observation", exact: true }),
+    q.getByRole("button", {
+      name: "Record observation",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   await expect(
     q.getByRole("button", { name: "Retry count queue", exact: true }),
@@ -104,7 +108,9 @@ test("browser: phone count pages replace twenty rows, retry exact cursors and re
   await expect(q.getByRole("status")).toContainText("Page 3");
   await page.unroute(pattern);
   const row = q.getByRole("row").filter({ hasText: "SYNTHETIC-COUNT-04" });
-  await row
+  await (
+    await withRowActions(row)
+  )
     .getByRole("button", { name: "Record observation", exact: true })
     .click();
   const observation = page.getByRole("dialog", {
@@ -138,9 +144,11 @@ test("browser: phone count pages replace twenty rows, retry exact cursors and re
     await expect(reviewQueue.getByRole("status")).toHaveText(
       "2 counts on this page · Page 1",
     );
-    await reviewQueue
-      .getByRole("row")
-      .filter({ hasText: "SYNTHETIC-COUNT-04" })
+    await (
+      await withRowActions(
+        reviewQueue.getByRole("row").filter({ hasText: "SYNTHETIC-COUNT-04" }),
+      )
+    )
       .getByRole("button", { name: "Approve count", exact: true })
       .click();
     const approval = reviewer.getByRole("dialog", {
@@ -267,7 +275,7 @@ test("browser: support count filters retry exactly, show no mutation controls an
     ).json();
     await q.getByLabel("Count state", { exact: true }).selectOption(state);
     await expect(q.getByRole("status")).toHaveText(
-      `${expected.items.length} counts on this page · Page 1`,
+      `${expected.items.length} ${expected.items.length === 1 ? "count" : "counts"} on this page · Page 1`,
     );
     expect(
       await q.locator("tbody tr td:first-child strong").allTextContents(),

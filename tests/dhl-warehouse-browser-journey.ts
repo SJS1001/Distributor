@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect, type Locator } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 
@@ -164,14 +164,16 @@ for (const variant of variants)
       })),
     ).toEqual(shipment.lines);
     await navigateWorkspace(page, "Orders", "Shipments");
-    await page
-      .getByRole("row")
-      .filter({
-        has: page.getByRole("cell", {
-          name: shipment.id.slice(0, 8),
-          exact: true,
+    await (
+      await withRowActions(
+        page.getByRole("row").filter({
+          has: page.getByRole("cell", {
+            name: shipment.id.slice(0, 8),
+            exact: true,
+          }),
         }),
-      })
+      )
+    )
       .getByRole("button", { name: "Review carrier booking", exact: true })
       .click();
     const pane = page.getByRole("region", {

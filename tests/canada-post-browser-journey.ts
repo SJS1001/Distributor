@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -476,7 +476,9 @@ test("browser: Canada Post phone group preparation survives a lost reply, recove
     .getByRole("region", { name: "Shipment history", exact: true })
     .getByRole("row")
     .filter({ hasText: last.items[2].shipmentId.slice(0, 8) });
-  await shipmentRow
+  await (
+    await withRowActions(shipmentRow)
+  )
     .getByRole("button", { name: "Review carrier booking", exact: true })
     .click();
   const carrierReview = page.getByRole("region", {

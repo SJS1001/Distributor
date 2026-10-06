@@ -1,0 +1,265 @@
+/* Fulfillment queues: approval requests, shipments, serial reviews, cycle
+   counts and transfers. Builds on .queue-controls, .stock-actions and
+   .record-detail from style.css; only lane-specific layout lives here. */
+
+.fulfillment-queue > .queue-controls {
+  margin-bottom: var(--space-4);
+}
+.fulfillment-queue .queue-controls .queue-field-actions > button {
+  font-size: var(--text-caption);
+}
+.fulfillment-queue > .table-wrap,
+.fulfillment-queue > .empty,
+.fulfillment-queue > .fulfillment-empty {
+  margin-top: 0;
+}
+.fulfillment-queue > p.queue-note {
+  margin: 0 0 var(--space-3);
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  max-width: 82ch;
+}
+.fulfillment-empty {
+  background: #fff;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+}
+.fulfillment-empty strong {
+  display: block;
+  color: var(--ink);
+  font-size: var(--text-control);
+  margin-bottom: 4px;
+}
+
+/* Short record identity with the full id kept in title/aria-label. */
+.queue-id {
+  display: inline-block;
+  font-size: var(--text-caption);
+  color: #4b5f78;
+  background: #f2f5f9;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.queue-id code {
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Workflow state chips. The visible text stays the stored state. */
+.queue-state {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  background: #eef1f5;
+  color: #3d4f66;
+  white-space: nowrap;
+}
+.queue-state[data-tone="active"] {
+  background: #e7effb;
+  color: #23498e;
+}
+.queue-state[data-tone="attention"] {
+  background: #fff2db;
+  color: #7a5214;
+}
+.queue-state[data-tone="done"] {
+  background: #e8f1ea;
+  color: #1d5c32;
+}
+.queue-state[data-tone="problem"] {
+  background: #fbecea;
+  color: #953d33;
+}
+.queue-cell {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+}
+.queue-cell > small {
+  font-size: var(--text-caption);
+  line-height: 1.45;
+}
+
+/* Transfer lines read like order lines: one block per product/serial. */
+.transfer-line {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+}
+.transfer-line + .transfer-line {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.transfer-line small {
+  font-size: var(--text-caption);
+}
+.transfer-loss {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 3px solid #f0d9a8;
+}
+.transfer-loss > button.secondary {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 4px 9px;
+  min-height: 30px;
+  font-size: var(--text-caption);
+}
+.queue-figures {
+  display: flex;
+  gap: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.queue-figures > span {
+  display: grid;
+  min-width: 52px;
+}
+.queue-figures strong {
+  font-size: 16px;
+}
+.queue-figures small {
+  font-size: var(--text-caption);
+}
+
+/* Approval requests: list rows and the focused request record. */
+.request-section-title {
+  margin: var(--space-4) 0 0;
+  font-size: 16px;
+}
+.record-detail-header h3 {
+  margin: 2px 0 6px;
+  font-size: 24px;
+  letter-spacing: -0.3px;
+}
+.record-detail-header h3[data-tone="attention"] {
+  color: #7a5214;
+}
+.record-detail-header h3[data-tone="done"] {
+  color: #1d5c32;
+}
+.record-detail-header h3[data-tone="problem"] {
+  color: #953d33;
+}
+.record-detail-eyebrow .queue-id {
+  margin-left: 4px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.request-figures {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.request-next {
+  margin-top: var(--space-3);
+}
+@media (max-width: 900px) {
+  .request-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.request-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.request-lines > li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-secondary);
+}
+.request-lines > li:first-child {
+  border-top: 0;
+}
+.request-lines > li > span:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.request-facts {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  color: #34475e;
+  font-size: var(--text-secondary);
+}
+.request-facts > p {
+  margin: 0;
+}
+.request-decision fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.request-decision legend {
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 4px;
+  padding: 0;
+}
+.request-decision label {
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-caption);
+  color: #44566b;
+  font-weight: 600;
+}
+.request-decision select,
+.request-decision textarea {
+  font-weight: 400;
+  font-size: var(--text-secondary);
+  color: var(--ink);
+}
+.request-decision p {
+  margin: 0;
+  color: #5a6c82;
+  font-size: var(--text-caption);
+}
+.request-decision button[type="submit"],
+.request-decision fieldset > button {
+  justify-self: start;
+}
+.request-history {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  font-size: var(--text-secondary);
+}
+.request-history p {
+  margin: 2px 0 0;
+  color: #4b5f78;
+}
+.request-message {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid #b9cbe6;
+  background: #f4f8fd;
+  color: #34475e;
+}
+
+@media (max-width: 760px) {
+  .fulfillment-queue .queue-controls .queue-field-actions > button,
+  .transfer-loss > button.secondary {
+    min-height: 44px;
+  }
+  .request-lines > li {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .request-lines > li > span:last-child {
+    text-align: left;
+    white-space: normal;
+  }
+}

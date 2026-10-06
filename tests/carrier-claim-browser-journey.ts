@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect, type Page, type Locator } from "@playwright/test";
 const origin = "http://127.0.0.1:3121";
 const reason = "Synthetic stopped writer and carrier investigation";
@@ -40,14 +40,16 @@ async function native(page: Page) {
 }
 async function ordinary(page: Page, shipmentId: string) {
   await orders(page);
-  await page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("cell", {
-        name: shipmentId.slice(0, 8),
-        exact: true,
+  await (
+    await withRowActions(
+      page.getByRole("row").filter({
+        has: page.getByRole("cell", {
+          name: shipmentId.slice(0, 8),
+          exact: true,
+        }),
       }),
-    })
+    )
+  )
     .getByRole("button", { name: "Review carrier booking", exact: true })
     .click();
   const pane = page.getByRole("region", {
