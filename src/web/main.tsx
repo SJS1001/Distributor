@@ -142,6 +142,7 @@ import type {
 import "./style.css";
 import "./customer-workspace.css";
 import "./equipment-workspace.css";
+import "./overview-dashboard.css";
 const OperationsHealthPanel = deferredPage("Operations health", async () => {
   const module = await import("./operations-health.tsx");
   return { default: module.OperationsHealthPanel };

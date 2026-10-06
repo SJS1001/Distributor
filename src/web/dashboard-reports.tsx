@@ -1,6 +1,30 @@
 import React, { useEffect, useState } from "react";
 
-type Report = { id: string; label: string; content: React.ReactNode };
+type Report = {
+  id: string;
+  label: string;
+  content: React.ReactNode;
+  // Full-width reports (wide tables, filters) always take a whole row.
+  wide?: boolean;
+};
+// Two-column layout: a card left alone in its row (before a wide report or at
+// the end) spans the row, so the grid never shows an empty slot.
+export function reportSpans(reports: { wide?: boolean }[]) {
+  const spans: boolean[] = [];
+  let column = 0;
+  reports.forEach((report, index) => {
+    if (report.wide) {
+      spans.push(true);
+      column = 0;
+      return;
+    }
+    const next = reports[index + 1];
+    const alone = column === 0 && (!next || next.wide === true);
+    spans.push(alone);
+    column = alone ? 0 : (column + 1) % 2;
+  });
+  return spans;
+}
 type Preferences = { order: string[]; hidden: string[] };
 export function readReportPreferences(raw: string | null): Preferences {
   try {
@@ -88,6 +112,7 @@ export function DashboardReports({
     save({ ...preferences, order });
   };
   const visible = ordered.filter((r) => !preferences.hidden.includes(r.id));
+  const spans = reportSpans(visible);
   return (
     <section className="dashboard-reports" aria-label="Workspace reports">
       <div className="report-toolbar">
@@ -146,13 +171,18 @@ export function DashboardReports({
         </details>
       </div>
       {visible.length ? (
-        <div className="overview-charts">
-          {visible.map((report) => (
-            <React.Fragment key={report.id}>{report.content}</React.Fragment>
+        <div className="report-grid">
+          {visible.map((report, index) => (
+            <div
+              key={report.id}
+              className={`report-slot ${spans[index] ? "is-wide" : ""}`}
+            >
+              {report.content}
+            </div>
           ))}
         </div>
       ) : (
-        <div className="dashboard-card">
+        <div className="dashboard-card report-empty-state">
           <h3>Your workspace, your choice</h3>
           <p>
             All report cards are hidden. Open Customize reports to add them

@@ -1,0 +1,465 @@
+/* Staff and customer Overview dashboard: attention tiles, report grid, trend
+   charts. Scoped to .overview so it never leaks into queue pages. */
+
+/* Needs attention: one tile per rule, count prominent, flagged tiles accented. */
+.overview .analytics-attention {
+  margin-top: var(--space-4);
+  padding: 20px 22px;
+}
+.overview .attention-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.overview .attention-head h2 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.3px;
+}
+.overview .attention-summary {
+  color: var(--muted);
+  font-size: var(--text-secondary);
+}
+.overview .attention-summary.is-flagged {
+  color: #8a4b10;
+  font-weight: 600;
+}
+.overview .analytics-attention .attention-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0 var(--space-3);
+}
+.overview .analytics-attention li + li {
+  margin: 0;
+}
+.overview .attention-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label label"
+    "count arrow";
+  align-items: end;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  min-height: 88px;
+  padding: 14px 16px;
+  text-align: left;
+  background: #f8fafc;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-left: 3px solid #c7d1dd;
+  border-radius: 8px;
+  font-weight: 400;
+}
+.overview .attention-item:hover {
+  background: #f1f5fa;
+  filter: none;
+}
+.overview .attention-item > span {
+  grid-area: label;
+  align-self: start;
+  font-size: var(--text-secondary);
+  line-height: 1.45;
+  color: #46576b;
+}
+.overview .attention-item > strong {
+  grid-area: count;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.6px;
+  line-height: 1;
+  color: #6b7a8c;
+  font-variant-numeric: tabular-nums;
+}
+.overview .attention-item > .workspace-icon {
+  grid-area: arrow;
+  width: 16px;
+  color: #8799ae;
+}
+.overview .attention-item.is-flagged {
+  background: #fff8ef;
+  border-color: #f0d9bb;
+  border-left-color: #c77a1f;
+}
+.overview .attention-item.is-flagged > strong {
+  color: #8a4b10;
+}
+.overview .attention-rules,
+.overview .report-basis {
+  font-size: var(--text-secondary);
+  color: var(--muted);
+}
+.overview .attention-rules summary,
+.overview .report-basis summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #3f5167;
+  padding-block: 6px;
+}
+.overview .attention-rules p,
+.overview .report-basis p {
+  margin: var(--space-2) 0 0;
+  line-height: 1.6;
+}
+
+/* Recent orders: the short id is the row's single open control. */
+.overview .recent-orders button.record-link {
+  margin-top: 0;
+}
+.overview .recent-orders .chart-note {
+  font-size: var(--text-secondary);
+}
+
+/* Reports: two even columns; wide or lone cards take the full row. */
+.overview .report-toolbar {
+  align-items: center;
+}
+.overview .report-customizer summary {
+  padding-block: 12px;
+  min-height: 0;
+}
+.overview .report-customizer {
+  padding-block: 0;
+}
+.overview .report-customizer[open] {
+  padding-bottom: var(--space-4);
+}
+.overview .report-preference button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.overview .report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+.overview .report-slot {
+  display: flex;
+  min-width: 0;
+}
+.overview .report-slot.is-wide {
+  grid-column: 1 / -1;
+}
+.overview .report-slot > .dashboard-card {
+  flex: 1;
+  margin: 0;
+}
+.overview .report-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.overview .report-card-head {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.overview .report-card-head h2 {
+  margin: 4px 0 4px;
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+.overview .report-card-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-secondary);
+  line-height: 1.5;
+}
+.overview .report-card .report-basis {
+  margin-top: calc(-1 * var(--space-2));
+}
+.overview .report-empty {
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: var(--text-secondary);
+  text-align: center;
+}
+.overview .report-meters {
+  display: grid;
+  gap: var(--space-3);
+}
+.overview .report-meters h3 {
+  margin: 0;
+  font-size: var(--text-secondary);
+  font-weight: 650;
+  color: #3f5167;
+}
+.overview .report-meter {
+  display: grid;
+  gap: 6px;
+}
+.overview .report-meter-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  color: #3f5167;
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  text-align: left;
+}
+.overview button.report-meter-label {
+  color: #315fbd;
+  font-weight: 600;
+  min-height: 32px;
+  align-items: center;
+}
+.overview button.report-meter-label:hover {
+  background: transparent;
+  color: #23498e;
+  filter: none;
+}
+.overview .report-meter-label strong {
+  color: var(--ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.overview .report-meter small {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.overview .report-meter.is-zero .report-meter-label,
+.overview .report-meter.is-zero .report-meter-label strong {
+  color: #8391a3;
+  font-weight: 500;
+}
+.overview .report-meter .bar-track {
+  height: 6px;
+}
+.overview .report-card-footer {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+.overview .report-card-footer .text-action {
+  min-height: 36px;
+}
+
+/* Trend charts: compact header, readable axis, swatch legend. */
+.overview .analytics-history {
+  padding-top: var(--space-4);
+  border-top: 1px solid #edf0f4;
+}
+.overview .analytics-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+.overview .analytics-history h3 {
+  margin: 0;
+  font-size: var(--text-control);
+  font-weight: 650;
+}
+.overview .analytics-period-total {
+  margin: 0;
+  gap: 6px;
+}
+.overview .analytics-period-total strong {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+}
+.overview .trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.overview .trend-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.overview .trend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.overview .trend-swatch.is-current,
+.overview .trend-swatch.is-invoice {
+  background: #315fbd;
+}
+.overview .trend-swatch.is-invoice {
+  background: #215fa2;
+}
+.overview .trend-swatch.is-previous {
+  background: #cfd7e1;
+}
+.overview .trend-swatch.is-credit {
+  background: #c26a2c;
+}
+.overview .analytics-history details {
+  margin-top: var(--space-2);
+  font-size: var(--text-secondary);
+}
+.overview .analytics-history summary {
+  padding-block: 6px;
+  color: #3f5167;
+}
+.overview .analytics-history details p {
+  margin: var(--space-1) 0 var(--space-2);
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* Financial report trend. */
+.overview .sales-trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.overview .sales-trend-head h3 {
+  margin: 0;
+  font-size: var(--text-control);
+}
+.overview .sales-trend-note {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+/* Daily bar charts: stretching bars, fixed-size HTML axis labels. */
+.overview .daily-bars {
+  display: grid;
+  grid-template-columns: 3.4em minmax(0, 1fr);
+  grid-template-rows: 140px auto;
+  column-gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.overview .sales-trend .daily-bars {
+  grid-template-rows: 180px auto;
+}
+.overview .daily-bars-y {
+  position: relative;
+}
+.overview .daily-bars-y span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.overview .daily-bars svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  background: none;
+  overflow: visible;
+}
+.overview .daily-bars-x {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  padding-top: 6px;
+}
+
+/* Customer portal fills workspace buttons navy; attention tiles and meter
+   labels are content, not commands, so they keep the light treatment there. */
+.customer-shell
+  .workspace-main
+  .overview
+  button:is(.attention-item, .report-meter-label):not(.secondary):not(
+    .record-link
+  ):not([role="tab"]) {
+  background-color: #f8fafc;
+  border-color: var(--line);
+  border-left-color: #c7d1dd;
+  color: var(--ink);
+}
+.customer-shell
+  .workspace-main
+  .overview
+  button.attention-item.is-flagged:not(.secondary):not(.record-link):not(
+    [role="tab"]
+  ) {
+  background-color: #fff8ef;
+  border-color: #f0d9bb;
+  border-left-color: #c77a1f;
+}
+.customer-shell
+  .workspace-main
+  .overview
+  button.report-meter-label:not(.secondary):not(.record-link):not(
+    [role="tab"]
+  ) {
+  background-color: transparent;
+  border: 0;
+  color: #23498e;
+}
+.customer-shell .overview .text-action {
+  padding-inline: 14px;
+}
+.customer-shell .overview .workflow-path small,
+.customer-shell .overview .workflow-path .workspace-icon {
+  color: #c9d4e3;
+}
+.customer-shell .overview .metric-top,
+.customer-shell .overview .metric-hint,
+.customer-shell .overview .metric-top > .workspace-icon {
+  color: #c9d4e3;
+}
+
+@media (max-width: 1100px) {
+  .overview .report-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .overview .report-slot {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 760px) {
+  .overview .overview-metrics > .metric-card:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .overview .analytics-attention {
+    padding: var(--space-4);
+  }
+  .overview .attention-item {
+    min-height: 0;
+  }
+  .overview .attention-rules summary,
+  .overview .report-basis summary,
+  .overview .analytics-history summary {
+    padding-block: 12px;
+  }
+  .overview button.report-meter-label,
+  .overview .report-card-footer .text-action,
+  .overview .recent-orders .text-action {
+    min-height: 44px;
+  }
+}

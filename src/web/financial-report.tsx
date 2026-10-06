@@ -5,6 +5,7 @@ import type {
 } from "../shared/billing-sales-report.ts";
 import { request, downloadDocument } from "./api.ts";
 import { PageSections, PageSection } from "./workspace.tsx";
+import { DailyBars, compactNumber, shortDate, plural } from "./bar-chart.tsx";
 const money = (cents: number, currency: string) =>
   new Intl.NumberFormat("en-CA", {
     style: "currency",
@@ -20,6 +21,8 @@ function dates(days = 30) {
     to: end.toISOString().slice(0, 10),
   };
 }
+// Daily invoices and credits as paired bars. Sparse activity stays legible:
+// one active day is one bar rather than a ramp from zero.
 function Trend({
   rows,
   currency,
@@ -28,77 +31,51 @@ function Trend({
   currency: string;
 }) {
   const max = Math.max(1, ...rows.flatMap((r) => [r.invoiceNet, r.creditNet]));
-  const x = (i: number) =>
-    rows.length === 1 ? 280 : 80 + (i / Math.max(1, rows.length - 1)) * 400;
-  const points = (field: "invoiceNet" | "creditNet") =>
-    rows.map((r, i) => `${x(i)},${145 - (r[field] / max) * 115}`).join(" ");
+  const active = rows.filter((r) => r.invoiceNet > 0 || r.creditNet > 0);
   return (
     <div className="sales-trend">
-      <h3>Invoices and credits over time</h3>
-      <svg
-        viewBox="0 0 500 185"
-        role="img"
-        aria-label={`Daily invoices in blue and credits in orange, excluding tax, ${currency}. Exact values in Daily figures tab.`}
-      >
-        {[0, 0.5, 1].map((n) => (
-          <g key={n}>
-            <line
-              x1="80"
-              x2="480"
-              y1={145 - n * 115}
-              y2={145 - n * 115}
-              stroke="#dbe5f0"
-            />
-            <text x="73" y={149 - n * 115} textAnchor="end" fontSize="10">
-              {new Intl.NumberFormat("en-CA", {
-                maximumFractionDigits: 0,
-              }).format((n * max) / 100)}
-            </text>
-          </g>
-        ))}
-        {rows.length > 1 && (
-          <polygon
-            points={`${x(0)},145 ${points("invoiceNet")} ${x(rows.length - 1)},145`}
-            fill="#dfecfa"
-          />
-        )}
-        <polyline
-          points={points("invoiceNet")}
-          stroke="#215fa2"
-          strokeWidth="2.5"
-          fill="none"
-        />
-        {rows.length === 1 &&
-          ["invoiceNet", "creditNet"].map((field) => (
-            <circle
-              key={field}
-              cx="280"
-              cy={
-                145 -
-                (rows[0]![field as "invoiceNet" | "creditNet"] / max) * 115
-              }
-              r="4"
-              fill={field === "invoiceNet" ? "#215fa2" : "#a4521b"}
-            />
-          ))}
-        <polyline
-          points={points("creditNet")}
-          stroke="#a4521b"
-          strokeWidth="2.5"
-          strokeDasharray="5 3"
-          fill="none"
-        />
-        <text x="80" y="171" fontSize="11">
-          {rows[0]?.date}
-        </text>
-        <text x="480" y="171" textAnchor="end" fontSize="11">
-          {rows.at(-1)?.date}
-        </text>
-      </svg>
-      <p className="sales-legend">
-        <span>● Invoices</span>
-        <span>┄ Credits</span>
-        <span>{currency}, before tax</span>
+      <div className="sales-trend-head">
+        <h3>Invoices and credits over time</h3>
+        <ul className="trend-legend" aria-hidden="true">
+          <li>
+            <i className="trend-swatch is-invoice" />
+            Invoices
+          </li>
+          <li>
+            <i className="trend-swatch is-credit" />
+            Credits
+          </li>
+          <li>{currency} per day, before tax</li>
+        </ul>
+      </div>
+      <DailyBars
+        label={`Daily invoices in blue and credits in orange, excluding tax, ${currency}. Exact values in Daily figures tab.`}
+        max={max}
+        ticks={[0, 0.5, 1].map((n) => ({
+          value: n * max,
+          label: n === 0 ? "0" : compactNumber((n * max) / 100),
+        }))}
+        start={shortDate(rows[0]?.date)}
+        end={shortDate(rows.at(-1)?.date)}
+        series={[
+          {
+            values: rows.map((r) => r.invoiceNet),
+            color: "#215fa2",
+            offset: 0.1,
+            width: 0.38,
+          },
+          {
+            values: rows.map((r) => r.creditNet),
+            color: "#c26a2c",
+            offset: 0.52,
+            width: 0.38,
+          },
+        ]}
+      />
+      <p className="sales-trend-note">
+        {active.length === 0
+          ? "No invoices or credits on any day in this period."
+          : `Activity on ${plural(active.length, "day")} of ${rows.length}. Exact values are in Daily figures.`}
       </p>
     </div>
   );
@@ -304,8 +281,7 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
                       </span>
                       <strong>{money(totals.netSales, currency)}</strong>
                       <small>
-                        Before tax · {totals.invoiceCount}{" "}
-                        {totals.invoiceCount === 1 ? "invoice" : "invoices"}
+                        Before tax · {plural(totals.invoiceCount, "invoice")}
                       </small>
                     </div>
                     <div>
@@ -317,10 +293,7 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
                         )}
                       </strong>
                       <small>
-                        Before tax · {totals.creditCount}{" "}
-                        {totals.creditCount === 1
-                          ? "credit note"
-                          : "credit notes"}
+                        Before tax · {plural(totals.creditCount, "credit note")}
                       </small>
                     </div>
                     <div>
