@@ -81,7 +81,7 @@ export function RefundNotices({
   const [selected, setSelected] = useState<Notice | null>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   return (
-    <section aria-label="Refund notices">
+    <section className="ledger-section" aria-label="Refund notices">
       <h2>Refund notices</h2>
       <p>
         {personal

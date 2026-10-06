@@ -571,7 +571,8 @@ function ProductResults({
         {filters}
         <div className="sf-results-summary">
           <p role="status">
-            {products.length} matching products loaded
+            {products.length} matching{" "}
+            {products.length === 1 ? "product" : "products"} loaded
             {rows.busy ? " · Loading…" : ""}
           </p>
           <span>Prices before tax</span>

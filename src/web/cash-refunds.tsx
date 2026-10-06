@@ -116,7 +116,7 @@ export function CashRefunds({
   const [selected, setSelected] = useState<RefundSummary | null>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
   return (
-    <section aria-label="Cash refunds">
+    <section className="ledger-section" aria-label="Cash refunds">
       <h2 ref={heading} tabIndex={-1}>
         Cash refunds
       </h2>

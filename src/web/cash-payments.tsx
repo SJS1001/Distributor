@@ -23,7 +23,7 @@ export function CashPayments({
     previouslyBusy.current = rows.busy;
   }, [rows.busy, rows.next, rows.loaded]);
   return (
-    <section aria-label="Recorded cash payments">
+    <section className="ledger-section" aria-label="Recorded cash payments">
       <h2 ref={heading} tabIndex={-1}>
         Recorded cash payments
       </h2>

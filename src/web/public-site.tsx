@@ -274,9 +274,17 @@ export function PublicSite({
                 className={`public-access-paths${signedIn ? " is-signed-in" : ""}`}
               >
                 {sessionAudience === "staff" && (
-                  <a className="public-scanner-link" href="#scanner">
-                    Barcode scanner <span aria-hidden="true">↗</span>
-                    <small>Open it here or send the link to your phone.</small>
+                  <a
+                    className="public-access-link public-scanner-tool"
+                    href="#scanner"
+                  >
+                    <span className="public-index">WAREHOUSE TOOL</span>
+                    <span className="public-access-title">
+                      Barcode scanner <span aria-hidden="true">↗</span>
+                    </span>
+                    <span className="public-access-description">
+                      Open it here or send the link to your phone.
+                    </span>
                   </a>
                 )}
 
@@ -285,10 +293,12 @@ export function PublicSite({
                   href={signedIn ? accountHref : "#customer-sign-in"}
                 >
                   <span className="public-index">
-                    01 /{" "}
+                    {signedIn ? "" : "01 / "}
                     {sessionAudience === "staff"
                       ? "DISTRIBUTOR STAFF"
-                      : "EXISTING CUSTOMERS"}
+                      : signedIn
+                        ? "YOUR ACCOUNT"
+                        : "EXISTING CUSTOMERS"}
                   </span>
                   <span className="public-access-title">
                     {signedIn ? accountLabel : "Customer sign in"}{" "}

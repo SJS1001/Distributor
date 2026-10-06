@@ -79,55 +79,63 @@ export function SavedCarts({
   return (
     <section aria-label="Saved carts">
       <h2>Saved carts</h2>
-      <label htmlFor={`${prefix}-account`}>Saved cart customer</label>
-      <select
-        id={`${prefix}-account`}
-        value={accountId}
-        disabled={locked}
-        onChange={(e) => setAccount(e.target.value)}
-      >
-        <option value="">All available customers</option>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
-      <label htmlFor={`${prefix}-warehouse`}>Saved cart warehouse</label>
-      <select
-        id={`${prefix}-warehouse`}
-        value={warehouseId}
-        disabled={locked}
-        onChange={(e) => setWarehouse(e.target.value)}
-      >
-        <option value="">All available warehouses</option>
-        {warehouses.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
-          </option>
-        ))}
-      </select>
-      <div className="actions">
-        <button type="button" disabled={locked} onClick={() => void load()}>
-          Search saved carts
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={locked}
-          onClick={() => {
-            setAccount("");
-            setWarehouse("");
-            void load("", "");
-          }}
-        >
-          First saved cart page
-        </button>
+      <div className="queue-controls saved-cart-filters">
+        {accounts.length > 1 && (
+          <div className="queue-field">
+            <label htmlFor={`${prefix}-account`}>Saved cart customer</label>
+            <select
+              id={`${prefix}-account`}
+              value={accountId}
+              disabled={locked}
+              onChange={(e) => setAccount(e.target.value)}
+            >
+              <option value="">All available customers</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="queue-field">
+          <label htmlFor={`${prefix}-warehouse`}>Saved cart warehouse</label>
+          <select
+            id={`${prefix}-warehouse`}
+            value={warehouseId}
+            disabled={locked}
+            onChange={(e) => setWarehouse(e.target.value)}
+          >
+            <option value="">All available warehouses</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="actions queue-field-actions">
+          <button type="button" disabled={locked} onClick={() => void load()}>
+            Search saved carts
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={locked}
+            onClick={() => {
+              setAccount("");
+              setWarehouse("");
+              void load("", "");
+            }}
+          >
+            First saved cart page
+          </button>
+        </div>
       </div>
       <p role="status">
         {busy
           ? "Loading saved carts…"
-          : `${page.items.length} saved carts on this page`}
+          : `${page.items.length} saved ${page.items.length === 1 ? "cart" : "carts"} on this page`}
       </p>
       {error && (
         <p role="alert" className="error">
@@ -167,33 +175,38 @@ export function SavedCarts({
                   <td>{accountName(c.account_id)}</td>
                   <td>{warehouseName(c.warehouse_id)}</td>
                   <td>
-                    {c.products} products · {c.units} units
+                    {c.products} {c.products === 1 ? "product" : "products"} ·{" "}
+                    {c.units} {c.units === 1 ? "unit" : "units"}
                   </td>
                   <td>
-                    <button
-                      type="button"
-                      disabled={locked}
-                      onClick={() => resume(c.account_id, c.warehouse_id)}
-                    >
-                      Resume
-                    </button>
-                    {priceDetails && (
-                      <button
-                        disabled={locked}
-                        onClick={() => priceDetails(c.id, c.revision)}
-                      >
-                        Selling price
-                      </button>
-                    )}
-                    {shippingDetails && (
+                    <div className="actions">
                       <button
                         type="button"
                         disabled={locked}
-                        onClick={() => shippingDetails(c.id, c.revision)}
+                        onClick={() => resume(c.account_id, c.warehouse_id)}
                       >
-                        Shipping terms
+                        Resume
                       </button>
-                    )}
+                      {priceDetails && (
+                        <button
+                          className="secondary"
+                          disabled={locked}
+                          onClick={() => priceDetails(c.id, c.revision)}
+                        >
+                          Selling price
+                        </button>
+                      )}
+                      {shippingDetails && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={locked}
+                          onClick={() => shippingDetails(c.id, c.revision)}
+                        >
+                          Shipping terms
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3136",
   pattern = "**/api/billing/invoices/page?*";
@@ -99,7 +99,9 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
         exact: true,
       }),
     });
-  await oldest
+  await (
+    await withRowActions(oldest)
+  )
     .getByRole("button", { name: "Record payment", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -141,7 +143,9 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
         exact: true,
       }),
     });
-  await credit
+  await (
+    await withRowActions(credit)
+  )
     .getByRole("button", { name: "Request refund", exact: true })
     .click();
   await expect(

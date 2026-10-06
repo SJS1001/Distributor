@@ -200,7 +200,8 @@ export function InvoiceQueueControls({
         </button>
       )}
       <p role="status">
-        {queue.items.length} invoices loaded
+        {queue.items.length} {queue.items.length === 1 ? "invoice" : "invoices"}{" "}
+        loaded
         {queue.busy
           ? " · Loading…"
           : queue.loaded && !queue.next && !queue.error

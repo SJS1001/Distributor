@@ -173,7 +173,8 @@ export function PurchaseQueueControls({
         </select>
       </div>
       <p role="status">
-        {queue.items.length} purchase orders loaded
+        {queue.items.length}{" "}
+        {queue.items.length === 1 ? "purchase order" : "purchase orders"} loaded
         {queue.busy
           ? " · Loading…"
           : queue.loaded && !queue.next && !queue.error

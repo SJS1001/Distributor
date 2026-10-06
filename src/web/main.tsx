@@ -6,6 +6,7 @@ import { PriceApprovalPolicyEditor } from "./price-authority.tsx";
 import { readReference } from "./reference-context.ts";
 import { ShippingTermsEditor } from "./shipping-terms.tsx";
 import { shippingSummary } from "../shared/shipping-terms.ts";
+import { InvoiceDetail } from "./invoice-detail.tsx";
 import { ManufacturerCollection } from "./manufacturer-collection.tsx";
 import { Storefront } from "./storefront.tsx";
 import { CustomerPurchasingRules } from "./purchasing-rules.tsx";
@@ -265,6 +266,18 @@ function App() {
   };
   const appliedHash = useRef(window.location.hash);
   const orderOpener = useRef<HTMLElement | null>(null);
+  const invoiceOpener = useRef<HTMLElement | null>(null);
+  const previousInvoice = useRef(route.invoiceId);
+  useEffect(() => {
+    if (previousInvoice.current && !route.invoiceId && page === "Billing")
+      requestAnimationFrame(() => {
+        if (invoiceOpener.current?.isConnected) {
+          invoiceOpener.current.focus();
+          invoiceOpener.current.scrollIntoView({ block: "nearest" });
+        }
+      });
+    previousInvoice.current = route.invoiceId;
+  }, [route.invoiceId, page]);
   const previousOrder = useRef(route.orderId);
   useEffect(() => {
     if (previousOrder.current && !route.orderId && page === "Orders")
@@ -2121,6 +2134,115 @@ function App() {
     setRoute(next);
   };
 
+  // Invoice commands shared by the queue row and the invoice detail record.
+  const invoiceActionButtons = (i: Item) => (
+    <>
+      {can("finance") &&
+        i.balance > 0 &&
+        button("Record payment", () =>
+          simple(
+            "Record verified manual payment",
+            [
+              {
+                name: "amount",
+                label: "Amount in cents",
+                type: "number",
+                value: i.balance,
+              },
+              {
+                name: "reference",
+                label: "Bank / payment reference",
+              },
+              reason,
+            ],
+            "billing.payment.manual",
+            (v) => ({ ...v, invoiceId: i.id }),
+          ),
+        )}
+      {can("finance", "buyer") &&
+        i.balance > 0 &&
+        button("Request Stripe checkout", () => {
+          void run(() => command("stripe.checkout", { invoiceId: i.id })).catch(
+            () => {},
+          );
+        })}
+      {can("finance") &&
+        !i.opening &&
+        !extra.effects?.some(
+          (e: Item) =>
+            e.provider === "quickbooks" &&
+            e.kind === "invoice" &&
+            e.reference === i.id,
+        ) &&
+        button("Queue QuickBooks invoice", () => queueAccountingInvoice(i))}
+      {can("finance") &&
+        i.balance < 0 &&
+        button("Request refund", () =>
+          simple(
+            "Request credited cash refund",
+            [
+              {
+                name: "paymentId",
+                label: "Original payment",
+                content: <RefundPaymentSelect invoiceId={i.id} />,
+              },
+              {
+                name: "amount",
+                label: "Amount in cents",
+                type: "number",
+                value: -i.balance,
+              },
+              {
+                name: "reference",
+                label: "Unique refund reference",
+              },
+              reason,
+            ],
+            "billing.refund.request",
+            (v) => ({ ...v, invoiceId: i.id }),
+          ),
+        )}
+      {can("finance") &&
+        i.lines.some((l: Item) => l.creditable_quantity > 0) &&
+        button("Credit units", () =>
+          simple(
+            "Issue credit against original invoice",
+            [
+              select(
+                "lineId",
+                "Invoice line",
+                i.lines.filter((l: Item) => l.creditable_quantity > 0),
+                (l) =>
+                  `${l.description} · ${l.quantity} invoiced · ${l.credited_quantity} credited · ${l.creditable_quantity} remaining`,
+              ),
+              {
+                name: "quantity",
+                label: "Units to credit",
+                type: "number",
+                value: 1,
+              },
+              {
+                name: "reference",
+                label: "Unique business reference",
+              },
+              reason,
+            ],
+            "billing.credit",
+            (v) => ({
+              invoiceId: i.id,
+              reference: v.reference,
+              reason: v.reason,
+              lines: [{ lineId: v.lineId, quantity: v.quantity }],
+            }),
+          ),
+        )}
+      {can("finance") &&
+        !i.hasActivePublication &&
+        button("Review and publish invoice", () =>
+          publishDocument("invoice", i.id, i.number, i.account_id),
+        )}
+    </>
+  );
   const customerTermsActions = (a: Item) => (
     <div className="actions">
       {can("finance") &&
@@ -2555,20 +2677,25 @@ function App() {
                         type="button"
                         className="record-link"
                         title={o.id}
+                        aria-label={`Open order ${o.id}`}
                         onClick={(event) => {
                           orderOpener.current = event.currentTarget;
                           updateRoute({ orderId: o.id });
                         }}
                       >
-                        Open order {o.id}
+                        Open order <code>{o.id.slice(0, 8)}</code>
                       </button>
                     </>,
                     warehouseName(o.warehouse_id),
                     o.lines.map((l: Item) => (
-                      <div key={l.id}>
-                        {productName(l.product_id, l.description)} ·{" "}
-                        {l.quantity} ordered / {l.allocated} reserved /{" "}
-                        {l.shipped} shipped / {l.canceled} canceled
+                      <div key={l.id} className="order-line">
+                        <strong>
+                          {productName(l.product_id, l.description)}
+                        </strong>
+                        <span>
+                          {l.quantity} ordered · {l.allocated} reserved ·{" "}
+                          {l.shipped} shipped · {l.canceled} canceled
+                        </span>
                         {o.state === "open" &&
                           can("commercial", "buyer") &&
                           button(
@@ -2633,7 +2760,7 @@ function App() {
                       <span className="badge">{o.state}</span>
                       <ReservationStatus reservation={o.reservation} />
                     </div>,
-                    <div className="actions">
+                    <div className="row-actions">
                       {staff && (
                         <RecordNotes
                           kind="order"
@@ -2642,363 +2769,390 @@ function App() {
                           recoveryScope={`${actor.orgId}:${actor.id}`}
                         />
                       )}
-                      {can(
-                        "commercial",
-                        "buyer",
-                        "warehouse",
-                        "finance",
-                        "support",
-                      ) &&
-                        button("View amendment history", () => {
-                          setReservationOrderId(null);
-                          reservationOpener.current = null;
-                          amendmentOpener.current =
-                            document.activeElement as HTMLElement | null;
-                          setAmendmentOrderId(o.id);
-                        })}
-                      {can(
-                        "commercial",
-                        "buyer",
-                        "warehouse",
-                        "finance",
-                        "support",
-                      ) &&
-                        button("View reservation history", () => {
-                          setAmendmentOrderId(null);
-                          amendmentOpener.current = null;
-                          reservationOpener.current =
-                            document.activeElement as HTMLElement | null;
-                          setReservationOrderId(o.id);
-                        })}
-                      {o.state === "open" && can("commercial") && (
-                        <>
-                          {button(
-                            o.reservation?.expiresAt == null
-                              ? "Set reservation deadline"
-                              : "Renew reservation deadline",
-                            () =>
-                              open(
-                                "Review reservation deadline",
-                                [
-                                  {
-                                    name: "expiresAt",
-                                    label:
-                                      "Future reservation deadline (local time)",
-                                    type: "datetime-local",
-                                    help: "Choose a future date and time. Allocation does not renew this deadline.",
-                                  },
-                                  {
-                                    name: "reason",
-                                    label:
-                                      "Buyer-visible reason for reservation change",
-                                    type: "textarea",
-                                  },
-                                ],
-                                async (v) => {
-                                  const expiresAt = new Date(
-                                    v.expiresAt,
-                                  ).getTime();
-                                  if (!Number.isFinite(expiresAt))
-                                    throw new Error(
-                                      "Choose a valid future date and time.",
-                                    );
-                                  return command("order.reservation.deadline", {
-                                    orderId: o.id,
-                                    revision: o.revision,
-                                    expiresAt,
-                                    reason: v.reason,
-                                  });
-                                },
-                                <p>
-                                  Review the future deadline before saving. Once
-                                  due, new reservations, quantity increases and
-                                  new picking require an explicit renewal or
-                                  clearing of the deadline. No stock is released
-                                  until expiry is reviewed. The reason is
-                                  visible to the buyer.
-                                </p>,
-                                "Save reservation deadline",
-                              ),
-                          )}
-                          {o.reservation?.expiresAt != null && (
+                      <details className="stock-actions">
+                        <summary aria-label={`Actions for order ${o.id}`}>
+                          Actions
+                        </summary>
+                        <div className="actions">
+                          {can(
+                            "commercial",
+                            "buyer",
+                            "warehouse",
+                            "finance",
+                            "support",
+                          ) &&
+                            button("View amendment history", () => {
+                              setReservationOrderId(null);
+                              reservationOpener.current = null;
+                              amendmentOpener.current =
+                                document.activeElement as HTMLElement | null;
+                              setAmendmentOrderId(o.id);
+                            })}
+                          {can(
+                            "commercial",
+                            "buyer",
+                            "warehouse",
+                            "finance",
+                            "support",
+                          ) &&
+                            button("View reservation history", () => {
+                              setAmendmentOrderId(null);
+                              amendmentOpener.current = null;
+                              reservationOpener.current =
+                                document.activeElement as HTMLElement | null;
+                              setReservationOrderId(o.id);
+                            })}
+                          {o.state === "open" && can("commercial") && (
                             <>
-                              {button("Clear reservation deadline", () =>
-                                open(
-                                  "Review clearing reservation deadline",
-                                  [
-                                    {
-                                      name: "reason",
-                                      label:
-                                        "Buyer-visible reason for reservation change",
-                                      type: "textarea",
+                              {button(
+                                o.reservation?.expiresAt == null
+                                  ? "Set reservation deadline"
+                                  : "Renew reservation deadline",
+                                () =>
+                                  open(
+                                    "Review reservation deadline",
+                                    [
+                                      {
+                                        name: "expiresAt",
+                                        label:
+                                          "Future reservation deadline (local time)",
+                                        type: "datetime-local",
+                                        help: "Choose a future date and time. Allocation does not renew this deadline.",
+                                      },
+                                      {
+                                        name: "reason",
+                                        label:
+                                          "Buyer-visible reason for reservation change",
+                                        type: "textarea",
+                                      },
+                                    ],
+                                    async (v) => {
+                                      const expiresAt = new Date(
+                                        v.expiresAt,
+                                      ).getTime();
+                                      if (!Number.isFinite(expiresAt))
+                                        throw new Error(
+                                          "Choose a valid future date and time.",
+                                        );
+                                      return command(
+                                        "order.reservation.deadline",
+                                        {
+                                          orderId: o.id,
+                                          revision: o.revision,
+                                          expiresAt,
+                                          reason: v.reason,
+                                        },
+                                      );
                                     },
-                                  ],
-                                  (v) =>
-                                    command("order.reservation.deadline", {
-                                      orderId: o.id,
-                                      revision: o.revision,
-                                      expiresAt: null,
-                                      reason: v.reason,
-                                    }),
-                                  <p>
-                                    Clearing removes the deadline and permits
-                                    new allocation and picking. This does not
-                                    restore stock already released to backorder.
-                                    The reason is visible to the buyer.
-                                  </p>,
-                                  "Clear reservation deadline",
-                                ),
+                                    <p>
+                                      Review the future deadline before saving.
+                                      Once due, new reservations, quantity
+                                      increases and new picking require an
+                                      explicit renewal or clearing of the
+                                      deadline. No stock is released until
+                                      expiry is reviewed. The reason is visible
+                                      to the buyer.
+                                    </p>,
+                                    "Save reservation deadline",
+                                  ),
                               )}
-                              {button("Expire unpicked reservations", () => {
-                                if (
-                                  !o.reservation.overdue &&
-                                  o.reservation.expiresAt > Date.now()
-                                ) {
-                                  setError(
-                                    "The reservation deadline is not due yet. Refresh to review its current status.",
-                                  );
-                                  return;
-                                }
-                                open(
-                                  "Review reservation expiry",
-                                  [
-                                    {
-                                      name: "reason",
-                                      label:
-                                        "Buyer-visible reason for reservation expiry",
-                                      type: "textarea",
+                              {o.reservation?.expiresAt != null && (
+                                <>
+                                  {button("Clear reservation deadline", () =>
+                                    open(
+                                      "Review clearing reservation deadline",
+                                      [
+                                        {
+                                          name: "reason",
+                                          label:
+                                            "Buyer-visible reason for reservation change",
+                                          type: "textarea",
+                                        },
+                                      ],
+                                      (v) =>
+                                        command("order.reservation.deadline", {
+                                          orderId: o.id,
+                                          revision: o.revision,
+                                          expiresAt: null,
+                                          reason: v.reason,
+                                        }),
+                                      <p>
+                                        Clearing removes the deadline and
+                                        permits new allocation and picking. This
+                                        does not restore stock already released
+                                        to backorder. The reason is visible to
+                                        the buyer.
+                                      </p>,
+                                      "Clear reservation deadline",
+                                    ),
+                                  )}
+                                  {button(
+                                    "Expire unpicked reservations",
+                                    () => {
+                                      if (
+                                        !o.reservation.overdue &&
+                                        o.reservation.expiresAt > Date.now()
+                                      ) {
+                                        setError(
+                                          "The reservation deadline is not due yet. Refresh to review its current status.",
+                                        );
+                                        return;
+                                      }
+                                      open(
+                                        "Review reservation expiry",
+                                        [
+                                          {
+                                            name: "reason",
+                                            label:
+                                              "Buyer-visible reason for reservation expiry",
+                                            type: "textarea",
+                                          },
+                                        ],
+                                        (v) =>
+                                          command("order.reservation.expire", {
+                                            orderId: o.id,
+                                            revision: o.revision,
+                                            reason: v.reason,
+                                          }),
+                                        <p>
+                                          Release only unpicked reserved units
+                                          to backorder. Picked and packed stock
+                                          is preserved. The original ordered
+                                          quantities, accepted prices, tax,
+                                          order total and credit exposure stay
+                                          intact. The deadline remains due until
+                                          explicitly renewed or cleared. The
+                                          reason is visible to the buyer.
+                                        </p>,
+                                        "Expire unpicked reservations",
+                                      );
                                     },
-                                  ],
-                                  (v) =>
-                                    command("order.reservation.expire", {
-                                      orderId: o.id,
-                                      revision: o.revision,
-                                      reason: v.reason,
-                                    }),
-                                  <p>
-                                    Release only unpicked reserved units to
-                                    backorder. Picked and packed stock is
-                                    preserved. The original ordered quantities,
-                                    accepted prices, tax, order total and credit
-                                    exposure stay intact. The deadline remains
-                                    due until explicitly renewed or cleared. The
-                                    reason is visible to the buyer.
-                                  </p>,
-                                  "Expire unpicked reservations",
-                                );
-                              })}
+                                  )}
+                                </>
+                              )}
                             </>
                           )}
-                        </>
-                      )}
-                      {o.state === "open" &&
-                        can("commercial") &&
-                        button("Allocate", () => {
-                          void run(() =>
-                            command("order.allocate", {
-                              orderId: o.id,
-                              revision: o.revision,
-                            }),
-                          ).catch(() => {});
-                        })}
-                      {o.state === "open" &&
-                        can("commercial", "buyer") &&
-                        button("Cancel units", () =>
-                          simple(
-                            "Cancel open units",
-                            [
-                              select(
-                                "lineId",
-                                "Order line",
-                                o.lines,
-                                (l) =>
-                                  `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
-                              ),
-                              {
-                                name: "quantity",
-                                label: "Units",
-                                type: "number",
-                                value: 1,
-                              },
-                              reason,
-                            ],
-                            "order.cancel",
-                            (v) => ({
-                              ...v,
-                              orderId: o.id,
-                              revision: o.revision,
-                            }),
-                          ),
-                        )}
-                      {o.state === "open" &&
-                        can("warehouse") &&
-                        button("Pick / pack", () => {
-                          void readReview<Item[]>(`/api/orders/${o.id}/picks`)
-                            .then((picks) => {
-                              if (!picks) return;
-                              open(
-                                "Confirm picked stock",
+                          {o.state === "open" &&
+                            can("commercial") &&
+                            button("Allocate", () => {
+                              void run(() =>
+                                command("order.allocate", {
+                                  orderId: o.id,
+                                  revision: o.revision,
+                                }),
+                              ).catch(() => {});
+                            })}
+                          {o.state === "open" &&
+                            can("commercial", "buyer") &&
+                            button("Cancel units", () =>
+                              simple(
+                                "Cancel open units",
                                 [
                                   select(
-                                    "allocationId",
-                                    "Allocation",
-                                    picks.filter(
-                                      (a: Item) =>
-                                        a.quantity > a.consumed + a.released,
-                                    ),
-                                    (a) =>
-                                      `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin}`,
-                                  ),
-                                  {
-                                    name: "serial",
-                                    scan: "single",
-                                    label: "Scan serial (leave blank for bulk)",
-                                    optional: true,
-                                  },
-                                  {
-                                    name: "unpick",
-                                    label: "Unpick instead",
-                                    type: "checkbox",
-                                  },
-                                ],
-                                (v) =>
-                                  command("fulfillment.pick", {
-                                    orderId: o.id,
-                                    allocationId: v.allocationId,
-                                    serial: v.serial || null,
-                                    unpick: !!v.unpick,
-                                  }),
-                              );
-                            })
-                            .catch((e) => setError(e.message));
-                        })}
-                      {o.state === "open" &&
-                        can("warehouse") &&
-                        button("Report short pick", () => {
-                          void readReview<Item[]>(`/api/orders/${o.id}/picks`)
-                            .then((picks) => {
-                              if (!picks) return;
-                              const available = picks.filter(
-                                (a: Item) =>
-                                  a.quantity -
-                                    a.consumed -
-                                    a.released -
-                                    a.packed >
-                                  0,
-                              );
-                              if (!available.length) {
-                                setError(
-                                  "No unpacked allocated units remain. Void conflicting packing first.",
-                                );
-                                return;
-                              }
-                              open(
-                                "Report unavailable allocated stock",
-                                [
-                                  select(
-                                    "allocationId",
-                                    "Short allocation",
-                                    available,
-                                    (a) =>
-                                      `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                                    "lineId",
+                                    "Order line",
+                                    o.lines,
+                                    (l) =>
+                                      `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
                                   ),
                                   {
                                     name: "quantity",
-                                    label: "Unavailable units",
+                                    label: "Units",
                                     type: "number",
                                     value: 1,
                                   },
                                   reason,
                                 ],
-                                (v) => {
-                                  const a = available.find(
-                                    (a: Item) => a.id === v.allocationId,
-                                  )!;
-                                  return command("fulfillment.short-pick", {
-                                    ...v,
-                                    orderId: o.id,
-                                    revision: o.revision,
-                                    unitRevision: a.unitRevision,
-                                  });
-                                },
-                                "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
-                              );
-                            })
-                            .catch((e) => setError(e.message));
-                        })}
-                      {can("warehouse", "commercial", "support") &&
-                        button("View short picks", () => {
-                          void showShortPicks(o.id).catch((e) =>
-                            setError(e.message),
-                          );
-                        })}
-                      {o.state === "open" &&
-                        can("warehouse") &&
-                        button("Pack shipment", () => {
-                          void readReview<Item[]>(`/api/orders/${o.id}/picks`)
-                            .then((picks) => {
-                              if (!picks) return;
-                              const available = picks.filter(
-                                (a: Item) => a.packable > 0,
-                              );
-                              if (!available.length) {
-                                setError(
-                                  "No picked units are available to pack. Pick stock or void active packing first.",
-                                );
-                                return;
-                              }
-                              open(
-                                "Pack picked units",
-                                [
-                                  {
-                                    name: "mode",
-                                    label: "Delivery method",
-                                    options: [
+                                "order.cancel",
+                                (v) => ({
+                                  ...v,
+                                  orderId: o.id,
+                                  revision: o.revision,
+                                }),
+                              ),
+                            )}
+                          {o.state === "open" &&
+                            can("warehouse") &&
+                            button("Pick / pack", () => {
+                              void readReview<Item[]>(
+                                `/api/orders/${o.id}/picks`,
+                              )
+                                .then((picks) => {
+                                  if (!picks) return;
+                                  open(
+                                    "Confirm picked stock",
+                                    [
+                                      select(
+                                        "allocationId",
+                                        "Allocation",
+                                        picks.filter(
+                                          (a: Item) =>
+                                            a.quantity >
+                                            a.consumed + a.released,
+                                        ),
+                                        (a) =>
+                                          `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin}`,
+                                      ),
                                       {
-                                        value: "collection",
-                                        label: "Customer collection",
+                                        name: "serial",
+                                        scan: "single",
+                                        label:
+                                          "Scan serial (leave blank for bulk)",
+                                        optional: true,
                                       },
-                                      { value: "carrier", label: "Carrier" },
+                                      {
+                                        name: "unpick",
+                                        label: "Unpick instead",
+                                        type: "checkbox",
+                                      },
                                     ],
-                                  },
-                                  {
-                                    name: "address",
-                                    label: "Destination / collection point",
-                                    type: "textarea",
-                                  },
-                                  ...available.map((a: Item): Field => ({
-                                    name: `pack-${a.id}`,
-                                    label: `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · units to pack`,
-                                    type: "number",
-                                    value: a.packable,
-                                    max: a.packable,
-                                    help: `${a.packable} available; ${a.packed} already packed. Use 0 to leave this allocation for a later shipment.`,
-                                  })),
-                                ],
-                                (v) => {
-                                  const lines = available
-                                    .map((a: Item) => ({
-                                      allocationId: a.id,
-                                      quantity: v[`pack-${a.id}`],
-                                    }))
-                                    .filter((l: Item) => l.quantity > 0);
-                                  if (!lines.length)
-                                    throw new Error(
-                                      "Select at least one unit to pack.",
+                                    (v) =>
+                                      command("fulfillment.pick", {
+                                        orderId: o.id,
+                                        allocationId: v.allocationId,
+                                        serial: v.serial || null,
+                                        unpick: !!v.unpick,
+                                      }),
+                                  );
+                                })
+                                .catch((e) => setError(e.message));
+                            })}
+                          {o.state === "open" &&
+                            can("warehouse") &&
+                            button("Report short pick", () => {
+                              void readReview<Item[]>(
+                                `/api/orders/${o.id}/picks`,
+                              )
+                                .then((picks) => {
+                                  if (!picks) return;
+                                  const available = picks.filter(
+                                    (a: Item) =>
+                                      a.quantity -
+                                        a.consumed -
+                                        a.released -
+                                        a.packed >
+                                      0,
+                                  );
+                                  if (!available.length) {
+                                    setError(
+                                      "No unpacked allocated units remain. Void conflicting packing first.",
                                     );
-                                  return command("fulfillment.pack", {
-                                    orderId: o.id,
-                                    revision: o.revision,
-                                    mode: v.mode,
-                                    address: v.address,
-                                    lines,
-                                  });
-                                },
-                                "Choose the picked quantities for this shipment. Remaining units stay on the order. Packing holds stock; handover creates the invoice.",
+                                    return;
+                                  }
+                                  open(
+                                    "Report unavailable allocated stock",
+                                    [
+                                      select(
+                                        "allocationId",
+                                        "Short allocation",
+                                        available,
+                                        (a) =>
+                                          `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                                      ),
+                                      {
+                                        name: "quantity",
+                                        label: "Unavailable units",
+                                        type: "number",
+                                        value: 1,
+                                      },
+                                      reason,
+                                    ],
+                                    (v) => {
+                                      const a = available.find(
+                                        (a: Item) => a.id === v.allocationId,
+                                      )!;
+                                      return command("fulfillment.short-pick", {
+                                        ...v,
+                                        orderId: o.id,
+                                        revision: o.revision,
+                                        unitRevision: a.unitRevision,
+                                      });
+                                    },
+                                    "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
+                                  );
+                                })
+                                .catch((e) => setError(e.message));
+                            })}
+                          {can("warehouse", "commercial", "support") &&
+                            button("View short picks", () => {
+                              void showShortPicks(o.id).catch((e) =>
+                                setError(e.message),
                               );
-                            })
-                            .catch((e) => setError(e.message));
-                        })}
+                            })}
+                          {o.state === "open" &&
+                            can("warehouse") &&
+                            button("Pack shipment", () => {
+                              void readReview<Item[]>(
+                                `/api/orders/${o.id}/picks`,
+                              )
+                                .then((picks) => {
+                                  if (!picks) return;
+                                  const available = picks.filter(
+                                    (a: Item) => a.packable > 0,
+                                  );
+                                  if (!available.length) {
+                                    setError(
+                                      "No picked units are available to pack. Pick stock or void active packing first.",
+                                    );
+                                    return;
+                                  }
+                                  open(
+                                    "Pack picked units",
+                                    [
+                                      {
+                                        name: "mode",
+                                        label: "Delivery method",
+                                        options: [
+                                          {
+                                            value: "collection",
+                                            label: "Customer collection",
+                                          },
+                                          {
+                                            value: "carrier",
+                                            label: "Carrier",
+                                          },
+                                        ],
+                                      },
+                                      {
+                                        name: "address",
+                                        label: "Destination / collection point",
+                                        type: "textarea",
+                                      },
+                                      ...available.map((a: Item): Field => ({
+                                        name: `pack-${a.id}`,
+                                        label: `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · units to pack`,
+                                        type: "number",
+                                        value: a.packable,
+                                        max: a.packable,
+                                        help: `${a.packable} available; ${a.packed} already packed. Use 0 to leave this allocation for a later shipment.`,
+                                      })),
+                                    ],
+                                    (v) => {
+                                      const lines = available
+                                        .map((a: Item) => ({
+                                          allocationId: a.id,
+                                          quantity: v[`pack-${a.id}`],
+                                        }))
+                                        .filter((l: Item) => l.quantity > 0);
+                                      if (!lines.length)
+                                        throw new Error(
+                                          "Select at least one unit to pack.",
+                                        );
+                                      return command("fulfillment.pack", {
+                                        orderId: o.id,
+                                        revision: o.revision,
+                                        mode: v.mode,
+                                        address: v.address,
+                                        lines,
+                                      });
+                                    },
+                                    "Choose the picked quantities for this shipment. Remaining units stay on the order. Packing holds stock; handover creates the invoice.",
+                                  );
+                                })
+                                .catch((e) => setError(e.message));
+                            })}
+                        </div>
+                      </details>
                     </div>,
                   ],
                 )}
@@ -4653,303 +4807,123 @@ function App() {
             ]}
           >
             <PageSection id="billing-invoices">
-              <div className="actions">
-                {can("finance") && (
-                  <a className="button secondary" href="/api/accounting.csv">
-                    Export reconciliation CSV
-                  </a>
-                )}
-              </div>
-              <InvoiceQueueControls
-                queue={invoiceQueue}
-                scope={savedFilterKey(actor.orgId, actor.id, "invoices")}
-                onFilter={(invoiceBalance) => updateRoute({ invoiceBalance })}
-              />
-              {table(
-                ["Invoice", "Customer", "Total", "Balance", "Actions"],
-                invoiceQueue.items,
-                (i: Item) => [
-                  <>
-                    <strong>{i.number}</strong>
-                    <small>{new Date(i.created_at).toLocaleDateString()}</small>
-                    {i.opening && (
-                      <small>
-                        Historical opening document · source{" "}
-                        {i.opening.source_id}
-                        <br />
-                        Due {new Date(i.opening.due_at).toLocaleDateString()} ·
-                        cutoff {i.opening.cutoff_at}
-                        <br />
-                        At cutoff: {money(i.opening.credited, i.currency)}{" "}
-                        credited · {money(i.opening.paid, i.currency)} paid ·{" "}
-                        {money(i.opening.refunded, i.currency)} refunded
-                      </small>
-                    )}
-                  </>,
-                  accountName(i.account_id),
-                  <>
-                    {money(i.total, i.currency)}
-                    <small>{shippingSummary(i.shipping, i.currency)}</small>
-                    {i.shipping?.treatment === "extra" && (
-                      <small>
-                        {i.shipping.charged
-                          ? "Shipping charge is on this invoice."
-                          : "Shipping charge is not on this invoice."}
-                      </small>
-                    )}
-                  </>,
-                  money(i.balance, i.currency),
-                  <div className="actions">
-                    {staff && (
-                      <RecordNotes
-                        kind="invoice"
-                        recordId={i.id}
-                        actorId={actor.id}
-                        recoveryScope={`${actor.orgId}:${actor.id}`}
-                      />
-                    )}
-                    {can("finance") &&
-                      i.balance > 0 &&
-                      button("Record payment", () =>
-                        simple(
-                          "Record verified manual payment",
-                          [
-                            {
-                              name: "amount",
-                              label: "Amount in cents",
-                              type: "number",
-                              value: i.balance,
-                            },
-                            {
-                              name: "reference",
-                              label: "Bank / payment reference",
-                            },
-                            reason,
-                          ],
-                          "billing.payment.manual",
-                          (v) => ({ ...v, invoiceId: i.id }),
-                        ),
-                      )}
-                    {can("finance", "buyer") &&
-                      i.balance > 0 &&
-                      button("Request Stripe checkout", () => {
-                        void run(() =>
-                          command("stripe.checkout", { invoiceId: i.id }),
-                        ).catch(() => {});
-                      })}
-                    {can("finance") &&
-                      !i.opening &&
-                      !extra.effects?.some(
-                        (e: Item) =>
-                          e.provider === "quickbooks" &&
-                          e.kind === "invoice" &&
-                          e.reference === i.id,
-                      ) &&
-                      button("Queue QuickBooks invoice", () =>
-                        queueAccountingInvoice(i),
-                      )}
-                    {can("finance") &&
-                      i.balance < 0 &&
-                      button("Request refund", () =>
-                        simple(
-                          "Request credited cash refund",
-                          [
-                            {
-                              name: "paymentId",
-                              label: "Original payment",
-                              content: <RefundPaymentSelect invoiceId={i.id} />,
-                            },
-                            {
-                              name: "amount",
-                              label: "Amount in cents",
-                              type: "number",
-                              value: -i.balance,
-                            },
-                            {
-                              name: "reference",
-                              label: "Unique refund reference",
-                            },
-                            reason,
-                          ],
-                          "billing.refund.request",
-                          (v) => ({ ...v, invoiceId: i.id }),
-                        ),
-                      )}
-                    {can("finance") &&
-                      i.lines.some((l: Item) => l.creditable_quantity > 0) &&
-                      button("Credit units", () =>
-                        simple(
-                          "Issue credit against original invoice",
-                          [
-                            select(
-                              "lineId",
-                              "Invoice line",
-                              i.lines.filter(
-                                (l: Item) => l.creditable_quantity > 0,
-                              ),
-                              (l) =>
-                                `${l.description} · ${l.quantity} invoiced · ${l.credited_quantity} credited · ${l.creditable_quantity} remaining`,
-                            ),
-                            {
-                              name: "quantity",
-                              label: "Units to credit",
-                              type: "number",
-                              value: 1,
-                            },
-                            {
-                              name: "reference",
-                              label: "Unique business reference",
-                            },
-                            reason,
-                          ],
-                          "billing.credit",
-                          (v) => ({
-                            invoiceId: i.id,
-                            reference: v.reference,
-                            reason: v.reason,
-                            lines: [{ lineId: v.lineId, quantity: v.quantity }],
-                          }),
-                        ),
-                      )}
-                    {button("Download invoice PDF", () => {
-                      void run((signal) =>
-                        downloadDocument("invoice", i.id, signal),
-                      )
-                        .then((receipt) => {
-                          if (typeof receipt === "string")
-                            setNotice(
-                              "PDF download prepared. Receipt does not confirm delivery.",
-                            );
-                        })
-                        .catch(() => {});
-                    })}
-                    {can("finance") &&
-                      !i.hasActivePublication &&
-                      button("Review and publish invoice", () =>
-                        publishDocument(
-                          "invoice",
-                          i.id,
-                          i.number,
-                          i.account_id,
-                        ),
-                      )}
-                  </div>,
-                ],
+              {route.invoiceId && (
+                <InvoiceDetail
+                  key={`${actor.orgId}:${actor.id}:${route.invoiceId}`}
+                  invoiceId={route.invoiceId}
+                  accountName={accountName}
+                  backLabel={staff ? "All invoices" : "Invoices & payments"}
+                  back={() => updateRoute({ invoiceId: undefined })}
+                  canSeePayments={can("finance", "support")}
+                  openOrder={(orderId) => navigate({ page: "Orders", orderId })}
+                  actions={
+                    staff
+                      ? (invoice) => (
+                          <details className="stock-actions">
+                            <summary
+                              aria-label={`Actions for invoice ${invoice.number}`}
+                            >
+                              More actions
+                            </summary>
+                            <div className="actions">
+                              {invoiceActionButtons(invoice)}
+                            </div>
+                          </details>
+                        )
+                      : undefined
+                  }
+                />
               )}
-              {extra.credits?.length > 0 && (
-                <>
-                  <h2>Credit notes</h2>
-                  {table(
-                    [
-                      "Credit",
-                      "Original invoice",
-                      "Total",
-                      ...(can("finance") || can("support")
-                        ? ["QuickBooks handoff"]
-                        : []),
-                      "Actions",
-                    ],
-                    extra.credits,
-                    (c: Item) => {
-                      const posted = extra.effects?.find(
-                          (e: Item) =>
-                            e.provider === "quickbooks" &&
-                            e.kind === "credit" &&
-                            e.reference === c.id,
-                        ),
-                        parent = extra.effects?.find(
-                          (e: Item) =>
-                            e.provider === "quickbooks" &&
-                            e.kind === "invoice" &&
-                            e.reference === c.invoice_id &&
-                            e.state === "completed",
-                        );
-                      return [
-                        c.number,
-                        c.invoice_number,
-                        money(c.total, c.currency),
-                        ...(can("finance") || can("support")
-                          ? [
-                              posted ? (
-                                <div className="actions">
-                                  <span>{posted.state}</span>
-                                  {posted.creditApplication && (
-                                    <small>
-                                      Reserved{" "}
-                                      {money(
-                                        posted.creditApplication.reservedAmount,
-                                        currency,
-                                      )}
-                                      ; remaining credit{" "}
-                                      {money(
-                                        posted.creditApplication
-                                          .availableCredit,
-                                        currency,
-                                      )}
-                                      ; invoice capacity{" "}
-                                      {money(
-                                        posted.creditApplication
-                                          .availableInvoice,
-                                        currency,
-                                      )}
-                                    </small>
-                                  )}
-                                  {can("finance") &&
-                                    posted.state === "completed" &&
-                                    posted.creditApplication?.availableCredit >
-                                      0 &&
-                                    posted.creditApplication?.availableInvoice >
-                                      0 &&
-                                    button("Apply QuickBooks credit", () =>
-                                      open(
-                                        "Apply QuickBooks credit",
-                                        [
-                                          {
-                                            name: "amount",
-                                            label: "Credit application (cents)",
-                                            type: "number",
-                                            value: 0,
-                                            min: 1,
-                                            max: Math.min(
-                                              posted.creditApplication
-                                                .availableCredit,
-                                              posted.creditApplication
-                                                .availableInvoice,
-                                            ),
-                                          },
-                                        ],
-                                        (v) =>
-                                          command("quickbooks.credit.apply", {
-                                            creditId: c.id,
-                                            amount: v.amount,
-                                          }),
-                                        `Apply part or all of ${c.number} to its original invoice. Review the amount; pending and unknown applications reserve capacity. This applies existing credit without repaying or charging cash.`,
-                                        "Queue application",
-                                      ),
-                                    )}
-                                </div>
-                              ) : can("finance") && parent ? (
-                                button("Queue QuickBooks credit", () =>
-                                  open(
-                                    "Queue QuickBooks credit",
-                                    [],
-                                    () =>
-                                      command("quickbooks.credit", {
-                                        creditId: c.id,
-                                      }),
-                                    `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
-                                    "Queue credit",
-                                  ),
-                                )
-                              ) : (
-                                "Reconcile QuickBooks invoice first"
-                              ),
-                            ]
-                          : []),
+              <div hidden={!!route.invoiceId}>
+                <div className="actions">
+                  {can("finance") && (
+                    <a className="button secondary" href="/api/accounting.csv">
+                      Export reconciliation CSV
+                    </a>
+                  )}
+                </div>
+                <InvoiceQueueControls
+                  queue={invoiceQueue}
+                  scope={savedFilterKey(actor.orgId, actor.id, "invoices")}
+                  onFilter={(invoiceBalance) => updateRoute({ invoiceBalance })}
+                />
+                {table(
+                  ["Invoice", "Customer", "Total", "Balance", "Actions"],
+                  invoiceQueue.items,
+                  (i: Item) => [
+                    <>
+                      <a
+                        className="record-title-link"
+                        href={navigationHash({ ...route, invoiceId: i.id })}
+                        onClick={(event) => {
+                          if (
+                            event.button ||
+                            event.metaKey ||
+                            event.ctrlKey ||
+                            event.shiftKey ||
+                            event.altKey
+                          )
+                            return;
+                          event.preventDefault();
+                          invoiceOpener.current = event.currentTarget;
+                          updateRoute({ invoiceId: i.id });
+                        }}
+                      >
+                        {i.number}
+                      </a>
+                      <small>
+                        {new Date(i.created_at).toLocaleDateString()}
+                      </small>
+                      {i.opening && (
+                        <small>
+                          Historical opening document · source{" "}
+                          {i.opening.source_id}
+                          <br />
+                          Due {new Date(
+                            i.opening.due_at,
+                          ).toLocaleDateString()}{" "}
+                          · cutoff {i.opening.cutoff_at}
+                          <br />
+                          At cutoff: {money(
+                            i.opening.credited,
+                            i.currency,
+                          )}{" "}
+                          credited · {money(i.opening.paid, i.currency)} paid ·{" "}
+                          {money(i.opening.refunded, i.currency)} refunded
+                        </small>
+                      )}
+                    </>,
+                    accountName(i.account_id),
+                    <>
+                      {money(i.total, i.currency)}
+                      <small>{shippingSummary(i.shipping, i.currency)}</small>
+                      {i.shipping?.treatment === "extra" && (
+                        <small>
+                          {i.shipping.charged
+                            ? "Shipping charge is on this invoice."
+                            : "Shipping charge is not on this invoice."}
+                        </small>
+                      )}
+                    </>,
+                    money(i.balance, i.currency),
+                    <div className="row-actions">
+                      {staff && (
+                        <RecordNotes
+                          kind="invoice"
+                          recordId={i.id}
+                          actorId={actor.id}
+                          recoveryScope={`${actor.orgId}:${actor.id}`}
+                        />
+                      )}
+                      <details className="stock-actions">
+                        <summary aria-label={`Actions for invoice ${i.number}`}>
+                          Actions
+                        </summary>
                         <div className="actions">
-                          {button("Download credit PDF", () => {
+                          {invoiceActionButtons(i)}
+                          {button("Download invoice PDF", () => {
                             void run((signal) =>
-                              downloadDocument("credit", c.id, signal),
+                              downloadDocument("invoice", i.id, signal),
                             )
                               .then((receipt) => {
                                 if (typeof receipt === "string")
@@ -4959,308 +4933,446 @@ function App() {
                               })
                               .catch(() => {});
                           })}
-                          {can("finance") &&
-                            !c.hasActivePublication &&
-                            button("Review and publish credit", () =>
-                              publishDocument(
-                                "credit",
-                                c.id,
-                                c.number,
-                                c.account_id,
-                              ),
-                            )}
-                        </div>,
-                      ];
-                    },
-                  )}
-                </>
-              )}
-              {extra.refundNotices && (
-                <RefundNotices
-                  key={extra.refundNoticeRefresh}
-                  initial={extra.refundNotices}
-                  personal={actor.role === "buyer"}
-                  accountName={accountName}
-                  renderActions={(n) =>
-                    n.acknowledged
-                      ? "Read by you"
-                      : button("Mark notice read", () =>
-                          open(
-                            "Review refund notice",
-                            [],
-                            () =>
-                              command("billing.refund.notice.acknowledge", {
-                                noticeId: n.id,
-                                revision: n.revision,
-                              }),
-                            `${n.number}: ${n.message} Marking this notice read records only your acknowledgment. It does not confirm repayment, close the refund case or send another refund. Refresh to see later status changes.`,
-                            "Mark notice read",
+                        </div>
+                      </details>
+                    </div>,
+                  ],
+                )}
+                {extra.credits?.length > 0 && (
+                  <>
+                    <h2>Credit notes</h2>
+                    {table(
+                      [
+                        "Credit",
+                        "Original invoice",
+                        "Total",
+                        ...(can("finance") || can("support")
+                          ? ["QuickBooks handoff"]
+                          : []),
+                        "Actions",
+                      ],
+                      extra.credits,
+                      (c: Item) => {
+                        const posted = extra.effects?.find(
+                            (e: Item) =>
+                              e.provider === "quickbooks" &&
+                              e.kind === "credit" &&
+                              e.reference === c.id,
                           ),
-                        )
-                  }
-                />
-              )}
-              {extra.inbox && (
-                <BillingInbox
-                  key={extra.inboxRefresh}
-                  initial={extra.inbox}
-                  personal={actor.role === "buyer"}
-                  accountName={accountName}
-                  renderActions={(p) => (
-                    <div className="actions">
-                      {actor.role === "buyer" &&
-                        p.state === "available" &&
-                        button(
-                          p.acknowledgments.some(
-                            (a: Item) => a.actor_id === actor.id,
-                          )
-                            ? "Download received PDF"
-                            : "Download and review receipt",
-                          () => receiveDocument(p),
-                        )}
-                      {can("finance") &&
-                        p.state === "available" &&
-                        button("Withdraw publication", () =>
-                          open(
-                            "Withdraw portal publication",
-                            [reason],
-                            (v) =>
-                              command("billing.portal.withdraw", {
-                                publicationId: p.id,
-                                revision: p.revision,
-                                reason: v.reason,
-                              }),
-                            `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
-                            "Withdraw from inbox",
-                          ),
-                        )}
-                    </div>
-                  )}
-                />
-              )}
-              {extra.downloads?.length > 0 && (
-                <>
-                  <h2>Prepared document downloads</h2>
-                  <p>
-                    These receipts record an authorized request and prepared
-                    bytes. They do not establish receipt, reading or delivery to
-                    the customer.
-                  </p>
-                  {table(
-                    ["Document", "Requested", "Bytes", "SHA-256", "State"],
-                    extra.downloads,
-                    (d: Item) => [
-                      d.number,
-                      d.requested_at,
-                      d.size,
-                      <code>{d.content_hash}</code>,
-                      d.state,
-                    ],
-                  )}
-                </>
-              )}
-              {extra.payments && (
-                <CashPayments
-                  key={extra.paymentRefresh}
-                  initial={extra.payments}
-                  renderActions={(p) => {
-                    const posted = extra.effects?.find(
-                        (e: Item) =>
-                          e.provider === "quickbooks" &&
-                          e.kind === "payment" &&
-                          e.reference === p.id,
-                      ),
-                      parent = extra.effects?.find(
-                        (e: Item) =>
-                          e.provider === "quickbooks" &&
-                          e.kind === "invoice" &&
-                          e.reference === p.invoice_id &&
-                          e.state === "completed",
-                      );
-                    return posted
-                      ? posted.state
-                      : can("finance") && parent
-                        ? button("Queue QuickBooks payment", () =>
+                          parent = extra.effects?.find(
+                            (e: Item) =>
+                              e.provider === "quickbooks" &&
+                              e.kind === "invoice" &&
+                              e.reference === c.invoice_id &&
+                              e.state === "completed",
+                          );
+                        return [
+                          c.number,
+                          c.invoice_number,
+                          money(c.total, c.currency),
+                          ...(can("finance") || can("support")
+                            ? [
+                                posted ? (
+                                  <div className="actions">
+                                    <span>{posted.state}</span>
+                                    {posted.creditApplication && (
+                                      <small>
+                                        Reserved{" "}
+                                        {money(
+                                          posted.creditApplication
+                                            .reservedAmount,
+                                          currency,
+                                        )}
+                                        ; remaining credit{" "}
+                                        {money(
+                                          posted.creditApplication
+                                            .availableCredit,
+                                          currency,
+                                        )}
+                                        ; invoice capacity{" "}
+                                        {money(
+                                          posted.creditApplication
+                                            .availableInvoice,
+                                          currency,
+                                        )}
+                                      </small>
+                                    )}
+                                    {can("finance") &&
+                                      posted.state === "completed" &&
+                                      posted.creditApplication
+                                        ?.availableCredit > 0 &&
+                                      posted.creditApplication
+                                        ?.availableInvoice > 0 &&
+                                      button("Apply QuickBooks credit", () =>
+                                        open(
+                                          "Apply QuickBooks credit",
+                                          [
+                                            {
+                                              name: "amount",
+                                              label:
+                                                "Credit application (cents)",
+                                              type: "number",
+                                              value: 0,
+                                              min: 1,
+                                              max: Math.min(
+                                                posted.creditApplication
+                                                  .availableCredit,
+                                                posted.creditApplication
+                                                  .availableInvoice,
+                                              ),
+                                            },
+                                          ],
+                                          (v) =>
+                                            command("quickbooks.credit.apply", {
+                                              creditId: c.id,
+                                              amount: v.amount,
+                                            }),
+                                          `Apply part or all of ${c.number} to its original invoice. Review the amount; pending and unknown applications reserve capacity. This applies existing credit without repaying or charging cash.`,
+                                          "Queue application",
+                                        ),
+                                      )}
+                                  </div>
+                                ) : can("finance") && parent ? (
+                                  button("Queue QuickBooks credit", () =>
+                                    open(
+                                      "Queue QuickBooks credit",
+                                      [],
+                                      () =>
+                                        command("quickbooks.credit", {
+                                          creditId: c.id,
+                                        }),
+                                      `Record ${c.number} for ${money(c.total, currency)} using the original invoice mappings. The credit stays unapplied in QuickBooks; automatic credit application must be off. Applying it to an invoice or repaying cash requires separate reconciliation.`,
+                                      "Queue credit",
+                                    ),
+                                  )
+                                ) : (
+                                  "Reconcile QuickBooks invoice first"
+                                ),
+                              ]
+                            : []),
+                          <div className="actions">
+                            {button("Download credit PDF", () => {
+                              void run((signal) =>
+                                downloadDocument("credit", c.id, signal),
+                              )
+                                .then((receipt) => {
+                                  if (typeof receipt === "string")
+                                    setNotice(
+                                      "PDF download prepared. Receipt does not confirm delivery.",
+                                    );
+                                })
+                                .catch(() => {});
+                            })}
+                            {can("finance") &&
+                              !c.hasActivePublication &&
+                              button("Review and publish credit", () =>
+                                publishDocument(
+                                  "credit",
+                                  c.id,
+                                  c.number,
+                                  c.account_id,
+                                ),
+                              )}
+                          </div>,
+                        ];
+                      },
+                    )}
+                  </>
+                )}
+                {extra.refundNotices && (
+                  <RefundNotices
+                    key={extra.refundNoticeRefresh}
+                    initial={extra.refundNotices}
+                    personal={actor.role === "buyer"}
+                    accountName={accountName}
+                    renderActions={(n) =>
+                      n.acknowledged
+                        ? "Read by you"
+                        : button("Mark notice read", () =>
                             open(
-                              "Queue QuickBooks payment",
-                              [
-                                {
-                                  name: "appliedAmount",
-                                  label: "Apply to invoice (cents)",
-                                  type: "number",
-                                  value: 0,
-                                  min: 0,
-                                  max: p.amount,
-                                },
-                                {
-                                  name: "depositAccountRef",
-                                  label: "QuickBooks deposit account ID",
-                                },
-                              ],
-                              (v) =>
-                                command("quickbooks.payment", {
-                                  ...v,
-                                  paymentId: p.id,
+                              "Review refund notice",
+                              [],
+                              () =>
+                                command("billing.refund.notice.acknowledge", {
+                                  noticeId: n.id,
+                                  revision: n.revision,
                                 }),
-                              `Record ${money(p.amount, p.currency)} already received. Choose the amount to apply to ${p.invoiceNumber}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
-                              "Queue payment",
+                              `${n.number}: ${n.message} Marking this notice read records only your acknowledgment. It does not confirm repayment, close the refund case or send another refund. Refresh to see later status changes.`,
+                              "Mark notice read",
                             ),
                           )
-                        : "Reconcile QuickBooks invoice first";
-                  }}
-                />
-              )}
-              {extra.refunds && (
-                <CashRefunds
-                  key={extra.refundRefresh}
-                  initial={extra.refunds}
-                  renderActions={(r) => (
-                    <div className="actions">
-                      {can("finance") &&
-                        r.state === "pending" &&
-                        (r.provider === "manual"
-                          ? button("Verify manual refund", () =>
-                              simple(
-                                "Verify bank refund",
+                    }
+                  />
+                )}
+                {extra.inbox && (
+                  <BillingInbox
+                    key={extra.inboxRefresh}
+                    initial={extra.inbox}
+                    personal={actor.role === "buyer"}
+                    accountName={accountName}
+                    renderActions={(p) => (
+                      <div className="actions">
+                        {actor.role === "buyer" &&
+                          p.state === "available" &&
+                          button(
+                            p.acknowledgments.some(
+                              (a: Item) => a.actor_id === actor.id,
+                            )
+                              ? "Download received PDF"
+                              : "Download and review receipt",
+                            () => receiveDocument(p),
+                          )}
+                        {can("finance") &&
+                          p.state === "available" &&
+                          button("Withdraw publication", () =>
+                            open(
+                              "Withdraw portal publication",
+                              [reason],
+                              (v) =>
+                                command("billing.portal.withdraw", {
+                                  publicationId: p.id,
+                                  revision: p.revision,
+                                  reason: v.reason,
+                                }),
+                              `Withdraw ${p.number} from the customer inbox. Existing copies and receipt confirmations remain. This does not cancel or change the financial document.`,
+                              "Withdraw from inbox",
+                            ),
+                          )}
+                      </div>
+                    )}
+                  />
+                )}
+                {extra.downloads?.length > 0 && (
+                  <>
+                    <h2>Prepared document downloads</h2>
+                    <p>
+                      These receipts record an authorized request and prepared
+                      bytes. They do not establish receipt, reading or delivery
+                      to the customer.
+                    </p>
+                    {table(
+                      ["Document", "Requested", "Bytes", "SHA-256", "State"],
+                      extra.downloads,
+                      (d: Item) => [
+                        d.number,
+                        d.requested_at,
+                        d.size,
+                        <code>{d.content_hash}</code>,
+                        d.state,
+                      ],
+                    )}
+                  </>
+                )}
+                {extra.payments && (
+                  <CashPayments
+                    key={extra.paymentRefresh}
+                    initial={extra.payments}
+                    renderActions={(p) => {
+                      const posted = extra.effects?.find(
+                          (e: Item) =>
+                            e.provider === "quickbooks" &&
+                            e.kind === "payment" &&
+                            e.reference === p.id,
+                        ),
+                        parent = extra.effects?.find(
+                          (e: Item) =>
+                            e.provider === "quickbooks" &&
+                            e.kind === "invoice" &&
+                            e.reference === p.invoice_id &&
+                            e.state === "completed",
+                        );
+                      return posted
+                        ? posted.state
+                        : can("finance") && parent
+                          ? button("Queue QuickBooks payment", () =>
+                              open(
+                                "Queue QuickBooks payment",
                                 [
                                   {
-                                    name: "reference",
-                                    label: "Bank refund reference",
+                                    name: "appliedAmount",
+                                    label: "Apply to invoice (cents)",
+                                    type: "number",
+                                    value: 0,
+                                    min: 0,
+                                    max: p.amount,
                                   },
-                                  reason,
+                                  {
+                                    name: "depositAccountRef",
+                                    label: "QuickBooks deposit account ID",
+                                  },
                                 ],
-                                "billing.refund.manual",
-                                (v) => ({ ...v, refundId: r.id }),
+                                (v) =>
+                                  command("quickbooks.payment", {
+                                    ...v,
+                                    paymentId: p.id,
+                                  }),
+                                `Record ${money(p.amount, p.currency)} already received. Choose the amount to apply to ${p.invoiceNumber}; the remainder stays unapplied in QuickBooks. Verify the deposit account and reconcile credits/refunds separately. This records cash without charging the customer.`,
+                                "Queue payment",
                               ),
                             )
-                          : !extra.effects?.some(
-                              (e: Item) =>
-                                e.kind === "refund" && e.reference === r.id,
-                            ) &&
-                            button("Queue Stripe refund", () => {
-                              void run(() =>
-                                command("stripe.refund", { refundId: r.id }),
-                              ).catch(() => {});
-                            }))}
-                      {can("finance") &&
-                        (() => {
-                          const expense = extra.effects?.find(
-                              (e: Item) =>
-                                e.provider === "quickbooks" &&
-                                e.kind === "refund-expense" &&
-                                e.reference === r.id,
-                            ),
-                            application = extra.effects?.find(
-                              (e: Item) =>
-                                e.provider === "quickbooks" &&
-                                e.kind === "refund-application" &&
-                                e.reference === r.id,
-                            ),
-                            credits =
-                              extra.credits?.filter(
-                                (c: Item) =>
-                                  c.invoice_id === r.invoice_id &&
-                                  extra.effects?.some(
-                                    (e: Item) =>
-                                      e.provider === "quickbooks" &&
-                                      e.kind === "credit" &&
-                                      e.reference === c.id &&
-                                      e.state === "completed" &&
-                                      e.creditApplication?.availableCredit >=
-                                        r.amount,
-                                  ),
-                              ) ?? [],
-                            payment = extra.effects?.some(
-                              (e: Item) =>
-                                e.provider === "quickbooks" &&
-                                e.kind === "payment" &&
-                                e.reference === r.payment_id &&
-                                e.state === "completed",
-                            );
-                          if (expense && r.state !== "completed")
-                            return (
-                              <strong role="status">
-                                Accounting refund requires review: native cash
-                                is {r.state}. Reconcile the existing provider
-                                outcome.
-                              </strong>
-                            );
-                          if (application)
-                            return (
-                              <span>
-                                QuickBooks refund link: {application.state}
-                              </span>
-                            );
-                          if (expense)
-                            return expense.state === "completed" ? (
-                              button("Link refund expense to credit", () =>
-                                open(
-                                  "Link refund expense to credit",
-                                  [],
-                                  () =>
-                                    command("quickbooks.refund.apply", {
-                                      refundId: r.id,
-                                    }),
-                                  "Link the reconciled expense and its reserved original credit through a zero-cash accounting payment. Review the bank, receivable account and accounting date already saved on the expense. This records the earlier cash refund.",
-                                  "Queue refund link",
+                          : "Reconcile QuickBooks invoice first";
+                    }}
+                  />
+                )}
+                {extra.refunds && (
+                  <CashRefunds
+                    key={extra.refundRefresh}
+                    initial={extra.refunds}
+                    renderActions={(r) => (
+                      <div className="actions">
+                        {can("finance") &&
+                          r.state === "pending" &&
+                          (r.provider === "manual"
+                            ? button("Verify manual refund", () =>
+                                simple(
+                                  "Verify bank refund",
+                                  [
+                                    {
+                                      name: "reference",
+                                      label: "Bank refund reference",
+                                    },
+                                    reason,
+                                  ],
+                                  "billing.refund.manual",
+                                  (v) => ({ ...v, refundId: r.id }),
                                 ),
                               )
-                            ) : (
-                              <span>
-                                QuickBooks refund expense: {expense.state}
-                              </span>
-                            );
-                          if (r.state !== "completed") return null;
-                          if (!payment || !credits.length)
-                            return (
-                              <span>
-                                Reconcile the original QuickBooks payment and an
-                                available credit first.
-                              </span>
-                            );
-                          return button("Queue QuickBooks refund expense", () =>
-                            open(
+                            : !extra.effects?.some(
+                                (e: Item) =>
+                                  e.kind === "refund" && e.reference === r.id,
+                              ) &&
+                              button("Queue Stripe refund", () => {
+                                void run(() =>
+                                  command("stripe.refund", { refundId: r.id }),
+                                ).catch(() => {});
+                              }))}
+                        {can("finance") &&
+                          (() => {
+                            const expense = extra.effects?.find(
+                                (e: Item) =>
+                                  e.provider === "quickbooks" &&
+                                  e.kind === "refund-expense" &&
+                                  e.reference === r.id,
+                              ),
+                              application = extra.effects?.find(
+                                (e: Item) =>
+                                  e.provider === "quickbooks" &&
+                                  e.kind === "refund-application" &&
+                                  e.reference === r.id,
+                              ),
+                              credits =
+                                extra.credits?.filter(
+                                  (c: Item) =>
+                                    c.invoice_id === r.invoice_id &&
+                                    extra.effects?.some(
+                                      (e: Item) =>
+                                        e.provider === "quickbooks" &&
+                                        e.kind === "credit" &&
+                                        e.reference === c.id &&
+                                        e.state === "completed" &&
+                                        e.creditApplication?.availableCredit >=
+                                          r.amount,
+                                    ),
+                                ) ?? [],
+                              payment = extra.effects?.some(
+                                (e: Item) =>
+                                  e.provider === "quickbooks" &&
+                                  e.kind === "payment" &&
+                                  e.reference === r.payment_id &&
+                                  e.state === "completed",
+                              );
+                            if (expense && r.state !== "completed")
+                              return (
+                                <strong role="status">
+                                  Accounting refund requires review: native cash
+                                  is {r.state}. Reconcile the existing provider
+                                  outcome.
+                                </strong>
+                              );
+                            if (application)
+                              return (
+                                <span>
+                                  QuickBooks refund link: {application.state}
+                                </span>
+                              );
+                            if (expense)
+                              return expense.state === "completed" ? (
+                                button("Link refund expense to credit", () =>
+                                  open(
+                                    "Link refund expense to credit",
+                                    [],
+                                    () =>
+                                      command("quickbooks.refund.apply", {
+                                        refundId: r.id,
+                                      }),
+                                    "Link the reconciled expense and its reserved original credit through a zero-cash accounting payment. Review the bank, receivable account and accounting date already saved on the expense. This records the earlier cash refund.",
+                                    "Queue refund link",
+                                  ),
+                                )
+                              ) : (
+                                <span>
+                                  QuickBooks refund expense: {expense.state}
+                                </span>
+                              );
+                            if (r.state !== "completed") return null;
+                            if (!payment || !credits.length)
+                              return (
+                                <span>
+                                  Reconcile the original QuickBooks payment and
+                                  an available credit first.
+                                </span>
+                              );
+                            return button(
                               "Queue QuickBooks refund expense",
-                              [
-                                select(
-                                  "creditId",
-                                  "Original QuickBooks credit",
-                                  credits,
-                                  (c: Item) => c.number,
+                              () =>
+                                open(
+                                  "Queue QuickBooks refund expense",
+                                  [
+                                    select(
+                                      "creditId",
+                                      "Original QuickBooks credit",
+                                      credits,
+                                      (c: Item) => c.number,
+                                    ),
+                                    {
+                                      name: "bankAccountRef",
+                                      label:
+                                        "QuickBooks refund bank account ID",
+                                    },
+                                    {
+                                      name: "receivableAccountRef",
+                                      label:
+                                        "QuickBooks accounts receivable ID",
+                                    },
+                                    {
+                                      name: "nonTaxCodeRef",
+                                      label:
+                                        "QuickBooks non-tax expense code ID",
+                                    },
+                                    {
+                                      name: "expenseDate",
+                                      label: "Refund accounting date",
+                                      type: "date",
+                                      value: new Date()
+                                        .toISOString()
+                                        .slice(0, 10),
+                                    },
+                                  ],
+                                  (v) =>
+                                    command("quickbooks.refund", {
+                                      ...v,
+                                      refundId: r.id,
+                                    }),
+                                  `Record ${money(r.amount, r.currency)} already returned to the customer. Choose the original credit and verify the bank, receivable account, non-tax code and open accounting period. Existing credit records the sales tax; this expense records cash once. After reconciliation, link the expense to its credit.`,
+                                  "Queue refund expense",
                                 ),
-                                {
-                                  name: "bankAccountRef",
-                                  label: "QuickBooks refund bank account ID",
-                                },
-                                {
-                                  name: "receivableAccountRef",
-                                  label: "QuickBooks accounts receivable ID",
-                                },
-                                {
-                                  name: "nonTaxCodeRef",
-                                  label: "QuickBooks non-tax expense code ID",
-                                },
-                                {
-                                  name: "expenseDate",
-                                  label: "Refund accounting date",
-                                  type: "date",
-                                  value: new Date().toISOString().slice(0, 10),
-                                },
-                              ],
-                              (v) =>
-                                command("quickbooks.refund", {
-                                  ...v,
-                                  refundId: r.id,
-                                }),
-                              `Record ${money(r.amount, r.currency)} already returned to the customer. Choose the original credit and verify the bank, receivable account, non-tax code and open accounting period. Existing credit records the sales tax; this expense records cash once. After reconciliation, link the expense to its credit.`,
-                              "Queue refund expense",
-                            ),
-                          );
-                        })()}
-                    </div>
-                  )}
-                />
-              )}
+                            );
+                          })()}
+                      </div>
+                    )}
+                  />
+                )}
+              </div>
             </PageSection>
             <PageSection id="billing-accounting">
               {can("finance") && (

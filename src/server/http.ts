@@ -3385,6 +3385,18 @@ export async function createHttp(app: Application, options: HttpOptions) {
     },
     async (request) => app.billing.invoicePage(actor(request), request.query),
   );
+  http.get<{ Params: { invoiceId: string } }>(
+    "/api/billing/invoices/:invoiceId",
+    {
+      schema: {
+        params: obj({
+          invoiceId: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+      },
+    },
+    async (request) =>
+      app.billing.invoiceDetail(actor(request), request.params.invoiceId),
+  );
   http.get("/api/billing/payments", async (request) =>
     app.billing.refunds.payments(actor(request)),
   );

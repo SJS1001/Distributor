@@ -54,6 +54,7 @@ export type NavigationIntent = {
   stockView?: StockQueueView | "";
   warehouseId?: string;
   orderId?: string;
+  invoiceId?: string;
   countState?: CountQueueState | "";
 };
 const sections: Record<string, string[]> = {
@@ -133,11 +134,11 @@ export function readNavigation(hash: string): NavigationIntent {
     if (query.get("reservation") === "overdue")
       route.orderReservation = "overdue";
   }
-  if (
-    page === "Billing" &&
-    invoiceQueueStates.includes(invoiceBalance as InvoiceQueueState)
-  )
-    route.invoiceBalance = invoiceBalance as InvoiceQueueState;
+  if (page === "Billing") {
+    if (invoiceQueueStates.includes(invoiceBalance as InvoiceQueueState))
+      route.invoiceBalance = invoiceBalance as InvoiceQueueState;
+    route.invoiceId = identifier(query.get("invoice"));
+  }
   if (page === "Inventory") {
     if (stockQueueViews.includes(stockView as StockQueueView))
       route.stockView = stockView as StockQueueView;
@@ -164,6 +165,7 @@ export function navigationHash(intent: NavigationIntent) {
   if (intent.stockView) query.set("stock", intent.stockView);
   if (intent.warehouseId) query.set("warehouse", intent.warehouseId);
   if (intent.orderId) query.set("order", intent.orderId);
+  if (intent.invoiceId) query.set("invoice", intent.invoiceId);
   if (intent.countState) query.set("counts", intent.countState);
   const safe = readNavigation(`#${query}`);
   const result = new URLSearchParams({ page: safe.page });
@@ -180,6 +182,7 @@ export function navigationHash(intent: NavigationIntent) {
     stock: safe.stockView,
     warehouse: safe.warehouseId,
     order: safe.orderId,
+    invoice: safe.invoiceId,
     counts: safe.countState,
   }))
     if (value) result.set(key, value);

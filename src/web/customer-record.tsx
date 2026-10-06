@@ -141,7 +141,7 @@ export function CustomerRecord({
   const heading = useRef<HTMLHeadingElement>(null);
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    heading.current?.focus();
+    heading.current?.focus({ preventScroll: true });
   }, [account.id]);
   useEffect(() => {
     root.current
@@ -189,8 +189,14 @@ export function CustomerRecord({
         selectSection={(s) => onTab(s.replace("record-", "") as CustomerTab)}
       >
         <PageSection id="record-overview">
+          <CustomerSummary
+            account={account}
+            role={role}
+            onTab={onTab}
+            onNavigate={onNavigate}
+          />
           <section className="panel">
-            <h3>Account overview</h3>
+            <h3>Account standing</h3>
             <dl className="customer-detail-facts">
               <div>
                 <dt>Purchasing status</dt>
@@ -215,10 +221,6 @@ export function CustomerRecord({
                 </dd>
               </div>
             </dl>
-            <p>
-              Use History for retained sales and payments, Contacts for people
-              at this company, and Notes for private staff context.
-            </p>
           </section>
         </PageSection>
         <PageSection id="record-history">
@@ -286,6 +288,122 @@ export function CustomerRecord({
         </PageSection>
       </PageSections>
     </div>
+  );
+}
+type SummaryFigure = {
+  value: string;
+  detail: string;
+  state: "loading" | "ready" | "unavailable";
+};
+const pending: SummaryFigure = { value: "…", detail: "", state: "loading" };
+/** Figures come from the same scoped queue reads as History; nothing is inferred. */
+function CustomerSummary({
+  account,
+  role,
+  onTab,
+  onNavigate,
+}: {
+  account: Account;
+  role: string;
+  onTab: (t: CustomerTab) => void;
+  onNavigate: (route: NavigationIntent) => void;
+}) {
+  const staffRoles = ["admin", "commercial", "finance", "support"];
+  const canOrders = [...staffRoles, "warehouse", "warranty"].includes(role),
+    canInvoices = [...staffRoles, "warranty"].includes(role),
+    canContacts = [...staffRoles, "warehouse", "warranty"].includes(role);
+  const [orders, setOrders] = useState<SummaryFigure>(pending),
+    [due, setDue] = useState<SummaryFigure>(pending),
+    [contact, setContact] = useState<SummaryFigure>(pending);
+  useEffect(() => {
+    const c = new AbortController();
+    const id = encodeURIComponent(account.id);
+    const unavailable = (set: (f: SummaryFigure) => void) => () => {
+      if (!c.signal.aborted)
+        set({ value: "—", detail: "Unavailable", state: "unavailable" });
+    };
+    setOrders(pending);
+    setDue(pending);
+    setContact(pending);
+    if (canOrders)
+      void request<{ items: any[]; next: string | null }>(
+        `/api/orders/page?accountId=${id}&state=open`,
+        { signal: c.signal },
+      )
+        .then((p) =>
+          setOrders({
+            value: `${p.items.length}${p.next ? "+" : ""}`,
+            detail: p.items[0]
+              ? `Latest ${new Date(p.items[0].created_at).toLocaleDateString()}`
+              : "No open orders",
+            state: "ready",
+          }),
+        )
+        .catch(unavailable(setOrders));
+    if (canInvoices)
+      void request<{ items: any[]; next: string | null }>(
+        `/api/billing/invoices/page?accountId=${id}&state=unpaid`,
+        { signal: c.signal },
+      )
+        .then((p) => {
+          const total = p.items.reduce((sum, i) => sum + i.balance, 0);
+          setDue({
+            value: p.next
+              ? `${p.items.length}+ invoices`
+              : money(total, account.currency),
+            detail: p.next
+              ? "Open the invoice history for the full balance"
+              : `${p.items.length} unpaid ${p.items.length === 1 ? "invoice" : "invoices"}`,
+            state: "ready",
+          });
+        })
+        .catch(unavailable(setDue));
+    if (canContacts)
+      void request<CustomerContacts>(`/api/accounts/${id}/contacts`, {
+        signal: c.signal,
+      })
+        .then((p) => {
+          const active = p.items.filter((x) => !x.archived);
+          const first = active[0];
+          setContact({
+            value: first ? first.name : "None recorded",
+            detail: first
+              ? [first.title, first.email || first.phone]
+                  .filter(Boolean)
+                  .join(" · ") || "Contact details not recorded"
+              : "Add people in Contacts",
+            state: "ready",
+          });
+        })
+        .catch(unavailable(setContact));
+    return () => c.abort();
+  }, [account.id, role]);
+  const card = (
+    label: string,
+    figure: SummaryFigure,
+    action: string,
+    go: () => void,
+  ) => (
+    <div className="customer-summary-card" data-state={figure.state}>
+      <dt>{label}</dt>
+      <dd>
+        <strong>{figure.value}</strong>
+        <span>{figure.detail}</span>
+        <button type="button" className="text-action" onClick={go}>
+          {action} →
+        </button>
+      </dd>
+    </div>
+  );
+  return (
+    <dl className="customer-summary" aria-label="Account summary">
+      {canOrders &&
+        card("Open orders", orders, "Order history", () => onTab("history"))}
+      {canInvoices &&
+        card("Balance due", due, "Invoice history", () => onTab("history"))}
+      {canContacts &&
+        card("Primary contact", contact, "Contacts", () => onTab("contacts"))}
+    </dl>
   );
 }
 function CustomerBillingTerms({
@@ -467,53 +585,114 @@ function HistoryList({
     void load();
     return () => controller.current?.abort();
   }, [account.id, path]);
+  const link = (route: NavigationIntent, label: string) => (
+    <a
+      className="record-title-link"
+      href={navigationHash(route)}
+      onClick={(e) => {
+        if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+          return;
+        e.preventDefault();
+        onNavigate(route);
+      }}
+    >
+      {label}
+    </a>
+  );
+  const when = (value?: string) =>
+    value ? new Date(value).toLocaleDateString() : "";
+  const headings =
+    kind === "orders"
+      ? ["Order", "Placed", "Status", "Total"]
+      : kind === "invoices"
+        ? ["Invoice", "Issued", "Total", "Balance"]
+        : ["Invoice", "Received", "Source", "Amount"];
   return (
     <>
-      <button disabled={busy} onClick={() => void load()}>
-        Refresh {kind}
-      </button>
+      <div className="customer-history-toolbar">
+        <p role="status">
+          {busy
+            ? `Loading ${kind}…`
+            : `${items.length}${next ? "+" : ""} ${items.length === 1 ? kind.slice(0, -1) : kind} shown`}
+        </p>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => void load()}
+        >
+          Refresh {kind}
+        </button>
+      </div>
       {error && <p role="alert">{error}</p>}
-      <ul className="customer-history-list">
-        {items.map((i) => (
-          <li key={i.id}>
-            {kind === "orders" ? (
-              <a
-                href={navigationHash({ page: "Orders", orderId: i.id })}
-                onClick={(e) => {
-                  if (
-                    e.button ||
-                    e.metaKey ||
-                    e.ctrlKey ||
-                    e.shiftKey ||
-                    e.altKey
-                  )
-                    return;
-                  e.preventDefault();
-                  onNavigate({ page: "Orders", orderId: i.id });
-                }}
-              >
-                {i.number ?? i.id}
-              </a>
-            ) : (
-              <strong>{i.number ?? i.invoiceNumber ?? i.id}</strong>
-            )}
-            <span>
-              {kind === "payments"
-                ? `${money(i.amount, i.currency)} · ${i.provider}`
-                : kind === "invoices"
-                  ? `${money(i.total, i.currency)} · Balance ${money(i.balance, i.currency)}`
-                  : `${i.state} · ${money(i.total, i.currency ?? account.currency)}`}
-            </span>
-            <small>
-              {i.created_at ? new Date(i.created_at).toLocaleString() : ""}
-            </small>
-          </li>
-        ))}
-      </ul>
-      {!busy && !error && !items.length && (
-        <p>No retained {kind} for this customer.</p>
+      {items.length > 0 && (
+        <div className="table-wrap">
+          <table className="customer-history-table">
+            <thead>
+              <tr>
+                {headings.map((h, index) => (
+                  <th key={h} className={index === 3 ? "numeric" : undefined}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((i) => (
+                <tr key={i.id}>
+                  {kind === "orders" ? (
+                    <>
+                      <td>
+                        {link(
+                          { page: "Orders", orderId: i.id },
+                          i.number ?? `Order ${String(i.id).slice(0, 8)}`,
+                        )}
+                      </td>
+                      <td>{when(i.created_at)}</td>
+                      <td>
+                        <span className="badge">{i.state}</span>
+                      </td>
+                      <td className="numeric">
+                        {money(i.total, i.currency ?? account.currency)}
+                      </td>
+                    </>
+                  ) : kind === "invoices" ? (
+                    <>
+                      <td>
+                        {link(
+                          { page: "Billing", invoiceId: i.id },
+                          i.number ?? i.id,
+                        )}
+                      </td>
+                      <td>{when(i.created_at)}</td>
+                      <td>{money(i.total, i.currency)}</td>
+                      <td className="numeric">
+                        {money(i.balance, i.currency)}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>
+                        {link(
+                          { page: "Billing", invoiceId: i.invoice_id },
+                          i.invoiceNumber ?? i.invoice_id,
+                        )}
+                      </td>
+                      <td>{when(i.created_at)}</td>
+                      <td>{i.provider}</td>
+                      <td className="numeric">{money(i.amount, i.currency)}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      {busy && <p role="status">Loading {kind}…</p>}
+      {!busy && !error && !items.length && (
+        <p className="record-detail-empty">
+          No retained {kind} for this customer.
+        </p>
+      )}
       {next && (
         <button disabled={busy} onClick={() => void load(next)}>
           Load more {kind}

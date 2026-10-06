@@ -1,6 +1,7 @@
 import {
   navigateWorkspace,
   navigateAccounting,
+  openVisibleRowActions,
 } from "./workspace-navigation.ts";
 import { test, expect, type Page, type Request } from "@playwright/test";
 import { createHash } from "node:crypto";
@@ -17,6 +18,7 @@ async function login(page: Page) {
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   await nav(page, "Billing");
+  await openVisibleRowActions(page);
   await expect(
     page.getByRole("button", {
       name: "Review and publish invoice",
@@ -98,6 +100,7 @@ test.describe("application async abandonment", () => {
           }
         },
       );
+      await openVisibleRowActions(page);
       await page
         .getByRole("button", {
           name:
@@ -204,6 +207,7 @@ test.describe("PDF retained preparation", () => {
           settled = true;
         }
       });
+      await openVisibleRowActions(page);
       await page.getByRole("button", { name: label, exact: true }).click();
       await expect.poll(() => held).toBe(true);
       const retained = await page.evaluate(() =>
@@ -235,6 +239,7 @@ test.describe("PDF retained preparation", () => {
       ).toBeVisible();
       await nav(page, "Billing");
       const downloaded = page.waitForEvent("download");
+      await openVisibleRowActions(page);
       await page.getByRole("button", { name: label, exact: true }).click();
       await downloaded;
       await expect(
@@ -318,6 +323,7 @@ test.describe("PDF retained preparation", () => {
         }
       });
       const downloaded = page.waitForEvent("download");
+      await openVisibleRowActions(page);
       await page
         .getByRole("button", {
           name: "Review and publish invoice",
@@ -506,6 +512,7 @@ test.describe("late fulfillment reads", () => {
           "Orders",
           action === "View delivery history" ? "Shipments" : "Orders",
         );
+        await openVisibleRowActions(page);
         await expect(
           page.getByRole("button", { name: action, exact: true }).first(),
         ).toBeVisible();
@@ -542,6 +549,7 @@ test.describe("late fulfillment reads", () => {
             settled = true;
           }
         });
+        await openVisibleRowActions(page);
         await page
           .getByRole("button", { name: action, exact: true })
           .first()
@@ -595,6 +603,7 @@ test.describe("active fulfillment read retry", () => {
           }),
         }),
       );
+      await openVisibleRowActions(page);
       await page
         .getByRole("button", { name: action, exact: true })
         .first()
@@ -602,10 +611,12 @@ test.describe("active fulfillment read retry", () => {
       await expect(page.getByRole("alert")).toContainText(
         "Synthetic active review failure",
       );
+      await openVisibleRowActions(page);
       await expect(
         page.getByRole("button", { name: action, exact: true }).first(),
       ).toBeEnabled();
       await page.unroute(path);
+      await openVisibleRowActions(page);
       await page
         .getByRole("button", { name: action, exact: true })
         .first()
@@ -638,6 +649,7 @@ test.describe("read-only fulfillment history closure", () => {
         action === "View delivery history" ? "Shipments" : "Orders",
       );
       const before = await (await page.request.get("/api/dashboard")).json();
+      await openVisibleRowActions(page);
       const opener = page
         .getByRole("button", { name: action, exact: true })
         .first();

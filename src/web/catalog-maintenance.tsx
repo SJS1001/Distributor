@@ -35,7 +35,8 @@ function Products({
   return (
     <section aria-label="Staff catalog">
       <p role="status">
-        Page {rows.pageNumber} · {rows.items.length} products loaded
+        Page {rows.pageNumber} · {rows.items.length}{" "}
+        {rows.items.length === 1 ? "product" : "products"} loaded
         {rows.busy ? " · Loading…" : ""}
       </p>
       {rows.error && (
@@ -93,12 +94,14 @@ function Products({
                         Manage {p.sku}
                       </button>
                       <button
+                        className="secondary"
                         disabled={actions.busy}
                         onClick={() => actions.price(p)}
                       >
                         Tier price
                       </button>
                       <button
+                        className="secondary"
                         disabled={actions.busy}
                         aria-label={`${p.active === 1 ? "Retire" : "Reactivate"} ${p.sku}`}
                         onClick={() => actions.review(p.id, p.active !== 1)}
@@ -106,6 +109,7 @@ function Products({
                         {p.active === 1 ? "Retire" : "Reactivate"}
                       </button>
                       <button
+                        className="secondary"
                         disabled={actions.busy}
                         aria-label={`Lifecycle history ${p.sku}`}
                         onClick={() => actions.history(p.id)}
@@ -125,12 +129,17 @@ function Products({
       )}
       <nav className="actions" aria-label="Catalog pages">
         <button
+          className="secondary"
           disabled={rows.busy || rows.pageNumber === 1}
           onClick={rows.previous}
         >
           Previous catalog page
         </button>
-        <button disabled={rows.busy || !rows.next} onClick={rows.nextPage}>
+        <button
+          className="secondary"
+          disabled={rows.busy || !rows.next}
+          onClick={rows.nextPage}
+        >
           Next staff catalog page
         </button>
         {rows.error && (
@@ -168,6 +177,8 @@ export function CatalogMaintenance(actions: Actions) {
         />
       )}
       <form
+        className="queue-controls catalog-search"
+        aria-label="Catalog filters"
         onSubmit={(e) => {
           e.preventDefault();
           setSelection({
@@ -177,15 +188,16 @@ export function CatalogMaintenance(actions: Actions) {
           });
         }}
       >
-        <label>
+        <label className="queue-field">
           Catalog search
           <input
+            type="search"
             value={search}
             maxLength={120}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <label>
+        <label className="queue-field">
           Product status
           <select value={state} onChange={(e) => setState(e.target.value)}>
             <option value="active">Active</option>
@@ -193,9 +205,11 @@ export function CatalogMaintenance(actions: Actions) {
             <option value="all">All products</option>
           </select>
         </label>
-        <button type="submit" disabled={actions.busy}>
-          Search catalog
-        </button>
+        <div className="queue-field-actions">
+          <button type="submit" disabled={actions.busy}>
+            Search catalog
+          </button>
+        </div>
       </form>
       <Products
         key={selection.epoch}

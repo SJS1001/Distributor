@@ -592,6 +592,25 @@ export class Billing {
       WHERE i.org_id=? AND (?=0 OR i.account_id=?)
     )`;
   }
+  // Canonical single-invoice read for detail navigation. Same roles and custody as the queue.
+  invoiceDetail(actor: Actor, invoiceId: string) {
+    return this.database.transaction(() => {
+      actor = this.current(actor, [
+        "finance",
+        "commercial",
+        "buyer",
+        "warranty",
+        "support",
+      ]);
+      check(
+        text(invoiceId, "Invoice", 128) === invoiceId,
+        "VALIDATION",
+        "Use the exact invoice ID.",
+        400,
+      );
+      return this.invoiceView(actor, invoiceId);
+    });
+  }
   invoicePage(
     actor: Actor,
     input: {

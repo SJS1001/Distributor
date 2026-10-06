@@ -2063,3 +2063,265 @@ th[scope="row"] {
     max-width: 100%;
   }
 }
+
+/* Record rows: one clear open action, line facts, and grouped secondary actions. */
+button.record-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-2);
+  padding: 6px 10px;
+  min-height: 34px;
+  background: #fff;
+  color: #1f4fa8;
+  border: 1px solid #b9cbe6;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+button.record-link:hover {
+  background: #eef4fc;
+  filter: none;
+}
+button.record-link code {
+  font-size: var(--text-caption);
+  color: #4b5f78;
+  font-weight: 500;
+}
+.order-line {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+}
+.order-line + .order-line {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.order-line > span {
+  color: #4b5f78;
+  font-size: var(--text-secondary);
+}
+.order-line > button.secondary {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 4px 9px;
+  min-height: 30px;
+  font-size: var(--text-caption);
+}
+.row-actions {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+@media (max-width: 760px) {
+  button.record-link,
+  .order-line > button.secondary {
+    min-height: 44px;
+  }
+}
+.queue-controls .queue-field-actions {
+  align-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.saved-cart-filters {
+  margin: var(--space-3) 0 var(--space-4);
+}
+.queue-controls .queue-field select,
+.queue-controls .queue-field input {
+  width: 100%;
+}
+
+/* Programmatic focus targets are not controls; keep the focus without a ring. */
+h1[tabindex="-1"]:focus,
+h2[tabindex="-1"]:focus,
+h3[tabindex="-1"]:focus {
+  outline: none;
+}
+a.record-title-link {
+  font-weight: 700;
+  color: #1f4fa8;
+  text-decoration: underline;
+  text-decoration-color: #a9bfe3;
+  text-underline-offset: 3px;
+}
+a.record-title-link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Focused record detail (invoice, order). */
+.record-detail {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+.record-detail .back-link {
+  justify-self: start;
+}
+.record-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px 22px;
+}
+.record-detail-header h2 {
+  margin: 2px 0 6px;
+  font-size: 26px;
+  letter-spacing: -0.3px;
+}
+.record-detail-header p {
+  margin: 0;
+  color: #4b5f78;
+}
+.record-detail-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  color: #1f6fbf !important;
+}
+.record-status {
+  flex: none;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  background: #e8f1ea;
+  color: #1d5c32;
+}
+.record-status[data-status="due"] {
+  background: #fff2db;
+  color: #7a5214;
+}
+.record-status[data-status="credit"] {
+  background: #e7effb;
+  color: #23498e;
+}
+.record-figures {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.record-figures > div {
+  padding: 14px 18px;
+  border-right: 1px solid var(--line);
+  min-width: 0;
+}
+.record-figures > div:last-child {
+  border-right: 0;
+}
+.record-figures dt {
+  font-size: var(--text-caption);
+  color: #5a6c82;
+}
+.record-figures dd {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.record-figure-emphasis {
+  background: #f4f8fd;
+}
+.record-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.record-detail-actions .stock-actions {
+  max-width: 260px;
+}
+.record-detail-panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+}
+.record-detail-panel h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.record-detail-panel tfoot th {
+  text-align: right;
+  font-weight: 600;
+  color: #4b5f78;
+}
+.record-detail-note,
+.record-detail-empty {
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  margin: 12px 0 0;
+}
+@media (max-width: 900px) {
+  .record-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .record-figures > div {
+    border-bottom: 1px solid var(--line);
+  }
+}
+@media (max-width: 600px) {
+  .record-detail-header {
+    flex-direction: column;
+  }
+}
+.record-detail-panel tfoot th,
+.record-detail-panel tfoot td {
+  background: #fff;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--text-secondary);
+  color: #34475e;
+  border-top: 1px solid var(--line);
+}
+.record-detail-panel tfoot tr:last-child th,
+.record-detail-panel tfoot tr:last-child td {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Secondary ledgers below a primary queue read as distinct cards. */
+.ledger-section {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-top: var(--space-5);
+}
+.ledger-section > h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.ledger-section > p {
+  margin: 4px 0;
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  max-width: 78ch;
+}
+.ledger-section .table-wrap {
+  margin-top: var(--space-3);
+}
+.catalog-search {
+  margin-bottom: var(--space-4);
+}
+.catalog-search > label.queue-field {
+  display: grid;
+  gap: 7px;
+  font-size: var(--text-caption);
+  color: #44566b;
+  font-weight: 600;
+}
+nav[aria-label="Catalog pages"] button:disabled {
+  opacity: 0.55;
+}

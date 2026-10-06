@@ -205,16 +205,18 @@ export function OrderQueueControls({
           ))}
         </select>
       </div>
-      <label htmlFor={reservationId}>Reservation deadline</label>
-      <select
-        id={reservationId}
-        value={queue.reservation}
-        disabled={!queue.active}
-        onChange={(e) => applyReservation(e.target.value as "overdue" | "")}
-      >
-        <option value="">All deadlines</option>
-        <option value="overdue">Overdue reservations on open orders</option>
-      </select>
+      <div className="queue-field">
+        <label htmlFor={reservationId}>Reservation deadline</label>
+        <select
+          id={reservationId}
+          value={queue.reservation}
+          disabled={!queue.active}
+          onChange={(e) => applyReservation(e.target.value as "overdue" | "")}
+        >
+          <option value="">All deadlines</option>
+          <option value="overdue">Overdue reservations on open orders</option>
+        </select>
+      </div>
       {queue.reservation && (
         <p>
           Open orders with a recorded reservation deadline at or before the
@@ -253,7 +255,8 @@ export function OrderQueueControls({
         </button>
       )}
       <p role="status">
-        {queue.items.length} orders loaded
+        {queue.items.length} {queue.items.length === 1 ? "order" : "orders"}{" "}
+        loaded
         {queue.busy
           ? " · Loading…"
           : queue.loaded && !queue.next && !queue.error

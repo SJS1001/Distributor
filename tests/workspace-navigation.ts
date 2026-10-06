@@ -69,3 +69,16 @@ export async function openStockActions(row: Locator) {
   if (!(await actions.evaluate((element) => element.hasAttribute("open"))))
     await actions.locator("summary").click();
 }
+
+// Order and invoice rows group secondary commands in the same disclosure.
+export async function withRowActions(row: Locator) {
+  await openStockActions(row);
+  return row;
+}
+
+// Page-level variant for journeys that act on the first matching row.
+export async function openVisibleRowActions(page: Page) {
+  const closed = page.locator("details.stock-actions:not([open]) > summary");
+  for (const summary of await closed.all())
+    if (await summary.isVisible()) await summary.click();
+}

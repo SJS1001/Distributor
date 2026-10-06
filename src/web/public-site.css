@@ -1367,3 +1367,11 @@
 .public-access-paths.is-signed-in {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 }
+.public-site .public-scanner-tool {
+  background: #eef4fa;
+  border-color: #d5e1ed;
+  color: #123957;
+}
+.public-scanner-tool .public-access-description {
+  color: #546e85;
+}

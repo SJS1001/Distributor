@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3134",
   pattern = "**/api/orders/page?*";
@@ -78,7 +78,9 @@ test("browser: phone order queue preserves scoped pages on failure, retries exac
   const history = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/orders/queue-000/amendments",
   );
-  await oldest
+  await (
+    await withRowActions(oldest)
+  )
     .getByRole("button", { name: "View amendment history", exact: true })
     .click();
   expect((await history).status()).toBe(200);

@@ -200,7 +200,7 @@ export function BillingInbox({
   const opener = useRef<HTMLButtonElement | null>(null);
   return (
     <>
-      <section aria-label="Customer document inbox">
+      <section className="ledger-section" aria-label="Customer document inbox">
         <h2>Customer document inbox</h2>
         <p>
           Published PDFs are available to the customer account. Only a buyer's
