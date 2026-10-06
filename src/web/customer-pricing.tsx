@@ -5,6 +5,7 @@ import type {
   PricingPolicy,
   ProductMsrp,
 } from "../shared/customer-pricing.ts";
+import "./record-forms.css";
 import "./customer-pricing.css";
 
 const money = (cents: number, currency: string) =>
@@ -268,17 +269,35 @@ function CustomerEditor({
             });
           }}
         >
-          <fieldset disabled={change.locked}>
+          <fieldset disabled={change.locked} className="record-form-card">
             <legend>Customer price agreement</legend>
-            <label>
-              Price calculation
-              <select value={mode} onChange={(e) => setMode(e.target.value)}>
-                <option value="tier">Existing tier and base prices</option>
-                <option value="multiplier">Multiply each product’s MSRP</option>
-              </select>
-            </label>
+            <div className="record-form-grid">
+              <label>
+                Price calculation
+                <select value={mode} onChange={(e) => setMode(e.target.value)}>
+                  <option value="tier">Existing tier and base prices</option>
+                  <option value="multiplier">
+                    Multiply each product’s MSRP
+                  </option>
+                </select>
+              </label>
+              <label>
+                Prices shown to this customer
+                <select
+                  value={display}
+                  onChange={(e) =>
+                    setDisplay(e.target.value as PricingPolicy["displayMode"])
+                  }
+                >
+                  <option value="net_only">Net price only</option>
+                  <option value="detailed">
+                    MSRP, discount %, savings and net price
+                  </option>
+                </select>
+              </label>
+            </div>
             {mode === "multiplier" && (
-              <>
+              <div className="record-form-grid">
                 <label>
                   MSRP multiplier
                   <input
@@ -292,32 +311,21 @@ function CustomerEditor({
                     aria-describedby={`multiplier-help-${accountId}`}
                   />
                 </label>
-                <p id={`multiplier-help-${accountId}`}>
+                <p
+                  id={`multiplier-help-${accountId}`}
+                  className="record-form-note"
+                >
                   {valid
                     ? `${bp / 100}% of MSRP · ${(10000 - bp) / 100}% discount`
                     : "Enter a multiplier between 0 and 1, with up to four decimal places."}{" "}
                   For example, 0.75 gives 25% off MSRP.
                 </p>
-                <p>
+                <p className="record-form-note record-form-wide">
                   Every eligible product needs an explicit MSRP. Products
                   missing MSRP cannot be quoted under this agreement.
                 </p>
-              </>
+              </div>
             )}
-            <label>
-              Prices shown to this customer
-              <select
-                value={display}
-                onChange={(e) =>
-                  setDisplay(e.target.value as PricingPolicy["displayMode"])
-                }
-              >
-                <option value="net_only">Net price only</option>
-                <option value="detailed">
-                  MSRP, discount %, savings and net price
-                </option>
-              </select>
-            </label>
             {mode === "multiplier" && (
               <div className="pricing-preview">
                 <label>
@@ -359,7 +367,7 @@ function CustomerEditor({
               </div>
             )}
             {mode === "tier" && (
-              <p>
+              <p className="record-form-note">
                 Current tier prices remain in effect. Detailed display includes
                 MSRP and savings only for products with an MSRP and a net price
                 at or below it.
@@ -374,24 +382,36 @@ function CustomerEditor({
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
-            <button type="submit" disabled={mode === "multiplier" && !valid}>
-              Save customer pricing
-            </button>
+            <div className="record-form-footer">
+              <button type="submit" disabled={mode === "multiplier" && !valid}>
+                Save customer pricing
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={change.locked}
+                onClick={change.reload}
+              >
+                Reload current pricing
+              </button>
+            </div>
           </fieldset>
         </form>
       ) : (
-        <p role="status">
-          {change.busy ? "Loading current pricing…" : "Pricing unavailable."}
-        </p>
+        <>
+          <p role="status">
+            {change.busy ? "Loading current pricing…" : "Pricing unavailable."}
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={change.locked}
+            onClick={change.reload}
+          >
+            Reload current pricing
+          </button>
+        </>
       )}
-      <button
-        type="button"
-        className="secondary"
-        disabled={change.locked}
-        onClick={change.reload}
-      >
-        Reload current pricing
-      </button>
       <PricingHistory accountId={accountId} currency={currency} />
     </div>
   );
@@ -408,11 +428,12 @@ export function CustomerPricingControls({
   const [id, setId] = useState(accounts[0]?.id ?? "");
   const account = accounts.find((a) => a.id === id);
   return (
-    <section className="panel">
-      <h2>Customer pricing</h2>
-      <p>
-        Choose the customer, agree their MSRP multiplier and decide how their
-        prices appear.
+    <section className="panel customer-pricing-panel">
+      <h3>Customer pricing</h3>
+      <p className="customer-panel-intro">
+        {selectedOnly
+          ? "Agree this customer’s MSRP multiplier and decide how their prices appear."
+          : "Choose the customer, agree their MSRP multiplier and decide how their prices appear."}
       </p>
       {!selectedOnly && (
         <label>
@@ -484,7 +505,7 @@ export function ProductMsrpEditor({
             });
           }}
         >
-          <fieldset disabled={change.locked}>
+          <fieldset disabled={change.locked} className="record-form-card">
             <legend>Product MSRP</legend>
             <label>
               MSRP ({currency}, dollars)
@@ -497,7 +518,7 @@ export function ProductMsrpEditor({
                 onChange={(e) => setAmount(e.target.value)}
               />
             </label>
-            <small>
+            <small className="record-form-note">
               Blank means no MSRP. Customers with an MSRP multiplier cannot
               quote this product until MSRP is set.
             </small>
@@ -510,18 +531,30 @@ export function ProductMsrpEditor({
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
-            <button>Save product MSRP</button>
+            <div className="record-form-footer">
+              <button>Save product MSRP</button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={change.locked}
+                onClick={change.reload}
+              >
+                Reload product MSRP
+              </button>
+            </div>
           </fieldset>
         </form>
       )}
-      <button
-        type="button"
-        className="secondary"
-        disabled={change.locked}
-        onClick={change.reload}
-      >
-        Reload product MSRP
-      </button>
+      {!change.value && (
+        <button
+          type="button"
+          className="secondary"
+          disabled={change.locked}
+          onClick={change.reload}
+        >
+          Reload product MSRP
+        </button>
+      )}
       <PricingHistory productId={productId} currency={currency} />
     </section>
   );
@@ -588,7 +621,7 @@ function PricingHistory({
       {error && <p role="alert">{error}</p>}
       {busy && <p role="status">Loading pricing history…</p>}
       {page?.items.map((h) => (
-        <article key={h.id}>
+        <article key={h.id} className="pricing-history-entry">
           <h4>
             {h.kind === "policy"
               ? "Customer price agreement"

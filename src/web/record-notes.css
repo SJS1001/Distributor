@@ -43,3 +43,99 @@
 .record-note-verified {
   font-weight: 600;
 }
+
+/* Readable staff notes: the disclosure reads as a card; notes are entries. */
+.record-notes {
+  border: 1px solid var(--line, #d1d5db);
+  border-radius: 8px;
+  background: #fff;
+  box-sizing: border-box;
+}
+.record-notes > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.record-notes[open] > summary {
+  border-bottom: 1px solid var(--line, #d1d5db);
+}
+.record-notes .record-notes-content {
+  border: 0;
+  margin: 0;
+  padding: 14px 16px 16px;
+}
+.record-notes-intro {
+  margin: 0 0 12px;
+  color: var(--muted, #5d6d80);
+  font-size: var(--text-secondary, 13px);
+}
+.record-notes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+.record-notes-toolbar p {
+  margin: 0;
+  color: var(--muted, #5d6d80);
+  font-size: var(--text-secondary, 13px);
+  font-weight: 600;
+}
+.record-notes-toolbar button,
+.record-notes-content button {
+  min-height: 44px;
+}
+.record-notes-empty {
+  color: var(--muted, #5d6d80);
+}
+.record-notes .record-note-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+.record-notes .record-note-list li {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line, #d1d5db);
+  border-radius: 8px;
+  background: #fafbfd;
+}
+.record-note-list li > p {
+  margin: 0;
+}
+.record-note-list .record-note-body {
+  line-height: 1.55;
+  margin-bottom: 6px;
+}
+.record-note-meta {
+  color: var(--muted, #5d6d80);
+  font-size: var(--text-caption, 12px);
+}
+.record-note-verified {
+  margin-top: 4px !important;
+  color: #1d5c32;
+  font-size: var(--text-caption, 12px);
+}
+.record-note-verify {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.record-note-unverified {
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff2db;
+  color: #7a5214;
+  font-size: var(--text-caption, 12px);
+  font-weight: 700;
+}
+.record-note-composer {
+  margin: 12px 0 8px;
+}

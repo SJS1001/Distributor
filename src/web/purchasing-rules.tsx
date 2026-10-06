@@ -6,6 +6,7 @@ import type {
   ProductPurchasingPolicy,
 } from "../shared/purchasing.ts";
 import type { CatalogProduct } from "../shared/catalog-lifecycle.ts";
+import "./record-forms.css";
 import "./purchasing-rules.css";
 
 function ProductChoices({
@@ -21,7 +22,7 @@ function ProductChoices({
     "/api/catalog/products/page?state=active",
   );
   return (
-    <fieldset disabled={disabled}>
+    <fieldset disabled={disabled} className="policy-product-choices">
       <legend>Eligible products ({selected.length} selected)</legend>
       <div className="policy-products">
         {rows.items.map((p) => (
@@ -90,9 +91,6 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
         </p>
       )}
       {notice && <p role="status">{notice}</p>}
-      <button type="button" disabled={busy} onClick={() => setEpoch(epoch + 1)}>
-        Reload current purchasing rules
-      </button>
       {policy ? (
         <form
           onSubmit={async (e) => {
@@ -116,9 +114,9 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
             }
           }}
         >
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy} className="record-form-card">
             <legend>Customer purchasing access</legend>
-            <label>
+            <label className="purchasing-access">
               Catalog access
               <select
                 aria-label="Catalog access"
@@ -161,19 +159,39 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
-            <p>
+            <p className="record-form-note">
               Changing access applies to browsing and subsequent cart, quote and
               acceptance checks. Product rules may independently require review.
             </p>
-            <button type="submit">Save customer purchasing rules</button>
+            <div className="record-form-footer">
+              <button type="submit">Save customer purchasing rules</button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setEpoch(epoch + 1)}
+              >
+                Reload current purchasing rules
+              </button>
+            </div>
           </fieldset>
         </form>
       ) : (
-        <p role="status">
-          {error
-            ? "Rules unavailable. Reload to retry."
-            : "Loading purchasing rules…"}
-        </p>
+        <>
+          <p role="status">
+            {error
+              ? "Rules unavailable. Reload to retry."
+              : "Loading purchasing rules…"}
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy}
+            onClick={() => setEpoch(epoch + 1)}
+          >
+            Reload current purchasing rules
+          </button>
+        </>
       )}
     </>
   );
@@ -188,7 +206,7 @@ export function CustomerPurchasingRules({
   const [id, setId] = useState(accounts[0]?.id ?? "");
   return (
     <section className="panel customer-purchasing-rules">
-      <h2>Customer purchasing rules</h2>
+      <h3>Customer purchasing rules</h3>
       {!selectedOnly && (
         <label>
           Customer for purchasing rules
@@ -235,9 +253,18 @@ export function ProductPurchasingRules({ productId }: { productId: string }) {
       <h3>Product purchasing rules</h3>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
-      <button disabled={busy} onClick={() => setEpoch(epoch + 1)}>
-        Reload product purchasing rule
-      </button>
+      {!policy && (
+        <>
+          {!error && <p role="status">Loading product purchasing rule…</p>}
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => setEpoch(epoch + 1)}
+          >
+            Reload product purchasing rule
+          </button>
+        </>
+      )}
       {policy && (
         <form
           onSubmit={async (e) => {
@@ -259,9 +286,9 @@ export function ProductPurchasingRules({ productId }: { productId: string }) {
             }
           }}
         >
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy} className="record-form-card">
             <legend>Order review</legend>
-            <label>
+            <label className="record-form-check">
               <input
                 type="checkbox"
                 checked={policy.requiresReview}
@@ -280,11 +307,21 @@ export function ProductPurchasingRules({ productId }: { productId: string }) {
                 onChange={(e) => setReason(e.target.value)}
               />
             </label>
-            <p>
+            <p className="record-form-note">
               Customer entitlement is managed in Customers → Customer purchasing
               rules.
             </p>
-            <button>Save product purchasing rule</button>
+            <div className="record-form-footer">
+              <button>Save product purchasing rule</button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setEpoch(epoch + 1)}
+              >
+                Reload product purchasing rule
+              </button>
+            </div>
           </fieldset>
         </form>
       )}

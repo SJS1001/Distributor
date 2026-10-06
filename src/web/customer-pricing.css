@@ -48,3 +48,50 @@
 .customer-price-compact strong {
   font-size: 1rem;
 }
+
+/* Customer pricing tab: grouped agreement form and readable history. */
+.customer-pricing-panel .pricing-editor {
+  max-width: 52rem;
+  margin-block: 0;
+}
+.pricing-editor fieldset.record-form-card {
+  display: block;
+}
+.pricing-editor fieldset.record-form-card .pricing-preview {
+  margin: 0 0 var(--space-4);
+}
+.pricing-history {
+  margin-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+.pricing-history > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.pricing-history > p {
+  color: var(--muted);
+  font-size: var(--text-secondary);
+}
+.pricing-history-entry {
+  padding: 12px 14px;
+  margin: 0 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: var(--text-secondary);
+}
+.pricing-history-entry h4 {
+  margin: 0 0 6px;
+  font-size: var(--text-control);
+}
+.pricing-history-entry p {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+.pricing-history-entry small {
+  color: var(--muted);
+}

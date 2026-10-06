@@ -148,3 +148,116 @@
     max-height: calc(100dvh - 16px);
   }
 }
+
+/* Catalog product management dialog: compact header and record figures. */
+.catalog-product-header {
+  position: sticky;
+  top: -1.4rem;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: -1.4rem -1.4rem var(--space-3);
+  padding: 16px 1.4rem 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+.catalog-product-header h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 4px 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.2px;
+  overflow-wrap: anywhere;
+}
+.catalog-product-header h2 code {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #eef3fa;
+  color: #23498e;
+  font-size: 15px;
+}
+.catalog-product-header p {
+  margin: 0;
+}
+.catalog-product-header > button {
+  flex: none;
+  min-height: 44px;
+}
+nav.catalog-product-breadcrumbs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+nav.catalog-product-breadcrumbs button.text-action {
+  min-height: 32px;
+  padding: 4px 0;
+  color: #315fbd;
+  font-size: var(--text-caption);
+}
+.catalog-product-manager > .page-sections {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.catalog-product-manager > .page-sections button {
+  flex: none;
+  white-space: nowrap;
+}
+.catalog-product-manager h3 {
+  margin: var(--space-4) 0 var(--space-3);
+  font-size: 17px;
+}
+.catalog-product-manager [role="tabpanel"] > dl + .record-detail-note {
+  margin: 0 0 var(--space-4);
+}
+.availability-editor:not(.availability-compact) fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.availability-editor:not(.availability-compact) .availability-legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 4px;
+}
+.availability-editor:not(.availability-compact) .availability-legend + * {
+  clear: left;
+}
+.availability-editor:not(.availability-compact) .availability-checkbox {
+  min-height: 44px;
+  align-items: center;
+  margin: 0;
+}
+.availability-editor:not(.availability-compact) .availability-checkbox input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+}
+.availability-editor:not(.availability-compact) fieldset > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-secondary);
+}
+.availability-editor:not(.availability-compact) .actions {
+  margin: 4px 0 0;
+}
+.availability-editor:not(.availability-compact) .actions button {
+  min-height: 44px;
+  font-size: var(--text-control);
+  padding: 0.5rem 1rem;
+}
+@media (max-width: 600px) {
+  .catalog-product-header {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

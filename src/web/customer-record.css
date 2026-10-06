@@ -34,20 +34,35 @@
 .customer-status.held {
   color: #9a3412;
 }
-.customer-directory-tools {
-  display: flex;
+.queue-controls.customer-directory-tools {
+  grid-template-columns: minmax(0, 26rem) 1fr;
   align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
 }
-.customer-directory-tools label {
-  max-width: 26rem;
-  flex: 1;
+.customer-directory-tools .queue-field {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  font-size: var(--text-caption);
+  color: #44566b;
+  font-weight: 600;
 }
-.customer-name-link {
+.customer-directory-tools .queue-field-actions {
+  justify-self: end;
+}
+.customer-directory-tools .queue-field-actions .actions {
+  margin: 0;
+}
+.customer-directory-count {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+}
+.customer-directory-table .customer-name-link {
   font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+}
+.customer-directory-table .customer-tier {
+  text-transform: capitalize;
 }
 .customer-detail-facts {
   display: grid;
@@ -69,22 +84,10 @@
   flex: none;
   white-space: nowrap;
 }
-.customer-contact-list,
 .customer-history-list {
   list-style: none;
   padding: 0;
   margin: 1rem 0;
-}
-.customer-contact-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 0;
-  border-bottom: 1px solid var(--border);
-  overflow-wrap: anywhere;
-}
-.customer-contact-list p {
-  margin: 0.3rem 0;
 }
 .customer-history-list li {
   display: grid;
@@ -104,12 +107,45 @@
   .customer-key-facts {
     gap: 1.5rem;
   }
-  .customer-directory-tools {
-    align-items: stretch;
-    flex-direction: column;
+  .queue-controls.customer-directory-tools {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .customer-contact-list li {
-    flex-direction: column;
+  /* Phone: each customer row becomes a compact two-line card. */
+  .customer-directory-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .customer-directory-table,
+  .customer-directory-table tbody {
+    display: block;
+  }
+  .customer-directory-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .customer-directory-table td {
+    padding: 0;
+    border: 0;
+  }
+  .customer-directory-table td.numeric {
+    text-align: right;
+  }
+  .customer-directory-table .customer-tier::before {
+    content: "Tier ";
+    color: var(--muted);
+  }
+  .customer-directory-table .customer-tier,
+  .customer-directory-table td.numeric {
+    font-size: var(--text-secondary);
+  }
+  .customer-directory-tools .queue-field-actions {
+    justify-self: stretch;
   }
   .customer-detail-facts {
     grid-template-columns: 1fr;
@@ -182,5 +218,175 @@
   .customer-history-table th,
   .customer-history-table td {
     padding-inline: 10px;
+  }
+}
+
+/* Customer record: Terms, Pricing, Notes and Contacts tabs. */
+.customer-terms-panel > h3,
+.customer-pricing-panel > h3,
+.customer-purchasing-rules > h3,
+.customer-panel-header h3 {
+  margin: 0 0 var(--space-3);
+  font-size: 17px;
+}
+.customer-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.customer-panel-header > button {
+  flex: none;
+  min-height: 44px;
+}
+.customer-panel-intro {
+  margin: -4px 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-secondary);
+  max-width: 72ch;
+}
+.customer-terms-panel .customer-detail-facts {
+  margin: 0;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbfd;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+}
+.customer-terms-panel .customer-detail-facts > div {
+  padding: 12px 16px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 0 -1px -1px 0;
+  min-width: 0;
+}
+.customer-terms-panel .customer-detail-facts dt {
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.customer-terms-panel .customer-detail-facts dd {
+  font-weight: 600;
+  color: var(--ink);
+}
+.customer-fact-wide {
+  grid-column: 1 / -1;
+}
+.customer-panel-actions .actions {
+  margin: var(--space-4) 0 0;
+}
+.customer-panel-actions .actions button {
+  min-height: 44px;
+}
+.customer-record .customer-terms-panel .record-detail-empty {
+  margin: 0;
+}
+.customer-contact-recovery {
+  padding: 12px 16px;
+  border: 1px solid #e8cf98;
+  border-radius: 8px;
+  background: #fff8e8;
+}
+.customer-contact-count {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+}
+.customer-contact-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.customer-contact-list li {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.customer-contact-list li[data-archived] {
+  background: #f6f7f9;
+}
+.customer-contact-list li[data-archived] strong {
+  color: var(--muted);
+}
+.customer-contact-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.customer-contact-card-head strong {
+  font-size: 15px;
+}
+.customer-contact-card-head .badge {
+  background: #eceff3;
+  color: #4b5f78;
+}
+.customer-contact-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-secondary);
+}
+.customer-contact-details {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+}
+.customer-contact-details > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  font-size: var(--text-secondary);
+}
+.customer-contact-details dt {
+  color: var(--muted);
+}
+.customer-contact-details dd {
+  margin: 0;
+}
+.customer-contact-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.customer-contact-card-foot small {
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.customer-contact-card-foot button {
+  min-height: 44px;
+}
+.customer-record .record-notes {
+  max-width: none;
+  margin-top: var(--space-5);
+}
+@media (max-width: 900px) {
+  .customer-terms-panel .customer-detail-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .customer-terms-panel .customer-detail-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .customer-panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .customer-contact-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -27,3 +27,31 @@
   padding: 0.5rem;
   border-bottom: 1px solid var(--border);
 }
+
+/* Customer purchasing rules: grouped access form. */
+.customer-purchasing-rules fieldset.record-form-card > label.purchasing-access {
+  max-width: 26rem;
+}
+.customer-purchasing-rules .policy-product-choices {
+  min-width: 0;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.customer-purchasing-rules .policy-product-choices > legend {
+  float: left;
+  width: 100%;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-secondary);
+  font-weight: 700;
+}
+.customer-purchasing-rules .policy-product-choices > legend + * {
+  clear: left;
+}
+.customer-purchasing-rules .policy-product-choices > p,
+.customer-purchasing-rules .policy-product-choices > button {
+  margin: 8px 12px;
+}
