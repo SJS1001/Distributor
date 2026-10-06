@@ -11411,6 +11411,8 @@ test("browser: required role MFA blocks workspace, retries and cancels setup rea
   await page
     .getByRole("button", { name: "Back to sign in", exact: true })
     .click();
+  // Same reload-dependent sign-out destination as the shipment journeys.
+  await openSignIn(page, "staff");
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();

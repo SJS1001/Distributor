@@ -112,8 +112,13 @@ export async function expectSignedOut(page: Page) {
   ).toBeVisible();
 }
 
-// Signing out returns to the public entrance. Follow its visible sign-in link
-// (a hash change, not a reload) so in-page state handling stays under test.
+// Where sign-out lands depends on whether the page reloaded while signed in:
+// without a reload the public route used to sign in (for example #sign-in) is
+// kept and its form shows again; after a reload at a workspace hash the public
+// route resets to the marketing home. That reload dependence is an open owner
+// question, not asserted here. Both destinations show the public navigation, so
+// follow its visible sign-in link (a hash change, not a reload) to reach the
+// form either way while in-page state handling stays under test.
 export async function openSignIn(page: Page, audience: "customer" | "staff") {
   await page
     .getByRole("navigation", { name: "Public navigation", exact: true })
