@@ -41,7 +41,16 @@ export async function navigateWorkspace(
       .getByRole("button", { name: category, exact: true })
       .click();
   }
-  await pages.getByRole("button", { name: destination, exact: true }).click();
+  // A category with one authorized page opens it directly and shows no page
+  // tabs, so wait for either the destination tab or the destination heading.
+  const tab = pages.getByRole("button", { name: destination, exact: true });
+  const title = page.locator("#workspace-title").filter({
+    hasText: new RegExp(
+      `^${destination.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+    ),
+  });
+  await expect(tab.or(title).first()).toBeVisible();
+  if (await tab.isVisible()) await tab.click();
   if (section)
     await page
       .getByRole("tablist", { name: `${destination} sections`, exact: true })

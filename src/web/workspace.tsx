@@ -267,6 +267,8 @@ export function WorkspaceTabs({
   const group = workspaceGroups.find((item) => item.pages.includes(page));
   if (!group) return null;
   const visible = group.pages.filter((item) => pages.includes(item));
+  // A single tab only repeats the page heading; it offers no navigation.
+  if (visible.length < 2) return null;
   return (
     <nav className="workspace-tabs" aria-label={`${group.name} pages`}>
       {visible.map((item) => (

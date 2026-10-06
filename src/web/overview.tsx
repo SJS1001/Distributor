@@ -317,8 +317,10 @@ export function Overview({
           {data.orders.length ? (
             <>
               <p className="chart-note">
-                Latest {Math.min(data.orders.length, 8)} recorded orders. Open
-                the order queue for all records and actions.
+                {Math.min(data.orders.length, 8) === 1
+                  ? "Latest recorded order."
+                  : `Latest ${Math.min(data.orders.length, 8)} recorded orders.`}{" "}
+                Open the order queue for all records and actions.
               </p>
               <div className="table-wrap">
                 <table>
@@ -336,7 +338,9 @@ export function Overview({
                         <td>{accountName(order.account_id)}</td>
                         <td>
                           <button
-                            className="record-reference text-action"
+                            type="button"
+                            className="record-link"
+                            title={order.id}
                             onClick={() =>
                               navigate({
                                 page: "Orders",
@@ -345,7 +349,7 @@ export function Overview({
                               })
                             }
                           >
-                            {order.id.slice(0, 8)}
+                            <code>{order.id.slice(0, 8)}</code>
                           </button>
                         </td>
                         <td>

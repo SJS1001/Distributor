@@ -50,7 +50,7 @@ test("overview charts use complete aggregates even when queues contain one recor
   );
   assert.match(html, /width:75%/);
   assert.match(html, /width:25%/);
-  assert.match(html, /Latest 1 recorded orders/);
+  assert.match(html, /Latest recorded order\./);
   assert.match(html, /1,234\.56/);
 });
 
@@ -206,4 +206,25 @@ test("section destinations select an allowed panel and fall back for an unavaila
     );
     assert.equal((html.match(/aria-selected="true"/g) ?? []).length, 1);
   }
+});
+
+test("report grid spans wide reports and any card left alone in its row", async () => {
+  const { reportSpans } = await import("../src/web/dashboard-reports.tsx");
+  const wide = { wide: true },
+    card = {};
+  assert.deepEqual(reportSpans([wide, card, card, card]), [
+    true,
+    false,
+    false,
+    true,
+  ]);
+  assert.deepEqual(reportSpans([card, wide, card, card]), [
+    true,
+    true,
+    false,
+    false,
+  ]);
+  assert.deepEqual(reportSpans([wide, card, card]), [true, false, false]);
+  assert.deepEqual(reportSpans([card]), [true]);
+  assert.deepEqual(reportSpans([]), []);
 });
