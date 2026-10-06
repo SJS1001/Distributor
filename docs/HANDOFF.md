@@ -11,7 +11,7 @@ Verification, run serially on the same workstation and toolchain, against the wo
 - All 28 browser configs exited 0; the main suite passed 342 of 342.
 - Build and typecheck passed.
 
-The limits of the entry below still apply.
+Deployed to the Canadian Fly pilot as `polish29b-20261006`; see the receipt in [FLY-CANADA.md](FLY-CANADA.md). The limits of the entry below still apply.
 
 ## UI polish, invoice detail and test repair — 2026-10-06
 

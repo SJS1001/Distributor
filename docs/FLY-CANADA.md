@@ -255,3 +255,13 @@ Source `fa48391`, schema28, image `polish28-20261005` supersedes notes28 on the 
 Source `bd41544`, schema 29, image `polish29-20261006` supersedes `customers29b-20261005` on the same Toronto Machine. Digest `sha256:0196cfe5bae05686489ca12fbf3df803687ef5b1c808896c99a10a1fa77d1fd0`. This code-only release has no migration.
 
 All 409 tracked source and package files matched the machine. Database integrity and foreign-key checks passed, and health is 200. The previous image is retained for rollback. Verification and limits are in the 2026-10-06 HANDOFF entry.
+
+## Staff sign-out landing release, 2026-10-06
+
+Source `828d878`, schema 29, image `polish29b-20261006` supersedes `polish29-20261006` on the same Toronto Machine (version 13). Digest `sha256:b0e456406d579658b778f44c3ec98493b10d13c3931da0e7e17e021a1714fa1d`. This code-only release has no migration. It was deployed from a clean export of the pushed commit.
+
+- All 409 tracked source and package files matched the machine.
+- Database integrity and foreign-key checks passed (0 violations).
+- Health is 200 and the Fly health check passes.
+
+A read-only live capture took 24 screenshots with 0 page errors and 0 business writes. It confirmed that the staff sign-out lands on "Administration sign in." `polish29-20261006` is retained for rollback.
