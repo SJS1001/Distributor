@@ -263,8 +263,16 @@ test("browser: purchasing resumes and confirms an off-page saved receipt draft w
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
+  // Saved receipt drafts also name their order; only the order queue pages.
+  const records = page.getByRole("region", {
+    name: "Purchase order records",
+    exact: true,
+  });
   await expect(
-    page.getByTitle("purchase-queue-001", { exact: true }),
+    records.getByTitle("purchase-queue-044", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    records.getByTitle("purchase-queue-001", { exact: true }),
   ).toHaveCount(0);
   await navigateWorkspace(page, "Purchasing", "Receipt drafts");
   const draft = page
@@ -305,6 +313,9 @@ test("browser: purchasing resumes and confirms an off-page saved receipt draft w
   expect((await detail.json()).lines[0].received).toBe(1);
   await navigateWorkspace(page, "Purchasing", "Purchase orders");
   await expect(
-    page.getByTitle("purchase-queue-001", { exact: true }),
+    records.getByTitle("purchase-queue-044", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    records.getByTitle("purchase-queue-001", { exact: true }),
   ).toHaveCount(0);
 });

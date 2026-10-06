@@ -1,7 +1,4 @@
-import {
-  navigateWorkspace,
-  openVisibleRowActions,
-} from "./workspace-navigation.ts";
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3129";
 async function login(page: Page, email: string, buyer = false) {
@@ -25,6 +22,14 @@ async function login(page: Page, email: string, buyer = false) {
   if (buyer) await buyerNav(page, "Returns");
   else await navigateWorkspace(page, "Returns");
   return csrf;
+}
+// Secondary claim commands live in the claim row's Actions disclosure; wait for
+// the refreshed row rather than opening whatever disclosures are rendered now.
+function claimRow(page: Page, claimId: string) {
+  return page
+    .getByRole("region", { name: "Claim records", exact: true })
+    .getByRole("row")
+    .filter({ hasText: claimId.slice(0, 8) });
 }
 // Buyers use the customer header: Overview is labelled Reports and Returns is
 // reached from Account. A phone header collapses the navigation behind Menu.
@@ -187,7 +192,7 @@ test("browser: warranty policy review on a phone fences stale claim dates and re
       });
     } else await route.continue();
   });
-  await openVisibleRowActions(page);
+  await openStockActions(claimRow(page, claim.id));
   await snapshotButton.click();
   const section = page.getByRole("region", {
     name: "Retained claim coverage",
@@ -218,7 +223,7 @@ test("browser: warranty policy review on a phone fences stale claim dates and re
         exact: true,
       }),
     ).toHaveCount(0);
-    await openVisibleRowActions(buyer);
+    await openStockActions(claimRow(buyer, claim.id));
     await buyer
       .getByRole("button", { name: "Claim coverage snapshot", exact: true })
       .click();

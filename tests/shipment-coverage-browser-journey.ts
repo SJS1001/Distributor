@@ -1,7 +1,4 @@
-import {
-  navigateWorkspace,
-  openVisibleRowActions,
-} from "./workspace-navigation.ts";
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3131";
 async function login(page: Page, email: string, buyer = false) {
@@ -177,7 +174,13 @@ test("browser: phone claim retains handover policy across later revisions, trans
     expect(attempts[1]).toEqual(attempts[0]);
     expect(attempts[0]!.payload.policyRevision).toBe(2);
     expect(claim.coverageEnd).toBe(coverage.coverageEnd);
-    await openVisibleRowActions(page);
+    // Wait for the refreshed claim row before opening its Actions disclosure.
+    await openStockActions(
+      page
+        .getByRole("region", { name: "Claim records", exact: true })
+        .getByRole("row")
+        .filter({ hasText: claim.id.slice(0, 8) }),
+    );
     await page
       .getByRole("button", { name: "Claim coverage snapshot", exact: true })
       .click();

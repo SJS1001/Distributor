@@ -39,7 +39,10 @@ import "./supplier-return-queue-browser-journey.ts";
 import "./catalog-lifecycle-browser-journey.ts";
 import "./react-render-browser-journey.ts";
 import "./catalog-entry-browser-journey.ts";
-import { stockFactsDashboard } from "./stock-browser-facts.ts";
+import {
+  stockFactsDashboard,
+  withoutReportTime as withoutDashboardTime,
+} from "./stock-browser-facts.ts";
 import {
   expectSessionsEndedAtSignIn,
   navigateBuyer,
@@ -3220,6 +3223,10 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     secret: string,
     heading = "Overview",
   ) => {
+    // Revocations happen behind this page's back. A full load (as the original
+    // "/" navigation did) rereads the session; a bare hash change would keep
+    // showing the stale workspace.
+    await p.goto("about:blank");
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(address);
     await p.getByLabel("Password", { exact: true }).fill(secret);
@@ -4546,7 +4553,9 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     ).toHaveCount(0);
     await colleague.unroute(delayedUrl);
     const paginationFinal = await stockFactsDashboard(page);
-    expect(paginationFinal).toEqual(final);
+    expect(withoutDashboardTime(paginationFinal)).toEqual(
+      withoutDashboardTime(final),
+    );
     expect(errors).toEqual([]);
   } finally {
     for (const context of contexts) await context.close();
@@ -4740,6 +4749,8 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
   await expect(referralDialog).not.toBeVisible();
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
+  // Manufacturer history has its own Returns sub-tab.
+  await nav(page, "Returns", "Manufacturer cases");
   const section = page.getByRole("region", {
     name: "Manufacturer case history",
     exact: true,
@@ -4783,8 +4794,10 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(first).toContainText("accepted · revision 2");
   await expect(first).not.toContainText("mfg-stale-response");
+  await nav(page, "Returns", "Claims and returns");
   const followup = await refer("BROWSER-M-002");
   await expect(followup).not.toBeVisible();
+  await nav(page, "Returns", "Manufacturer cases");
   const second = section.getByRole("row").filter({ hasText: "BROWSER-M-002" });
   const responseKeys: string[] = [];
   let lostResponse = false;
@@ -4822,7 +4835,7 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
   expect(responseKeys).toHaveLength(2);
   expect(responseKeys[0]).toBe(responseKeys[1]);
   await page.reload();
-  await nav(page, "Returns");
+  await nav(page, "Returns", "Manufacturer cases");
   await expect(first).toContainText("accepted · revision 2");
   await expect(second).toContainText("cancelled · revision 2");
   const after = await dashboard();
@@ -4991,7 +5004,9 @@ test("browser: replacement collection retries, cancellation, scan validation and
       }),
     })
     .filter({ hasText: claim.id.slice(0, 8) });
+  // Claims and replacement history are separate Returns sub-tabs.
   const reserve = async () => {
+    await nav(page, "Returns", "Claims and returns");
     await claimRow
       .getByRole("button", { name: "Approve replacement", exact: true })
       .click();
@@ -5007,6 +5022,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
   };
   await reserve();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await nav(page, "Returns", "Replacements");
   let current = (await dashboard()).claims.find((c: any) => c.id === claim.id)
     .replacements[0];
   await section
@@ -5060,6 +5076,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
     .getByRole("button", { name: "Reserve replacement", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await nav(page, "Returns", "Replacements");
   const activeRow = section.getByRole("row").filter({
     has: page.getByRole("button", {
       name: "Hand over replacement",
@@ -5114,7 +5131,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
     expect(v[0]).toBe(v[1]);
   }
   await page.reload();
-  await nav(page, "Returns");
+  await nav(page, "Returns", "Replacements");
   await expect(section).toContainText("handed_over · v2");
   await expect(section).toContainText("Synthetic collection receipt");
   const after = await dashboard();
@@ -5128,6 +5145,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
   expect(after.stock.find((u: any) => u.serial === "REP-SPARE").available).toBe(
     1,
   );
+  await nav(page, "Returns", "Claims and returns");
   const native = page
     .getByRole("row")
     .filter({ hasText: claim.id.slice(0, 8) })
@@ -7856,7 +7874,8 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     shipments: d.shipments,
   });
   await page.reload();
-  await nav(page, "Returns");
+  // Replacement history is its own Returns sub-tab.
+  await nav(page, "Returns", "Replacements");
   const section = page.getByRole("region", {
     name: "Replacement history",
     exact: true,
@@ -8011,7 +8030,7 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     });
   }
   await page.reload();
-  await nav(page, "Returns");
+  await nav(page, "Returns", "Replacements");
   await expect(row).toContainText("Shipping: in_transit · v23");
   const historyOpener = row.getByRole("button", {
     name: "View shipping history",
@@ -8109,7 +8128,7 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     .getByLabel("Password", { exact: true })
     .fill("long-shipping-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await nav(page, "Returns");
+  await nav(page, "Returns", "Replacements");
   await expect(row).toContainText("RSH-TRACK-1");
   await expect(row).not.toContainText("Private");
   await expect(
@@ -9134,6 +9153,14 @@ test("browser: customers review immutable provider terms, stale consent stops, a
       .getByLabel("Acknowledgment of reviewed processor terms")
       .fill("Synthetic buyer reviewed original FedEx terms");
     // Keep this original review open while staff replaces its immutable terms.
+    // Provider disclosures are their own Customers sub-tab.
+    await page
+      .getByRole("tablist", {
+        name: "Customer workspace sections",
+        exact: true,
+      })
+      .getByRole("tab", { name: "Provider settings", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Publish provider disclosure", exact: true })
       .click();
@@ -9934,6 +9961,8 @@ test("browser: phone order amendments retain accepted money, retry lost response
   const aborted = page.waitForEvent("requestfailed", {
     predicate: (r) => r.url().endsWith(`/api/orders/${accepted.id}/amendments`),
   });
+  // Returning to Orders renders the row's Actions disclosure closed again.
+  await openStockActions(row);
   await opener.click();
   await started;
   await expect(history).toContainText("Loading amendment history…");
@@ -9944,6 +9973,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
   await page.unroute(path);
   await nav(page, "Orders", "Orders");
   await expect(history).toHaveCount(0);
+  await openStockActions(row);
   await opener.click();
   await expect(history.getByRole("listitem")).toHaveCount(20);
   await history
@@ -10176,9 +10206,7 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   await page
     .getByLabel("Buyer-visible reason for reservation change", { exact: true })
     .fill("Synthetic reviewed clearing");
-  await (
-    await withRowActions(dialog)
-  )
+  await dialog
     .getByRole("button", { name: "Clear reservation deadline", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
@@ -10223,15 +10251,11 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   await page
     .getByLabel("Buyer-visible reason for reservation expiry", { exact: true })
     .fill("Synthetic reviewed release after deadline");
-  await (
-    await withRowActions(dialog)
-  )
+  await dialog
     .getByRole("button", { name: "Expire unpicked reservations", exact: true })
     .click();
   await expect(dialog.getByRole("alert")).toBeVisible();
-  await (
-    await withRowActions(dialog)
-  )
+  await dialog
     .getByRole("button", { name: "Expire unpicked reservations", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
@@ -10392,6 +10416,8 @@ test("browser: phone reservation deadlines and expiry preserve accepted money, r
   await page.unroute(first);
   await nav(page, "Orders", "Orders");
   await expect(history).toHaveCount(0);
+  // Returning to Orders renders the row's Actions disclosure closed again.
+  await openStockActions(row);
   await opener.click();
   await expect(history.getByRole("listitem")).toHaveCount(20);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -11863,6 +11889,12 @@ test("browser: required MFA recovery renewal keeps the factor, cancels stale res
     .click();
   await expect(renewal.getByRole("alert")).toBeVisible();
   expect((await page.request.get("/api/security")).status()).toBe(401);
+  // The browser never saw the reply; a fresh load discovers the ended session
+  // (#sign-in is only a hash change while the workspace is still shown).
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
   await login(codes[0]);
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true }),
@@ -12174,6 +12206,12 @@ test("browser: required MFA authenticator replacement verifies both factors, can
     .click();
   await expect(renewal.getByRole("alert")).toBeVisible();
   expect((await page.request.get("/api/security")).status()).toBe(401);
+  // The browser never saw the reply; a fresh load discovers the ended session
+  // (#sign-in is only a hash change while the workspace is still shown).
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
   await login(old[3]);
   await expect(page.getByRole("alert")).toContainText("Code is invalid");
   await login(codes[0]);

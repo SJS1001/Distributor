@@ -25,3 +25,17 @@ export async function stockFactsDashboard(page: Page) {
   );
   return dashboard;
 }
+
+// Dashboard reports are stamped with their request time ("as of"). Compare the
+// remaining facts when two reads must describe the same business state.
+export function withoutReportTime(value: any): any {
+  return Array.isArray(value)
+    ? value.map(withoutReportTime)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => key !== "asOf" && key !== "agingAsOf")
+            .map(([key, item]) => [key, withoutReportTime(item)]),
+        )
+      : value;
+}

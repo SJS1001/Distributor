@@ -48,9 +48,12 @@ test("browser: paged catalog preserves saved off-page quantities, literal search
   await prepare(page);
   const last = page.getByLabel("PAGE-44 · Paged product 44", { exact: true });
   await expect(last).toHaveValue("3");
-  await expect(page.getByRole("dialog")).toContainText(
-    "Customer price CA$7.77 + CA$1.01 tax per unit (CAD).",
-  );
+  // The off-page selection keeps its own net price and tax disclosure.
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("region", { name: "Selected products", exact: true }),
+  ).toContainText("CA$7.77Net price / unit+ CA$1.01 tax per unit (CAD).");
   await page.getByLabel("PAGE-00 · Paged product 0", { exact: true }).fill("2");
   await page
     .getByRole("button", { name: "Next catalog page", exact: true })

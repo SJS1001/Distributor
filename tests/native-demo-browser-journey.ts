@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { resolve } from "node:path";
 import { createDemoGateway } from "../src/demo/gateway.ts";
-import { workspacePages, navigationHash } from "../src/web/navigation.ts";
+import { authorizedPages, navigationHash } from "../src/web/navigation.ts";
 
 test("native demo: onboarding, all native pages, incoming data, buyer scope, and reset", async ({
   page,
@@ -33,7 +33,8 @@ test("native demo: onboarding, all native pages, incoming data, buyer scope, and
     await expect(
       page.getByRole("complementary", { name: "Demo workspace" }),
     ).toBeVisible();
-    for (const destination of workspacePages) {
+    // The default demo role is an administrator; Shop and Account are buyer pages.
+    for (const destination of authorizedPages("admin")) {
       await page.goto(origin + "/" + navigationHash({ page: destination }));
       await expect(page.locator("#workspace-title")).toHaveText(destination);
       await expect(page.locator("main")).not.toContainText("Unable to load");
@@ -64,9 +65,9 @@ test("native demo: onboarding, all native pages, incoming data, buyer scope, and
     await page
       .getByRole("button", { name: "Enter application as selected role" })
       .click();
-    await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await expect(page.locator("#workspace-title")).toHaveText("Shop");
     await page.goto(origin + "/" + navigationHash({ page: "Administration" }));
-    await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await expect(page.locator("#workspace-title")).toHaveText("Shop");
     await page.getByRole("link", { name: "Switch role or reset demo" }).click();
     page.once("dialog", (dialog) => dialog.accept());
     await page

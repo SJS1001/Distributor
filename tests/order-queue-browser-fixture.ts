@@ -1,7 +1,10 @@
 import { fixture } from "./fixtures.ts";
 import { seedOrderQueue } from "./order-queue-fixture.ts";
 import { createHttp } from "../src/server/http.ts";
-export async function orderQueueBrowser(after: (fn: () => void) => void) {
+export async function orderQueueBrowser(
+  after: (fn: () => void) => void,
+  port = 3134,
+) {
   const f = fixture({ after });
   seedOrderQueue(f);
   const other = f.app.identity.createCustomer(f.actor, "unrelated", {
@@ -18,7 +21,7 @@ export async function orderQueueBrowser(after: (fn: () => void) => void) {
     accountId: f.buyer,
     sites: [],
   });
-  const http = await createHttp(f.app, { origin: "http://127.0.0.1:3134" });
-  await http.listen({ host: "127.0.0.1", port: 3134 });
+  const http = await createHttp(f.app, { origin: `http://127.0.0.1:${port}` });
+  await http.listen({ host: "127.0.0.1", port });
   return http;
 }

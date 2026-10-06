@@ -1,3 +1,5 @@
+// These journeys own their servers on ports the shared browser fixture fleet
+// does not bind, so they also run inside browser.spec.ts.
 import { test, expect } from "@playwright/test";
 import { createHttp } from "../src/server/http.ts";
 import { replacementCarrierFixture } from "./replacement-carrier-fixture.ts";
@@ -8,7 +10,7 @@ test("browser: secondary pages load on demand and recover a failed download with
 }) => {
   const cleanup: (() => void)[] = [];
   const f = replacementCarrierFixture({ after: (fn) => cleanup.push(fn) });
-  const origin = "http://127.0.0.1:3197";
+  const origin = "http://127.0.0.1:3245";
   const http = await createHttp(f.app, { origin });
   const chunks: string[] = [];
   page.on("request", (request) => {
@@ -20,7 +22,7 @@ test("browser: secondary pages load on demand and recover a failed download with
       chunks.push(request.url());
   });
   try {
-    await http.listen({ host: "127.0.0.1", port: 3197 });
+    await http.listen({ host: "127.0.0.1", port: 3245 });
     await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
     await page
@@ -98,7 +100,7 @@ test("browser: replacement warehouse shortcut selects the visible Shipments sub-
 }) => {
   const cleanup: (() => void)[] = [];
   const f = replacementCarrierFixture({ after: (fn) => cleanup.push(fn) });
-  const origin = "http://127.0.0.1:3197";
+  const origin = "http://127.0.0.1:3245";
   const http = await createHttp(f.app, { origin });
   try {
     // Prepare only a local intent. No carrier runtime or external IO is enabled.
@@ -107,7 +109,7 @@ test("browser: replacement warehouse shortcut selects the visible Shipments sub-
       provider: "canada-post",
       service: "DOM.EP",
     });
-    await http.listen({ host: "127.0.0.1", port: 3197 });
+    await http.listen({ host: "127.0.0.1", port: 3245 });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
@@ -192,8 +194,8 @@ test("browser: Inventory sub-tabs retain recovery through pending and failed que
   const { navigateWorkspace, withRowActions } =
     await import("./workspace-navigation.ts");
   const cleanup: (() => void)[] = [];
-  const http = await transferArrivalBrowser((fn) => cleanup.push(fn));
-  const origin = "http://127.0.0.1:3161";
+  const http = await transferArrivalBrowser((fn) => cleanup.push(fn), 3246);
+  const origin = "http://127.0.0.1:3246";
   let release = () => {};
   try {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -337,8 +339,8 @@ test("browser: addressable orders preserve filters, list place and history with 
   const { orderQueueBrowser } =
     await import("./order-queue-browser-fixture.ts");
   const cleanup: (() => void)[] = [];
-  const http = await orderQueueBrowser((fn) => cleanup.push(fn));
-  const origin = "http://127.0.0.1:3134";
+  const http = await orderQueueBrowser((fn) => cleanup.push(fn), 3247);
+  const origin = "http://127.0.0.1:3247";
   try {
     await page.goto(origin + "/#sign-in");
     await page
@@ -455,8 +457,8 @@ test("browser: stock intent clears hidden search and stock filters follow histor
   const { transferArrivalBrowser } =
     await import("./transfer-arrival-browser-fixture.ts");
   const cleanup: (() => void)[] = [];
-  const http = await transferArrivalBrowser((fn) => cleanup.push(fn));
-  const origin = "http://127.0.0.1:3161";
+  const http = await transferArrivalBrowser((fn) => cleanup.push(fn), 3246);
+  const origin = "http://127.0.0.1:3246";
   try {
     await page.goto(origin + "/#sign-in");
     await page

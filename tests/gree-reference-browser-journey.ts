@@ -98,10 +98,8 @@ test("exact reference survives application and login, explicit admin mapping ena
   ).toBeVisible();
   await page.goto(`/#product=${family.id}&referenceModel=${model.id}`);
   await page
-    .getByRole("link", {
-      name: "Sign in for pricing & availability ↗",
-      exact: true,
-    })
+    .getByRole("link", { name: "Log in to see pricing", exact: true })
+    .first()
     .click();
   await page.reload();
   await expect(

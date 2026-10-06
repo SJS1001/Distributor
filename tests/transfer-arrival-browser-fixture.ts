@@ -1,7 +1,10 @@
 import { fixture } from "./fixtures.ts";
 import { createHttp } from "../src/server/http.ts";
 
-export async function transferArrivalBrowser(after: (fn: () => void) => void) {
+export async function transferArrivalBrowser(
+  after: (fn: () => void) => void,
+  port = 3161,
+) {
   const f = fixture({ after });
   for (let i = 1; i <= 8; i++) {
     const productId = f.app.catalog.create(f.actor, `arrival-product-${i}`, {
@@ -55,7 +58,7 @@ export async function transferArrivalBrowser(after: (fn: () => void) => void) {
       sites: [f.w2],
       password: "long-test-only-password",
     });
-  const http = await createHttp(f.app, { origin: "http://127.0.0.1:3161" });
-  await http.listen({ host: "127.0.0.1", port: 3161 });
+  const http = await createHttp(f.app, { origin: `http://127.0.0.1:${port}` });
+  await http.listen({ host: "127.0.0.1", port });
   return http;
 }
