@@ -175,7 +175,11 @@ export function GreeProductLibrary({
       </div>
       <div className="gree-results-heading">
         <h2>{selectedCategory?.title || "All products"}</h2>
-        <span aria-live="polite">{visible.length} product families</span>
+        <span aria-live="polite">
+          {visible.length}{" "}
+          {visible.length === 1 ? "product family" : "product families"}
+          {query ? ` matching “${query}”` : ""}
+        </span>
       </div>
       <div className="gree-product-grid">
         {visible.map((product) => (
@@ -418,17 +422,9 @@ function GreeProductDetail({
         aria-labelledby="gree-tab-overview"
         hidden={tab !== "overview"}
       >
-        <div>
+        <div className="gree-overview-aside">
           <p className="public-eyebrow">PRODUCT INFORMATION</p>
           <h2>Built for your application.</h2>
-        </div>
-        <div className="gree-description">
-          <DescriptionContent
-            text={
-              product.description ||
-              "Refer to the manufacturer documentation for model-specific details."
-            }
-          />
           {!!product.models?.length && (
             <div className="gree-model-selector">
               <label htmlFor="gree-model">Model configuration</label>
@@ -482,6 +478,14 @@ function GreeProductDetail({
               </p>
             </details>
           )}
+        </div>
+        <div className="gree-description">
+          <DescriptionContent
+            text={
+              product.description ||
+              "Refer to the manufacturer documentation for model-specific details."
+            }
+          />
         </div>
       </section>
       <section

@@ -255,7 +255,12 @@ export function PublicSite({
                       {category.title}
                       <span aria-hidden="true">→</span>
                     </h3>
-                    <p>{category.count} product families</p>
+                    <p>
+                      {category.count}{" "}
+                      {category.count === 1
+                        ? "product family"
+                        : "product families"}
+                    </p>
                   </a>
                 ))}
               </div>
@@ -451,10 +456,23 @@ export function PublicSite({
               </p>
               <div className="public-form-note">
                 <strong>What happens next</strong>
+                <ol className="public-steps">
+                  <li>
+                    <span>Send your business details.</span>
+                  </li>
+                  <li>
+                    <span>We review your application.</span>
+                  </li>
+                  <li>
+                    <span>
+                      If approved, you receive a private invitation to activate
+                      your buyer account.
+                    </span>
+                  </li>
+                </ol>
                 <p>
-                  Approval includes a private invitation to activate your buyer
-                  account. No account is created automatically, and submitting
-                  this form does not approve credit.
+                  No account is created automatically, and submitting this form
+                  does not approve credit.
                 </p>
               </div>
             </div>
@@ -586,75 +604,86 @@ function ApplicationForm({
       <p className="public-form-helper">
         All fields are required unless marked optional.
       </p>
-      <label>
-        Business name
-        <input
-          name="businessName"
-          required
-          maxLength={160}
-          autoComplete="organization"
-        />
-      </label>
-      <label>
-        Contact name
-        <input
-          name="contactName"
-          required
-          maxLength={120}
-          autoComplete="name"
-        />
-      </label>
-      <div className="public-form-row">
+      <fieldset className="public-form-group">
+        <legend>Business</legend>
         <label>
-          Business email
+          Business name
           <input
-            name="email"
+            name="businessName"
             required
-            type="email"
-            maxLength={254}
-            autoComplete="email"
+            maxLength={160}
+            autoComplete="organization"
           />
         </label>
-        <label>
-          Phone
-          <input
-            name="phone"
-            required
-            type="tel"
-            maxLength={40}
-            autoComplete="tel"
-          />
-        </label>
-      </div>
-      <label>
-        Province or territory
-        <select name="province" required defaultValue="">
-          <option value="" disabled>
-            Select province or territory
-          </option>
-          {provinces.map(([code, name]) => (
-            <option key={code} value={code}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Business registration number (optional)
-        <input name="businessNumber" maxLength={80} />
-        <span className="public-form-helper">
+        <div className="public-form-row">
+          <label>
+            Province or territory
+            <select name="province" required defaultValue="">
+              <option value="" disabled>
+                Select province or territory
+              </option>
+              {provinces.map(([code, name]) => (
+                <option key={code} value={code}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Business registration number (optional)
+            <input name="businessNumber" maxLength={80} />
+          </label>
+        </div>
+        <p className="public-form-helper">
           Do not provide a Social Insurance Number or personal identity
           documents.
-        </span>
-      </label>
-      <label>
-        Business details (optional)
-        <textarea name="notes" maxLength={1000} rows={3} />
-        <span className="public-form-helper">
-          Tell us your type of business. Please omit sensitive personal or
-          financial information.
-        </span>
-      </label>
+        </p>
+      </fieldset>
+      <fieldset className="public-form-group">
+        <legend>Contact</legend>
+        <label>
+          Contact name
+          <input
+            name="contactName"
+            required
+            maxLength={120}
+            autoComplete="name"
+          />
+        </label>
+        <div className="public-form-row">
+          <label>
+            Business email
+            <input
+              name="email"
+              required
+              type="email"
+              maxLength={254}
+              autoComplete="email"
+            />
+          </label>
+          <label>
+            Phone
+            <input
+              name="phone"
+              required
+              type="tel"
+              maxLength={40}
+              autoComplete="tel"
+            />
+          </label>
+        </div>
+      </fieldset>
+      <fieldset className="public-form-group">
+        <legend>About your business</legend>
+        <label>
+          Business details (optional)
+          <textarea name="notes" maxLength={1000} rows={3} />
+          <span className="public-form-helper">
+            Tell us your type of business. Please omit sensitive personal or
+            financial information.
+          </span>
+        </label>
+      </fieldset>
       <label className="public-checkbox">
         <input name="acknowledgment" type="checkbox" required />
         <span>

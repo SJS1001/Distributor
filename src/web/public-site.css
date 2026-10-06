@@ -1375,3 +1375,156 @@
 .public-scanner-tool .public-access-description {
   color: #546e85;
 }
+
+/* Public-site polish (2026-10-05): consistent field typography, grouped trade
+   application, phone navigation grid, home rhythm and signed-in entrance. */
+.public-form-card select,
+.public-form-card input,
+.public-form-card textarea {
+  font-weight: 400;
+}
+.public-form-card input:not([type="checkbox"]),
+.public-form-card select {
+  height: 48px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.public-form-card input::placeholder {
+  color: #6b7f93;
+}
+.public-form-group {
+  border: 0;
+  margin: 0;
+  padding: 0 0 22px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  border-bottom: 1px solid #e3ebf2;
+}
+.public-form-group legend {
+  padding: 0;
+  margin-bottom: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #1276c1;
+}
+.public-form-group > .public-form-helper {
+  margin-top: -8px;
+}
+.public-steps {
+  list-style: none;
+  counter-reset: public-step;
+  padding: 0;
+  margin: 16px 0 18px;
+  display: grid;
+  gap: 12px;
+}
+.public-steps li {
+  counter-increment: public-step;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.public-steps li::before {
+  content: counter(public-step);
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #e3eef8;
+  color: #1276c1;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.public-steps li > span {
+  padding-top: 3px;
+}
+.public-form-note > p {
+  margin: 0;
+  font-size: 13px;
+}
+.public-site .public-equipment-strip {
+  justify-content: flex-start;
+  gap: 48px;
+}
+.public-equipment-strip a {
+  margin-left: auto;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.public-access-paths.is-signed-in .public-access-link {
+  min-height: 0;
+}
+.public-access-paths.is-signed-in .public-access-description {
+  margin-top: 0;
+}
+@media (min-width: 721px) {
+  .public-form-layout > div:first-child {
+    position: sticky;
+    top: 24px;
+  }
+}
+@media (max-width: 720px) {
+  .public-header nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    font-size: 13px;
+  }
+  .public-header nav:has(.public-sign-out) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+  .public-header nav a,
+  .public-header nav a:first-child,
+  .public-header nav .public-sign-out {
+    min-height: 44px;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 10px;
+    border: 1px solid #d5e1ed;
+    border-radius: 2px;
+    text-align: center;
+    font-size: 13px;
+  }
+  .public-header nav a[href="#customer-sign-in"] {
+    margin-left: 0;
+    padding: 0 10px;
+    border-color: #1378c3;
+  }
+  .public-header nav a[href="#admin-sign-in"],
+  .public-header nav a[href="#apply"] {
+    font-size: 13px;
+  }
+  .public-equipment-feature > img {
+    height: 190px;
+  }
+  .public-site .public-equipment-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    font-size: 9px;
+  }
+  .public-equipment-strip span:nth-child(3) {
+    display: block;
+  }
+  .public-equipment-strip a {
+    grid-column: 1 / -1;
+    margin-left: 0;
+    font-size: 12px;
+  }
+  .public-section-heading > a {
+    min-height: 44px;
+  }
+  .public-form-group legend {
+    margin-bottom: 12px;
+  }
+}
