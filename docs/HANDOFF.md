@@ -18,6 +18,7 @@ Verification, run serially on the same workstation and toolchain, against the wo
 - `npm test`: 6,060 passed, 0 failed, cancelled or skipped.
 - All 28 browser configs exited 0; the main suite passed 343 of 343.
 - Typecheck, build and changed-file prettier checks passed.
+- Deployed to the Canadian Fly pilot as `polish29c-20261006`; see the receipt in [FLY-CANADA.md](FLY-CANADA.md).
 - The first full run had 2 distinct failures (7 across overlapping configs): the two journeys updated above. They were retained privately under `local-evidence/visual-20261005/tests/sessionend/`.
 
 ## Staff sign-out landing and owner guide — 2026-10-06

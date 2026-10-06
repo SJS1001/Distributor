@@ -265,3 +265,13 @@ Source `828d878`, schema 29, image `polish29b-20261006` supersedes `polish29-202
 - Health is 200 and the Fly health check passes.
 
 A read-only live capture took 24 screenshots with 0 page errors and 0 business writes. It confirmed that the staff sign-out lands on "Administration sign in." `polish29-20261006` is retained for rollback.
+
+## Session-ended handling release, 2026-10-06
+
+Source `fd560fd`, schema 29, image `polish29c-20261006` supersedes `polish29b-20261006` on the same Toronto Machine (version 14). Digest `sha256:d318c9c9a3f61a7a7dc85852316ab099d93cc197ab483bf1a951ecf5886d2d63`. This code-only release has no migration. It was deployed from a clean export of the pushed commit.
+
+- All 409 tracked source and package files matched the machine.
+- Database integrity and foreign-key checks passed (0 violations).
+- Health is 200 and the Fly health check passes.
+
+A read-only live capture took 26 screenshots with 0 page errors and 0 business writes. It removed one administrator browser's cookie and then made an in-app read; that browser landed on "Administration sign in." with "Your session has ended. Sign in again." The abandoned server session was then signed out (200). `polish29b-20261006` is retained for rollback.
