@@ -627,3 +627,107 @@
 .gree-documents[role="tabpanel"] {
   margin-top: 35px;
 }
+
+/* Public-site polish (2026-10-05): breadcrumb rhythm, aligned filters, denser
+   catalog grid, focused empty state and configuration beside the overview. */
+.gree-library {
+  padding-top: 16px;
+}
+.gree-detail {
+  padding-top: 24px;
+}
+.public-site .gree-breadcrumb {
+  font-size: 13px;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.gree-library-heading {
+  margin-bottom: 28px;
+}
+.gree-library-tools {
+  align-items: end;
+  padding: 20px 24px;
+}
+.gree-library-tools input,
+.gree-library-tools select {
+  height: 48px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 400;
+}
+.gree-library-tools input::placeholder {
+  color: #6b7f93;
+}
+.gree-results-heading {
+  padding: 28px 0 18px;
+}
+.gree-empty {
+  padding: 40px 24px;
+  border: 1px dashed #c9d7e4;
+}
+.public-site .gree-empty h3 {
+  margin-top: 0;
+}
+.gree-empty p {
+  color: #52687e;
+}
+.gree-empty button {
+  min-height: 44px;
+  font: inherit;
+  font-weight: 600;
+}
+.gree-detail-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 26px;
+}
+.gree-detail-actions .public-primary {
+  min-width: 240px;
+}
+.gree-detail-actions > a:not(.public-primary) {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.public-site .gree-overview-aside h2 {
+  margin-bottom: 24px;
+}
+.gree-overview-aside .gree-model-selector {
+  margin: 0 0 16px;
+}
+.gree-overview-aside .gree-specification-details {
+  background: white;
+}
+@media (min-width: 1200px) {
+  .gree-product-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 20px;
+  }
+  .gree-card-image {
+    height: 200px;
+    padding: 22px;
+  }
+  .gree-card-copy {
+    padding: 18px 20px 20px;
+  }
+  .public-site .gree-card-copy h3 {
+    font-size: 18px;
+    margin-bottom: 18px;
+  }
+}
+@media (max-width: 650px) {
+  .gree-library {
+    padding-top: 8px;
+  }
+  .gree-detail {
+    padding-top: 20px;
+  }
+  .gree-detail-actions .public-primary {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .gree-overview-aside {
+    margin-bottom: 12px;
+  }
+}
