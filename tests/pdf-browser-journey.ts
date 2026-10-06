@@ -3,6 +3,10 @@ import {
   navigateAccounting,
   openVisibleRowActions,
 } from "./workspace-navigation.ts";
+import {
+  expectBuyerLanding,
+  navigateBuyerWorkspace,
+} from "./commerce-browser-navigation.ts";
 import { test, expect, type Page, type Request } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -41,6 +45,14 @@ async function nav(page: Page, name: string, section?: string) {
       )[name],
   );
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+}
+// Buyers use the customer navigation; Billing is labelled Invoices & payments.
+async function buyerNav(page: Page, name: "Billing" | "Orders") {
+  await navigateBuyerWorkspace(
+    page,
+    name,
+    name === "Billing" ? "Invoices" : "Orders",
+  );
 }
 
 test.describe("application async abandonment", () => {
@@ -166,10 +178,8 @@ test.describe("PDF retained preparation", () => {
         await page
           .getByRole("button", { name: "Sign in", exact: true })
           .click();
-        await expect(
-          page.getByRole("heading", { name: "Overview", exact: true }),
-        ).toBeVisible();
-        await nav(page, "Billing");
+        await expectBuyerLanding(page);
+        await buyerNav(page, "Billing");
       } else await login(page);
       const path = buyer
         ? "**/api/billing/inbox/*/pdf"
@@ -221,7 +231,8 @@ test.describe("PDF retained preparation", () => {
       );
       expect(retained).toHaveLength(1);
       expect(retained[0]![1]).toBe(keys[0]);
-      await nav(page, buyer ? "Orders" : "Inventory");
+      if (buyer) await buyerNav(page, "Orders");
+      else await nav(page, "Inventory");
       release();
       await expect.poll(() => settled).toBe(true);
       await page.evaluate(
@@ -233,11 +244,16 @@ test.describe("PDF retained preparation", () => {
       expect(downloads).toBe(0);
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.getByRole("alert")).toHaveCount(0);
+      // Reload restores the last workspace location.
       await page.reload();
       await expect(
-        page.getByRole("heading", { name: "Overview", exact: true }),
+        page.getByRole("heading", {
+          name: buyer ? "Orders" : "Inventory",
+          exact: true,
+        }),
       ).toBeVisible();
-      await nav(page, "Billing");
+      if (buyer) await buyerNav(page, "Billing");
+      else await nav(page, "Billing");
       const downloaded = page.waitForEvent("download");
       await openVisibleRowActions(page);
       await page.getByRole("button", { name: label, exact: true }).click();

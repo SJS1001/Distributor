@@ -149,9 +149,10 @@ test("browser: supplier availability on phone pages suppliers, retains an exact 
     page.getByLabel("Supplier change reason / evidence", { exact: true }),
   ).toBeDisabled();
   expect((await supplier(page, "Recovery supplier")).revision).toBe(1);
+  // Reload restores the last workspace location.
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Purchasing", exact: true }),
   ).toBeVisible();
   await purchasing(page);
   await page
@@ -362,9 +363,10 @@ test("browser: supplier availability purchase refusal after reviewed suspension 
     "Synthetic purchase transport unavailable",
   );
   await suspend(page, csrf, "Purchase refusal supplier");
+  // Reload restores the last workspace location.
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Purchasing", exact: true }),
   ).toBeVisible();
   await purchasing(page, "Purchase orders");
   await page
@@ -452,9 +454,10 @@ test("browser: supplier availability keeps an already committed purchase exact r
   await expect(page.getByRole("dialog")).toContainText(
     "Synthetic committed purchase reply lost",
   );
+  // Reload restores the last workspace location.
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Purchasing", exact: true }),
   ).toBeVisible();
   await purchasing(page, "Purchase orders");
   await page

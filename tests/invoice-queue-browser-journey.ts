@@ -171,7 +171,18 @@ test("browser: phone invoice queue retains full overview totals, failed pages, e
   await expect(queue.getByRole("status")).toHaveText(
     "15 invoices loaded · All results shown",
   );
+  // Filters are addressable workspace state, so Refresh reloads the first
+  // page of the same filtered queue rather than resetting it.
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(queue.getByRole("status")).toHaveText(
+    "15 invoices loaded · All results shown",
+  );
+  await expect(
+    queue.getByLabel("Invoice balance", { exact: true }),
+  ).toHaveValue("settled");
+  await queue
+    .getByRole("button", { name: "Clear invoice balance filter", exact: true })
+    .click();
   await expect(queue.getByRole("status")).toHaveText("20 invoices loaded");
   await expect(
     queue.getByLabel("Invoice balance", { exact: true }),
@@ -216,6 +227,10 @@ test("browser: invoice queue ignores superseded filters, abandoned navigation, r
     invoices(page).getByText("SYNTHETIC-invoice-queue-044", { exact: true }),
   ).toHaveCount(0);
   await page.unroute(pattern);
+  // Refresh keeps the addressable filter; clear it to return to all invoices.
+  await queue
+    .getByRole("button", { name: "Clear invoice balance filter", exact: true })
+    .click();
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(queue.getByRole("status")).toHaveText("20 invoices loaded");
   for (const action of ["navigate", "refresh", "sign-out"]) {

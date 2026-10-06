@@ -1,9 +1,17 @@
-import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
+import { withRowActions } from "./workspace-navigation.ts";
+import {
+  expectBuyerLanding,
+  navigateBuyerWorkspace,
+} from "./commerce-browser-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3134",
   pattern = "**/api/orders/page?*";
 async function nav(page: Page, name: string) {
-  await navigateWorkspace(page, name, name === "Orders" ? "Orders" : undefined);
+  await navigateBuyerWorkspace(
+    page,
+    name,
+    name === "Orders" ? "Orders" : undefined,
+  );
 }
 async function login(page: Page) {
   await page.goto(origin + "/#sign-in");
@@ -14,9 +22,8 @@ async function login(page: Page) {
     .getByLabel("Password", { exact: true })
     .fill("long-test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  await expectBuyerLanding(page);
+  await nav(page, "Overview");
   await expect(
     page
       .locator(".overview-metrics .metric-card")
@@ -127,10 +134,12 @@ test("browser: phone order queue preserves scoped pages on failure, retries exac
   await expect(
     page.getByText("Unrelated customer", { exact: true }),
   ).toHaveCount(0);
+  // Filters are addressable workspace state, so Refresh reloads the first
+  // page of the same filtered queue rather than resetting it.
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(queue.getByRole("status")).toHaveText("20 orders loaded");
   await expect(queue.getByLabel("Order state", { exact: true })).toHaveValue(
-    "",
+    "open",
   );
   await nav(page, "Overview");
   await expect(
