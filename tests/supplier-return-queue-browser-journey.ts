@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3143",
   pattern = "**/api/purchases/returns/page?*";
 async function nav(page: Page, name: string) {
@@ -88,7 +88,7 @@ test("browser: phone supplier return pages preserve scope, retry exact cursor, s
   await page.unroute(pattern);
   await search(page, "%_");
   await expect(region.getByRole("status")).toHaveText(
-    "1 supplier returns loaded",
+    "1 supplier return loaded",
   );
   const row = page
     .getByRole("row")
@@ -155,7 +155,7 @@ test("browser: supplier return search discards superseded and abandoned response
     if (action === "search") {
       await search(page, "QUEUE-044");
       await expect(queue(page).getByRole("status")).toHaveText(
-        "1 supplier returns loaded",
+        "1 supplier return loaded",
       );
     } else if (action === "navigate") await nav(page, "Overview");
     else
@@ -189,6 +189,7 @@ test("browser: finance searches an old return, records native credit and reopens
   const row = page
     .getByRole("row")
     .filter({ has: page.getByText("QUEUE-000", { exact: true }) });
+  await openStockActions(row);
   await row
     .getByRole("button", { name: "Record supplier credit", exact: true })
     .click();

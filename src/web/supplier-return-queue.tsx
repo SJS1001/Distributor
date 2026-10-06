@@ -158,32 +158,39 @@ export function SupplierReturnQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section aria-label="Supplier return queue">
+    <section className="queue-controls" aria-label="Supplier return queue">
       <h2 ref={heading} tabIndex={-1}>
         Supplier return queue
       </h2>
       <form
+        className="queue-search"
         onSubmit={(event) => {
           event.preventDefault();
           onSearch();
           queue.filter(search.trim());
         }}
       >
-        <label htmlFor={searchId}>Search supplier returns</label>
-        <input
-          id={searchId}
-          type="search"
-          maxLength={160}
-          value={search}
-          disabled={!queue.active}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <button type="submit" disabled={!queue.active}>
-          Search returns
-        </button>
+        <div className="queue-field">
+          <label htmlFor={searchId}>Search supplier returns</label>
+          <input
+            id={searchId}
+            type="search"
+            maxLength={160}
+            value={search}
+            disabled={!queue.active}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+        <div className="queue-field-actions">
+          <button type="submit" disabled={!queue.active}>
+            Search returns
+          </button>
+        </div>
       </form>
       <p role="status">
-        {queue.items.length} supplier returns loaded
+        {queue.items.length}{" "}
+        {queue.items.length === 1 ? "supplier return" : "supplier returns"}{" "}
+        loaded
         {queue.busy ? " · Loading…" : ""}
       </p>
       <p>
@@ -195,26 +202,28 @@ export function SupplierReturnQueueControls({
           {queue.error}
         </p>
       )}
-      <button
-        type="button"
-        ref={pager}
-        className="secondary"
-        disabled={
-          !queue.active ||
-          queue.busy ||
-          (queue.loaded && !queue.next && !queue.error)
-        }
-        onClick={() => {
-          restoreFocus.current = true;
-          void queue.load(queue.q, queue.next, queue.loaded);
-        }}
-      >
-        {queue.error
-          ? "Retry supplier return queue"
-          : queue.loaded && !queue.next
-            ? "All supplier returns loaded"
-            : "Load more supplier returns"}
-      </button>
+      {(!queue.loaded || queue.next || queue.error || queue.busy) && (
+        <button
+          type="button"
+          ref={pager}
+          className="secondary"
+          disabled={
+            !queue.active ||
+            queue.busy ||
+            (queue.loaded && !queue.next && !queue.error)
+          }
+          onClick={() => {
+            restoreFocus.current = true;
+            void queue.load(queue.q, queue.next, queue.loaded);
+          }}
+        >
+          {queue.error
+            ? "Retry supplier return queue"
+            : queue.loaded && !queue.next
+              ? "All supplier returns loaded"
+              : "Load more supplier returns"}
+        </button>
+      )}
     </section>
   );
 }

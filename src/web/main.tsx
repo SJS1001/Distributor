@@ -4376,36 +4376,77 @@ function App() {
             ]}
           >
             <PageSection id="purchasing-queue">
-              <div className="actions">
-                {can("commercial") &&
-                  button("Add supplier", () =>
-                    simple(
-                      "Add supplier",
-                      [{ name: "name", label: "Supplier name" }],
-                      "supplier.create",
-                    ),
-                  )}
-                {can("commercial") &&
-                  button("Purchase order", () => setPurchaseEntryOpen(true))}
-              </div>
-              <PurchaseQueueControls queue={purchaseQueue} />
+              <PurchaseQueueControls
+                queue={purchaseQueue}
+                actions={
+                  can("commercial") && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setPurchaseEntryOpen(true)}
+                      >
+                        Purchase order
+                      </button>
+                      {button("Add supplier", () =>
+                        simple(
+                          "Add supplier",
+                          [{ name: "name", label: "Supplier name" }],
+                          "supplier.create",
+                        ),
+                      )}
+                    </>
+                  )
+                }
+              />
               {table(
                 ["Purchase order", "Warehouse", "Lines", "Status", "Actions"],
                 purchaseQueue.items,
-                (po: Item) => [
-                  <span title={po.id}>{po.id.slice(0, 8)}</span>,
-                  warehouseName(po.warehouse_id),
-                  po.lines.map((l: Item) => (
-                    <div key={l.id}>
-                      {purchaseLineName(l)} · {l.received}/{l.quantity} received
-                    </div>
-                  )),
-                  po.state,
-                  po.state === "open" &&
-                    can("warehouse") &&
-                    button("Start receipt draft", () => receiptDraft(po)),
-                ],
+                (po: Item) => {
+                  const supplier = extra.purchases?.suppliers?.find(
+                    (s: Item) => s.id === po.supplier_id,
+                  );
+                  return [
+                    <div className="purchasing-ref">
+                      {supplier && <strong>{supplier.name}</strong>}
+                      <span>
+                        PO <code title={po.id}>{po.id.slice(0, 8)}</code>
+                      </span>
+                    </div>,
+                    warehouseName(po.warehouse_id),
+                    po.lines.map((l: Item) => (
+                      <div key={l.id} className="order-line">
+                        <strong>{purchaseLineName(l)}</strong>
+                        <span>
+                          {l.received}/{l.quantity} received
+                          {l.received < l.quantity &&
+                            ` · ${l.quantity - l.received} remaining`}
+                        </span>
+                      </div>
+                    )),
+                    <span
+                      className="record-status purchasing-status"
+                      data-status={po.state === "open" ? "due" : undefined}
+                    >
+                      {po.state}
+                    </span>,
+                    po.state === "open" &&
+                      can("warehouse") &&
+                      button("Start receipt draft", () => receiptDraft(po)),
+                  ];
+                },
+                purchaseQueue.busy && !purchaseQueue.items.length
+                  ? "Loading purchase orders…"
+                  : purchaseQueue.state
+                    ? `No ${purchaseQueue.state} purchase orders.`
+                    : "No purchase orders yet. Create one to start receiving stock.",
               )}
+              <SupplierAvailability
+                key={`${actor.orgId}:${actor.id}`}
+                orgId={actor.orgId}
+                actorId={actor.id}
+                canManage={can("commercial")}
+              />
             </PageSection>
             <PageSection id="purchasing-incoming">
               <IncomingSupplyWorkspace
@@ -4420,73 +4461,131 @@ function App() {
               <h2 id="purchasing-drafts" tabIndex={-1}>
                 Saved receipt scans
               </h2>
-              <p>
+              <p className="purchasing-intro">
                 Drafts do not reserve or receive stock. Review the saved SKU,
                 quantity, serials, bin and inspection choice before receiving.
               </p>
               {table(
                 ["Delivery", "Warehouse / SKU", "Scans", "Status", "Actions"],
                 extra.purchases?.drafts ?? [],
-                (draft: Item) => [
-                  draft.delivery_ref,
-                  `${warehouseName(draft.warehouse_id)} · ${draft.input.observedSku}`,
-                  <div>
-                    {draft.input.serials.length} scans · {draft.input.quantity}{" "}
-                    units · {draft.input.bin}
-                    <br />
-                    {draft.input.quarantine
-                      ? "Inspection required"
-                      : "Available on receipt"}
-                  </div>,
-                  `${draft.state} · v${draft.revision}`,
-                  <div className="actions">
-                    {draft.state === "draft" && can("warehouse") && (
-                      <>
-                        {button("Resume scans", () =>
-                          // The draft already owns the exact purchase and line IDs;
-                          // resuming never depends on the visible queue page.
-                          receiptDraft({ id: draft.po_id }, draft),
-                        )}
-                        {button("Review and receive", () =>
-                          open(
-                            "Review physical receipt",
-                            [],
-                            () =>
-                              command("purchase.draft.confirm", {
-                                draftId: draft.id,
-                                revision: draft.revision,
-                              }),
-                            `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "bulk (no serials)"}. Confirm only after checking the physical delivery.`,
-                            "Receive stock",
-                          ),
-                        )}
-                        {button("Discard draft", () =>
-                          simple(
-                            "Discard receipt draft",
-                            [reason],
-                            "purchase.draft.discard",
-                            (v) => ({
-                              draftId: draft.id,
-                              revision: draft.revision,
-                              reason: v.reason,
-                            }),
-                          ),
-                        )}
-                      </>
-                    )}
-                    {button(
-                      "View draft history",
-                      () => void showReceiptHistory(draft.id),
-                    )}
-                  </div>,
-                ],
+                (draft: Item) => {
+                  const editable = draft.state === "draft" && can("warehouse");
+                  const serials = draft.input.serials.length;
+                  return [
+                    <div className="purchasing-ref">
+                      <strong>{draft.delivery_ref}</strong>
+                      <span>
+                        PO{" "}
+                        <code title={draft.po_id}>
+                          {draft.po_id.slice(0, 8)}
+                        </code>
+                      </span>
+                    </div>,
+                    <div className="purchasing-ref">
+                      <strong>{draft.input.observedSku}</strong>
+                      <span>{warehouseName(draft.warehouse_id)}</span>
+                    </div>,
+                    <div className="purchasing-ref">
+                      <strong>
+                        {draft.input.quantity}{" "}
+                        {draft.input.quantity === 1 ? "unit" : "units"} · bin{" "}
+                        {draft.input.bin}
+                      </strong>
+                      <span>
+                        {serials
+                          ? `${serials} ${serials === 1 ? "serial" : "serials"} scanned`
+                          : "Bulk (no serials)"}
+                      </span>
+                      <span
+                        className="stock-condition"
+                        data-condition={
+                          draft.input.quarantine ? "quarantine" : "usable"
+                        }
+                      >
+                        {draft.input.quarantine
+                          ? "Inspection required"
+                          : "Available on receipt"}
+                      </span>
+                    </div>,
+                    <span
+                      className="record-status purchasing-status"
+                      data-status={
+                        draft.state === "draft"
+                          ? "due"
+                          : draft.state === "discarded"
+                            ? "closed"
+                            : undefined
+                      }
+                    >
+                      {`${draft.state} · v${draft.revision}`}
+                    </span>,
+                    <div className="row-actions">
+                      {editable && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            open(
+                              "Review physical receipt",
+                              [],
+                              () =>
+                                command("purchase.draft.confirm", {
+                                  draftId: draft.id,
+                                  revision: draft.revision,
+                                }),
+                              `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "bulk (no serials)"}. Confirm only after checking the physical delivery.`,
+                              "Receive stock",
+                            )
+                          }
+                        >
+                          Review and receive
+                        </button>
+                      )}
+                      <details className="stock-actions">
+                        <summary
+                          aria-label={`Actions for receipt draft ${draft.delivery_ref}`}
+                        >
+                          Actions
+                        </summary>
+                        <div className="actions">
+                          {editable &&
+                            button("Resume scans", () =>
+                              // The draft already owns the exact purchase and line IDs;
+                              // resuming never depends on the visible queue page.
+                              receiptDraft({ id: draft.po_id }, draft),
+                            )}
+                          {button(
+                            "View draft history",
+                            () => void showReceiptHistory(draft.id),
+                          )}
+                          {editable &&
+                            button("Discard draft", () =>
+                              simple(
+                                "Discard receipt draft",
+                                [reason],
+                                "purchase.draft.discard",
+                                (v) => ({
+                                  draftId: draft.id,
+                                  revision: draft.revision,
+                                  reason: v.reason,
+                                }),
+                              ),
+                            )}
+                        </div>
+                      </details>
+                    </div>,
+                  ];
+                },
+                extra.purchases
+                  ? "No saved receipt drafts. Start one from an open purchase order."
+                  : "Loading receipt drafts…",
               )}
             </PageSection>
             <PageSection id="purchasing-receipts">
               <h2 id="purchasing-receipts" tabIndex={-1}>
                 Purchase receipts and supplier returns
               </h2>
-              <p>
+              <p className="purchasing-intro">
                 Confirm physical handover at original stock cost. Record
                 supplier credit evidence or link a separately received
                 replacement, then review the outcome. Accounting reconciliation
@@ -4496,16 +4595,38 @@ function App() {
                 ["Delivery", "Purchased / returned", "Held stock", "Actions"],
                 extra.purchases?.receipts ?? [],
                 (receipt: Item) => [
-                  receipt.delivery_ref,
+                  <div className="purchasing-ref">
+                    <strong>{receipt.delivery_ref}</strong>
+                    <span>
+                      PO{" "}
+                      <code title={receipt.po_id}>
+                        {receipt.po_id.slice(0, 8)}
+                      </code>
+                    </span>
+                  </div>,
                   `${receipt.quantity} purchased · ${receipt.returnedQuantity} returned`,
-                  receipt.candidates.map((u: Item) => (
-                    <div key={u.id}>
-                      {productName(u.product_id)} ·{" "}
-                      {warehouseName(u.warehouse_id)} · {u.bin} ·{" "}
-                      {u.serial ?? "bulk"} · {u.quantity - u.reserved}{" "}
-                      unreserved · {u.condition}
-                    </div>
-                  )),
+                  receipt.candidates.length ? (
+                    receipt.candidates.map((u: Item) => (
+                      <div key={u.id} className="order-line">
+                        <strong>{productName(u.product_id)}</strong>
+                        <span>
+                          {warehouseName(u.warehouse_id)} · bin {u.bin} ·{" "}
+                          {u.serial ?? "bulk"} · {u.quantity - u.reserved}{" "}
+                          unreserved ·{" "}
+                          <span
+                            className="stock-condition"
+                            data-condition={u.condition}
+                          >
+                            {u.condition}
+                          </span>
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="purchasing-muted">
+                      No held stock from this delivery
+                    </span>
+                  ),
                   actor.role === "admin" &&
                     receipt.candidates.length > 0 &&
                     receipt.returnedQuantity < receipt.quantity &&
@@ -4556,6 +4677,9 @@ function App() {
                       ),
                     ),
                 ],
+                extra.purchases
+                  ? "No purchase receipts yet. Receiving a delivery records one here."
+                  : "Loading purchase receipts…",
               )}
               <SupplierReturnQueueControls
                 queue={supplierReturnQueue}
@@ -4575,16 +4699,35 @@ function App() {
                 ],
                 supplierReturnQueue.items,
                 (r: Item) => [
-                  r.return_ref,
-                  `${warehouseName(r.warehouse_id)} · ${r.serial ?? "bulk"}`,
-                  `${r.quantity} units · ${money(r.quantity * r.unit_cost, data.currency)} cost`,
-                  `${r.reason} · ${r.handover_evidence}`,
-                  <div>
-                    {r.followup.state === "open"
-                      ? r.followup.activeCount > 0
-                        ? "Supplier outcomes recorded · follow-up open"
-                        : "Supplier credit pending · follow-up open"
-                      : `Follow-up closed · ${r.followup.resolution}`}
+                  <strong>{r.return_ref}</strong>,
+                  <div className="purchasing-ref">
+                    <strong>{warehouseName(r.warehouse_id)}</strong>
+                    <span>{r.serial ?? "bulk"}</span>
+                  </div>,
+                  <div className="purchasing-ref">
+                    <strong>{r.quantity} units</strong>
+                    <span>
+                      {money(r.quantity * r.unit_cost, data.currency)} original
+                      cost
+                    </span>
+                  </div>,
+                  <div className="purchasing-ref">
+                    <span>{r.reason}</span>
+                    <span>{r.handover_evidence}</span>
+                  </div>,
+                  <div className="purchasing-followup">
+                    <span
+                      className="record-status purchasing-status"
+                      data-status={
+                        r.followup.state === "open" ? "due" : "closed"
+                      }
+                    >
+                      {r.followup.state === "open"
+                        ? r.followup.activeCount > 0
+                          ? "Supplier outcomes recorded · follow-up open"
+                          : "Supplier credit pending · follow-up open"
+                        : `Follow-up closed · ${r.followup.resolution}`}
+                    </span>
                     <p>
                       {money(r.followup.creditAmount, currency)} supplier credit
                       recorded · {r.followup.replacementQuantity} replacement
@@ -4592,100 +4735,116 @@ function App() {
                     </p>
                     <p>External accounting reconciliation required.</p>
                   </div>,
-                  <div className="actions">
+                  <div className="row-actions">
                     {button("Supplier history", () => {
                       supplierHistoryOpener.current =
                         document.activeElement as HTMLElement;
                       setSupplierHistoryId(r.id);
                     })}
-                    {can("finance") && r.followup.state === "open" && (
-                      <>
-                        {button("Record supplier credit", () =>
-                          supplierCommand(
-                            r,
-                            "Record supplier credit",
-                            [
-                              {
-                                name: "amount",
-                                label: "Supplier credit amount (cents)",
-                                type: "number",
-                                min: 1,
-                                help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
-                              },
-                            ],
-                            "purchase.return.credit",
-                            { currency },
-                          ),
-                        )}
-                        {button("Link replacement receipt", () =>
-                          supplierCommand(
-                            r,
-                            "Link received supplier replacement",
-                            [
-                              select(
-                                "receiptId",
-                                "Received replacement delivery",
-                                extra.purchases.receipts.filter(
-                                  (p: Item) =>
-                                    p.po_id !== r.po_id &&
-                                    p.supplier_id === r.supplier_id &&
-                                    p.product_id === r.result.productId,
+                    {can("finance") && (
+                      <details className="stock-actions">
+                        <summary
+                          aria-label={`Actions for supplier return ${r.return_ref}`}
+                        >
+                          Actions
+                        </summary>
+                        <div className="actions">
+                          {r.followup.state === "open" && (
+                            <>
+                              {button("Record supplier credit", () =>
+                                supplierCommand(
+                                  r,
+                                  "Record supplier credit",
+                                  [
+                                    {
+                                      name: "amount",
+                                      label: "Supplier credit amount (cents)",
+                                      type: "number",
+                                      min: 1,
+                                      help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
+                                    },
+                                  ],
+                                  "purchase.return.credit",
+                                  { currency },
                                 ),
-                                (p) =>
-                                  `${p.delivery_ref} · ${p.quantity} received`,
+                              )}
+                              {button("Link replacement receipt", () =>
+                                supplierCommand(
+                                  r,
+                                  "Link received supplier replacement",
+                                  [
+                                    select(
+                                      "receiptId",
+                                      "Received replacement delivery",
+                                      extra.purchases.receipts.filter(
+                                        (p: Item) =>
+                                          p.po_id !== r.po_id &&
+                                          p.supplier_id === r.supplier_id &&
+                                          p.product_id === r.result.productId,
+                                      ),
+                                      (p) =>
+                                        `${p.delivery_ref} · ${p.quantity} received`,
+                                    ),
+                                    {
+                                      name: "quantity",
+                                      label: "Replacement units linked",
+                                      type: "number",
+                                      min: 1,
+                                      max: r.quantity,
+                                      value: 1,
+                                    },
+                                  ],
+                                  "purchase.return.replacement",
+                                ),
+                              )}
+                              {button("Close supplier follow-up", () =>
+                                supplierCommand(
+                                  r,
+                                  "Review supplier return outcome",
+                                  [
+                                    {
+                                      name: "resolution",
+                                      label: "Reviewed resolution",
+                                      options: [
+                                        {
+                                          value: "reconciled",
+                                          label: "Recorded outcomes reconciled",
+                                        },
+                                        {
+                                          value: "no-remedy",
+                                          label:
+                                            "No credit or replacement accepted",
+                                        },
+                                      ],
+                                      help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
+                                    },
+                                  ],
+                                  "purchase.return.review",
+                                  { state: "closed" },
+                                ),
+                              )}
+                            </>
+                          )}
+                          {r.followup.state === "closed" &&
+                            button("Reopen supplier follow-up", () =>
+                              supplierCommand(
+                                r,
+                                "Reopen supplier return follow-up",
+                                [],
+                                "purchase.return.review",
+                                { state: "open", resolution: null },
                               ),
-                              {
-                                name: "quantity",
-                                label: "Replacement units linked",
-                                type: "number",
-                                min: 1,
-                                max: r.quantity,
-                                value: 1,
-                              },
-                            ],
-                            "purchase.return.replacement",
-                          ),
-                        )}
-                        {button("Close supplier follow-up", () =>
-                          supplierCommand(
-                            r,
-                            "Review supplier return outcome",
-                            [
-                              {
-                                name: "resolution",
-                                label: "Reviewed resolution",
-                                options: [
-                                  {
-                                    value: "reconciled",
-                                    label: "Recorded outcomes reconciled",
-                                  },
-                                  {
-                                    value: "no-remedy",
-                                    label: "No credit or replacement accepted",
-                                  },
-                                ],
-                                help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
-                              },
-                            ],
-                            "purchase.return.review",
-                            { state: "closed" },
-                          ),
-                        )}
-                      </>
+                            )}
+                        </div>
+                      </details>
                     )}
-                    {can("finance") &&
-                      r.followup.state === "closed" &&
-                      button("Reopen supplier follow-up", () =>
-                        supplierCommand(
-                          r,
-                          "Reopen supplier return follow-up",
-                          [],
-                          "purchase.return.review",
-                          { state: "open", resolution: null },
-                        ),
-                      )}
                   </div>,
                 ],
+                supplierReturnQueue.busy && !supplierReturnQueue.items.length
+                  ? "Loading supplier returns…"
+                  : supplierReturnQueue.q
+                    ? "No supplier returns match this search."
+                    : "No supplier returns recorded.",
               )}
               {supplierHistoryId &&
                 (() => {
@@ -4718,12 +4877,6 @@ function App() {
                     )
                   );
                 })()}
-              <SupplierAvailability
-                key={`${actor.orgId}:${actor.id}`}
-                orgId={actor.orgId}
-                actorId={actor.id}
-                canManage={can("commercial")}
-              />
             </PageSection>
           </PageSections>
         )}

@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { request, RequestError } from "./api.ts";
+import "./purchasing-workspace.css";
 
 import type { IncomingSupplyReview as Supply } from "../shared/incoming-supply.ts";
 type Attempt = {
@@ -200,7 +201,12 @@ export function IncomingSupply({
           {storageError}
         </p>
       )}
-      <button type="button" disabled={busy || !!review} onClick={refresh}>
+      <button
+        type="button"
+        className="secondary"
+        disabled={busy || !!review}
+        onClick={refresh}
+      >
         Refresh incoming stock
       </button>
       {!data && !error && <p role="status">Loading incoming stock…</p>}
@@ -338,88 +344,102 @@ export function IncomingSupply({
                 <h4>Assign incoming stock</h4>
                 <fieldset disabled={locked}>
                   <legend>Choose demand and supply</legend>
-                  <label htmlFor={`${id}-line`}>Order product</label>
-                  <select
-                    id={`${id}-line`}
-                    required
-                    value={lineId}
-                    onChange={(event) => {
-                      setLineId(event.target.value);
-                      setPurchaseLineId("");
-                    }}
-                  >
-                    <option value="">Choose an uncovered product</option>
-                    {data.lines
-                      .filter((item) => item.uncovered > 0)
-                      .map((item) => (
-                        <option key={item.lineId} value={item.lineId}>
-                          {item.description} · {item.uncovered} uncovered
-                        </option>
-                      ))}
-                  </select>
-                  <label htmlFor={`${id}-purchase`}>
-                    Incoming purchase line
-                  </label>
-                  <select
-                    id={`${id}-purchase`}
-                    required
-                    value={purchaseLineId}
-                    onChange={(event) => setPurchaseLineId(event.target.value)}
-                  >
-                    <option value="">Choose available incoming stock</option>
-                    {candidates
-                      .filter((item) => item.availableQuantity > 0)
-                      .map((item) => (
-                        <option
-                          key={item.purchaseLineId}
-                          value={item.purchaseLineId}
-                        >
-                          {item.supplierName} · PO {item.poId.slice(0, 8)} ·{" "}
-                          {item.availableQuantity} available
-                        </option>
-                      ))}
-                  </select>
-                  {line &&
-                    !candidates.some((item) => item.availableQuantity > 0) && (
-                      <p>
-                        No unassigned incoming supply matches this product and
-                        warehouse. Create a purchase order or release another
-                        assignment first.
-                      </p>
-                    )}
-                  <label htmlFor={`${id}-quantity`}>Units to assign</label>
-                  <input
-                    id={`${id}-quantity`}
-                    type="number"
-                    min="1"
-                    max={Math.min(
-                      line?.uncovered ?? 0,
-                      candidate?.availableQuantity ?? 0,
-                    )}
-                    step="1"
-                    required
-                    value={quantity}
-                    onChange={(event) => setQuantity(event.target.value)}
-                  />
-                  <label htmlFor={`${id}-priority`}>Priority (1 first)</label>
-                  <input
-                    id={`${id}-priority`}
-                    type="number"
-                    min="1"
-                    max="999"
-                    step="1"
-                    required
-                    value={priority}
-                    onChange={(event) => setPriority(event.target.value)}
-                  />
-                  <label htmlFor={`${id}-reason`}>Assignment reason</label>
-                  <input
-                    id={`${id}-reason`}
-                    required
-                    maxLength={500}
-                    value={reason}
-                    onChange={(event) => setReason(event.target.value)}
-                  />
+                  <div className="incoming-field incoming-field-wide">
+                    <label htmlFor={`${id}-line`}>Order product</label>
+                    <select
+                      id={`${id}-line`}
+                      required
+                      value={lineId}
+                      onChange={(event) => {
+                        setLineId(event.target.value);
+                        setPurchaseLineId("");
+                      }}
+                    >
+                      <option value="">Choose an uncovered product</option>
+                      {data.lines
+                        .filter((item) => item.uncovered > 0)
+                        .map((item) => (
+                          <option key={item.lineId} value={item.lineId}>
+                            {item.description} · {item.uncovered} uncovered
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="incoming-field incoming-field-wide">
+                    <label htmlFor={`${id}-purchase`}>
+                      Incoming purchase line
+                    </label>
+                    <select
+                      id={`${id}-purchase`}
+                      required
+                      value={purchaseLineId}
+                      onChange={(event) =>
+                        setPurchaseLineId(event.target.value)
+                      }
+                    >
+                      <option value="">Choose available incoming stock</option>
+                      {candidates
+                        .filter((item) => item.availableQuantity > 0)
+                        .map((item) => (
+                          <option
+                            key={item.purchaseLineId}
+                            value={item.purchaseLineId}
+                          >
+                            {item.supplierName} · PO {item.poId.slice(0, 8)} ·{" "}
+                            {item.availableQuantity} available
+                          </option>
+                        ))}
+                    </select>
+                    {line &&
+                      !candidates.some(
+                        (item) => item.availableQuantity > 0,
+                      ) && (
+                        <p>
+                          No unassigned incoming supply matches this product and
+                          warehouse. Create a purchase order or release another
+                          assignment first.
+                        </p>
+                      )}
+                  </div>
+                  <div className="incoming-field">
+                    <label htmlFor={`${id}-quantity`}>Units to assign</label>
+                    <input
+                      id={`${id}-quantity`}
+                      type="number"
+                      min="1"
+                      max={Math.min(
+                        line?.uncovered ?? 0,
+                        candidate?.availableQuantity ?? 0,
+                      )}
+                      step="1"
+                      required
+                      value={quantity}
+                      onChange={(event) => setQuantity(event.target.value)}
+                    />
+                  </div>
+                  <div className="incoming-field">
+                    <label htmlFor={`${id}-priority`}>Priority (1 first)</label>
+                    <input
+                      id={`${id}-priority`}
+                      type="number"
+                      min="1"
+                      max="999"
+                      step="1"
+                      required
+                      value={priority}
+                      onChange={(event) => setPriority(event.target.value)}
+                    />
+                  </div>
+                  <div className="incoming-field incoming-field-wide">
+                    <label htmlFor={`${id}-reason`}>Assignment reason</label>
+                    <input
+                      id={`${id}-reason`}
+                      required
+                      maxLength={500}
+                      value={reason}
+                      onChange={(event) => setReason(event.target.value)}
+                    />
+                  </div>
                   <button type="submit" disabled={!candidate || !reason.trim()}>
                     Review assignment
                   </button>
@@ -452,66 +472,77 @@ export function IncomingSupply({
                   <h4>Change an assignment</h4>
                   <fieldset disabled={locked}>
                     <legend>Release units or change priority</legend>
-                    <label htmlFor={`${id}-change`}>Assignment</label>
-                    <select
-                      id={`${id}-change`}
-                      required
-                      value={changeId}
-                      onChange={(event) => setChangeId(event.target.value)}
-                    >
-                      <option value="">Choose assignment</option>
-                      {active.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {
-                            data.lines.find((row) => row.lineId === item.lineId)
-                              ?.description
-                          }{" "}
-                          · PO {item.poId.slice(0, 8)} ·{" "}
-                          {item.pendingQuantity + item.heldQuantity} remaining
-                        </option>
-                      ))}
-                    </select>
-                    <label htmlFor={`${id}-action`}>Action</label>
-                    <select
-                      id={`${id}-action`}
-                      value={changeKind}
-                      onChange={(event) =>
-                        setChangeKind(
-                          event.target.value as "release" | "priority",
-                        )
-                      }
-                    >
-                      <option value="release">Release assigned units</option>
-                      <option value="priority">Change priority</option>
-                    </select>
-                    <label htmlFor={`${id}-value`}>
-                      {changeKind === "release"
-                        ? "Units to release"
-                        : "New priority (1 first)"}
-                    </label>
-                    <input
-                      key={`${changeId}:${changeKind}`}
-                      id={`${id}-value`}
-                      name="value"
-                      type="number"
-                      min="1"
-                      max={
-                        changeKind === "release"
-                          ? (change?.pendingQuantity ?? 0) +
-                            (change?.heldQuantity ?? 0)
-                          : 999
-                      }
-                      step="1"
-                      defaultValue="1"
-                      required
-                    />
-                    <label htmlFor={`${id}-change-reason`}>Change reason</label>
-                    <input
-                      id={`${id}-change-reason`}
-                      name="reason"
-                      required
-                      maxLength={500}
-                    />
+                    <div className="incoming-field incoming-field-wide">
+                      <label htmlFor={`${id}-change`}>Assignment</label>
+                      <select
+                        id={`${id}-change`}
+                        required
+                        value={changeId}
+                        onChange={(event) => setChangeId(event.target.value)}
+                      >
+                        <option value="">Choose assignment</option>
+                        {active.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {
+                              data.lines.find(
+                                (row) => row.lineId === item.lineId,
+                              )?.description
+                            }{" "}
+                            · PO {item.poId.slice(0, 8)} ·{" "}
+                            {item.pendingQuantity + item.heldQuantity} remaining
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="incoming-field">
+                      <label htmlFor={`${id}-action`}>Action</label>
+                      <select
+                        id={`${id}-action`}
+                        value={changeKind}
+                        onChange={(event) =>
+                          setChangeKind(
+                            event.target.value as "release" | "priority",
+                          )
+                        }
+                      >
+                        <option value="release">Release assigned units</option>
+                        <option value="priority">Change priority</option>
+                      </select>
+                    </div>
+                    <div className="incoming-field">
+                      <label htmlFor={`${id}-value`}>
+                        {changeKind === "release"
+                          ? "Units to release"
+                          : "New priority (1 first)"}
+                      </label>
+                      <input
+                        key={`${changeId}:${changeKind}`}
+                        id={`${id}-value`}
+                        name="value"
+                        type="number"
+                        min="1"
+                        max={
+                          changeKind === "release"
+                            ? (change?.pendingQuantity ?? 0) +
+                              (change?.heldQuantity ?? 0)
+                            : 999
+                        }
+                        step="1"
+                        defaultValue="1"
+                        required
+                      />
+                    </div>
+                    <div className="incoming-field incoming-field-wide">
+                      <label htmlFor={`${id}-change-reason`}>
+                        Change reason
+                      </label>
+                      <input
+                        id={`${id}-change-reason`}
+                        name="reason"
+                        required
+                        maxLength={500}
+                      />
+                    </div>
                     <button type="submit" disabled={!change}>
                       Review change
                     </button>
@@ -605,16 +636,22 @@ export function IncomingSupplyWorkspace({
     return () => controller.abort();
   }, [cursor, retry]);
   return (
-    <section>
+    <section className="incoming-workspace">
       <h2>Incoming allocations</h2>
-      <p>
+      <p className="purchasing-intro">
         Choose a customer order to assign incoming purchase quantities and
         review what is still uncovered.
       </p>
       {error && (
         <>
-          <p role="alert">{error}</p>
-          <button type="button" onClick={() => setRetry((value) => value + 1)}>
+          <p role="alert" className="error">
+            {error}
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setRetry((value) => value + 1)}
+          >
             Retry orders
           </button>
         </>
@@ -622,6 +659,13 @@ export function IncomingSupplyWorkspace({
       {!page && !error && <p role="status">Loading open orders…</p>}
       {page && (
         <>
+          {page.items.length > 0 && (
+            <p className="incoming-order-count" role="status">
+              {page.items.length}{" "}
+              {page.items.length === 1 ? "open order" : "open orders"} on this
+              page
+            </p>
+          )}
           <div className="incoming-order-choices" aria-label="Open orders">
             {page.items.map((order) => (
               <button
@@ -630,24 +674,43 @@ export function IncomingSupplyWorkspace({
                 aria-pressed={orderId === order.id}
                 onClick={() => setOrderId(order.id)}
               >
-                {accountName(order.account_id)} ·{" "}
-                {warehouseName(order.warehouse_id)} · {order.id.slice(0, 8)}
+                <strong>{accountName(order.account_id)}</strong>
+                <span>
+                  {warehouseName(order.warehouse_id)} · Order{" "}
+                  <code title={order.id}>{order.id.slice(0, 8)}</code>
+                </span>
                 <small>
                   {order.lines.map((line) => line.description).join(", ")}
                 </small>
               </button>
             ))}
           </div>
-          {!page.items.length && <p>No open orders on this page.</p>}
-          {cursor && (
-            <button type="button" onClick={() => setCursor(null)}>
-              First page
-            </button>
+          {!page.items.length && (
+            <p className="empty">
+              No open customer orders need incoming stock on this page.
+            </p>
           )}
-          {page.next && (
-            <button type="button" onClick={() => setCursor(page.next)}>
-              Next orders
-            </button>
+          {(cursor || page.next) && (
+            <div className="actions">
+              {cursor && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setCursor(null)}
+                >
+                  First page
+                </button>
+              )}
+              {page.next && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setCursor(page.next)}
+                >
+                  Next orders
+                </button>
+              )}
+            </div>
           )}
         </>
       )}

@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 const origin = "http://127.0.0.1:3147";
 
@@ -46,6 +46,7 @@ test("browser: retired customer product receives saved and new delivery scans at
       .filter({ has: page.getByText(reference, { exact: true }) });
   await nav("Receipt drafts");
   const first = draft("RETIRED-PART-1");
+  await openStockActions(first);
   await first
     .getByRole("button", { name: "Resume scans", exact: true })
     .click();

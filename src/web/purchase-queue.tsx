@@ -10,6 +10,7 @@ import {
   type PurchaseQueueState,
 } from "../shared/purchase-queue.ts";
 import { request } from "./api.ts";
+import "./purchasing-workspace.css";
 
 type Order = Record<string, any>;
 type Page = { items: Order[]; next: string | null };
@@ -136,8 +137,10 @@ export function usePurchaseQueue(
 
 export function PurchaseQueueControls({
   queue,
+  actions,
 }: {
   queue: ReturnType<typeof usePurchaseQueue>;
+  actions?: React.ReactNode;
 }) {
   const heading = useRef<HTMLHeadingElement | null>(null);
   const stateId = useId();
@@ -167,11 +170,12 @@ export function PurchaseQueueControls({
           <option value="">All states</option>
           {purchaseQueueStates.map((state) => (
             <option key={state} value={state}>
-              {state}
+              {state.charAt(0).toUpperCase() + state.slice(1)}
             </option>
           ))}
         </select>
       </div>
+      {actions && <div className="queue-field-actions">{actions}</div>}
       <p role="status">
         {queue.items.length}{" "}
         {queue.items.length === 1 ? "purchase order" : "purchase orders"} loaded
