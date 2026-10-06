@@ -15,6 +15,7 @@ import type {
   CustomerContact,
   SaveCustomerContact,
 } from "../shared/customer-record.ts";
+import "./record-forms.css";
 import "./customer-record.css";
 type Account = {
   id: string;
@@ -43,9 +44,13 @@ export function CustomerDirectory({
     `${a.name} ${a.tier}`.toLowerCase().includes(search.toLowerCase()),
   );
   return (
-    <section className="panel customer-directory">
-      <div className="customer-directory-tools">
-        <label>
+    <section className="customer-directory">
+      <div
+        className="queue-controls customer-directory-tools"
+        role="search"
+        aria-label="Customer filters"
+      >
+        <label className="queue-field">
           Find customer
           <input
             type="search"
@@ -54,62 +59,81 @@ export function CustomerDirectory({
             placeholder="Company or price tier"
           />
         </label>
-        {actions}
+        <div className="queue-field-actions">{actions}</div>
       </div>
-      <p>
-        {rows.length} customer{rows.length === 1 ? "" : "s"}
+      <p className="customer-directory-count" role="status">
+        {search.trim()
+          ? `${rows.length} of ${accounts.length} ${accounts.length === 1 ? "customer" : "customers"}`
+          : `${rows.length} ${rows.length === 1 ? "customer" : "customers"}`}
       </p>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Status</th>
-              <th>Price tier</th>
-              <th>Credit limit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((a) => (
-              <tr key={a.id}>
-                <td>
-                  <a
-                    className="customer-name-link"
-                    href={navigationHash({
-                      page: "Customers",
-                      customerId: a.id,
-                      customerTab: "overview",
-                    })}
-                    onClick={(e) => {
-                      if (
-                        e.button ||
-                        e.metaKey ||
-                        e.ctrlKey ||
-                        e.shiftKey ||
-                        e.altKey
-                      )
-                        return;
-                      e.preventDefault();
-                      onNavigate({
+      {rows.length > 0 && (
+        <div className="table-wrap">
+          <table className="customer-directory-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>Price tier</th>
+                <th className="numeric">Credit limit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <a
+                      className="record-title-link customer-name-link"
+                      title={`Customer ${a.id}`}
+                      href={navigationHash({
                         page: "Customers",
                         customerId: a.id,
                         customerTab: "overview",
-                      });
-                    }}
-                  >
-                    {a.name}
-                    <span aria-hidden="true"> →</span>
-                  </a>
-                </td>
-                <td>{a.held ? "On hold" : "Active"}</td>
-                <td>{a.tier}</td>
-                <td>{money(a.credit_limit, a.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!rows.length && <p>No customers match this search.</p>}
+                      })}
+                      onClick={(e) => {
+                        if (
+                          e.button ||
+                          e.metaKey ||
+                          e.ctrlKey ||
+                          e.shiftKey ||
+                          e.altKey
+                        )
+                          return;
+                        e.preventDefault();
+                        onNavigate({
+                          page: "Customers",
+                          customerId: a.id,
+                          customerTab: "overview",
+                        });
+                      }}
+                    >
+                      {a.name}
+                    </a>
+                  </td>
+                  <td>
+                    <span
+                      className="record-status"
+                      data-status={a.held ? "due" : undefined}
+                    >
+                      {a.held ? "On hold" : "Active"}
+                    </span>
+                  </td>
+                  <td className="customer-tier">{a.tier}</td>
+                  <td className="numeric">
+                    {money(a.credit_limit, a.currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!rows.length && (
+        <p className="record-detail-empty">
+          {accounts.length
+            ? "No customers match this search."
+            : "No customer accounts yet."}
+        </p>
+      )}
     </section>
   );
 }
@@ -231,14 +255,31 @@ export function CustomerRecord({
           />
         </PageSection>
         <PageSection id="record-terms">
-          <section className="panel">
+          <section className="panel customer-terms-panel">
             <h3>Credit and residency</h3>
-            <p>
-              Credit limit {money(account.credit_limit, account.currency)} ·{" "}
-              {account.held ? "On hold" : "No finance hold"}. Shipping terms are
-              reviewed for each saved cart and retained on its quote.
-            </p>
-            {terms}
+            <dl className="customer-detail-facts">
+              <div>
+                <dt>Credit limit</dt>
+                <dd>{money(account.credit_limit, account.currency)}</dd>
+              </div>
+              <div>
+                <dt>Finance hold</dt>
+                <dd>{account.held ? "On hold" : "No finance hold"}</dd>
+              </div>
+              <div>
+                <dt>Data residency</dt>
+                <dd>
+                  {account.residency_mode === "strict"
+                    ? "Strict regional storage"
+                    : "Named provider exceptions"}
+                </dd>
+              </div>
+              <div>
+                <dt>Shipping terms</dt>
+                <dd>Reviewed for each saved cart and retained on its quote</dd>
+              </div>
+            </dl>
+            <div className="customer-panel-actions">{terms}</div>
           </section>
           {finance ? (
             <CustomerBillingTerms
@@ -247,7 +288,12 @@ export function CustomerRecord({
               epoch={billingEpoch}
             />
           ) : (
-            <p>Billing terms are available to finance staff.</p>
+            <section className="panel customer-terms-panel">
+              <h3>Billing terms</h3>
+              <p className="record-detail-empty">
+                Billing terms are available to finance staff.
+              </p>
+            </section>
           )}
           {commercial && (
             <CustomerPurchasingRules
@@ -423,7 +469,9 @@ function CustomerBillingTerms({
     setState(null);
     void request<any>("/api/billing/profiles", { signal: c.signal })
       .then((p) =>
-        setState(p.customers.find((a: any) => a.accountId === accountId)),
+        setState(
+          p.customers.find((a: any) => a.accountId === accountId) ?? false,
+        ),
       )
       .catch((e) => {
         if (!c.signal.aborted) setError(e.message);
@@ -431,47 +479,54 @@ function CustomerBillingTerms({
     return () => c.abort();
   }, [accountId, epoch]);
   return (
-    <section className="panel">
-      <h3>Billing terms</h3>
+    <section className="panel customer-terms-panel">
+      <div className="customer-panel-header">
+        <h3>Billing terms</h3>
+        {state && edit && (
+          <button className="secondary" onClick={() => edit(state)}>
+            Edit customer billing terms
+          </button>
+        )}
+      </div>
       {error && <p role="alert">{error}</p>}
       {state ? (
-        <>
-          <dl className="customer-detail-facts">
-            <div>
-              <dt>Payment terms</dt>
-              <dd>
-                {state.termDays === null
-                  ? "Not recorded"
-                  : `${state.termDays} calendar days`}
-              </dd>
-            </div>
-            <div>
-              <dt>Billing name</dt>
-              <dd>{state.name}</dd>
-            </div>
-            <div>
-              <dt>Billing address</dt>
-              <dd>{state.address || "Not recorded"}</dd>
-            </div>
-            <div>
-              <dt>Tax registration</dt>
-              <dd>{state.taxRegistration || "Not recorded"}</dd>
-            </div>
-          </dl>
-          <p>
-            Last review: {state.reason} ·{" "}
-            {state.updatedAt
-              ? new Date(state.updatedAt).toLocaleString()
-              : "No retained review"}
-          </p>
-          {edit && (
-            <button onClick={() => edit(state)}>
-              Edit customer billing terms
-            </button>
-          )}
-        </>
+        <dl className="customer-detail-facts">
+          <div>
+            <dt>Payment terms</dt>
+            <dd>
+              {state.termDays === null
+                ? "Not recorded"
+                : `${state.termDays} calendar days`}
+            </dd>
+          </div>
+          <div>
+            <dt>Billing name</dt>
+            <dd>{state.name}</dd>
+          </div>
+          <div>
+            <dt>Billing address</dt>
+            <dd>{state.address || "Not recorded"}</dd>
+          </div>
+          <div>
+            <dt>Tax registration</dt>
+            <dd>{state.taxRegistration || "Not recorded"}</dd>
+          </div>
+          <div className="customer-fact-wide">
+            <dt>Last review</dt>
+            <dd>
+              {state.reason} ·{" "}
+              {state.updatedAt
+                ? new Date(state.updatedAt).toLocaleString()
+                : "No retained review"}
+            </dd>
+          </div>
+        </dl>
+      ) : state === false ? (
+        <p className="record-detail-empty">
+          No billing profile is recorded for this customer.
+        </p>
       ) : (
-        !error && <p>Loading billing terms…</p>
+        !error && <p role="status">Loading billing terms…</p>
       )}
     </section>
   );
@@ -832,18 +887,34 @@ function CustomerContactsEditor({
       setBusy(false);
     }
   }
+  const active = page?.items.filter((c) => !c.archived).length ?? 0,
+    archived = (page?.items.length ?? 0) - active;
   return (
-    <section className="panel">
-      <h3>Company contacts</h3>
-      <p>
-        Staff-only contact directory. Archiving retains the person’s recorded
-        details.
-      </p>
+    <section className="panel customer-contacts">
+      <div className="customer-panel-header">
+        <div>
+          <h3>Company contacts</h3>
+          <p className="customer-panel-intro">
+            Staff-only contact directory. Archiving retains the person’s
+            recorded details.
+          </p>
+        </div>
+        {!attempt && page?.canManage && !recovery.error && !editing && (
+          <button
+            onClick={() => {
+              setDraft(empty());
+              setEditing(true);
+            }}
+          >
+            Add contact
+          </button>
+        )}
+      </div>
       {error && <p role="alert">{error}</p>}
       {recovery.error && <p role="alert">{recovery.error}</p>}
       {notice && <p role="status">{notice}</p>}
-      {attempt ? (
-        <div role="status">
+      {attempt && (
+        <div role="status" className="customer-contact-recovery">
           <p>
             A saved contact change needs confirmation. Retry the identical
             change before editing another contact.
@@ -855,59 +926,51 @@ function CustomerContactsEditor({
             Retry saved contact change
           </button>
         </div>
-      ) : (
-        page?.canManage &&
-        !recovery.error && (
-          <button
-            onClick={() => {
-              setDraft(empty());
-              setEditing(true);
-            }}
-          >
-            Add contact
-          </button>
-        )
       )}
       {editing && !attempt && (
         <form
+          className="customer-contact-form"
           onSubmit={(e) => {
             e.preventDefault();
             void save({ key: crypto.randomUUID(), payload: draft });
           }}
         >
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy} className="record-form-card">
             <legend>{draft.contactId ? "Edit contact" : "New contact"}</legend>
-            {(
-              [
-                ["name", "Contact name", 200],
-                ["title", "Job title", 200],
-                ["email", "Contact email", 254],
-                ["phone", "Contact phone", 80],
-              ] as const
-            ).map(([field, label, max]) => (
-              <label key={field}>
-                {label}
-                <input
-                  required={field === "name"}
-                  maxLength={max}
-                  value={draft[field]}
-                  onChange={(e) =>
-                    setDraft({ ...draft, [field]: e.target.value })
-                  }
-                />
-              </label>
-            ))}
-            <label>
+            <div className="record-form-grid">
+              {(
+                [
+                  ["name", "Contact name", 200, "text"],
+                  ["title", "Job title", 200, "text"],
+                  ["email", "Contact email", 254, "email"],
+                  ["phone", "Contact phone", 80, "tel"],
+                ] as const
+              ).map(([field, label, max, inputMode]) => (
+                <label key={field}>
+                  {label}
+                  <input
+                    inputMode={inputMode}
+                    required={field === "name"}
+                    maxLength={max}
+                    value={draft[field]}
+                    onChange={(e) =>
+                      setDraft({ ...draft, [field]: e.target.value })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <label className="record-form-check">
               <input
                 type="checkbox"
                 checked={draft.archived}
                 onChange={(e) =>
                   setDraft({ ...draft, archived: e.target.checked })
                 }
-              />{" "}
+              />
               Archived contact
             </label>
-            <div className="actions">
+            <div className="record-form-footer">
               <button>Save contact</button>
               <button
                 type="button"
@@ -920,47 +983,66 @@ function CustomerContactsEditor({
           </fieldset>
         </form>
       )}
+      {page && page.items.length > 0 && (
+        <p className="customer-contact-count">
+          {active} active {active === 1 ? "contact" : "contacts"}
+          {archived > 0 && ` · ${archived} archived`}
+        </p>
+      )}
       <ul className="customer-contact-list">
         {page?.items.map((c: CustomerContact) => (
-          <li key={c.id}>
-            <div>
+          <li key={c.id} data-archived={c.archived || undefined}>
+            <div className="customer-contact-card-head">
               <strong>{c.name}</strong>
-              {c.archived && <span> · Archived</span>}
-              <p>{c.title || "Job title not recorded"}</p>
-              <p>
-                {c.email || "Email not recorded"} ·{" "}
-                {c.phone || "Phone not recorded"}
-              </p>
+              {c.archived && <span className="badge">Archived</span>}
+            </div>
+            <p className="customer-contact-title">
+              {c.title || "Job title not recorded"}
+            </p>
+            <dl className="customer-contact-details">
+              <div>
+                <dt>Email</dt>
+                <dd>{c.email || "Not recorded"}</dd>
+              </div>
+              <div>
+                <dt>Phone</dt>
+                <dd>{c.phone || "Not recorded"}</dd>
+              </div>
+            </dl>
+            <div className="customer-contact-card-foot">
               <small>
                 Updated {new Date(c.updatedAt).toLocaleString()} · revision{" "}
                 {c.revision}
               </small>
+              {page.canManage && (
+                <button
+                  disabled={busy || !!attempt || !!recovery.error}
+                  className="secondary"
+                  onClick={() => {
+                    setDraft({
+                      accountId,
+                      contactId: c.id,
+                      expectedRevision: c.revision,
+                      name: c.name,
+                      title: c.title,
+                      email: c.email,
+                      phone: c.phone,
+                      archived: c.archived,
+                    });
+                    setEditing(true);
+                  }}
+                >
+                  Edit {c.name}
+                </button>
+              )}
             </div>
-            {page.canManage && (
-              <button
-                disabled={busy || !!attempt || !!recovery.error}
-                className="secondary"
-                onClick={() => {
-                  setDraft({
-                    accountId,
-                    contactId: c.id,
-                    expectedRevision: c.revision,
-                    name: c.name,
-                    title: c.title,
-                    email: c.email,
-                    phone: c.phone,
-                    archived: c.archived,
-                  });
-                  setEditing(true);
-                }}
-              >
-                Edit {c.name}
-              </button>
-            )}
           </li>
         ))}
       </ul>
-      {page && !page.items.length && <p>No contacts recorded.</p>}
+      {page && !page.items.length && !editing && (
+        <p className="record-detail-empty">No contacts recorded.</p>
+      )}
+      {!page && !error && <p role="status">Loading contacts…</p>}
     </section>
   );
 }

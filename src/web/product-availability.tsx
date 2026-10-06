@@ -160,6 +160,7 @@ export function ProductAvailabilityEditor({
                   <button type="submit">Save availability</button>
                   <button
                     type="button"
+                    className={compact ? undefined : "secondary"}
                     onClick={() => setEpoch((previous) => previous + 1)}
                   >
                     Reload

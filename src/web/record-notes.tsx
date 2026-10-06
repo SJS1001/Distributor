@@ -4,6 +4,7 @@ import type {
   RecordNoteKind,
   RecordNotesPage,
 } from "../shared/record-notes.ts";
+import "./record-forms.css";
 import "./record-notes.css";
 
 type NotePage = RecordNotesPage;
@@ -201,7 +202,7 @@ export function RecordNotes({
       <summary>Staff notes</summary>
       {opened && (
         <div className="record-notes-content">
-          <p>
+          <p className="record-notes-intro">
             Private to authorized staff. Notes keep their original text; add a
             new note to correct an earlier one. Verification records a separate
             person's review.
@@ -236,15 +237,28 @@ export function RecordNotes({
           {busy && <p role="status">Loading or saving staff notes…</p>}
           {page && (
             <>
-              <button type="button" disabled={busy} onClick={() => void load()}>
-                Refresh staff notes
-              </button>
-              {!page.items.length && <p>No staff notes yet.</p>}
+              <div className="record-notes-toolbar">
+                <p>
+                  {page.items.length > 0 &&
+                    `${page.items.length}${page.next ? "+" : ""} ${page.items.length === 1 ? "note" : "notes"} shown`}
+                </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void load()}
+                >
+                  Refresh staff notes
+                </button>
+              </div>
+              {!page.items.length && (
+                <p className="record-notes-empty">No staff notes yet.</p>
+              )}
               <ol className="record-note-list">
                 {page.items.map((note) => (
                   <li key={note.id}>
                     <p className="record-note-body">{note.body}</p>
-                    <p>
+                    <p className="record-note-meta">
                       Added by {note.authorName} ·{" "}
                       <time dateTime={note.createdAt}>
                         {new Date(note.createdAt).toLocaleString()}
@@ -260,11 +274,12 @@ export function RecordNotes({
                         </time>
                       </p>
                     ) : (
-                      <>
-                        <p>Unverified</p>
+                      <div className="record-note-verify">
+                        <p className="record-note-unverified">Unverified</p>
                         {page.canVerify && note.authorId !== actorId && (
                           <button
                             type="button"
+                            className="secondary"
                             disabled={locked}
                             onClick={() =>
                               void send({
@@ -277,7 +292,7 @@ export function RecordNotes({
                             Verify this note
                           </button>
                         )}
-                      </>
+                      </div>
                     )}
                   </li>
                 ))}
@@ -285,13 +300,14 @@ export function RecordNotes({
               {page.next && (
                 <button
                   type="button"
+                  className="secondary"
                   disabled={busy}
                   onClick={() => void load(page.next!)}
                 >
                   Load older staff notes
                 </button>
               )}
-              <label>
+              <label className="record-note-composer">
                 New staff note
                 <textarea
                   value={body}

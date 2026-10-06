@@ -13,6 +13,7 @@ import {
 import { ProductAvailabilityEditor } from "./product-availability.tsx";
 import { ProductMsrpEditor } from "./customer-pricing.tsx";
 import { ProductPurchasingRules } from "./purchasing-rules.tsx";
+import "./record-forms.css";
 import {
   catalogImageMaxBytes,
   catalogDocumentMaxBytes,
@@ -457,19 +458,34 @@ export function CatalogResourceWorkspace({
 }) {
   return (
     <section className="panel catalog-product-manager">
-      <nav aria-label="Product breadcrumbs">
-        <button type="button" onClick={close}>
-          Catalog
+      <header className="catalog-product-header">
+        <div>
+          <nav
+            aria-label="Product breadcrumbs"
+            className="catalog-product-breadcrumbs"
+          >
+            <button type="button" className="text-action" onClick={close}>
+              Catalog
+            </button>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">{product.name}</span>
+          </nav>
+          <h2>
+            <code>{product.sku}</code> {product.name}
+          </h2>
+          <p>
+            <span
+              className="record-status"
+              data-status={product.active ? undefined : "due"}
+            >
+              {product.active ? "Active" : "Retired"}
+            </span>
+          </p>
+        </div>
+        <button className="secondary" onClick={close}>
+          Close product management
         </button>
-        <span aria-hidden="true"> / </span>
-        <span aria-current="page">{product.name}</span>
-      </nav>
-      <div className="actions">
-        <h2>
-          {product.sku} · {product.name}
-        </h2>
-        <button onClick={close}>Close product management</button>
-      </div>
+      </header>
       <PageSections
         label="Catalog product management"
         items={[
@@ -488,12 +504,6 @@ export function CatalogResourceWorkspace({
       >
         <PageSection id="catalog-details">
           <h3>Product details</h3>
-          {canManageAvailability && (
-            <ProductAvailabilityEditor
-              productId={product.id}
-              initial={product.availability}
-            />
-          )}
           <dl>
             <dt>SKU</dt>
             <dd>{product.sku}</dd>
@@ -503,13 +513,17 @@ export function CatalogResourceWorkspace({
             <dd>{displayMoney(product.unit_price, product.currency)}</dd>
             <dt>Tracking</dt>
             <dd>{product.serialized ? "Serialized" : "Bulk"}</dd>
-            <dt>Status</dt>
-            <dd>{product.active ? "Active" : "Retired"}</dd>
           </dl>
-          <p>
+          <p className="record-detail-note">
             Use the catalog actions to change tier prices or product lifecycle.
             Customer quotes use their account prices.
           </p>
+          {canManageAvailability && (
+            <ProductAvailabilityEditor
+              productId={product.id}
+              initial={product.availability}
+            />
+          )}
         </PageSection>
         {canManageAvailability && (
           <PageSection id="catalog-pricing">
