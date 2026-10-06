@@ -32,7 +32,7 @@ Evidence key:
 | Gree reference to saleable SKU mapping editor and customer-side matches | source `src/web/gree-reference.tsx`, `catalog-resources.tsx`, `storefront.tsx`. No mappings are seeded; real mappings are an input (§4). |
 | Tabbed page sections across Orders, Inventory, Purchasing, Billing, Customers, Returns, Imports and Administration | source `src/web/main.tsx` `PageSections`. |
 | Account MSRP multipliers, detailed or net-only presentation, price history, reviewed cost, one-off overrides with a separate approver | source `src/server/order-price-overrides.ts`, `catalog-price-authority.ts`, `src/web/price-overrides.tsx`. run: price-overrides config 1/1 passed. |
-| Staff customer record with Overview, History, Terms, Pricing, Notes and Contacts tabs | source `src/web/customer-record.tsx`. run: customer-record config 5/5 passed after the locator fix noted in HANDOFF. |
+| Staff customer record with Overview, History, Terms, Pricing, Notes and Contacts tabs | source `src/web/customer-record.tsx`. run: customer-record config passed (counts in HANDOFF). |
 | **Canonical invoice detail** (new in this pass): `GET /api/billing/invoices/:invoiceId`, `#page=Billing&invoice=<id>`, header figures, lines, payments for finance and support, PDF, staff action menu, links from customer History | source `src/server/billing.ts` `invoiceDetail`, `src/web/invoice-detail.tsx`; run `tests/invoice-detail.test.ts` 2/2 passed (projection equality, no writes, custody, 401/403/404). This closes the one gap the 2026-10-05 customer-record release listed. |
 | Append-only staff record notes | source `src/server/record-notes.ts`, `src/web/record-notes.tsx`. run: record-notes-recovery config 8/8 passed. |
 | Per-customer product purchasing approval (none, all or selected) | source `src/web/purchasing-rules.tsx`. Choosing real entitlements is an input (§4). |
@@ -44,9 +44,14 @@ Evidence key:
 
 ## 2. Defects
 
-No demonstrated product defect is open from this pass.
+Two product defects found during this pass are fixed:
 
-Browser-suite failures that already occur on the base commit `a7fb9ff` are recorded in HANDOFF with counts, and are kept separate from regressions. They are test-harness or stale-expectation failures, not product defects. They still need individual triage; see §7.
+- **Sign-out landing.** After a reload, ending a workspace session (sign-out or a security change) landed on the public home and dropped the reason. It now always shows sign-in with its notice.
+- **Stock search on refresh.** Application Refresh re-applied a stale free-text stock search. Search now clears; address-bar view and warehouse filters remain.
+
+Before this pass, the browser suites had 137 failing journeys. They came from deliberate earlier product changes the tests had not followed: buyer Shop landing, sign-in entrances, purchasing approval, Actions disclosures and tabs. A few came from test-server port collisions. All were repaired without weakening assertions; final counts are in HANDOFF.
+
+Open product question (not a defect): if the server ends a session and the reply that would tell the client is lost, the client keeps showing the workspace until a full page load. There is no global unauthenticated-response handler.
 
 ## 3. Missing code
 
@@ -99,7 +104,7 @@ Browser-suite failures that already occur on the base commit `a7fb9ff` are recor
 The application is not complete until each item below is closed by its owner. The list is finite; no percentage is claimed.
 
 1. Owner visual acceptance of the polished public site, customer portal and staff workspace on a physical phone and a desktop.
-2. Triage of the browser-suite failures that already exist on the base commit (counts in HANDOFF): fix stale expectations or record each as a harness limitation.
+2. Owner decision on global handling of server-ended sessions (see §2).
 3. Email provider decision, then build and qualify the transport.
 4. Purolator contract, then build and qualify the client.
 5. Restore host and authority, then wire `configuredRestoreHost` in a reviewed change and rehearse a restore.

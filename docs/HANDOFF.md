@@ -1,3 +1,45 @@
+## UI polish, invoice detail and test repair — 2026-10-06
+
+Continuation of the 2026-10-05 handoff. Base `a7fb9ff`; the definitive remaining-work list is [REMAINING-WORK-LEDGER-2026-10-05.md](REMAINING-WORK-LEDGER-2026-10-05.md).
+
+Changed behaviour:
+
+- **Canonical invoice detail.** `GET /api/billing/invoices/:invoiceId` (read-only; current account custody and role scope) and `#page=Billing&invoice=<id>`. The view shows figures, lines, payments (finance and support only), the PDF and a staff action menu. Customer History, invoice queues and buyer Invoices & payments link to it. This closes the gap the customer-record release listed.
+- **Customer record.** The Overview tab has summary cards (open orders, balance due, primary contact). History tables link orders and invoices. Terms, Pricing, Notes and Contacts use grouped forms.
+- **Polish across the public site, customer portal and staff workspace.** Eight reviewed lanes covered:
+  - order detail;
+  - purchasing;
+  - returns, imports, administration, security and operations health;
+  - the buyer portal;
+  - public products;
+  - the Overview dashboard;
+  - customers;
+  - fulfillment queues.
+
+  Rows have one primary action, with secondary commands in an Actions disclosure. Ids are shortened. Plurals are correct. Single-page tab strips are hidden. Empty, loading and error states are explicit, and touch targets are 44px at phone width.
+- **Product fixes.**
+  - Ending a workspace session now always shows sign-in with its reason; after a reload it used to land on the public home.
+  - Application Refresh no longer re-applies a stale free-text stock search.
+  - Stock and count docs now describe the retained address-bar filters.
+- **Tests.** 137 stale browser journeys were repaired without weakening assertions. They had not followed earlier deliberate product changes (buyer Shop landing, sign-in entrances, purchasing approval, tabs and Actions disclosures). Five journeys collided with the shared test server's ports and now use 3245–3247.
+
+Verification, tested commit `222b611` on macOS, Node 24.16.0, Chromium (Playwright), run serially on the workstation:
+
+- `npm test`: 6,060 tests, 6,060 passed, 0 failed, cancelled or skipped.
+- All 28 browser configs passed with 0 failures, for 1,036 test passes in total (configs overlap). The main suite and the shared-navigation config each passed 342 of 342.
+- Typecheck, build and changed-file prettier checks passed.
+- Before and after screenshots at 1440px and 390px were captured and inspected. They are private, under `local-evidence/visual-20261005/`.
+- The earlier baseline at `a7fb9ff` had 137 failing main-suite journeys, plus 20 failing remaining-navigation journeys and 5 failing billing-navigation journeys (some overlap). Those runs are retained privately.
+- Machine load from other projects (load averages above 20) made the shared browser server exceed its 30-second start timeout. Verified runs waited for low load; the timeout was not raised.
+
+Limits:
+
+- Chromium viewport sizes are not physical iPhone Safari.
+- Visual acceptance remains the owner's.
+- Open product question: a server-ended session whose reply is lost keeps the stale workspace until a full page load.
+- No PR, merge or CI run.
+- Deployment status is recorded below this entry, once deployed.
+
 ## Native MVP representation and incoming supply — 2026-10-05
 
 2026-10-05: [Application/MVP evidence map](ACCEPTANCE-EVIDENCE-MAP.md) now traces all 44 accepted tasks to real source or canonical decisions, demo representation, remaining evidence, accountable roles and concrete resume conditions. Native demo uses the actual application; public Sites remains the older simplified version. Source registration and focused local checks do not establish universal workflow, external-service or product-gate acceptance. This mapping changes documentation only; no additional test run, commit, push, CI, PR/merge, provider operation or deployment is claimed.
