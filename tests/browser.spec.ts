@@ -6289,6 +6289,13 @@ test("browser: authenticator setup retries, required second factor, recovery reu
       page,
       "Authenticator settings saved. All your sessions have ended. Sign in again.",
     );
+    // Staff return to the Administration entrance, not customer sign-in.
+    await expect(
+      page.getByRole("heading", {
+        name: "Administration sign in.",
+        exact: true,
+      }),
+    ).toBeVisible();
     expect((await second.request.get("/api/session")).status()).toBe(401);
     expect((await page.request.get("/api/session")).status()).toBe(401);
     await enterPassword(page);

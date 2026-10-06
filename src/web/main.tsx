@@ -921,11 +921,16 @@ function App() {
     else {
       setPage("Overview");
       // Leaving the workspace always shows sign-in, where the notice renders;
-      // a reload must not turn this into the public home.
+      // a reload must not turn this into the public home. Staff return to the
+      // Administration entrance. Buyers keep the neutral form, because staff
+      // signing in at the customer entrance stay on customer pricing.
+      const staffLeaving = actor !== null && actor.role !== "buyer";
       setPublicRoute((current) =>
-        ["sign-in", "customer-sign-in", "admin-sign-in"].includes(current)
-          ? current
-          : "sign-in",
+        staffLeaving
+          ? "admin-sign-in"
+          : ["sign-in", "customer-sign-in", "admin-sign-in"].includes(current)
+            ? current
+            : "sign-in",
       );
     }
     setPasswordChangeRequired(false);

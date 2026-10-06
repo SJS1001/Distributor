@@ -1,3 +1,18 @@
+## Staff sign-out landing and owner guide — 2026-10-06
+
+Follow-up to the entry below.
+
+- **Changed behaviour.** When a staff session ends (sign-out, credential change or session revocation), the browser now lands on the Administration sign-in entrance. Previously it went to customer sign-in. Buyers keep their entrance. The main browser suite asserts the new landing after the authenticator-settings session end.
+- **Owner guide.** [OWNER-GUIDE-REMAINING-WORK-2026-10-06.md](OWNER-GUIDE-REMAINING-WORK-2026-10-06.md) restates the ledger's remaining work in plain language. It lists twelve owner decisions, each with a recommendation, consistent with [MISSING-INPUT-RECOMMENDATIONS.md](MISSING-INPUT-RECOMMENDATIONS.md).
+
+Verification, run serially on the same workstation and toolchain, against the working tree that became this commit:
+
+- `npm test`: 6,060 passed, 0 failed, cancelled or skipped.
+- All 28 browser configs exited 0; the main suite passed 342 of 342.
+- Build and typecheck passed.
+
+The limits of the entry below still apply.
+
 ## UI polish, invoice detail and test repair — 2026-10-06
 
 Continuation of the 2026-10-05 handoff. Base `a7fb9ff`; the definitive remaining-work list is [REMAINING-WORK-LEDGER-2026-10-05.md](REMAINING-WORK-LEDGER-2026-10-05.md).
