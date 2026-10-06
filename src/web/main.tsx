@@ -93,6 +93,7 @@ import {
   request,
   RequestError,
   setCsrf,
+  onSessionEnded,
   downloadDocument,
   downloadStockLabel,
   downloadInboxDocument,
@@ -865,6 +866,8 @@ function App() {
     return () => controller.abort();
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
   const clearSession = (message = "") => {
+    // Late replies from the ended session must not replace this notice.
+    onSessionEnded(null);
     stopApplicationRun();
     stopReceiptHistoryRead();
     setPurchaseEntryOpen(false);
@@ -947,6 +950,16 @@ function App() {
       if (!key.startsWith("distributor-notes:")) sessionStorage.removeItem(key);
     }
   };
+  // Any reply refusing the session returns the workspace to sign-in.
+  const endSession = useRef(clearSession);
+  endSession.current = clearSession;
+  useEffect(() => {
+    if (!actor) return;
+    onSessionEnded(() =>
+      endSession.current("Your session has ended. Sign in again."),
+    );
+    return () => onSessionEnded(null);
+  }, [actor]);
   const [signOutPending, setSignOutPending] = useState(false);
   const signOut = () => {
     if (signOutPending) return;

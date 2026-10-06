@@ -1,3 +1,25 @@
+## Global session-ended handling — 2026-10-06
+
+Owner decision 2 in the [owner guide](OWNER-GUIDE-REMAINING-WORK-2026-10-06.md), approved 2026-10-06.
+
+- **Changed behaviour.** While someone is signed in, any API reply that refuses the session (`401` with code `UNAUTHENTICATED`, from expiry, revocation or a session ended elsewhere) now returns the workspace to its sign-in entrance with "Your session has ended. Sign in again." Staff go to the Administration entrance; buyers go to customer sign-in. The hook is in `request()` and in the download helpers in `src/web/api.ts`, and the workspace registers it in `src/web/main.tsx`.
+- **What does not trigger it.** Wrong passwords (`LOGIN`), authenticator errors (`MFA_*`), permission refusals (403) and replies that arrive after sign-out.
+- **Notice behaviour.** The handler runs after the caller's own error handling, so sign-in shows one notice instead of an extra error. The ledger's open session question is resolved.
+- **Test.** `tests/session-ended-browser-journey.ts` covers staff and buyers. It ends the session by removing the cookie, then makes an in-app read. With the handler disabled, the test fails.
+- **Two journeys updated** for the approved behaviour; their other assertions are unchanged:
+  - the native quantity site-grant revocation (`tests/inventory-quantity-native-browser.ts`);
+  - the journal expired-session decision (`tests/stock-journal-browser-journey.ts`).
+
+  Each expected the stale panel's alert after the server ended the session. User access updates always end that user's sessions (`updateUser` in `src/server/iam.ts`). Both still prove that the refused attempt has no effect and that the retained `localStorage` attempt survives.
+- **Existing behaviour, unchanged.** The notice stays visible next to a later wrong-password error until sign-in succeeds.
+
+Verification, run serially on the same workstation and toolchain, against the working tree that became this commit:
+
+- `npm test`: 6,060 passed, 0 failed, cancelled or skipped.
+- All 28 browser configs exited 0; the main suite passed 343 of 343.
+- Typecheck, build and changed-file prettier checks passed.
+- The first full run had 2 distinct failures (7 across overlapping configs): the two journeys updated above. They were retained privately under `local-evidence/visual-20261005/tests/sessionend/`.
+
 ## Staff sign-out landing and owner guide — 2026-10-06
 
 Follow-up to the entry below.

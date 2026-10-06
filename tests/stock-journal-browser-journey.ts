@@ -573,10 +573,12 @@ test("browser: journal authority failure retains the original and native pre-eff
   await exact(page)
     .getByRole("button", { name: "Confirm journal decision" })
     .click();
-  await expect(recovery(page).getByRole("alert")).toBeVisible();
+  // The refused reply returns the workspace to sign-in at once; the retained
+  // attempt survives that and a reload.
+  await expect(
+    page.getByText("Your session has ended. Sign in again.", { exact: true }),
+  ).toBeVisible();
   expect(await retained(page)).not.toBeNull();
-  // The browser learns that its server session ended when it next reads the
-  // session; the retained attempt survives that reload.
   await page.reload();
   await signIn(page);
   // A separate request records a competing decision; the old submitted attempt has no effect.

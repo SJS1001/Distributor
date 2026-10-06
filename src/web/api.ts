@@ -23,6 +23,21 @@ export class RequestError extends Error {
 export function setCsrf(value: string) {
   csrf = value;
 }
+// The signed-in workspace registers this handler. A session the server no
+// longer accepts (expired, revoked or ended elsewhere) then returns to
+// sign-in at once instead of leaving a stale workspace until a full reload.
+// Wrong passwords (LOGIN) and authenticator codes (MFA_*) never trigger it.
+let sessionEnded: (() => void) | null = null;
+export function onSessionEnded(handler: (() => void) | null) {
+  sessionEnded = handler;
+}
+function noticeSessionEnd(status: number, code: unknown) {
+  if (status !== 401 || code !== "UNAUTHENTICATED" || !sessionEnded) return;
+  const handler = sessionEnded;
+  sessionEnded = null;
+  // Run after the caller's own error handling so sign-in shows one notice.
+  setTimeout(handler, 0);
+}
 export async function request<T = any>(
   path: string,
   options: RequestInit = {},
@@ -37,12 +52,14 @@ export async function request<T = any>(
     },
   });
   const result = await response.json();
-  if (!response.ok)
+  if (!response.ok) {
+    noticeSessionEnd(response.status, result.code);
     throw new RequestError(
       `${result.message ?? "Request failed."}${result.code ? ` (${result.code})` : ""}`,
       response.status,
       result.code,
     );
+  }
   return result as T;
 }
 // Keep a durable key for the exact attempt until the caller observes success.
@@ -81,6 +98,7 @@ export async function downloadReconciliation(
   );
   if (!response.ok) {
     const result = await response.json();
+    noticeSessionEnd(response.status, result.code);
     throw Error(
       `${result.message ?? "Report download failed."}${result.code ? ` (${result.code})` : ""}`,
     );
@@ -186,6 +204,7 @@ export async function downloadEvidence(
   );
   if (!response.ok) {
     const error = await response.json();
+    noticeSessionEnd(response.status, error.code);
     throw Error(
       `${error.message ?? "Evidence download failed"} (${error.code ?? response.status})`,
     );
@@ -301,6 +320,7 @@ async function downloadPdf(
   });
   if (!response.ok) {
     const error = await response.json();
+    noticeSessionEnd(response.status, error.code);
     throw new Error(
       `${error.message ?? "Download failed"} (${error.code ?? response.status})`,
     );
@@ -385,6 +405,7 @@ export async function downloadCostFile(
   );
   if (!response.ok) {
     const result = await response.json();
+    noticeSessionEnd(response.status, result.code);
     throw Error(
       `${result.message ?? "Cost file download failed"} (${result.code ?? response.status})`,
     );
@@ -430,6 +451,7 @@ export async function downloadCanadaPostManifest(
   );
   if (!response.ok) {
     const result = await response.json();
+    noticeSessionEnd(response.status, result.code);
     throw Error(
       `${result.message ?? "Manifest download failed"} (${result.code ?? response.status})`,
     );

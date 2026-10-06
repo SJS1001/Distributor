@@ -584,7 +584,11 @@ test.describe("Native quantity correction integration", () => {
       await admin.context.close();
     }
     await confirm(page);
-    await expect(panel(page).getByRole("alert")).toBeVisible();
+    // Changing the user's sites ends their sessions; the refused read returns
+    // the workspace to sign-in instead of leaving a stale panel.
+    await expect(
+      page.getByText("Your session has ended. Sign in again.", { exact: true }),
+    ).toBeVisible();
     expect(sends).toBe(0);
     const after = await facts(page, "authorization");
     preserved(before, after);

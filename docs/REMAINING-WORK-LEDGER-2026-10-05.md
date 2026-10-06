@@ -51,7 +51,7 @@ Two product defects found during this pass are fixed:
 
 Before this pass, the browser suites had 137 failing journeys. They came from deliberate earlier product changes the tests had not followed: buyer Shop landing, sign-in entrances, purchasing approval, Actions disclosures and tabs. A few came from test-server port collisions. All were repaired without weakening assertions; final counts are in HANDOFF.
 
-Open product question (not a defect): if the server ends a session and the reply that would tell the client is lost, the client keeps showing the workspace until a full page load. There is no global unauthenticated-response handler.
+Resolved 2026-10-06 (owner decision): any API reply refusing the session (`401 UNAUTHENTICATED`) now returns the workspace to its sign-in entrance with "Your session has ended. Sign in again." Previously the client kept showing the workspace until a full page load.
 
 ## 3. Missing code
 
