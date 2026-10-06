@@ -2,7 +2,20 @@ import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { IncomingSupply } from "./incoming-supply.tsx";
+import { shippingSummary } from "../shared/shipping-terms.ts";
+import "./order-detail.css";
 type Item = Record<string, any>;
+
+const formatMoney = (value: number, currency: string) =>
+  new Intl.NumberFormat("en", {
+    style: "currency",
+    currency,
+    currencyDisplay: "code",
+  }).format(value / 100);
+const units = (n: number) => `${n} ${n === 1 ? "unit" : "units"}`;
+const sum = (lines: Item[], key: string) =>
+  lines.reduce((total, line) => total + (Number(line[key]) || 0), 0);
+
 function OrderTimeline({ order }: { order: Item }) {
   const amendments = usePages(
       `/api/orders/${encodeURIComponent(order.id)}/amendments`,
@@ -34,16 +47,19 @@ function OrderTimeline({ order }: { order: Item }) {
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
   return (
-    <section aria-label="Recorded order timeline">
+    <section
+      className="record-detail-panel"
+      aria-label="Recorded order timeline"
+    >
       <h3>Recorded history</h3>
-      <p>
+      <p className="record-detail-note order-timeline-intro">
         Recorded milestones, newest first. Planned fulfillment steps are not
         completed events.
       </p>
-      <ol>
+      <ol className="order-timeline">
         {events.map((e) => (
           <li key={e.id}>
-            <strong>{e.label}</strong> ·{" "}
+            <strong>{e.label}</strong>
             <time dateTime={e.date}>{new Date(e.date).toLocaleString()}</time>
             {e.reason && <p>{e.reason}</p>}
           </li>
@@ -52,24 +68,29 @@ function OrderTimeline({ order }: { order: Item }) {
       {[
         { history: amendments, label: "quantity changes" },
         { history: reservations, label: "reservation changes" },
-      ].map(({ history, label }) => (
-        <div key={label}>
-          {history.error && <p role="alert">{history.error}</p>}
-          {history.busy && <p role="status">Loading {label}…</p>}
-          {(history.next || history.error) && (
-            <button
-              type="button"
-              disabled={history.busy}
-              onClick={() => void history.load()}
-            >
-              {history.error ? "Retry" : "Load more"} {label}
-            </button>
-          )}
-        </div>
-      ))}
+      ].map(({ history, label }) =>
+        history.error || history.busy || history.next ? (
+          <div key={label} className="order-timeline-more">
+            {history.error && <p role="alert">{history.error}</p>}
+            {history.busy && <p role="status">Loading {label}…</p>}
+            {(history.next || history.error) && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={history.busy}
+                onClick={() => void history.load()}
+              >
+                {history.error ? "Retry" : "Load more"} {label}
+              </button>
+            )}
+          </div>
+        ) : null,
+      )}
     </section>
   );
 }
+
+/** Focused order record. Reads use the server's current order access. */
 export function OrderDetail({
   orderId,
   accountName,
@@ -114,51 +135,139 @@ export function OrderDetail({
   useEffect(() => {
     heading.current?.focus();
   }, [orderId]);
+  const lines: Item[] = order?.lines ?? [];
   return (
-    <section aria-label="Focused order detail">
-      <h2 ref={heading} tabIndex={-1}>
-        Order {orderId}
-      </h2>
-      <button type="button" onClick={back}>
-        Return to order queue
+    <section
+      className="record-detail order-detail"
+      aria-label="Focused order detail"
+    >
+      <button type="button" className="secondary back-link" onClick={back}>
+        <span aria-hidden="true">←</span> All orders
       </button>
+      <header className="record-detail-header">
+        <div>
+          <p className="record-detail-eyebrow">Customer order</p>
+          <h2
+            ref={heading}
+            tabIndex={-1}
+            aria-label={error ? undefined : `Order ${orderId}`}
+            title={orderId}
+          >
+            {error ? (
+              "Order unavailable"
+            ) : (
+              <>
+                Order <code>{orderId.slice(0, 8)}</code>
+              </>
+            )}
+          </h2>
+          {order && (
+            <p>
+              <strong>{accountName(order.account_id)}</strong> ·{" "}
+              {warehouseName(order.warehouse_id)} · Created{" "}
+              <time dateTime={order.created_at}>
+                {new Date(order.created_at).toLocaleDateString()}
+              </time>
+            </p>
+          )}
+        </div>
+        {order && (
+          <span
+            className="record-status order-status"
+            data-status={order.state === "closed" ? "closed" : "open"}
+          >
+            <span className="order-visually-hidden">Status: </span>
+            {order.state}
+          </span>
+        )}
+      </header>
       {error ? (
-        <>
+        <div className="record-detail-panel">
           <p role="alert">{error}</p>
           <button type="button" onClick={() => setAttempt((v) => v + 1)}>
             Retry order detail
           </button>
-        </>
+        </div>
       ) : !order ? (
-        <p role="status">Checking current order access…</p>
+        <p role="status" className="record-detail-panel">
+          Checking current order access…
+        </p>
       ) : (
         <>
-          <p>
-            <strong>{accountName(order.account_id)}</strong> ·{" "}
-            {warehouseName(order.warehouse_id)} · Status: {order.state}
-          </p>
-          <p>
-            Total:{" "}
-            {new Intl.NumberFormat("en", {
-              style: "currency",
-              currency: order.currency,
-              currencyDisplay: "code",
-            }).format(order.total / 100)}
-          </p>
-          <p>
-            {order.state === "closed"
-              ? "This order is closed. Review its recorded history."
-              : "Review outstanding quantities below, then return to the queue for the actions permitted for your role. Each action checks current access and stock."}
-          </p>
-          <ul>
-            {order.lines.map((line: Item) => (
-              <li key={line.id}>
-                {line.description ?? line.product_id} · {line.quantity} ordered
-                · {line.allocated} reserved · {line.shipped} shipped ·{" "}
-                {line.canceled} canceled
-              </li>
-            ))}
-          </ul>
+          <dl className="record-figures">
+            <div className="record-figure-emphasis">
+              <dt>Order total</dt>
+              <dd>{formatMoney(order.total, order.currency)}</dd>
+            </div>
+            <div>
+              <dt>Ordered</dt>
+              <dd>{units(sum(lines, "quantity"))}</dd>
+            </div>
+            <div>
+              <dt>Reserved</dt>
+              <dd>{units(sum(lines, "allocated"))}</dd>
+            </div>
+            <div>
+              <dt>Shipped</dt>
+              <dd>{units(sum(lines, "shipped"))}</dd>
+            </div>
+            <div>
+              <dt>Canceled</dt>
+              <dd>{units(sum(lines, "canceled"))}</dd>
+            </div>
+          </dl>
+          <section className="record-detail-panel" aria-label="Order lines">
+            <h3>
+              Lines{" "}
+              <small>
+                {lines.length} {lines.length === 1 ? "product" : "products"}
+              </small>
+            </h3>
+            {lines.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th className="numeric">Ordered</th>
+                      <th className="numeric">Reserved</th>
+                      <th className="numeric">Shipped</th>
+                      <th className="numeric">Canceled</th>
+                      <th className="numeric">Unit price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((line) => (
+                      <tr key={line.id}>
+                        <td>{line.description ?? line.product_id}</td>
+                        <td className="numeric">{line.quantity}</td>
+                        <td className="numeric">{line.allocated}</td>
+                        <td className="numeric">{line.shipped}</td>
+                        <td className="numeric">{line.canceled}</td>
+                        <td className="numeric">
+                          {typeof line.unit_price === "number"
+                            ? formatMoney(line.unit_price, order.currency)
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="record-detail-empty">
+                No lines are recorded on this order.
+              </p>
+            )}
+            <p className="record-detail-note">
+              {shippingSummary(order.shipping, order.currency)}
+            </p>
+            <p className="record-detail-note">
+              {order.state === "closed"
+                ? "This order is closed. Review its recorded history."
+                : "Review outstanding quantities above, then return to the queue for the actions permitted for your role. Each action checks current access and stock."}
+            </p>
+          </section>
           <IncomingSupply
             key={`${scope}:${order.id}`}
             orderId={order.id}
