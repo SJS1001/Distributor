@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { stockFactsDashboard } from "./stock-browser-facts.ts";
@@ -21,7 +21,7 @@ async function inventory(page: Page) {
     page
       .getByRole("region", { name: "Count queue", exact: true })
       .getByRole("status"),
-  ).toContainText("counts on this page");
+  ).toContainText(" on this page");
 }
 async function fixture(page: Page, kind: CountKind) {
   await login(page);
@@ -118,7 +118,9 @@ async function open(
   f: Awaited<ReturnType<typeof fixture>>,
   kind: CountKind,
 ) {
-  await f.row
+  await (
+    await withRowActions(f.row)
+  )
     .getByRole("button", {
       name:
         kind === "observation"
@@ -246,7 +248,7 @@ test.describe("retained count recovery", () => {
             page
               .getByRole("region", { name: "Count queue", exact: true })
               .getByRole("status"),
-          ).toContainText("counts on this page");
+          ).toContainText(" on this page");
           expect(await original!.evaluate((node) => node.isConnected)).toBe(
             true,
           );

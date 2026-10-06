@@ -3283,6 +3283,7 @@ function App() {
               <OrderRequests
                 buyer={!staff}
                 canReview={can("commercial")}
+                accountName={accountName}
                 resubmit={(value) =>
                   placeOrder(
                     value.accountId,
@@ -3300,50 +3301,78 @@ function App() {
               />
             </PageSection>
             <PageSection id="orders-shipments">
-              <section aria-label="Shipment history">
-                <h2 id="orders-shipments" ref={shipmentHeading} tabIndex={-1}>
-                  Shipments
-                </h2>
-                <label htmlFor="shipment-status">Shipment status</label>
-                <select
-                  id="shipment-status"
-                  value={shipmentFilter}
-                  disabled={busy}
-                  onChange={(e) =>
-                    filterShipments(e.target.value as ShipmentQueueState | "")
-                  }
-                >
-                  <option value="">All statuses</option>
-                  {shipmentQueueStates.map((state) => (
-                    <option key={state} value={state}>
-                      {state.replaceAll("_", " ")}
-                    </option>
-                  ))}
-                </select>
-                <p>
-                  Newest first. Loaded: {data.shipments.length}. Saved changes
-                  or refresh reload the newest page.
-                </p>
-                {shipmentFilterReady && !data.shipments.length && (
-                  <p role="status">No shipments match this status.</p>
-                )}
-                {shipmentsLoading && <p role="status">Loading shipments…</p>}
-                {can("warehouse") && data.warehouses.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={(event) => {
-                      canadaPostOpener.current = event.currentTarget;
-                      setShippingCart(null);
-                      shippingTermsOpener.current = null;
-                      setCarrierShipmentId(null);
-                      setCarrierReplacementId(null);
-                      setCanadaPostWarehouse(data.warehouses[0].id);
-                    }}
-                  >
-                    Review Canada Post warehouse groups
-                  </button>
-                )}
+              <section
+                aria-label="Shipment history"
+                className="fulfillment-queue"
+              >
+                <div className="queue-controls">
+                  <h2 id="orders-shipments" ref={shipmentHeading} tabIndex={-1}>
+                    Shipments
+                  </h2>
+                  <div className="queue-field">
+                    <label htmlFor="shipment-status">Shipment status</label>
+                    <select
+                      id="shipment-status"
+                      value={shipmentFilter}
+                      disabled={busy}
+                      onChange={(e) =>
+                        filterShipments(
+                          e.target.value as ShipmentQueueState | "",
+                        )
+                      }
+                    >
+                      <option value="">All statuses</option>
+                      {shipmentQueueStates.map((state) => (
+                        <option key={state} value={state}>
+                          {state.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {can("warehouse") && data.warehouses.length > 0 && (
+                    <div className="queue-field queue-field-actions">
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy}
+                        onClick={(event) => {
+                          canadaPostOpener.current = event.currentTarget;
+                          setShippingCart(null);
+                          shippingTermsOpener.current = null;
+                          setCarrierShipmentId(null);
+                          setCarrierReplacementId(null);
+                          setCanadaPostWarehouse(data.warehouses[0].id);
+                        }}
+                      >
+                        Review Canada Post warehouse groups
+                      </button>
+                    </div>
+                  )}
+                  <p>
+                    {data.shipments.length}{" "}
+                    {data.shipments.length === 1 ? "shipment" : "shipments"}{" "}
+                    loaded, newest first. Saved changes or refresh reload the
+                    newest page.
+                  </p>
+                  {shipmentFilterReady && !data.shipments.length && (
+                    <p role="status">No shipments match this status.</p>
+                  )}
+                  {shipmentsLoading && <p role="status">Loading shipments…</p>}
+                  {(data.shipmentNext || !shipmentFilterReady) && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || shipmentsLoading}
+                      onClick={() => void loadShipments()}
+                    >
+                      {shipmentsLoading
+                        ? "Loading shipments…"
+                        : shipmentFilterReady
+                          ? "Load more shipments"
+                          : "Retry shipment filter"}
+                    </button>
+                  )}
+                </div>
                 {canadaPostWarehouse && (
                   <CanadaPostWarehouse
                     key={`${canadaPostWarehouse}:${eventViewEpoch}`}
@@ -3365,14 +3394,47 @@ function App() {
                   ["Shipment", "Destination", "Units", "Status", "Actions"],
                   data.shipments,
                   (s: Item) => [
-                    s.id.slice(0, 8),
+                    <code className="queue-id" title={s.id}>
+                      {s.id.slice(0, 8)}
+                    </code>,
                     s.address,
                     s.lines.reduce(
                       (total: number, l: Item) => total + l.quantity,
                       0,
                     ),
-                    `${s.state}${s.delivery ? ` · Delivery: ${s.delivery.state} · v${s.delivery.revision}` : ""}`,
-                    <div className="actions">
+                    <div className="queue-cell">
+                      <span>
+                        <span
+                          className="queue-state"
+                          data-tone={
+                            s.state === "packed"
+                              ? "attention"
+                              : s.state === "shipped"
+                                ? ["lost", "returned", "delayed"].includes(
+                                    s.delivery?.state,
+                                  )
+                                  ? "problem"
+                                  : "done"
+                                : "neutral"
+                          }
+                        >
+                          {s.state}
+                        </span>
+                      </span>
+                      <small>
+                        {s.mode === "collection"
+                          ? "Customer collection"
+                          : s.mode === "carrier"
+                            ? "Carrier shipment"
+                            : s.mode}
+                      </small>
+                      {s.delivery && (
+                        <small>
+                          Delivery: {s.delivery.state} · v{s.delivery.revision}
+                        </small>
+                      )}
+                    </div>,
+                    <div className="row-actions">
                       {staff && (
                         <RecordNotes
                           kind="shipment"
@@ -3381,118 +3443,138 @@ function App() {
                           recoveryScope={`${actor.orgId}:${actor.id}`}
                         />
                       )}
-                      {s.mode === "carrier" &&
-                        ["packed", "shipped"].includes(s.state) &&
-                        can("warehouse") && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={(event) => {
-                              carrierOpener.current = event.currentTarget;
-                              setCanadaPostWarehouse(null);
-                              setCarrierShipmentId(s.id);
-                            }}
-                          >
-                            Review carrier booking
-                          </button>
-                        )}
-                      {s.state === "shipped" &&
-                        button("View delivery history", () =>
-                          showShipmentDelivery(s.id).catch((e) =>
-                            setError(e.message),
-                          ),
-                        )}
-                      {s.state === "shipped" &&
-                        s.mode === "carrier" &&
-                        !["delivered", "returned"].includes(
-                          s.delivery?.state,
-                        ) &&
-                        can("warehouse", "commercial") &&
-                        button("Record delivery outcome", () =>
-                          open(
-                            "Record shipment delivery outcome",
-                            [
-                              {
-                                name: "state",
-                                label: "Delivery outcome",
-                                options: [
-                                  { value: "in_transit", label: "In transit" },
-                                  { value: "delayed", label: "Delayed" },
-                                  { value: "lost", label: "Lost" },
-                                  {
-                                    value: "returned",
-                                    label: "Returned to sender",
-                                  },
-                                  { value: "delivered", label: "Delivered" },
-                                ],
-                                value: "in_transit",
-                              },
-                              {
-                                name: "observedAt",
-                                label: "Observed time (UTC ISO)",
-                                value: new Date().toISOString(),
-                              },
-                              {
-                                name: "reference",
-                                label: "Delivery evidence reference",
-                              },
-                              {
-                                name: "evidence",
-                                label: "Delivery observation",
-                                type: "textarea",
-                              },
-                            ],
-                            (v) =>
-                              command("fulfillment.delivery.update", {
-                                ...v,
-                                shipmentId: s.id,
-                                revision: s.delivery?.revision ?? 0,
-                              }),
-                            "Record the carrier observation. Loss or return does not restock goods, replace equipment or create credit/refund; use a separately approved return or remedy.",
-                            "Record outcome",
-                          ),
-                        )}
-                      {s.state === "packed" &&
-                        can("warehouse") &&
-                        button(
-                          s.mode === "collection"
-                            ? "Confirm collection"
-                            : "Confirm shipment",
-                          () =>
-                            simple(
-                              "Confirm handover",
-                              [
-                                ...(s.mode === "carrier"
-                                  ? ([
-                                      { name: "carrier", label: "Carrier" },
+                      {(s.state === "shipped" ||
+                        (s.state === "packed" && can("warehouse"))) && (
+                        <details className="stock-actions">
+                          <summary aria-label={`Actions for shipment ${s.id}`}>
+                            Actions
+                          </summary>
+                          <div className="actions">
+                            {s.mode === "carrier" &&
+                              ["packed", "shipped"].includes(s.state) &&
+                              can("warehouse") && (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={(event) => {
+                                    carrierOpener.current = event.currentTarget;
+                                    setCanadaPostWarehouse(null);
+                                    setCarrierShipmentId(s.id);
+                                  }}
+                                >
+                                  Review carrier booking
+                                </button>
+                              )}
+                            {s.state === "shipped" &&
+                              button("View delivery history", () =>
+                                showShipmentDelivery(s.id).catch((e) =>
+                                  setError(e.message),
+                                ),
+                              )}
+                            {s.state === "shipped" &&
+                              s.mode === "carrier" &&
+                              !["delivered", "returned"].includes(
+                                s.delivery?.state,
+                              ) &&
+                              can("warehouse", "commercial") &&
+                              button("Record delivery outcome", () =>
+                                open(
+                                  "Record shipment delivery outcome",
+                                  [
+                                    {
+                                      name: "state",
+                                      label: "Delivery outcome",
+                                      options: [
+                                        {
+                                          value: "in_transit",
+                                          label: "In transit",
+                                        },
+                                        { value: "delayed", label: "Delayed" },
+                                        { value: "lost", label: "Lost" },
+                                        {
+                                          value: "returned",
+                                          label: "Returned to sender",
+                                        },
+                                        {
+                                          value: "delivered",
+                                          label: "Delivered",
+                                        },
+                                      ],
+                                      value: "in_transit",
+                                    },
+                                    {
+                                      name: "observedAt",
+                                      label: "Observed time (UTC ISO)",
+                                      value: new Date().toISOString(),
+                                    },
+                                    {
+                                      name: "reference",
+                                      label: "Delivery evidence reference",
+                                    },
+                                    {
+                                      name: "evidence",
+                                      label: "Delivery observation",
+                                      type: "textarea",
+                                    },
+                                  ],
+                                  (v) =>
+                                    command("fulfillment.delivery.update", {
+                                      ...v,
+                                      shipmentId: s.id,
+                                      revision: s.delivery?.revision ?? 0,
+                                    }),
+                                  "Record the carrier observation. Loss or return does not restock goods, replace equipment or create credit/refund; use a separately approved return or remedy.",
+                                  "Record outcome",
+                                ),
+                              )}
+                            {s.state === "packed" &&
+                              can("warehouse") &&
+                              button(
+                                s.mode === "collection"
+                                  ? "Confirm collection"
+                                  : "Confirm shipment",
+                                () =>
+                                  simple(
+                                    "Confirm handover",
+                                    [
+                                      ...(s.mode === "carrier"
+                                        ? ([
+                                            {
+                                              name: "carrier",
+                                              label: "Carrier",
+                                            },
+                                            {
+                                              name: "tracking",
+                                              label: "Tracking / consignment",
+                                            },
+                                          ] as Field[])
+                                        : []),
                                       {
-                                        name: "tracking",
-                                        label: "Tracking / consignment",
+                                        name: "handoverEvidence",
+                                        label: "Handover evidence",
+                                        type: "textarea",
                                       },
-                                    ] as Field[])
-                                  : []),
-                                {
-                                  name: "handoverEvidence",
-                                  label: "Handover evidence",
-                                  type: "textarea",
-                                },
-                              ],
-                              "fulfillment.ship",
-                              (v) => ({ ...v, shipmentId: s.id }),
-                            ),
-                        )}
-                      {s.state === "packed" &&
-                        can("warehouse") &&
-                        button("Void packing", () =>
-                          simple(
-                            "Void packed shipment",
-                            [reason],
-                            "fulfillment.void",
-                            (v) => ({ ...v, shipmentId: s.id }),
-                          ),
-                        )}
+                                    ],
+                                    "fulfillment.ship",
+                                    (v) => ({ ...v, shipmentId: s.id }),
+                                  ),
+                              )}
+                            {s.state === "packed" &&
+                              can("warehouse") &&
+                              button("Void packing", () =>
+                                simple(
+                                  "Void packed shipment",
+                                  [reason],
+                                  "fulfillment.void",
+                                  (v) => ({ ...v, shipmentId: s.id }),
+                                ),
+                              )}
+                          </div>
+                        </details>
+                      )}
                     </div>,
                   ],
+                  "Shipments appear here once order lines are packed for collection or carrier handover.",
                 )}
                 {carrierShipmentId &&
                   data.shipments.some(
@@ -3540,19 +3622,6 @@ function App() {
                       }}
                     />
                   )}
-                {(data.shipmentNext || !shipmentFilterReady) && (
-                  <button
-                    type="button"
-                    disabled={busy || shipmentsLoading}
-                    onClick={() => void loadShipments()}
-                  >
-                    {shipmentsLoading
-                      ? "Loading shipments…"
-                      : shipmentFilterReady
-                        ? "Load more shipments"
-                        : "Retry shipment filter"}
-                  </button>
-                )}
               </section>
             </PageSection>
           </PageSections>
@@ -3938,66 +4007,77 @@ function App() {
                   initial={extra.serialReviews}
                   warehouseName={warehouseName}
                   currency={currency}
-                  renderActions={(r: Item) => (
-                    <div className="actions">
-                      {admin &&
-                        r.state === "submitted" &&
-                        button("Approve serial loss", () =>
-                          open(
-                            "Approve missing serial writeoff",
-                            [reason],
-                            (v) =>
-                              command("serial.missing.decide", {
-                                ...v,
-                                reviewId: r.id,
-                                decision: "approve",
-                              }),
-                            `${r.review_ref}: ${r.serial} expected at ${warehouseName(r.warehouse_id)} / ${r.bin}. Approval removes one expected unit and ${money(r.unit_cost, currency)} of original stock value. It does not cancel the order, credit a customer or post an accounting entry.`,
-                          ),
-                        )}
-                      {admin &&
-                        r.state === "submitted" &&
-                        button("Reject serial loss", () =>
-                          simple(
-                            "Reject missing serial review",
-                            [reason],
-                            "serial.missing.decide",
-                            (v) => ({
-                              ...v,
-                              reviewId: r.id,
-                              decision: "reject",
-                            }),
-                          ),
-                        )}
-                      {can("warehouse") &&
-                        r.state === "approved" &&
-                        button("Recover serial", () =>
-                          open(
-                            "Record found serial recovery",
-                            [
-                              {
-                                name: "serial",
-                                label: "Scan recovered serial",
-                                scan: "single",
-                              },
-                              {
-                                name: "receiptRef",
-                                label: "Recovery receipt reference (unique)",
-                              },
-                              { name: "bin", label: "Recovered stock bin" },
-                              reason,
-                            ],
-                            (v) =>
-                              command("serial.missing.recover", {
-                                ...v,
-                                reviewId: r.id,
-                                revision: r.currentRevision,
-                              }),
-                            `Scan the exact lost serial ${r.serial}. Recovery restores one unit at its original ${money(r.unit_cost, currency)} cost in ${warehouseName(r.warehouse_id)}. It remains quarantined until inspection and is not automatically reallocated.`,
-                          ),
-                        )}
-                    </div>
-                  )}
+                  renderActions={(r: Item) =>
+                    ((admin && r.state === "submitted") ||
+                      (can("warehouse") && r.state === "approved")) && (
+                      <details className="stock-actions">
+                        <summary
+                          aria-label={`Actions for serial review ${r.review_ref}`}
+                        >
+                          Actions
+                        </summary>
+                        <div className="actions">
+                          {admin &&
+                            r.state === "submitted" &&
+                            button("Approve serial loss", () =>
+                              open(
+                                "Approve missing serial writeoff",
+                                [reason],
+                                (v) =>
+                                  command("serial.missing.decide", {
+                                    ...v,
+                                    reviewId: r.id,
+                                    decision: "approve",
+                                  }),
+                                `${r.review_ref}: ${r.serial} expected at ${warehouseName(r.warehouse_id)} / ${r.bin}. Approval removes one expected unit and ${money(r.unit_cost, currency)} of original stock value. It does not cancel the order, credit a customer or post an accounting entry.`,
+                              ),
+                            )}
+                          {admin &&
+                            r.state === "submitted" &&
+                            button("Reject serial loss", () =>
+                              simple(
+                                "Reject missing serial review",
+                                [reason],
+                                "serial.missing.decide",
+                                (v) => ({
+                                  ...v,
+                                  reviewId: r.id,
+                                  decision: "reject",
+                                }),
+                              ),
+                            )}
+                          {can("warehouse") &&
+                            r.state === "approved" &&
+                            button("Recover serial", () =>
+                              open(
+                                "Record found serial recovery",
+                                [
+                                  {
+                                    name: "serial",
+                                    label: "Scan recovered serial",
+                                    scan: "single",
+                                  },
+                                  {
+                                    name: "receiptRef",
+                                    label:
+                                      "Recovery receipt reference (unique)",
+                                  },
+                                  { name: "bin", label: "Recovered stock bin" },
+                                  reason,
+                                ],
+                                (v) =>
+                                  command("serial.missing.recover", {
+                                    ...v,
+                                    reviewId: r.id,
+                                    revision: r.currentRevision,
+                                  }),
+                                `Scan the exact lost serial ${r.serial}. Recovery restores one unit at its original ${money(r.unit_cost, currency)} cost in ${warehouseName(r.warehouse_id)}. It remains quarantined until inspection and is not automatically reallocated.`,
+                              ),
+                            )}
+                        </div>
+                      </details>
+                    )
+                  }
                 />
               )}
             </PageSection>
@@ -4006,15 +4086,6 @@ function App() {
                 <p role="status">
                   Cycle counts are not loaded yet. You can review any retained
                   operations shown below. Use Refresh to retry if loading fails.
-                </p>
-              )}
-              {extra.countReviewPolicy && (
-                <p>
-                  Approval duties:{" "}
-                  {extra.countReviewPolicy.mode === "independent"
-                    ? "A separate administrator must approve; the count starter and observer cannot approve."
-                    : "Administrator review permits self-review."}{" "}
-                  Policy version {extra.countReviewPolicy.revision}.
                 </p>
               )}
               {(["observation", "approve", "reject"] as const).map((kind) => {
@@ -4048,7 +4119,7 @@ function App() {
                 >
                   {(items) => (
                     <>
-                      <p>
+                      <p className="queue-note">
                         A saved snapshot does not freeze stock. Approval checks
                         the stock revision and current reservations; a changed
                         snapshot needs a new count. Serialized discrepancies
@@ -4081,28 +4152,35 @@ function App() {
                               · cutoff {new Date(c.created_at).toLocaleString()}
                             </small>
                           </>,
-                          <>
-                            {c.state}
-                            <small>{c.observation_reason ?? ""}</small>
-                            <small>{c.decision_reason ?? ""}</small>
+                          <div className="queue-cell">
+                            <span>
+                              <span
+                                className="queue-state"
+                                data-tone={
+                                  c.state === "submitted"
+                                    ? "attention"
+                                    : c.state === "draft"
+                                      ? "active"
+                                      : c.state === "approved"
+                                        ? "done"
+                                        : "neutral"
+                                }
+                              >
+                                {c.state}
+                              </span>
+                            </span>
+                            {c.observation_reason && (
+                              <small>{c.observation_reason}</small>
+                            )}
+                            {c.decision_reason && (
+                              <small>{c.decision_reason}</small>
+                            )}
                             {c.result?.reviewPolicy && (
                               <small>
                                 Reviewed under {c.result.reviewPolicy.mode}{" "}
                                 policy version {c.result.reviewPolicy.revision}
                               </small>
                             )}
-                          </>,
-                          <div className="actions">
-                            {c.state === "draft" &&
-                              can("warehouse") &&
-                              button("Record observation", () =>
-                                reviewCount(c, "observation"),
-                              )}
-                            {c.state === "submitted" &&
-                              c.canApprove &&
-                              button("Approve count", () =>
-                                reviewCount(c, "approve"),
-                              )}
                             {c.state === "submitted" &&
                               admin &&
                               !c.canApprove && (
@@ -4111,12 +4189,36 @@ function App() {
                                   count.
                                 </small>
                               )}
-                            {["draft", "submitted"].includes(c.state) &&
-                              admin &&
-                              button("Reject count", () =>
-                                reviewCount(c, "reject"),
-                              )}
                           </div>,
+                          ((c.state === "draft" && can("warehouse")) ||
+                            (c.state === "submitted" && c.canApprove) ||
+                            (["draft", "submitted"].includes(c.state) &&
+                              admin)) && (
+                            <details className="stock-actions">
+                              <summary
+                                aria-label={`Actions for count ${c.count_ref}`}
+                              >
+                                Actions
+                              </summary>
+                              <div className="actions">
+                                {c.state === "draft" &&
+                                  can("warehouse") &&
+                                  button("Record observation", () =>
+                                    reviewCount(c, "observation"),
+                                  )}
+                                {c.state === "submitted" &&
+                                  c.canApprove &&
+                                  button("Approve count", () =>
+                                    reviewCount(c, "approve"),
+                                  )}
+                                {["draft", "submitted"].includes(c.state) &&
+                                  admin &&
+                                  button("Reject count", () =>
+                                    reviewCount(c, "reject"),
+                                  )}
+                              </div>
+                            </details>
+                          ),
                         ],
                       )}
                     </>
@@ -4124,48 +4226,59 @@ function App() {
                 </CountQueue>
               )}
               {extra.countReviewPolicy && (
-                <details>
-                  <summary>Count review policy and configuration</summary>
-                  <p>
-                    {extra.countReviewPolicy.mode === "independent"
-                      ? "Independent review: a separate administrator must approve. The count starter and observer cannot approve; direct quantity corrections are disabled."
-                      : "Administrator review: an administrator may approve their own count and make direct quantity corrections."}{" "}
-                    Policy version {extra.countReviewPolicy.revision}.
-                  </p>
-                  {extra.countReviewPolicy.reason && (
-                    <p>{extra.countReviewPolicy.reason}</p>
-                  )}
-                  {admin &&
-                    button("Configure count review", () =>
-                      open(
-                        "Configure count review policy",
-                        [
-                          {
-                            name: "mode",
-                            label: "Approval duties",
-                            options: [
-                              {
-                                value: "administrator",
-                                label:
-                                  "Administrator review (self-review allowed)",
-                              },
-                              {
-                                value: "independent",
-                                label: "Independent administrator review",
-                              },
-                            ],
-                            value: extra.countReviewPolicy.mode,
-                          },
-                          reason,
-                        ],
-                        (v) =>
-                          command("count.policy", {
-                            ...v,
-                            revision: extra.countReviewPolicy.revision,
-                          }),
-                        "This affects all new bulk count approvals in this organization immediately. Existing observations and decisions remain intact. Independent review needs an administrator other than the count starter and observer. Selecting administrator review permits self-review and direct corrections; record the operating reason.",
-                      ),
+                <details className="workspace-disclosure">
+                  <summary>
+                    Count review policy and configuration
+                    <small>
+                      Approval duties:{" "}
+                      {extra.countReviewPolicy.mode === "independent"
+                        ? "a separate administrator must approve; the count starter and observer cannot approve."
+                        : "administrator review permits self-review."}{" "}
+                      Policy version {extra.countReviewPolicy.revision}.
+                    </small>
+                  </summary>
+                  <div className="disclosure-body">
+                    <p>
+                      {extra.countReviewPolicy.mode === "independent"
+                        ? "Independent review: a separate administrator must approve. The count starter and observer cannot approve; direct quantity corrections are disabled."
+                        : "Administrator review: an administrator may approve their own count and make direct quantity corrections."}{" "}
+                      Policy version {extra.countReviewPolicy.revision}.
+                    </p>
+                    {extra.countReviewPolicy.reason && (
+                      <p>{extra.countReviewPolicy.reason}</p>
                     )}
+                    {admin &&
+                      button("Configure count review", () =>
+                        open(
+                          "Configure count review policy",
+                          [
+                            {
+                              name: "mode",
+                              label: "Approval duties",
+                              options: [
+                                {
+                                  value: "administrator",
+                                  label:
+                                    "Administrator review (self-review allowed)",
+                                },
+                                {
+                                  value: "independent",
+                                  label: "Independent administrator review",
+                                },
+                              ],
+                              value: extra.countReviewPolicy.mode,
+                            },
+                            reason,
+                          ],
+                          (v) =>
+                            command("count.policy", {
+                              ...v,
+                              revision: extra.countReviewPolicy.revision,
+                            }),
+                          "This affects all new bulk count approvals in this organization immediately. Existing observations and decisions remain intact. Independent review needs an administrator other than the count starter and observer. Selecting administrator review permits self-review and direct corrections; record the operating reason.",
+                        ),
+                      )}
+                  </div>
                 </details>
               )}
             </PageSection>
@@ -4227,14 +4340,29 @@ function App() {
                       ],
                       items,
                       (t: Item) => [
-                        <span key="reference" title={t.id}>
-                          {t.id}
+                        <span key="reference" className="queue-id" title={t.id}>
+                          <code>{t.id.slice(0, 8)}</code>
                         </span>,
-                        `${t.source_name} → ${t.destination_name}`,
-                        t.state,
+                        <strong>
+                          {t.source_name} → {t.destination_name}
+                        </strong>,
+                        <span
+                          className="queue-state"
+                          data-tone={
+                            t.state === "transit"
+                              ? "active"
+                              : t.state === "received"
+                                ? "done"
+                                : t.state === "reconciled-with-loss"
+                                  ? "problem"
+                                  : "attention"
+                          }
+                        >
+                          {t.state}
+                        </span>,
                         <div>
                           {t.lines.map((line: Item) => (
-                            <div key={line.line_id}>
+                            <div key={line.line_id} className="transfer-line">
                               <strong>
                                 {productName(line.product_id)} ·{" "}
                                 {line.serial ?? "Bulk lot"}
@@ -4264,7 +4392,7 @@ function App() {
                                 </small>
                               ))}
                               {line.losses.map((loss: Item) => (
-                                <div key={loss.id}>
+                                <div key={loss.id} className="transfer-loss">
                                   <small>
                                     {loss.loss_ref} · {loss.quantity} loss
                                     approved · {loss.remainingLostQuantity}{" "}
@@ -4306,38 +4434,28 @@ function App() {
                         </div>,
                         can("warehouse") &&
                           (actor?.role === "admin" ||
-                            actor?.sites.includes(t.destination_id)) && (
-                            <div className="actions">
-                              {t.lines
-                                .filter(
-                                  (line: Item) => line.remainingQuantity > 0,
-                                )
-                                .map((line: Item) => (
-                                  <React.Fragment key={line.line_id}>
-                                    {button("Receive transfer", () =>
-                                      setArrivalSelection({
-                                        transferId: t.id,
-                                        lineId: line.line_id,
-                                        destinationId: t.destination_id,
-                                        product: productName(line.product_id),
-                                        source: warehouseName(t.source_id),
-                                        destination: warehouseName(
-                                          t.destination_id,
-                                        ),
-                                        serial: line.serial,
-                                        dispatchedQuantity: line.quantity,
-                                        remainingQuantity:
-                                          line.remainingQuantity,
-                                        unitCost: line.unit_cost,
-                                      }),
-                                    )}
-                                    {actor?.role === "admin" &&
-                                      button("Approve transit loss", () =>
-                                        setLossSelection({
-                                          kind: "loss",
+                            actor?.sites.includes(t.destination_id)) &&
+                          t.lines.some(
+                            (line: Item) => line.remainingQuantity > 0,
+                          ) && (
+                            <details className="stock-actions">
+                              <summary
+                                aria-label={`Actions for transfer ${t.id}`}
+                              >
+                                Actions
+                              </summary>
+                              <div className="actions">
+                                {t.lines
+                                  .filter(
+                                    (line: Item) => line.remainingQuantity > 0,
+                                  )
+                                  .map((line: Item) => (
+                                    <React.Fragment key={line.line_id}>
+                                      {button("Receive transfer", () =>
+                                        setArrivalSelection({
                                           transferId: t.id,
                                           lineId: line.line_id,
-                                          unitId: line.unit_id,
+                                          destinationId: t.destination_id,
                                           product: productName(line.product_id),
                                           source: warehouseName(t.source_id),
                                           destination: warehouseName(
@@ -4348,12 +4466,34 @@ function App() {
                                           remainingQuantity:
                                             line.remainingQuantity,
                                           unitCost: line.unit_cost,
-                                          revision: line.transitRevision,
                                         }),
                                       )}
-                                  </React.Fragment>
-                                ))}
-                            </div>
+                                      {actor?.role === "admin" &&
+                                        button("Approve transit loss", () =>
+                                          setLossSelection({
+                                            kind: "loss",
+                                            transferId: t.id,
+                                            lineId: line.line_id,
+                                            unitId: line.unit_id,
+                                            product: productName(
+                                              line.product_id,
+                                            ),
+                                            source: warehouseName(t.source_id),
+                                            destination: warehouseName(
+                                              t.destination_id,
+                                            ),
+                                            serial: line.serial,
+                                            dispatchedQuantity: line.quantity,
+                                            remainingQuantity:
+                                              line.remainingQuantity,
+                                            unitCost: line.unit_cost,
+                                            revision: line.transitRevision,
+                                          }),
+                                        )}
+                                    </React.Fragment>
+                                  ))}
+                              </div>
+                            </details>
                           ),
                       ],
                     )

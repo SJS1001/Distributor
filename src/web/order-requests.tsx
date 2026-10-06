@@ -1,9 +1,10 @@
 import { shippingSummary } from "../shared/shipping-terms.ts";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { command, request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { displayMoney } from "./storefront.tsx";
 import type { OrderRequest, OrderRequestStatus } from "../shared/purchasing.ts";
+import "./fulfillment-queues.css";
 const labels: Record<OrderRequestStatus, string> = {
   awaiting_approval: "Awaiting distributor approval",
   information_needed: "More information needed",
@@ -11,6 +12,17 @@ const labels: Record<OrderRequestStatus, string> = {
   withdrawn: "Withdrawn",
   accepted: "Accepted",
 };
+const tones: Record<OrderRequestStatus, string> = {
+  awaiting_approval: "attention",
+  information_needed: "active",
+  declined: "problem",
+  withdrawn: "neutral",
+  accepted: "done",
+};
+const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count} ${count === 1 ? one : many}`;
+const units = (value: OrderRequest) =>
+  value.lines.reduce((total, l) => total + l.quantity, 0);
 function RequestDetail({
   id,
   buyer,
@@ -19,6 +31,7 @@ function RequestDetail({
   resubmit,
   order,
   changed,
+  accountName,
 }: {
   id: string;
   buyer: boolean;
@@ -27,6 +40,7 @@ function RequestDetail({
   resubmit: (value: OrderRequest) => void;
   order: (id: string) => void;
   changed: () => void;
+  accountName?: (id: string) => string;
 }) {
   const [value, setValue] = useState<OrderRequest | null>(null),
     [error, setError] = useState(""),
@@ -65,12 +79,16 @@ function RequestDetail({
     }
   };
   return (
-    <section className="panel">
-      <div className="actions">
-        <button disabled={busy} onClick={back}>
-          Back to requests
+    <section className="record-detail" aria-label="Order request detail">
+      <div className="record-detail-actions">
+        <button className="secondary" disabled={busy} onClick={back}>
+          <span aria-hidden="true">← </span>Back to requests
         </button>
-        <button disabled={busy} onClick={() => setEpoch(epoch + 1)}>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => setEpoch(epoch + 1)}
+        >
           Refresh request
         </button>
       </div>
@@ -81,69 +99,109 @@ function RequestDetail({
       )}
       {value ? (
         <>
-          <h3>{labels[value.status]}</h3>
-          <p>
-            Request {value.id} · Revision {value.revision}
-          </p>
-          <p>
-            {!buyer && `Customer ${value.accountId} · `}Submitted{" "}
-            {new Date(value.createdAt).toLocaleString()}
-          </p>
-          <ul>
-            {value.lines.map((l) => (
-              <li key={l.productId}>
-                {l.quantity} × {l.description} —{" "}
-                {displayMoney(l.unitPrice, value.currency)} +{" "}
-                {displayMoney(l.unitTax, value.currency)} tax per unit
-              </li>
-            ))}
-          </ul>
-          <p>
-            <strong>
-              Submitted total: {displayMoney(value.total, value.currency)}
-            </strong>
-          </p>
-          <p>{shippingSummary(value.shipping, value.currency)}</p>
-          <p>
-            {value.allowBackorder
-              ? "Backorders accepted"
-              : "No backorders accepted"}
-            . Quote expires {new Date(value.expiresAt).toLocaleString()}.
-          </p>
-          {value.status !== "accepted" && (
-            <p>
-              No stock is reserved and no payment is taken for this request.
-              Price and availability are confirmed on acceptance.
-            </p>
-          )}
-          {value.reviewReason && <p>Review required: {value.reviewReason}</p>}
-          {value.message && <blockquote>{value.message}</blockquote>}
-          {value.orderId && (
-            <button onClick={() => order(value.orderId!)}>
-              View accepted order
-            </button>
-          )}
-          {buyer && value.status !== "accepted" && (
-            <div className="actions">
-              {["awaiting_approval", "information_needed"].includes(
-                value.status,
-              ) && (
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void run("order.review.withdraw", {
-                      requestId: value.id,
-                      revision: value.revision,
-                    })
-                  }
-                >
-                  Withdraw request
-                </button>
-              )}
-              <button disabled={busy} onClick={() => resubmit(value)}>
-                Review quantities and resubmit
-              </button>
+          <header className="record-detail-header">
+            <div>
+              <p className="record-detail-eyebrow">
+                Order request{" "}
+                <code className="queue-id" title={value.id}>
+                  {value.id.slice(0, 8)}
+                </code>
+              </p>
+              <h3 data-tone={tones[value.status]}>{labels[value.status]}</h3>
               <p>
+                {!buyer &&
+                  `${accountName ? accountName(value.accountId) : `Customer ${value.accountId}`} · `}
+                Submitted {new Date(value.createdAt).toLocaleString()} ·
+                Revision {value.revision}
+              </p>
+            </div>
+          </header>
+          <dl className="record-figures request-figures">
+            <div className="record-figure-emphasis">
+              <dt>Submitted total</dt>
+              <dd>{displayMoney(value.total, value.currency)}</dd>
+            </div>
+            <div>
+              <dt>Requested units</dt>
+              <dd>
+                {plural(units(value), "unit")} ·{" "}
+                {plural(value.lines.length, "product")}
+              </dd>
+            </div>
+            <div>
+              <dt>Backorders</dt>
+              <dd>{value.allowBackorder ? "Accepted" : "Not accepted"}</dd>
+            </div>
+            <div>
+              <dt>Quote expires</dt>
+              <dd>{new Date(value.expiresAt).toLocaleString()}</dd>
+            </div>
+          </dl>
+          <div className="record-detail-panel">
+            <h3>Requested lines</h3>
+            <ul className="request-lines">
+              {value.lines.map((l) => (
+                <li key={l.productId}>
+                  <span>
+                    <strong>{l.quantity} ×</strong> {l.description}
+                  </span>
+                  <span>
+                    {displayMoney(l.unitPrice, value.currency)} +{" "}
+                    {displayMoney(l.unitTax, value.currency)} tax per unit
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="request-facts">
+              <p>{shippingSummary(value.shipping, value.currency)}</p>
+              {value.status !== "accepted" && (
+                <p>
+                  No stock is reserved and no payment is taken for this request.
+                  Price and availability are confirmed on acceptance.
+                </p>
+              )}
+              {value.reviewReason && (
+                <p>Review required: {value.reviewReason}</p>
+              )}
+            </div>
+            {value.message && (
+              <blockquote className="request-message">
+                {value.message}
+              </blockquote>
+            )}
+            {value.orderId && (
+              <div className="record-detail-actions request-next">
+                <button onClick={() => order(value.orderId!)}>
+                  View accepted order
+                </button>
+              </div>
+            )}
+          </div>
+          {buyer && value.status !== "accepted" && (
+            <div className="record-detail-panel">
+              <h3>Your next step</h3>
+              <div className="actions">
+                {["awaiting_approval", "information_needed"].includes(
+                  value.status,
+                ) && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      void run("order.review.withdraw", {
+                        requestId: value.id,
+                        revision: value.revision,
+                      })
+                    }
+                  >
+                    Withdraw request
+                  </button>
+                )}
+                <button disabled={busy} onClick={() => resubmit(value)}>
+                  Review quantities and resubmit
+                </button>
+              </div>
+              <p className="record-detail-note">
                 Resubmission opens the current cart for this warehouse using
                 these request quantities. Review any existing draft, current
                 prices and terms before submitting a new revision.
@@ -152,6 +210,7 @@ function RequestDetail({
           )}
           {!buyer && canReview && value.status === "awaiting_approval" && (
             <form
+              className="record-detail-panel request-decision"
               onSubmit={(e) => {
                 e.preventDefault();
                 void run("order.review.decide", {
@@ -207,70 +266,169 @@ function RequestDetail({
             </form>
           )}
           {!buyer && value.status === "information_needed" && (
-            <p>
+            <p className="record-detail-panel record-detail-note">
               Awaiting the buyer's response and renewed quote before another
               decision.
             </p>
           )}
-          <h4>Request history</h4>
-          <ol>
-            {value.history.map((h, i) => (
-              <li key={`${h.revision}:${i}`}>
-                <strong>{h.action.replaceAll("_", " ")}</strong> ·{" "}
-                {new Date(h.createdAt).toLocaleString()}
-                <p>{h.message}</p>
-                {h.staffNote && <p>Private note: {h.staffNote}</p>}
-              </li>
-            ))}
-          </ol>
+          <div className="record-detail-panel">
+            <h3>Request history</h3>
+            <ol className="request-history">
+              {value.history.map((h, i) => (
+                <li key={`${h.revision}:${i}`}>
+                  <strong>{h.action.replaceAll("_", " ")}</strong> ·{" "}
+                  {new Date(h.createdAt).toLocaleString()}
+                  {h.message && <p>{h.message}</p>}
+                  {h.staffNote && <p>Private note: {h.staffNote}</p>}
+                </li>
+              ))}
+            </ol>
+          </div>
         </>
       ) : (
-        !error && <p role="status">Loading request…</p>
+        !error && (
+          <p role="status" className="record-detail-panel">
+            Loading request…
+          </p>
+        )
       )}
     </section>
   );
 }
-function RequestList({ select }: { select: (id: string) => void }) {
+function RequestList({
+  title,
+  buyer,
+  refresh,
+  select,
+  accountName,
+}: {
+  title: string;
+  buyer: boolean;
+  refresh: () => void;
+  select: (id: string) => void;
+  accountName?: (id: string) => string;
+}) {
   const rows = usePages<OrderRequest>("/api/order-requests"),
-    [status, setStatus] = useState("");
+    [status, setStatus] = useState(""),
+    statusId = useId();
+  const shown = rows.items.filter((r) => !status || r.status === status);
   return (
     <>
-      <label>
-        Request status
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          {Object.entries(labels).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {rows.error && <p role="alert">{rows.error}</p>}
-      <p role="status">
-        {rows.items.length} requests loaded{rows.busy ? " · Loading…" : ""}
-      </p>
-      <div className="request-cards">
-        {rows.items
-          .filter((r) => !status || r.status === status)
-          .map((r) => (
-            <article className="panel" key={r.id}>
-              <h3>{labels[r.status]}</h3>
-              <p>
-                {r.lines.length} products · {displayMoney(r.total, r.currency)}
-              </p>
-              <p>{new Date(r.createdAt).toLocaleString()}</p>
-              <button onClick={() => select(r.id)}>
-                View request {r.id.slice(-8)}
-              </button>
-            </article>
-          ))}
+      <div className="queue-controls">
+        <h2>{title}</h2>
+        <div className="queue-field">
+          <label htmlFor={statusId}>Request status</label>
+          <select
+            id={statusId}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <option value="">All statuses</option>
+            {Object.entries(labels).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="queue-field queue-field-actions">
+          <button className="secondary" onClick={refresh}>
+            Refresh requests
+          </button>
+        </div>
+        <p role="status">
+          {plural(rows.items.length, "request")} loaded
+          {status ? ` · ${shown.length} shown` : ""}
+          {rows.busy ? " · Loading…" : ""}
+        </p>
+        <p>
+          {buyer
+            ? "Orders that need distributor verification wait here before acceptance. No stock is reserved and no payment is taken until a request is accepted."
+            : "Orders requiring distributor verification appear here before acceptance."}
+        </p>
+        {rows.error && <p role="alert">{rows.error}</p>}
+        {(rows.next || rows.error) && (
+          <button
+            className="secondary"
+            disabled={rows.busy}
+            onClick={() => void rows.load()}
+          >
+            {rows.error ? "Retry requests" : "Load more requests"}
+          </button>
+        )}
       </div>
-      {rows.loaded && !rows.items.length && <p>No order requests.</p>}
-      {(rows.next || rows.error) && (
-        <button disabled={rows.busy} onClick={() => void rows.load()}>
-          {rows.error ? "Retry requests" : "Load more requests"}
-        </button>
+      {shown.length > 0 && (
+        <div
+          className="table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label="Order request records"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Request</th>
+                {!buyer && <th>Customer</th>}
+                <th>Status</th>
+                <th>Requested</th>
+                <th>Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <button
+                      type="button"
+                      className="record-link"
+                      title={r.id}
+                      aria-label={`View request ${r.id}`}
+                      onClick={() => select(r.id)}
+                    >
+                      View request <code>{r.id.slice(0, 8)}</code>
+                    </button>
+                  </td>
+                  {!buyer && (
+                    <td>
+                      <strong>
+                        {accountName
+                          ? accountName(r.accountId)
+                          : `Customer ${r.accountId.slice(0, 8)}`}
+                      </strong>
+                    </td>
+                  )}
+                  <td>
+                    <span className="queue-state" data-tone={tones[r.status]}>
+                      {labels[r.status]}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{displayMoney(r.total, r.currency)}</strong>
+                    <small>
+                      {plural(units(r), "unit")} ·{" "}
+                      {plural(r.lines.length, "product")}
+                    </small>
+                  </td>
+                  <td>{new Date(r.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {rows.loaded && !shown.length && (
+        <p className="fulfillment-empty">
+          <strong>
+            {rows.items.length
+              ? "No requests match this status"
+              : "No order requests"}
+          </strong>
+          {rows.items.length
+            ? "Choose another status to see the other loaded requests."
+            : buyer
+              ? "Orders that need distributor approval will appear here after you submit them."
+              : "Customer orders that need distributor approval will appear here."}
+        </p>
       )}
     </>
   );
@@ -280,37 +438,43 @@ export function OrderRequests({
   canReview,
   resubmit,
   order,
+  accountName,
 }: {
   buyer: boolean;
   canReview: boolean;
   resubmit: (value: OrderRequest) => void;
   order: (id: string) => void;
+  accountName?: (id: string) => string;
 }) {
   const [selected, setSelected] = useState<string | null>(null),
     [epoch, setEpoch] = useState(0);
+  const title = buyer ? "Your order requests" : "Order review queue";
   return (
-    <section>
-      <h2>{buyer ? "Your order requests" : "Order review queue"}</h2>
+    <section className="fulfillment-queue" aria-label={title}>
       {selected ? (
-        <RequestDetail
-          key={selected}
-          id={selected}
-          buyer={buyer}
-          canReview={canReview}
-          back={() => setSelected(null)}
-          resubmit={resubmit}
-          order={order}
-          changed={() => setEpoch(epoch + 1)}
-        />
-      ) : (
         <>
-          <p>
-            Orders requiring distributor verification appear here before
-            acceptance.
-          </p>
-          <button onClick={() => setEpoch(epoch + 1)}>Refresh requests</button>
-          <RequestList key={epoch} select={setSelected} />
+          <h2 className="request-section-title">{title}</h2>
+          <RequestDetail
+            key={selected}
+            id={selected}
+            buyer={buyer}
+            canReview={canReview}
+            back={() => setSelected(null)}
+            resubmit={resubmit}
+            order={order}
+            changed={() => setEpoch(epoch + 1)}
+            accountName={accountName}
+          />
         </>
+      ) : (
+        <RequestList
+          key={epoch}
+          title={title}
+          buyer={buyer}
+          refresh={() => setEpoch(epoch + 1)}
+          select={setSelected}
+          accountName={accountName}
+        />
       )}
     </section>
   );

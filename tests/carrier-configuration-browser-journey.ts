@@ -1,4 +1,4 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, withRowActions } from "./workspace-navigation.ts";
 import { test, expect } from "@playwright/test";
 const origin = "http://127.0.0.1:3122";
 
@@ -33,14 +33,16 @@ test("browser: phone carrier settings review retains exact retries, blocks drift
   expect(shipment).toBeTruthy();
   const path = origin + `/api/shipments/${shipment.id}/carrier`;
   await navigateWorkspace(page, "Orders", "Shipments");
-  await page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("cell", {
-        name: shipment.id.slice(0, 8),
-        exact: true,
+  await (
+    await withRowActions(
+      page.getByRole("row").filter({
+        has: page.getByRole("cell", {
+          name: shipment.id.slice(0, 8),
+          exact: true,
+        }),
       }),
-    })
+    )
+  )
     .getByRole("button", { name: "Review carrier booking", exact: true })
     .click();
   const pane = page.getByRole("region", {

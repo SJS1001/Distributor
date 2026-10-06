@@ -4,6 +4,7 @@ import {
   type TransferQueueState,
 } from "../shared/transfer-queue.ts";
 import { request } from "./api.ts";
+import "./fulfillment-queues.css";
 
 type Transfer = Record<string, any>;
 type Page = { items: Transfer[]; next: string | null };
@@ -95,107 +96,118 @@ export function TransferQueue({
       }
     }
   };
+  const count = page?.items.length ?? 0;
   return (
-    <section aria-label="Transfer queue">
-      <h2 id="inventory-transfers" ref={heading} tabIndex={-1}>
-        Transfers
-      </h2>
-      <label htmlFor={stateId}>Transfer state</label>
-      <select
-        id={stateId}
-        value={selection.state}
-        disabled={!active}
-        onChange={(e) =>
-          void load(
-            {
-              state: e.target.value as TransferQueueState | "",
-              after: null,
-              trail: [],
-            },
-            false,
-          )
-        }
-      >
-        <option value="">All states</option>
-        {transferQueueStates.map((state) => (
-          <option key={state} value={state}>
-            {names[state]}
-          </option>
-        ))}
-      </select>
-      <p>
-        Newest recorded transfers first. States and quantities are current when
-        each page is read.
-      </p>
-      <p role="status">
-        {busy
-          ? "Loading transfers…"
-          : page && active
-            ? `${page.items.length} transfers on this page · Page ${selection.trail.length + 1}`
-            : "No transfer page available."}
-      </p>
-      <div className="actions">
-        <button
-          type="button"
-          disabled={!active}
-          onClick={() =>
-            void load({ state: selection.state, after: null, trail: [] })
-          }
-        >
-          Refresh transfers
-        </button>
-        {page && active && selection.trail.length > 0 && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void load({
-                state: selection.state,
-                after: selection.trail.at(-1)!,
-                trail: selection.trail.slice(0, -1),
-              })
+    <section aria-label="Transfer queue" className="fulfillment-queue">
+      <div className="queue-controls">
+        <h2 id="inventory-transfers" ref={heading} tabIndex={-1}>
+          Transfers
+        </h2>
+        <div className="queue-field">
+          <label htmlFor={stateId}>Transfer state</label>
+          <select
+            id={stateId}
+            value={selection.state}
+            disabled={!active}
+            onChange={(e) =>
+              void load(
+                {
+                  state: e.target.value as TransferQueueState | "",
+                  after: null,
+                  trail: [],
+                },
+                false,
+              )
             }
           >
-            Newer transfers
-          </button>
-        )}
-        {page?.next && active && (
+            <option value="">All states</option>
+            {transferQueueStates.map((state) => (
+              <option key={state} value={state}>
+                {names[state]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="queue-field queue-field-actions">
           <button
             type="button"
-            disabled={busy}
+            className="secondary"
+            disabled={!active}
             onClick={() =>
-              void load({
-                state: selection.state,
-                after: page.next,
-                trail: [...selection.trail, selection.after],
-              })
+              void load({ state: selection.state, after: null, trail: [] })
             }
           >
-            Older transfers
+            Refresh transfers
           </button>
+          {page && active && selection.trail.length > 0 && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                void load({
+                  state: selection.state,
+                  after: selection.trail.at(-1)!,
+                  trail: selection.trail.slice(0, -1),
+                })
+              }
+            >
+              Newer transfers
+            </button>
+          )}
+          {page?.next && active && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                void load({
+                  state: selection.state,
+                  after: page.next,
+                  trail: [...selection.trail, selection.after],
+                })
+              }
+            >
+              Older transfers
+            </button>
+          )}
+        </div>
+        <p role="status">
+          {busy
+            ? "Loading transfers…"
+            : page && active
+              ? `${count} ${count === 1 ? "transfer" : "transfers"} on this page · Page ${selection.trail.length + 1}`
+              : "No transfer page available."}
+        </p>
+        <p>
+          Newest recorded transfers first. States and quantities are current
+          when each page is read.
+        </p>
+        {error && (
+          <>
+            <p role="alert" className="error">
+              {error}
+            </p>
+            <button
+              type="button"
+              className="secondary"
+              ref={retry}
+              disabled={!active || busy}
+              onClick={() => void load(selection)}
+            >
+              Retry transfer queue
+            </button>
+          </>
         )}
       </div>
-      {error && (
-        <>
-          <p role="alert" className="error">
-            {error}
-          </p>
-          <button
-            type="button"
-            ref={retry}
-            disabled={!active || busy}
-            onClick={() => void load(selection)}
-          >
-            Retry transfer queue
-          </button>
-        </>
-      )}
       {page &&
         active &&
         (page.items.length ? (
           children(page.items)
         ) : (
-          <p>No transfers match this state in your current warehouse scope.</p>
+          <p className="fulfillment-empty">
+            No transfers match this state in your current warehouse scope.
+          </p>
         ))}
     </section>
   );

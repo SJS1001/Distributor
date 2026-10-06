@@ -1,4 +1,8 @@
-import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
+import {
+  navigateWorkspace,
+  openStockActions,
+  withRowActions,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3128";
 async function signIn(page: Page, email: string) {
@@ -37,7 +41,9 @@ test("browser: independent count review on a phone retains lost-response policy 
   const count = page
     .getByRole("row")
     .filter({ hasText: "PHONE-INDEPENDENT-COUNT" });
-  await count
+  await (
+    await withRowActions(count)
+  )
     .getByRole("button", { name: "Record observation", exact: true })
     .click();
   dialog = page.getByRole("dialog", {
@@ -51,6 +57,7 @@ test("browser: independent count review on a phone retains lost-response policy 
   await dialog.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(count).toContainText("-2 units");
+  await openStockActions(count);
   await expect(
     count.getByRole("button", { name: "Approve count", exact: true }),
   ).toBeVisible();
@@ -71,6 +78,13 @@ test("browser: independent count review on a phone retains lost-response policy 
       await route.fulfill({ response });
     }
   });
+  const policy = page.locator("details", {
+    has: page.locator("summary", {
+      hasText: "Count review policy and configuration",
+    }),
+  });
+  if (!(await policy.evaluate((element) => element.hasAttribute("open"))))
+    await policy.locator("summary").click();
   await page
     .getByRole("button", { name: "Configure count review", exact: true })
     .click();
@@ -94,7 +108,11 @@ test("browser: independent count review on a phone retains lost-response policy 
   expect(requests).toHaveLength(2);
   expect(requests[1]).toEqual(requests[0]);
   await expect(
-    count.getByRole("button", { name: "Approve count", exact: true }),
+    count.getByRole("button", {
+      name: "Approve count",
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   await expect(count).toContainText("A different administrator must review");
   const context = await browser.newContext({
@@ -108,7 +126,9 @@ test("browser: independent count review on a phone retains lost-response policy 
     const review = reviewer
       .getByRole("row")
       .filter({ hasText: "PHONE-INDEPENDENT-COUNT" });
-    await review
+    await (
+      await withRowActions(review)
+    )
       .getByRole("button", { name: "Approve count", exact: true })
       .click();
     const approval = reviewer.getByRole("dialog", {
