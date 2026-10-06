@@ -6265,14 +6265,12 @@ test("browser: authenticator setup retries, required second factor, recovery reu
     await panel
       .getByRole("button", { name: "Remove authenticator", exact: true })
       .click();
-    // This page was reloaded on a workspace location, so ending its sessions
-    // closes the workspace and returns to the public entrance.
-    await expect(
-      page.getByRole("button", { name: "Sign out", exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("navigation", { name: "Public navigation", exact: true }),
-    ).toBeVisible();
+    // Even after a reload on a workspace location, ending sessions shows
+    // sign-in with the reason.
+    await expectSessionsEndedAtSignIn(
+      page,
+      "Authenticator settings saved. All your sessions have ended. Sign in again.",
+    );
     expect((await second.request.get("/api/session")).status()).toBe(401);
     expect((await page.request.get("/api/session")).status()).toBe(401);
     await enterPassword(page);
@@ -11541,8 +11539,6 @@ test("browser: required role MFA blocks workspace, retries and cancels setup rea
   await page
     .getByRole("button", { name: "Back to sign in", exact: true })
     .click();
-  // Same reload-dependent sign-out destination as the shipment journeys.
-  await openSignIn(page, "staff");
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();

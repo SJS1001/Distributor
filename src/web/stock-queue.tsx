@@ -116,7 +116,14 @@ export function useStockQueue(
     }
   };
   const filter = (changes: Partial<Filters>, read = true) => {
-    const filters = { ...view.filters, ...changes };
+    // After new initial stock arrives, the reset effect may not have applied
+    // yet; start from the reset filters the hook already displays.
+    const filters = {
+      ...(view.source === initial
+        ? view.filters
+        : ({ query: "", productId: "", warehouseId: "", view: "" } as Filters)),
+      ...changes,
+    };
     cancel();
     setView({
       source: initial,

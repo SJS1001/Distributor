@@ -25,7 +25,7 @@ Policy selection and stock decision transactions serialize across local processe
 
 ## Browse the count queue
 
-Inventory shows at most twenty counts on each page, newest recorded first. **Older counts** and **Newer counts** replace rows and keep navigation tokens. **Count state** selects all states, awaiting observation, awaiting review, approved or rejected. Filtering and **Refresh counts** restart at the selected state's first page. Application Refresh and successful commands restart with all states. References identify counts across pages. Empty scoped results remain explicit; support has no observation or decision controls.
+Inventory shows at most twenty counts on each page, newest recorded first. **Older counts** and **Newer counts** replace rows and keep navigation tokens. **Count state** selects all states, awaiting observation, awaiting review, approved or rejected. Filtering and **Refresh counts** restart at the selected state's first page. Application Refresh keeps the count state held in the address bar. Successful commands restart with all states. References identify counts across pages. Empty scoped results remain explicit; support has no observation or decision controls.
 
 Pending or failed reads clear the old rows and actions. **Retry count queue** repeats the original filter, continuation and page position. Successful navigation focuses the queue heading; failed reads focus retry. Changed filters, navigation, application refresh and sign-out abandon late responses. The queue does not retain count rows from previous pages.
 
