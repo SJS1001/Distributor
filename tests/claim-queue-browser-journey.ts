@@ -5,17 +5,43 @@ const pattern = "**/api/warranty/claims/page?*";
 async function nav(page: Page, name: string) {
   await navigateWorkspace(page, name, name === "Orders" ? "Orders" : undefined);
 }
-async function login(page: Page, email = "admin@example.test") {
+async function login(page: Page, email = "admin@example.test", buyer = false) {
   await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })
     .fill("long-test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  // Staff land on Overview; buyers land on Shop.
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", {
+      name: buyer ? "Shop" : "Overview",
+      exact: true,
+    }),
   ).toBeVisible();
-  await nav(page, "Returns");
+  if (buyer) await buyerNav(page, "Returns");
+  else await nav(page, "Returns");
+}
+// Buyers use the customer header: Overview is labelled Reports and Returns is
+// reached from Account. A phone header collapses the navigation behind Menu.
+async function buyerNav(page: Page, name: "Reports" | "Returns") {
+  const target = page
+    .getByRole("navigation", { name: "Workspace", exact: true })
+    .getByRole("button", {
+      name: name === "Returns" ? "Account" : name,
+      exact: true,
+    });
+  if (!(await target.isVisible()))
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await target.click();
+  if (name === "Returns")
+    await page
+      .getByRole("button", {
+        name: "Returns and warranty requests",
+        exact: true,
+      })
+      .click();
+  await expect(page.locator("#workspace-title")).toHaveText(name);
 }
 test("browser: phone claim queue retains pages on failure, retries the same cursor, filters states and reaches the oldest claim", async ({
   page,
@@ -117,7 +143,7 @@ test("browser: phone claim queue retains pages on failure, retries the same curs
 test("browser: claim queue cancels reads on filter change, refresh, navigation and sign-out; buyer sees only current account claims", async ({
   page,
 }) => {
-  await login(page, "queue-buyer@example.test");
+  await login(page, "queue-buyer@example.test", true);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const queue = page.getByRole("region", { name: "Claim queue", exact: true });
@@ -162,7 +188,7 @@ test("browser: claim queue cancels reads on filter change, refresh, navigation a
       await page
         .getByRole("button", { name: "Refresh", exact: true })
         .press("Enter");
-    else if (exit === "navigation") await nav(page, "Overview");
+    else if (exit === "navigation") await buyerNav(page, "Reports");
     else
       await page
         .getByRole("button", { name: "Sign out", exact: true })
@@ -178,11 +204,19 @@ test("browser: claim queue cancels reads on filter change, refresh, navigation a
       await expect(
         page.getByRole("button", { name: "Refresh", exact: true }),
       ).toBeEnabled();
-    else if (exit === "navigation") await nav(page, "Returns");
-    else
+    else if (exit === "navigation") await buyerNav(page, "Returns");
+    else {
+      // Signing out of a workspace page now returns to the public site.
       await expect(
-        page.getByRole("button", { name: "Sign in", exact: true }),
+        page.getByRole("navigation", {
+          name: "Public navigation",
+          exact: true,
+        }),
       ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Sign out", exact: true }),
+      ).toHaveCount(0);
+    }
     if (exit !== "signout")
       await expect(queue.getByRole("status")).toHaveText("20 claims loaded");
   }

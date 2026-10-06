@@ -255,9 +255,8 @@ test("browser: damaged valuation recovery evidence blocks replacement writes and
     { key, damaged },
   );
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  // Reload restores the signed-in workspace location instead of Overview.
+  await expect(page.locator("#workspace-title")).toHaveText("Inventory");
   await inventory(page);
   await open(page);
   await expect(
@@ -407,9 +406,8 @@ test("browser: malformed valuation approval reply retains evidence and recovers 
     );
     expect((await rows(second, unit.id))[0].state).toBe("reviewed");
     await second.reload();
-    await expect(
-      second.getByRole("heading", { name: "Overview", exact: true }),
-    ).toBeVisible();
+    // Reload restores the signed-in workspace location instead of Overview.
+    await expect(second.locator("#workspace-title")).toHaveText("Inventory");
     await inventory(second);
     await second
       .getByRole("button", {
@@ -495,9 +493,8 @@ test("browser: lost valuation preparation reply survives reload and retries its 
   ).toHaveLength(1);
   await page.unroute("**/api/commands/inventory.valuation.prepare");
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  // Reload restores the signed-in workspace location instead of Overview.
+  await expect(page.locator("#workspace-title")).toHaveText("Inventory");
   await inventory(page);
   await page
     .getByRole("button", {

@@ -174,7 +174,14 @@ test("browser: supplier return search discards superseded and abandoned response
       await expect(page.getByText("QUEUE-044", { exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
     } else if (action === "navigate") await nav(page, "Purchasing");
-    else if (action === "sign-out") await login(page);
+    else if (action === "sign-out") {
+      // Let sign-out finish before opening sign-in; a still-signed-in
+      // workspace otherwise normalizes #sign-in to Overview.
+      await expect(
+        page.getByRole("button", { name: "Sign out", exact: true }),
+      ).toHaveCount(0);
+      await login(page);
+    }
     await expect(queue(page).getByRole("status")).toHaveText(
       "20 supplier returns loaded",
     );

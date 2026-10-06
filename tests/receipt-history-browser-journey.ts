@@ -127,12 +127,16 @@ for (const scenario of ["navigation", "late error", "sign-out"] as const) {
         await page
           .getByRole("button", { name: "Sign out", exact: true })
           .click();
+        // Signing out of a workspace page now returns to the public site.
         await expect(
-          page.getByRole("heading", {
-            name: "Sign in to your workspace",
+          page.getByRole("navigation", {
+            name: "Public navigation",
             exact: true,
           }),
         ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Sign out", exact: true }),
+        ).toHaveCount(0);
       } else await nav(page, "Catalog");
       release();
       await settled;

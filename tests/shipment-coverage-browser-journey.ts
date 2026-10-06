@@ -4,7 +4,7 @@ import {
 } from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3131";
-async function login(page: Page, email: string) {
+async function login(page: Page, email: string, buyer = false) {
   await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
@@ -15,11 +15,37 @@ async function login(page: Page, email: string) {
   );
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   const csrf = (await (await response).json()).csrf;
+  // Staff land on Overview; buyers land on Shop.
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", {
+      name: buyer ? "Shop" : "Overview",
+      exact: true,
+    }),
   ).toBeVisible();
-  await navigateWorkspace(page, "Returns");
+  if (buyer) await buyerNav(page, "Returns");
+  else await navigateWorkspace(page, "Returns");
   return csrf;
+}
+// Buyers use the customer header: Overview is labelled Reports and Returns is
+// reached from Account. A phone header collapses the navigation behind Menu.
+async function buyerNav(page: Page, name: "Reports" | "Returns") {
+  const target = page
+    .getByRole("navigation", { name: "Workspace", exact: true })
+    .getByRole("button", {
+      name: name === "Returns" ? "Account" : name,
+      exact: true,
+    });
+  if (!(await target.isVisible()))
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await target.click();
+  if (name === "Returns")
+    await page
+      .getByRole("button", {
+        name: "Returns and warranty requests",
+        exact: true,
+      })
+      .click();
+  await expect(page.locator("#workspace-title")).toHaveText(name);
 }
 test("browser: phone claim retains handover policy across later revisions, transient coverage reads and lost claim replies", async ({
   page,
@@ -32,7 +58,7 @@ test("browser: phone claim retains handover policy across later revisions, trans
   try {
     const admin = await adminContext.newPage(),
       csrf = await login(admin, "admin@example.test");
-    await login(page, "sale-buyer@example.test");
+    await login(page, "sale-buyer@example.test", true);
     await expect(
       page.getByRole("button", {
         name: "Configure warranty coverage",
