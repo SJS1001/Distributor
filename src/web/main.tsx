@@ -2630,24 +2630,27 @@ function App() {
                   recovered={refresh}
                 />
               )}
-              <div className="actions">
-                {can("commercial", "buyer") &&
-                  button("Prepare order", () => placeOrder())}
+              {/* Queue controls stay mounted but hidden while a record is focused. */}
+              <div hidden={!!route.orderId}>
+                <div className="actions">
+                  {can("commercial", "buyer") &&
+                    button("Prepare order", () => placeOrder())}
+                </div>
+                <OrderQueueControls
+                  queue={orderQueue}
+                  scope={savedFilterKey(actor.orgId, actor.id, "orders")}
+                  onFilter={(orderState, orderReservation) =>
+                    updateRoute({
+                      orderState,
+                      orderReservation:
+                        orderReservation ?? route.orderReservation,
+                    })
+                  }
+                  onReservation={(orderReservation) =>
+                    updateRoute({ orderReservation })
+                  }
+                />
               </div>
-              <OrderQueueControls
-                queue={orderQueue}
-                scope={savedFilterKey(actor.orgId, actor.id, "orders")}
-                onFilter={(orderState, orderReservation) =>
-                  updateRoute({
-                    orderState,
-                    orderReservation:
-                      orderReservation ?? route.orderReservation,
-                  })
-                }
-                onReservation={(orderReservation) =>
-                  updateRoute({ orderReservation })
-                }
-              />
               {route.orderId && (
                 <OrderDetail
                   key={`${actor.orgId}:${actor.id}:${route.orderId}`}

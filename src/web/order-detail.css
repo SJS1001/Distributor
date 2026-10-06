@@ -1,0 +1,128 @@
+/* Focused order record: builds on the shared .record-detail layout in style.css. */
+.order-detail .back-link {
+  min-height: 44px;
+}
+.order-detail .record-detail-header h2 code {
+  font-size: inherit;
+  font-family: inherit;
+  background: none;
+  padding: 0;
+}
+.order-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.order-status {
+  text-transform: capitalize;
+}
+.order-status[data-status="open"] {
+  background: #e7effb;
+  color: #23498e;
+}
+.order-status[data-status="closed"] {
+  background: #eef1f4;
+  color: #3d4c5e;
+}
+.order-detail .record-detail-panel h3 small {
+  margin-left: var(--space-2);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: #5a6c82;
+}
+.order-detail td.numeric,
+.order-detail th.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Incoming stock sits in the record as one more panel. */
+.order-detail > .incoming-supply {
+  margin: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px 20px;
+}
+.order-detail > .incoming-supply > h3 {
+  margin-top: 0;
+  font-size: 16px;
+}
+/* Recorded history reads as a vertical timeline. */
+.order-timeline-intro {
+  margin: 0 0 var(--space-3);
+}
+.order-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.order-timeline li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 0 0 var(--space-4) 26px;
+}
+.order-timeline li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1f6fbf;
+  box-shadow: 0 0 0 3px #e7effb;
+}
+.order-timeline li::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 20px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--line);
+}
+.order-timeline li:last-child {
+  padding-bottom: 0;
+}
+.order-timeline li:last-child::after {
+  display: none;
+}
+.order-timeline time {
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.order-timeline p {
+  margin: 4px 0 0;
+  color: #34475e;
+}
+.order-timeline-more {
+  margin-top: var(--space-3);
+}
+.order-timeline-more button {
+  min-height: 44px;
+}
+@media (max-width: 900px) {
+  .order-detail .record-figures > div:first-child {
+    grid-column: 1 / -1;
+  }
+}
+/* Let tables scroll inside their panel instead of widening the page. */
+.order-detail {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The global header margin would double the grid gap. */
+.order-detail > .record-detail-header {
+  margin-bottom: 0;
+}
+.order-detail .record-detail-panel h3 small {
+  display: inline;
+  background: none;
+}
+.order-detail .record-detail-panel > p[role="alert"] {
+  margin-top: 0;
+}
