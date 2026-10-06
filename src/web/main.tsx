@@ -244,7 +244,8 @@ function App() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [dialog, setDialog] = useState<Dialog | null>(null),
-    [extra, setExtra] = useState<Item>({});
+    [extra, setExtra] = useState<Item>({}),
+    [extraLoadFailed, setExtraLoadFailed] = useState(false);
   const page = route.page;
   const customerPricingSignIn =
     publicRoute === "customer-sign-in" && actor?.role !== "buyer";
@@ -757,6 +758,7 @@ function App() {
     // reads must preserve their explicit review; later refreshes invalidate it.
     if (data) setEventViewEpoch((value) => value + 1);
     setExtra(e);
+    setExtraLoadFailed(false);
   };
   const loadShipments = async (
     state = shipmentFilter,
@@ -854,8 +856,11 @@ function App() {
   useEffect(() => {
     if (!actor || passwordChangeRequired || mfaEnrollmentRequired) return;
     const controller = new AbortController();
+    setExtraLoadFailed(false);
     void refresh(controller.signal).catch((e) => {
-      if (!controller.signal.aborted) setError(e.message);
+      if (controller.signal.aborted) return;
+      setExtraLoadFailed(true);
+      setError(e.message);
     });
     return () => controller.abort();
   }, [actor, passwordChangeRequired, mfaEnrollmentRequired]);
@@ -1411,6 +1416,16 @@ function App() {
   const staff = actor?.role !== "buyer",
     admin = actor?.role === "admin",
     can = (...roles: string[]) => admin || roles.includes(actor?.role ?? "");
+  // Purchasing records are read only for roles that load /api/purchases; other
+  // roles and failed loads must not be told the records are still loading.
+  const purchasingEmpty = (subject: string, empty: string) =>
+    extra.purchases
+      ? empty
+      : !can("commercial", "warehouse", "finance")
+        ? `${subject} are not available to your role.`
+        : extraLoadFailed
+          ? `${subject} could not be loaded.`
+          : `Loading ${subject.toLowerCase()}…`;
   const currency = data?.organization.currency ?? "CAD";
   const reviewCount = (c: Item, kind: CountKind) =>
     setCountSelection({
@@ -3427,7 +3442,11 @@ function App() {
                                     s.delivery?.state,
                                   )
                                   ? "problem"
-                                  : "done"
+                                  : // Carrier shipments are done only once delivery is observed.
+                                    s.mode === "collection" ||
+                                      s.delivery?.state === "delivered"
+                                    ? "done"
+                                    : "active"
                                 : "neutral"
                           }
                         >
@@ -4592,7 +4611,12 @@ function App() {
                   ? "Loading purchase orders…"
                   : purchaseQueue.state
                     ? `No ${purchaseQueue.state} purchase orders.`
-                    : "No purchase orders yet. Create one to start receiving stock.",
+                    : purchasingEmpty(
+                        "Purchase orders",
+                        can("commercial")
+                          ? "No purchase orders yet. Create one to start receiving stock."
+                          : "No purchase orders yet.",
+                      ),
               )}
               <SupplierAvailability
                 key={`${actor.orgId}:${actor.id}`}
@@ -4672,7 +4696,7 @@ function App() {
                     >
                       {`${draft.state} · v${draft.revision}`}
                     </span>,
-                    <div className="row-actions">
+                    <div className="row-actions purchasing-row-actions">
                       {editable && (
                         <button
                           type="button"
@@ -4694,25 +4718,29 @@ function App() {
                           Review and receive
                         </button>
                       )}
-                      <details className="stock-actions">
-                        <summary
-                          aria-label={`Actions for receipt draft ${draft.delivery_ref}`}
-                        >
-                          Actions
-                        </summary>
-                        <div className="actions">
-                          {editable &&
-                            button("Resume scans", () =>
+                      {!editable &&
+                        button(
+                          "View draft history",
+                          () => void showReceiptHistory(draft.id),
+                        )}
+                      {editable && (
+                        <details className="stock-actions">
+                          <summary
+                            aria-label={`Actions for receipt draft ${draft.delivery_ref}`}
+                          >
+                            Actions
+                          </summary>
+                          <div className="actions">
+                            {button("Resume scans", () =>
                               // The draft already owns the exact purchase and line IDs;
                               // resuming never depends on the visible queue page.
                               receiptDraft({ id: draft.po_id }, draft),
                             )}
-                          {button(
-                            "View draft history",
-                            () => void showReceiptHistory(draft.id),
-                          )}
-                          {editable &&
-                            button("Discard draft", () =>
+                            {button(
+                              "View draft history",
+                              () => void showReceiptHistory(draft.id),
+                            )}
+                            {button("Discard draft", () =>
                               simple(
                                 "Discard receipt draft",
                                 [reason],
@@ -4724,14 +4752,18 @@ function App() {
                                 }),
                               ),
                             )}
-                        </div>
-                      </details>
+                          </div>
+                        </details>
+                      )}
                     </div>,
                   ];
                 },
-                extra.purchases
-                  ? "No saved receipt drafts. Start one from an open purchase order."
-                  : "Loading receipt drafts…",
+                purchasingEmpty(
+                  "Receipt drafts",
+                  can("warehouse")
+                    ? "No saved receipt drafts. Start one from an open purchase order."
+                    : "No saved receipt drafts.",
+                ),
               )}
             </PageSection>
             <PageSection id="purchasing-receipts">
@@ -4777,7 +4809,7 @@ function App() {
                     ))
                   ) : (
                     <span className="purchasing-muted">
-                      No held stock from this delivery
+                      No returnable stock from this delivery
                     </span>
                   ),
                   actor.role === "admin" &&
@@ -4830,9 +4862,10 @@ function App() {
                       ),
                     ),
                 ],
-                extra.purchases
-                  ? "No purchase receipts yet. Receiving a delivery records one here."
-                  : "Loading purchase receipts…",
+                purchasingEmpty(
+                  "Purchase receipts",
+                  "No purchase receipts yet. Receiving a delivery records one here.",
+                ),
               )}
               <SupplierReturnQueueControls
                 queue={supplierReturnQueue}
@@ -4888,13 +4921,24 @@ function App() {
                     </p>
                     <p>External accounting reconciliation required.</p>
                   </div>,
-                  <div className="row-actions">
+                  <div className="row-actions purchasing-row-actions">
                     {button("Supplier history", () => {
                       supplierHistoryOpener.current =
                         document.activeElement as HTMLElement;
                       setSupplierHistoryId(r.id);
                     })}
-                    {can("finance") && (
+                    {can("finance") &&
+                      r.followup.state === "closed" &&
+                      button("Reopen supplier follow-up", () =>
+                        supplierCommand(
+                          r,
+                          "Reopen supplier return follow-up",
+                          [],
+                          "purchase.return.review",
+                          { state: "open", resolution: null },
+                        ),
+                      )}
+                    {can("finance") && r.followup.state === "open" && (
                       <details className="stock-actions">
                         <summary
                           aria-label={`Actions for supplier return ${r.return_ref}`}
@@ -4902,92 +4946,78 @@ function App() {
                           Actions
                         </summary>
                         <div className="actions">
-                          {r.followup.state === "open" && (
-                            <>
-                              {button("Record supplier credit", () =>
-                                supplierCommand(
-                                  r,
-                                  "Record supplier credit",
-                                  [
-                                    {
-                                      name: "amount",
-                                      label: "Supplier credit amount (cents)",
-                                      type: "number",
-                                      min: 1,
-                                      help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
-                                    },
-                                  ],
-                                  "purchase.return.credit",
-                                  { currency },
-                                ),
-                              )}
-                              {button("Link replacement receipt", () =>
-                                supplierCommand(
-                                  r,
-                                  "Link received supplier replacement",
-                                  [
-                                    select(
-                                      "receiptId",
-                                      "Received replacement delivery",
-                                      extra.purchases.receipts.filter(
-                                        (p: Item) =>
-                                          p.po_id !== r.po_id &&
-                                          p.supplier_id === r.supplier_id &&
-                                          p.product_id === r.result.productId,
-                                      ),
-                                      (p) =>
-                                        `${p.delivery_ref} · ${p.quantity} received`,
-                                    ),
-                                    {
-                                      name: "quantity",
-                                      label: "Replacement units linked",
-                                      type: "number",
-                                      min: 1,
-                                      max: r.quantity,
-                                      value: 1,
-                                    },
-                                  ],
-                                  "purchase.return.replacement",
-                                ),
-                              )}
-                              {button("Close supplier follow-up", () =>
-                                supplierCommand(
-                                  r,
-                                  "Review supplier return outcome",
-                                  [
-                                    {
-                                      name: "resolution",
-                                      label: "Reviewed resolution",
-                                      options: [
-                                        {
-                                          value: "reconciled",
-                                          label: "Recorded outcomes reconciled",
-                                        },
-                                        {
-                                          value: "no-remedy",
-                                          label:
-                                            "No credit or replacement accepted",
-                                        },
-                                      ],
-                                      help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
-                                    },
-                                  ],
-                                  "purchase.return.review",
-                                  { state: "closed" },
-                                ),
-                              )}
-                            </>
+                          {button("Record supplier credit", () =>
+                            supplierCommand(
+                              r,
+                              "Record supplier credit",
+                              [
+                                {
+                                  name: "amount",
+                                  label: "Supplier credit amount (cents)",
+                                  type: "number",
+                                  min: 1,
+                                  help: "Use the supplier's stated total. This may differ from original stock cost and requires finance reconciliation.",
+                                },
+                              ],
+                              "purchase.return.credit",
+                              { currency },
+                            ),
                           )}
-                          {r.followup.state === "closed" &&
-                            button("Reopen supplier follow-up", () =>
-                              supplierCommand(
-                                r,
-                                "Reopen supplier return follow-up",
-                                [],
-                                "purchase.return.review",
-                                { state: "open", resolution: null },
-                              ),
-                            )}
+                          {button("Link replacement receipt", () =>
+                            supplierCommand(
+                              r,
+                              "Link received supplier replacement",
+                              [
+                                select(
+                                  "receiptId",
+                                  "Received replacement delivery",
+                                  extra.purchases.receipts.filter(
+                                    (p: Item) =>
+                                      p.po_id !== r.po_id &&
+                                      p.supplier_id === r.supplier_id &&
+                                      p.product_id === r.result.productId,
+                                  ),
+                                  (p) =>
+                                    `${p.delivery_ref} · ${p.quantity} received`,
+                                ),
+                                {
+                                  name: "quantity",
+                                  label: "Replacement units linked",
+                                  type: "number",
+                                  min: 1,
+                                  max: r.quantity,
+                                  value: 1,
+                                },
+                              ],
+                              "purchase.return.replacement",
+                            ),
+                          )}
+                          {button("Close supplier follow-up", () =>
+                            supplierCommand(
+                              r,
+                              "Review supplier return outcome",
+                              [
+                                {
+                                  name: "resolution",
+                                  label: "Reviewed resolution",
+                                  options: [
+                                    {
+                                      value: "reconciled",
+                                      label: "Recorded outcomes reconciled",
+                                    },
+                                    {
+                                      value: "no-remedy",
+                                      label:
+                                        "No credit or replacement accepted",
+                                    },
+                                  ],
+                                  help: "Reconciled requires recorded outcomes; no remedy requires none. Review external accounting and any cost differences.",
+                                },
+                              ],
+                              "purchase.return.review",
+                              { state: "closed" },
+                            ),
+                          )}
                         </div>
                       </details>
                     )}
@@ -6319,37 +6349,6 @@ function App() {
                     {c.state}
                   </span>,
                   <div className="row-actions claim-row-actions">
-                    <details className="stock-actions claim-actions">
-                      <summary
-                        aria-label={`Actions for claim ${c.id.slice(0, 8)}`}
-                      >
-                        Actions
-                      </summary>
-                      <div className="actions">
-                        <RetainedClaimCoverage
-                          key={`${c.id}:${eventViewEpoch}`}
-                          claimId={c.id}
-                        />
-                        <button
-                          className="secondary"
-                          onClick={(event) => {
-                            evidenceOpener.current = event.currentTarget;
-                            setEvidenceClaim(c.id);
-                          }}
-                        >
-                          Evidence files
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={(event) => {
-                            decisionOpener.current = event.currentTarget;
-                            setDecisionClaim(c.id);
-                          }}
-                        >
-                          Claim activity
-                        </button>
-                      </div>
-                    </details>
                     {c.state === "submitted" &&
                       can("warranty") &&
                       button("Review", () =>
@@ -6527,11 +6526,46 @@ function App() {
                           (v) => ({ ...v, claimId: c.id }),
                         ),
                       )}
+                    <details className="stock-actions claim-actions">
+                      <summary
+                        aria-label={`Actions for claim ${c.id.slice(0, 8)}`}
+                      >
+                        Actions
+                      </summary>
+                      <div className="actions">
+                        <RetainedClaimCoverage
+                          key={`${c.id}:${eventViewEpoch}`}
+                          claimId={c.id}
+                        />
+                        <button
+                          className="secondary"
+                          onClick={(event) => {
+                            evidenceOpener.current = event.currentTarget;
+                            setEvidenceClaim(c.id);
+                          }}
+                        >
+                          Evidence files
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={(event) => {
+                            decisionOpener.current = event.currentTarget;
+                            setDecisionClaim(c.id);
+                          }}
+                        >
+                          Claim activity
+                        </button>
+                      </div>
+                    </details>
                   </div>,
                 ],
                 claimQueue.state
                   ? "No claims are in this state. Choose All states to see every claim."
-                  : "No claims or returns yet. Use Submit claim / return when a customer reports a fault or return.",
+                  : actor.role === "buyer"
+                    ? "No claims or returns yet. Use Submit claim / return to report a fault or request a return."
+                    : can("warranty", "commercial")
+                      ? "No claims or returns yet. Use Submit claim / return when a customer reports a fault or return."
+                      : "No claims or returns yet.",
               )}
               {evidenceClaim && (
                 <WarrantyEvidence
@@ -6761,7 +6795,9 @@ function App() {
                         )}
                     </div>,
                   ],
-                  "No replacements have been recorded. Approve a replacement from an inspected warranty claim in Claims and returns.",
+                  can("warranty")
+                    ? "No replacements have been recorded. Approve a replacement from an inspected warranty claim in Claims and returns."
+                    : "No replacements have been recorded.",
                 )}
                 {carrierReplacementId &&
                   claimQueue.items
@@ -6888,7 +6924,9 @@ function App() {
                           )
                         : "",
                     ],
-                    "No manufacturer cases have been recorded. Record a referral from a warranty claim in Claims and returns once the manufacturer has opened a case.",
+                    can("warranty")
+                      ? "No manufacturer cases have been recorded. Record a referral from a warranty claim in Claims and returns once the manufacturer has opened a case."
+                      : "No manufacturer cases have been recorded.",
                   )}
                 </section>
               )}
@@ -8080,7 +8118,7 @@ function App() {
                       </small>
                     </span>,
                     u.sessions,
-                    <div className="row-actions">
+                    <div className="row-actions ops-row-actions">
                       <button
                         className="secondary"
                         disabled={busy}

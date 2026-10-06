@@ -99,19 +99,19 @@
   min-height: 40px;
   font-size: var(--text-caption);
 }
-.queue-controls > .queue-field-actions {
+.purchase-queue-controls > .queue-field-actions {
   align-self: end;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.queue-controls > .queue-field-actions button {
+.purchase-queue-controls > .queue-field-actions button {
   min-height: 40px;
   font-size: var(--text-caption);
 }
 
 /* Row actions: one visible primary command above the Actions disclosure. */
-.row-actions > button:not(.secondary) {
+.purchasing-row-actions > button:not(.secondary) {
   justify-self: start;
   font-size: var(--text-caption);
 }
@@ -261,8 +261,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .queue-search .queue-field-actions button,
-  .queue-controls > .queue-field-actions button,
-  .row-actions > button,
+  .purchase-queue-controls > .queue-field-actions button,
+  .purchasing-row-actions > button,
   .supplier-directory .actions button,
   .incoming-supply button {
     min-height: 44px;

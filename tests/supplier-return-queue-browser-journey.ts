@@ -113,6 +113,7 @@ test("browser: phone supplier return pages preserve scope, retry exact cursor, s
   await expect(
     row.getByRole("button", { name: "Supplier history", exact: true }),
   ).toBeFocused();
+  await expect(row.locator("details.stock-actions")).toHaveCount(0);
   await expect(
     row.getByRole("button", { name: "Record supplier credit", exact: true }),
   ).toHaveCount(0);

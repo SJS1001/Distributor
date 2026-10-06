@@ -150,11 +150,15 @@ export function OrderDetail({
           <h2
             ref={heading}
             tabIndex={-1}
-            aria-label={error ? undefined : `Order ${orderId}`}
+            aria-label={
+              error ? `Order ${orderId} unavailable` : `Order ${orderId}`
+            }
             title={orderId}
           >
             {error ? (
-              "Order unavailable"
+              <>
+                Order <code>{orderId.slice(0, 8)}</code> unavailable
+              </>
             ) : (
               <>
                 Order <code>{orderId.slice(0, 8)}</code>
@@ -224,7 +228,12 @@ export function OrderDetail({
               </small>
             </h3>
             {lines.length ? (
-              <div className="table-wrap">
+              <div
+                className="table-wrap"
+                tabIndex={0}
+                role="region"
+                aria-label="Order line records"
+              >
                 <table>
                   <thead>
                     <tr>

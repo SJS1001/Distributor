@@ -66,6 +66,8 @@
 .gree-results-heading > span {
   font-size: 13px;
   color: #5a6b7e;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .gree-product-grid {
   display: grid;
@@ -656,7 +658,7 @@
   font-weight: 400;
 }
 .gree-library-tools input::placeholder {
-  color: #6b7f93;
+  color: #576b80;
 }
 .gree-results-heading {
   padding: 28px 0 18px;

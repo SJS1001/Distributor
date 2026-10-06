@@ -44,23 +44,26 @@
   font-weight: 600;
 }
 
-/* Readable staff notes: the disclosure reads as a card; notes are entries. */
-.record-notes {
+/* Readable staff notes: on customer and catalog records the disclosure reads
+   as a card; queue rows keep the compact disclosure above. Notes are entries. */
+:is(.customer-record, .catalog-product-manager) .record-notes {
   border: 1px solid var(--line, #d1d5db);
   border-radius: 8px;
   background: #fff;
   box-sizing: border-box;
 }
-.record-notes > summary {
+:is(.customer-record, .catalog-product-manager) .record-notes > summary {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
 }
-.record-notes[open] > summary {
+:is(.customer-record, .catalog-product-manager) .record-notes[open] > summary {
   border-bottom: 1px solid var(--line, #d1d5db);
 }
-.record-notes .record-notes-content {
+:is(.customer-record, .catalog-product-manager)
+  .record-notes
+  .record-notes-content {
   border: 0;
   margin: 0;
   padding: 14px 16px 16px;

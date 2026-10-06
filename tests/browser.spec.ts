@@ -391,10 +391,11 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(row).toContainText("Follow-up closed · reconciled");
+  // Closed follow-up shows its only command directly, without a disclosure.
+  await expect(row.locator("details.stock-actions")).toHaveCount(0);
   await expect(
     row.getByRole("button", { name: "Record supplier credit", exact: true }),
   ).toHaveCount(0);
-  await openStockActions(row);
   await row
     .getByRole("button", { name: "Reopen supplier follow-up", exact: true })
     .click();
@@ -514,6 +515,9 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await login(false);
   await nav(page, "Purchasing", "Receipts & returns");
+  // Finance commands live in a disclosure; assert the disclosure itself is
+  // absent so the check cannot pass merely because it is closed.
+  await expect(row.locator("details.stock-actions")).toHaveCount(0);
   await expect(
     row.getByRole("button", { name: "Record supplier credit", exact: true }),
   ).toHaveCount(0);
@@ -1400,6 +1404,14 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
   ).toBeVisible();
   expect((await page.request.get("/api/imports/masters")).status()).toBe(403);
   await nav(page, "Security");
+  // Security is warehouse's only System & controls page, so no page tabs
+  // render; a second authorized page such as Imports would bring them back.
+  await expect(
+    page.getByRole("navigation", {
+      name: "System & controls pages",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(
     page
       .getByRole("navigation", { name: "System & controls pages", exact: true })
@@ -1582,6 +1594,14 @@ test("browser: opening dry runs reconcile independent totals and apply serial/bu
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   await nav(page, "Security");
+  // Security is warehouse's only System & controls page, so no page tabs
+  // render; a second authorized page such as Imports would bring them back.
+  await expect(
+    page.getByRole("navigation", {
+      name: "System & controls pages",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(
     page
       .getByRole("navigation", { name: "System & controls pages", exact: true })
@@ -2941,6 +2961,14 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   await nav(page, "Security");
+  // Security is warehouse's only System & controls page, so no page tabs
+  // render; a second authorized page such as Imports would bring them back.
+  await expect(
+    page.getByRole("navigation", {
+      name: "System & controls pages",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(
     page
       .getByRole("navigation", { name: "System & controls pages", exact: true })
@@ -3549,7 +3577,8 @@ test("browser: receipt scans save without stock, resume after reload, review cam
     12000,
   );
   expect(stock.every((u: any) => u.condition === "quarantine")).toBe(true);
-  await openStockActions(savedRow);
+  // A received draft has only one command, shown without a disclosure.
+  await expect(savedRow.locator("details.stock-actions")).toHaveCount(0);
   await savedRow
     .getByRole("button", { name: "View draft history", exact: true })
     .click();

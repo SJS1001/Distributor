@@ -393,7 +393,7 @@ export function OperationalAnalytics({
                           ? "Your purchases & balances"
                           : "Sales & receivables"
                       }
-                      caption={`Positive balances as of ${asOf}. Each currency is separate.`}
+                      caption={`Positive balances as of ${asOf} (UTC). Each currency is separate.`}
                     />
                     <details className="report-basis">
                       <summary>How balances are aged</summary>

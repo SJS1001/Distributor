@@ -241,7 +241,12 @@ export function InvoiceDetail({
           {notice && <p role="status">{notice}</p>}
           <section className="record-detail-panel" aria-label="Invoice lines">
             <h3>Lines</h3>
-            <div className="table-wrap">
+            <div
+              className="table-wrap"
+              tabIndex={0}
+              role="region"
+              aria-label="Invoice line records"
+            >
               <table>
                 <thead>
                   <tr>

@@ -202,6 +202,13 @@ nav.catalog-product-breadcrumbs button.text-action {
   color: #315fbd;
   font-size: var(--text-caption);
 }
+@media (max-width: 760px), (pointer: coarse) {
+  nav.catalog-product-breadcrumbs button.text-action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
 .catalog-product-manager > .page-sections {
   overflow-x: auto;
   flex-wrap: nowrap;

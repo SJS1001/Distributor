@@ -153,7 +153,10 @@ export function PurchaseQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section className="queue-controls" aria-label="Purchase order queue">
+    <section
+      className="queue-controls purchase-queue-controls"
+      aria-label="Purchase order queue"
+    >
       <h2 id="purchasing-queue" ref={heading} tabIndex={-1}>
         Purchase order queue
       </h2>

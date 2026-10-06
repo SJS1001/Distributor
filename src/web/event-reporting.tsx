@@ -203,7 +203,7 @@ export function EventReporting({
             <p className="empty">
               No event deliveries are recorded.{" "}
               {data.pending.count
-                ? "Unclaimed events are delivered once a local worker is enabled; use Refresh after worker activity."
+                ? "Unclaimed events wait for a separately enabled local worker to process them; use Refresh after worker activity."
                 : "Deliveries appear here after events are processed."}
             </p>
           )}

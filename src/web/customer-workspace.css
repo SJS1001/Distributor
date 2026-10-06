@@ -300,7 +300,11 @@
     border-top: 1px solid #edf1f6;
   }
   .customer-shell .table-wrap:has(td[data-label]) td[data-label]::before {
+    /* Visual-only label: the empty alternative text keeps it out of the cell's
+       accessible name (the visually hidden header row still names the column).
+       Browsers without alt-text support keep the first declaration. */
     content: attr(data-label);
+    content: attr(data-label) / "";
     display: block;
     margin-bottom: 2px;
     color: var(--muted);

@@ -129,18 +129,11 @@
   color: #5a6c82;
 }
 
-/* One visible primary row command, the rest behind "Actions". */
-.row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: flex-start;
-}
-.row-actions > button {
+/* One visible primary row command, the rest behind "Actions". Layout comes
+   from the shared .row-actions pattern in style.css; only lane rows are tuned. */
+.ops-row-actions > button,
+.claim-row-actions > button {
   white-space: nowrap;
-}
-.row-actions > details.stock-actions {
-  order: 1;
 }
 .claim-actions[open] {
   max-width: 360px;
@@ -344,7 +337,8 @@
   }
   .ops-header-actions button,
   .ops-section-header > button,
-  .row-actions > button,
+  .ops-row-actions > button,
+  .claim-row-actions > button,
   .ops-report-list button {
     min-height: 44px;
   }

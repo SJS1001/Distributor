@@ -73,16 +73,19 @@ label.record-form-check input[type="checkbox"] {
 .record-form-footer button {
   min-height: 44px;
 }
-/* Disclosure chevron for summaries rendered as flex rows (marker hidden). */
-.record-notes > summary,
+/* Disclosure chevron for summaries rendered as flex rows (marker hidden).
+   Record notes are flex rows only on customer and catalog records. */
+:is(.customer-record, .catalog-product-manager) .record-notes > summary,
 .pricing-history > summary {
   list-style: none;
 }
-.record-notes > summary::-webkit-details-marker,
+:is(.customer-record, .catalog-product-manager)
+  .record-notes
+  > summary::-webkit-details-marker,
 .pricing-history > summary::-webkit-details-marker {
   display: none;
 }
-.record-notes > summary::before,
+:is(.customer-record, .catalog-product-manager) .record-notes > summary::before,
 .pricing-history > summary::before {
   content: "";
   flex: none;
@@ -94,7 +97,9 @@ label.record-form-check input[type="checkbox"] {
   transform: rotate(-45deg);
   transition: transform 0.15s ease;
 }
-.record-notes[open] > summary::before,
+:is(.customer-record, .catalog-product-manager)
+  .record-notes[open]
+  > summary::before,
 .pricing-history[open] > summary::before {
   transform: rotate(45deg);
 }

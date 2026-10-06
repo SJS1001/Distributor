@@ -240,7 +240,7 @@ export function RecordNotes({
               <div className="record-notes-toolbar">
                 <p>
                   {page.items.length > 0 &&
-                    `${page.items.length}${page.next ? "+" : ""} ${page.items.length === 1 ? "note" : "notes"} shown`}
+                    `${page.items.length} ${page.items.length === 1 ? "note" : "notes"} shown${page.next ? " · older notes available" : ""}`}
                 </p>
                 <button
                   type="button"
