@@ -72,55 +72,72 @@ function SupplierRows({
   return (
     <section aria-label="Supplier directory">
       <p role="status">
-        {rows.items.length} suppliers loaded{rows.busy ? " · Loading…" : ""}
+        {rows.items.length} {rows.items.length === 1 ? "supplier" : "suppliers"}{" "}
+        loaded
+        {rows.busy ? " · Loading…" : ""}
       </p>
       {rows.error && (
         <p role="alert" className="error">
           {rows.error}
         </p>
       )}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Supplier</th>
-              <th>New purchasing</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.items.map((supplier) => (
-              <tr key={supplier.id}>
-                <td>{supplier.name}</td>
-                <td>{supplier.active ? "Available" : "Suspended"}</td>
-                <td>
-                  <div className="actions">
-                    {canManage && (
-                      <button
-                        disabled={blocked}
-                        onClick={() => select(supplier.id, true)}
-                        aria-label={`${supplier.active ? "Suspend purchasing from" : "Resume purchasing from"} ${supplier.name}`}
-                      >
-                        {supplier.active
-                          ? "Suspend purchasing"
-                          : "Resume purchasing"}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => select(supplier.id, false)}
-                      aria-label={`Purchasing history ${supplier.name}`}
-                    >
-                      Purchasing history
-                    </button>
-                  </div>
-                </td>
+      {rows.items.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Supplier</th>
+                <th>New purchasing</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.items.map((supplier) => (
+                <tr key={supplier.id}>
+                  <td>
+                    <strong>{supplier.name}</strong>
+                  </td>
+                  <td>
+                    <span
+                      className="record-status purchasing-status"
+                      data-status={supplier.active ? undefined : "closed"}
+                    >
+                      {supplier.active ? "Available" : "Suspended"}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="actions">
+                      {canManage && (
+                        <button
+                          className="secondary"
+                          disabled={blocked}
+                          onClick={() => select(supplier.id, true)}
+                          aria-label={`${supplier.active ? "Suspend purchasing from" : "Resume purchasing from"} ${supplier.name}`}
+                        >
+                          {supplier.active
+                            ? "Suspend purchasing"
+                            : "Resume purchasing"}
+                        </button>
+                      )}
+                      <button
+                        className="secondary"
+                        onClick={() => select(supplier.id, false)}
+                        aria-label={`Purchasing history ${supplier.name}`}
+                      >
+                        Purchasing history
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {rows.loaded && !rows.busy && !rows.items.length && (
-        <p>No matching suppliers.</p>
+        <p className="empty">
+          {q ? "No suppliers match this search." : "No suppliers yet."}
+        </p>
       )}
       {(rows.next || rows.error) && (
         <button disabled={rows.busy} onClick={() => void rows.load()}>
@@ -496,7 +513,10 @@ export function SupplierAvailability({
     );
   };
   return (
-    <section aria-label="Supplier purchasing availability">
+    <section
+      className="ledger-section supplier-directory"
+      aria-label="Supplier purchasing availability"
+    >
       <h2>Suppliers</h2>
       <p>
         Review purchasing availability and its history. Search includes
@@ -524,12 +544,13 @@ export function SupplierAvailability({
         </p>
       )}
       <form
+        className="queue-search"
         onSubmit={(e) => {
           e.preventDefault();
           setSelection({ q: search.trim(), epoch: selection.epoch + 1 });
         }}
       >
-        <label>
+        <label className="queue-field">
           Supplier directory search
           <input
             maxLength={120}
@@ -537,7 +558,11 @@ export function SupplierAvailability({
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <button type="submit">Search supplier directory</button>
+        <div className="queue-field-actions">
+          <button type="submit" className="secondary">
+            Search supplier directory
+          </button>
+        </div>
       </form>
       <SupplierRows
         key={selection.epoch}

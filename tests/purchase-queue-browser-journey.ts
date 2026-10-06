@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3135",
   pattern = "**/api/purchases/orders/page?*";
 async function nav(page: Page, name: string) {
@@ -277,6 +277,7 @@ test("browser: purchasing resumes and confirms an off-page saved receipt draft w
     })
     .getByRole("row")
     .filter({ has: page.getByText("OFF-PAGE-DRAFT", { exact: true }) });
+  await openStockActions(draft);
   await draft
     .getByRole("button", { name: "Resume scans", exact: true })
     .click();

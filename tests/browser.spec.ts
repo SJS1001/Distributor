@@ -326,6 +326,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
       .getByLabel("Supplier outcome / review evidence", { exact: true })
       .fill(text);
   };
+  await openStockActions(row);
   await row
     .getByRole("button", { name: "Record supplier credit", exact: true })
     .click();
@@ -354,6 +355,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
   expect(keys[0]).toBe(keys[1]);
   await expect(row).toContainText("$25.00 supplier credit recorded");
   await expect(row).toContainText("Supplier outcomes recorded");
+  await openStockActions(row);
   await row
     .getByRole("button", { name: "Link replacement receipt", exact: true })
     .click();
@@ -367,6 +369,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(row).toContainText("1 replacement units linked · v2");
+  await openStockActions(row);
   await row
     .getByRole("button", { name: "Close supplier follow-up", exact: true })
     .click();
@@ -390,6 +393,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
   await expect(
     row.getByRole("button", { name: "Record supplier credit", exact: true }),
   ).toHaveCount(0);
+  await openStockActions(row);
   await row
     .getByRole("button", { name: "Reopen supplier follow-up", exact: true })
     .click();
@@ -3419,6 +3423,7 @@ test("browser: receipt scans save without stock, resume after reload, review cam
     .getByRole("dialog")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
+  await openStockActions(draftRow);
   await draftRow
     .getByRole("button", { name: "Resume scans", exact: true })
     .click();
@@ -3502,6 +3507,7 @@ test("browser: receipt scans save without stock, resume after reload, review cam
     12000,
   );
   expect(stock.every((u: any) => u.condition === "quarantine")).toBe(true);
+  await openStockActions(savedRow);
   await savedRow
     .getByRole("button", { name: "View draft history", exact: true })
     .click();

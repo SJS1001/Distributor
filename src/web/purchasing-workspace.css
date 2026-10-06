@@ -1,0 +1,277 @@
+/* Purchasing workspace: purchase order queue, incoming allocations, receipt
+   drafts, receipts and supplier returns. Builds on the shared queue, row and
+   ledger patterns in style.css (.queue-controls, .stock-actions, .ledger-section,
+   .record-status). */
+
+.purchasing-intro {
+  margin: 4px 0 var(--space-4);
+  max-width: 78ch;
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* Record reference cell: optional name, then a short id or supporting fact. */
+.purchasing-ref {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+}
+.purchasing-ref {
+  min-width: 9rem;
+}
+.purchasing-ref code,
+.purchasing-ref .stock-condition {
+  white-space: nowrap;
+}
+.purchasing-ref > span {
+  color: #4b5f78;
+  font-size: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.purchasing-ref code,
+.incoming-order-choices code {
+  font-size: var(--text-caption);
+  color: #4b5f78;
+  background: #f1f4f8;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.purchasing-muted {
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+}
+
+.record-status.purchasing-status {
+  display: inline-block;
+  white-space: nowrap;
+}
+.record-status.purchasing-status::first-letter {
+  text-transform: uppercase;
+}
+.record-status.purchasing-status[data-status="closed"] {
+  background: #eef1f5;
+  color: #44566b;
+}
+.purchasing-followup .record-status.purchasing-status {
+  white-space: normal;
+}
+.purchasing-ref .stock-condition {
+  text-transform: none;
+  font-size: var(--text-caption);
+}
+.purchasing-followup p {
+  margin: 8px 0 0;
+  color: #4b5f78;
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+
+/* Search forms that live inside queue or ledger cards: field plus action. */
+.queue-controls > .queue-search {
+  grid-column: 1 / -1;
+}
+.queue-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 18px;
+  align-items: end;
+  margin: var(--space-2) 0 var(--space-3);
+  max-width: 760px;
+}
+.queue-search .queue-field input {
+  width: 100%;
+  margin: 0;
+}
+.queue-search label.queue-field {
+  margin: 0;
+  display: grid;
+  gap: 7px;
+  font-size: var(--text-caption);
+  color: #44566b;
+  font-weight: 600;
+}
+.queue-search .queue-field-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.queue-search .queue-field-actions button {
+  min-height: 40px;
+  font-size: var(--text-caption);
+}
+.queue-controls > .queue-field-actions {
+  align-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.queue-controls > .queue-field-actions button {
+  min-height: 40px;
+  font-size: var(--text-caption);
+}
+
+/* Row actions: one visible primary command above the Actions disclosure. */
+.row-actions > button:not(.secondary) {
+  justify-self: start;
+  font-size: var(--text-caption);
+}
+
+/* Supplier directory ledger. */
+.supplier-directory p[role="status"] {
+  color: #34475e;
+  font-weight: 600;
+  font-size: var(--text-caption);
+}
+.supplier-directory .actions button {
+  font-size: var(--text-caption);
+}
+.supplier-directory .empty {
+  padding: var(--space-4);
+}
+
+/* Incoming allocations: choose an open order, then work its coverage. */
+.incoming-order-count {
+  margin: 0 0 var(--space-2);
+  color: #34475e;
+  font-weight: 600;
+  font-size: var(--text-caption);
+}
+.incoming-order-choices {
+  margin-block: 0 var(--space-4);
+}
+.incoming-order-choices button {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+  min-height: 44px;
+  padding: 14px 16px;
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 400;
+}
+.incoming-order-choices button:hover {
+  filter: none;
+  border-color: #9fb6d9;
+  background: #f9fbfe;
+}
+.incoming-order-choices button strong {
+  font-size: var(--text-control);
+  color: var(--ink);
+}
+.incoming-order-choices button > span {
+  color: #4b5f78;
+  font-size: var(--text-secondary);
+}
+.incoming-order-choices button small {
+  margin-top: 2px;
+  color: #5a6c82;
+  font-size: var(--text-caption);
+}
+.incoming-order-choices button[aria-pressed="true"] {
+  outline: none;
+  border-color: #315fbd;
+  background: #eef4fc;
+  box-shadow: inset 4px 0 0 #315fbd;
+}
+.incoming-order-choices button:focus-visible {
+  outline: 3px solid #497bce;
+  outline-offset: 2px;
+}
+.incoming-workspace > .actions {
+  margin-bottom: var(--space-4);
+}
+
+.incoming-supply {
+  background: #fff;
+  border-color: var(--line);
+  border-radius: 8px;
+}
+.incoming-supply > h3 {
+  margin-top: 0;
+}
+.incoming-supply > p {
+  color: #4b5f78;
+  font-size: var(--text-secondary);
+  max-width: 78ch;
+}
+.incoming-supply .table-wrap tbody th[scope="row"] {
+  background: transparent;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  border-top: 1px solid #e9edf2;
+}
+.incoming-forms form {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+.incoming-forms h4 {
+  margin: 0;
+}
+.incoming-supply fieldset {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+.incoming-supply fieldset > legend {
+  font-weight: 600;
+  padding: 0 6px;
+}
+.incoming-supply fieldset > p,
+.incoming-supply fieldset > label,
+.incoming-supply fieldset > input,
+.incoming-supply fieldset > button {
+  grid-column: 1 / -1;
+}
+.incoming-supply fieldset > button {
+  justify-self: start;
+}
+.incoming-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.incoming-field-wide {
+  grid-column: 1 / -1;
+}
+.incoming-field label {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: #44566b;
+  font-weight: 600;
+}
+.incoming-supply .incoming-field input,
+.incoming-supply .incoming-field select {
+  margin: 0;
+  min-height: 40px;
+}
+.incoming-field p {
+  margin: 4px 0 0;
+  color: #805a1c;
+  font-size: var(--text-caption);
+}
+
+@media (max-width: 760px) {
+  .queue-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .queue-search .queue-field-actions button,
+  .queue-controls > .queue-field-actions button,
+  .row-actions > button,
+  .supplier-directory .actions button,
+  .incoming-supply button {
+    min-height: 44px;
+  }
+  .incoming-supply {
+    padding: 14px 12px;
+  }
+  .incoming-supply fieldset {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+}

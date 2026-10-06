@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import { navigateWorkspace, openStockActions } from "./workspace-navigation.ts";
 import { randomUUID } from "node:crypto";
 
 async function signIn(page: Page) {
@@ -118,6 +118,7 @@ for (const scenario of ["navigation", "late error", "sign-out"] as const) {
       else await route.fulfill({ response });
     });
     try {
+      await openStockActions(fixture.row);
       await fixture.row
         .getByRole("button", { name: "View draft history", exact: true })
         .click();
@@ -188,6 +189,7 @@ test("browser: receipt history reports an active failure, retries and closes wit
       });
     else await route.continue();
   });
+  await openStockActions(fixture.row);
   const view = fixture.row.getByRole("button", {
     name: "View draft history",
     exact: true,
@@ -222,6 +224,7 @@ test("browser: receipt history closes at cancel without changing native facts", 
   page,
 }) => {
   const fixture = await draftFixture(page);
+  await openStockActions(fixture.row);
   await fixture.row
     .getByRole("button", { name: "View draft history", exact: true })
     .click();

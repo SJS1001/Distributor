@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 const origin = "http://127.0.0.1:3157";
-async function purchasing(page: Page, section = "Receipts & returns") {
+async function purchasing(page: Page, section = "Purchase orders") {
   await navigateWorkspace(page, "Purchasing", section);
   await expect(
     page.getByRole("heading", { name: "Purchasing", exact: true }),
