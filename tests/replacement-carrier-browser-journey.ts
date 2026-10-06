@@ -29,7 +29,7 @@ test("browser: phone replacement carrier preparation, private label and exact di
     };
   };
   const before = await native();
-  await navigateWorkspace(page, "Returns");
+  await navigateWorkspace(page, "Returns", "Replacements");
   const history = page.getByRole("region", {
     name: "Replacement history",
     exact: true,

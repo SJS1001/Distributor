@@ -174,9 +174,8 @@ test("browser: phone ordinary claim release retains an exact lost-response retry
   ).booking;
   expect(stored.state).toBe("unknown");
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+  // Reload restores the signed-in workspace location instead of Overview.
+  await expect(page.locator("#workspace-title")).toHaveText("Orders");
   pane = await ordinary(page, booking.shipmentId);
   claim = pane.getByRole("region", {
     name: "Interrupted booking claim",
@@ -385,6 +384,11 @@ test("browser: phone manifest claim release keeps all created members and refuse
     }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  // Let sign-out finish before opening sign-in; a still-signed-in workspace
+  // otherwise normalizes #sign-in to Overview and signs out onto the public home.
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
   await login(page, "claim-warehouse@example.test");
   const staff = await group(page, g.id);
   await expect(

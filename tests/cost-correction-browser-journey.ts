@@ -329,9 +329,8 @@ test("browser: phone correction retries exact attempts, requires separate financ
     await expect(review(other)).toHaveCount(0);
     await other.reload();
     // Reopen retained records after reload; no observation is inferred from the lost reply.
-    await expect(
-      other.getByRole("heading", { name: "Overview", exact: true }),
-    ).toBeVisible();
+    // Reload restores the signed-in workspace location (Billing), not Overview.
+    await expect(other.locator("#workspace-title")).toHaveText("Billing");
     await navigateAccounting(other, "Inventory costs");
     await other
       .getByRole("button", { name: "Load stock cost review", exact: true })

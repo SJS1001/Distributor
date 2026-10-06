@@ -173,7 +173,7 @@ test("browser: subsequent correction recovers exact lost preparation and require
     .click();
   await expect(successor(page).getByRole("alert")).toBeVisible();
   await page.reload();
-  await signInAlready(page);
+  await signInAlready(page, "Billing");
   await expect(successor(page)).toContainText("Retained preparation");
   await successor(page)
     .getByRole("button", {
@@ -217,10 +217,10 @@ test("browser: subsequent correction recovers exact lost preparation and require
   await expect(saved(reviewer)).toContainText("State: reviewed");
   await context.close();
 });
-async function signInAlready(page: Page) {
-  await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
-  ).toBeVisible();
+// A fresh tab opens Overview; a reload restores the signed-in workspace
+// location, so reload callers name the page they left (Billing).
+async function signInAlready(page: Page, landing = "Overview") {
+  await expect(page.locator("#workspace-title")).toHaveText(landing);
   await navigateAccounting(page, "Inventory costs");
   await page
     .getByRole("button", { name: "Load stock cost review", exact: true })
@@ -397,7 +397,7 @@ test("browser: subsequent correction refuses damaged and empty retained evidence
     localStorage.setItem(key, "");
   });
   await page.reload();
-  await signInAlready(page);
+  await signInAlready(page, "Billing");
   await expect(successor(page).getByRole("alert")).toContainText("damaged");
   await expect(
     successor(page).getByRole("button", {
