@@ -6155,34 +6155,49 @@ function App() {
                 ["Claim", "Customer", "Issue", "State", "Actions"],
                 claimQueue.items,
                 (c: Item) => [
-                  c.id.slice(0, 8),
+                  <span className="ops-record-id">
+                    <code title={c.id} aria-label={`Claim ${c.id}`}>
+                      {c.id.slice(0, 8)}
+                    </code>
+                    {c.type && <small>{c.type}</small>}
+                  </span>,
                   accountName(c.account_id),
-                  c.issue,
-                  c.state,
-                  <div className="actions">
-                    <RetainedClaimCoverage
-                      key={`${c.id}:${eventViewEpoch}`}
-                      claimId={c.id}
-                    />
-
-                    <button
-                      className="secondary"
-                      onClick={(event) => {
-                        evidenceOpener.current = event.currentTarget;
-                        setEvidenceClaim(c.id);
-                      }}
-                    >
-                      Evidence files
-                    </button>
-                    <button
-                      className="secondary"
-                      onClick={(event) => {
-                        decisionOpener.current = event.currentTarget;
-                        setDecisionClaim(c.id);
-                      }}
-                    >
-                      Claim activity
-                    </button>
+                  <span className="claim-issue">{c.issue}</span>,
+                  <span className="ops-state" data-state={c.state}>
+                    {c.state}
+                  </span>,
+                  <div className="row-actions claim-row-actions">
+                    <details className="stock-actions claim-actions">
+                      <summary
+                        aria-label={`Actions for claim ${c.id.slice(0, 8)}`}
+                      >
+                        Actions
+                      </summary>
+                      <div className="actions">
+                        <RetainedClaimCoverage
+                          key={`${c.id}:${eventViewEpoch}`}
+                          claimId={c.id}
+                        />
+                        <button
+                          className="secondary"
+                          onClick={(event) => {
+                            evidenceOpener.current = event.currentTarget;
+                            setEvidenceClaim(c.id);
+                          }}
+                        >
+                          Evidence files
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={(event) => {
+                            decisionOpener.current = event.currentTarget;
+                            setDecisionClaim(c.id);
+                          }}
+                        >
+                          Claim activity
+                        </button>
+                      </div>
+                    </details>
                     {c.state === "submitted" &&
                       can("warranty") &&
                       button("Review", () =>
@@ -6362,6 +6377,9 @@ function App() {
                       )}
                   </div>,
                 ],
+                claimQueue.state
+                  ? "No claims are in this state. Choose All states to see every claim."
+                  : "No claims or returns yet. Use Submit claim / return when a customer reports a fault or return.",
               )}
               {evidenceClaim && (
                 <WarrantyEvidence
@@ -6388,7 +6406,10 @@ function App() {
             </PageSection>
             <PageSection id="returns-replacements">
               {" "}
-              <section aria-label="Replacement history">
+              <section
+                className="ledger-section ops-section"
+                aria-label="Replacement history"
+              >
                 <h2>Replacement history</h2>
                 <p>
                   Approved serials are held for customer collection or carrier
@@ -6588,7 +6609,7 @@ function App() {
                         )}
                     </div>,
                   ],
-                  "No replacements have been recorded.",
+                  "No replacements have been recorded. Approve a replacement from an inspected warranty claim in Claims and returns.",
                 )}
                 {carrierReplacementId &&
                   claimQueue.items
@@ -6640,7 +6661,10 @@ function App() {
             <PageSection id="returns-manufacturers">
               {" "}
               {can("warranty", "warehouse", "finance", "commercial") && (
-                <section aria-label="Manufacturer case history">
+                <section
+                  className="ledger-section ops-section"
+                  aria-label="Manufacturer case history"
+                >
                   <h2>Manufacturer case history</h2>
                   <p>
                     Staff record referrals and responses obtained outside
@@ -6712,19 +6736,31 @@ function App() {
                           )
                         : "",
                     ],
-                    "No manufacturer cases have been recorded.",
+                    "No manufacturer cases have been recorded. Record a referral from a warranty claim in Claims and returns once the manufacturer has opened a case.",
                   )}
                 </section>
               )}
             </PageSection>
             <PageSection id="returns-policy">
               {admin && extra.coveragePolicy && (
-                <section>
+                <section className="ledger-section ops-section">
                   <h2>Warranty coverage policy</h2>
+                  <dl className="record-figures ops-figures">
+                    <div>
+                      <dt>Policy version</dt>
+                      <dd>{extra.coveragePolicy.revision}</dd>
+                    </div>
+                    <div>
+                      <dt>Coverage after shipment</dt>
+                      <dd>
+                        {extra.coveragePolicy.days}{" "}
+                        {extra.coveragePolicy.days === 1 ? "day" : "days"}
+                      </dd>
+                    </div>
+                  </dl>
                   <p>
-                    Policy version {extra.coveragePolicy.revision}:{" "}
-                    {extra.coveragePolicy.days} whole UTC days after shipment.
-                    Settings are provisional; eligibility requires review.
+                    Counted in whole UTC days after shipment. Settings are
+                    provisional; eligibility requires review.
                   </p>
                   {extra.coveragePolicy.reason && (
                     <p>{extra.coveragePolicy.reason}</p>
@@ -7725,36 +7761,50 @@ function App() {
           </PageSections>
         )}
         {(page === "Security" || (page === "Account" && !staff)) && (
-          <section className="panel">
+          <section className="panel ops-security">
             <h2>Your sign-in security</h2>
             <p>
-              {extra.security?.email} · {extra.security?.sessions ?? 0} active
-              sessions. Password changes end every session.
+              {extra.security?.email} · {extra.security?.sessions ?? 0} active{" "}
+              {extra.security?.sessions === 1 ? "session" : "sessions"}.
+              Password changes end every session.
             </p>
-            {extra.security?.mfa && (
-              <MfaSecurity
-                security={extra.security}
-                sessionEnded={clearSession}
-              />
-            )}
-            <hr />
-            <PasswordChangeForm
-              busy={busy}
-              submit={(values) =>
-                run(() => command("user.password.change", values))
-              }
-            />
-            <hr />
-            {button("End all my sessions", () =>
-              open(
-                "End all my sessions",
-                [],
-                () => command("user.sessions.end-own", {}),
-                "This ends your signed-in sessions on every device.",
-                "End sessions",
-              ),
-            )}
-            <p>You will need to sign in again on every device.</p>
+            <div className="ops-security-grid">
+              {extra.security?.mfa && (
+                <div className="ops-card">
+                  <MfaSecurity
+                    security={extra.security}
+                    sessionEnded={clearSession}
+                  />
+                </div>
+              )}
+              <section className="ops-card">
+                <h3>Password</h3>
+                <p className="ops-note">
+                  Changing your password ends every signed-in session.
+                </p>
+                <PasswordChangeForm
+                  busy={busy}
+                  submit={(values) =>
+                    run(() => command("user.password.change", values))
+                  }
+                />
+              </section>
+              <section className="ops-card">
+                <h3>Signed-in sessions</h3>
+                <p className="ops-note">
+                  You will need to sign in again on every device.
+                </p>
+                {button("End all my sessions", () =>
+                  open(
+                    "End all my sessions",
+                    [],
+                    () => command("user.sessions.end-own", {}),
+                    "This ends your signed-in sessions on every device.",
+                    "End sessions",
+                  ),
+                )}
+              </section>
+            </div>
           </section>
         )}
         {page === "Administration" && admin && (
@@ -7768,193 +7818,240 @@ function App() {
             ]}
           >
             <PageSection id="admin-access">
-              <section className="panel">
-                <h2>Staff and buyer access</h2>
-                <p>
+              <section className="panel ops-access">
+                <div className="ops-section-header">
+                  <div>
+                    <h2>Staff and buyer access</h2>
+                    <p>
+                      New users must change their initial password. Access
+                      changes, resets and revocations end every session for the
+                      affected user.
+                    </p>
+                  </div>
+                  {button("Create user", () =>
+                    simple(
+                      "Create user",
+                      [
+                        { name: "name", label: "Name" },
+                        { name: "email", label: "Email" },
+                        {
+                          name: "password",
+                          label: "Initial password (14+ characters)",
+                          type: "password",
+                        },
+                        {
+                          name: "currentPassword",
+                          label: "Your current password",
+                          type: "password",
+                        },
+                        {
+                          name: "role",
+                          label: "Role",
+                          options: [
+                            "warehouse",
+                            "commercial",
+                            "finance",
+                            "warranty",
+                            "buyer",
+                            "support",
+                            "admin",
+                          ].map((v) => ({ value: v, label: v })),
+                        },
+                        {
+                          ...select(
+                            "accountId",
+                            "Buyer account (buyer role only)",
+                            data.accounts,
+                            (a) => a.name,
+                          ),
+                          optional: true,
+                        },
+                        {
+                          name: "sites",
+                          label: "Permitted warehouses",
+                          type: "multiselect",
+                          options: options(data.warehouses, (w) => w.name),
+                          optional: true,
+                          help: "Select each warehouse this user may operate.",
+                        },
+                      ],
+                      "user.create",
+                      (v) => ({
+                        ...v,
+                        ...(v.role !== "buyer" ? { accountId: undefined } : {}),
+                        requirePasswordChange: true,
+                        sites: v.sites ?? [],
+                      }),
+                    ),
+                  )}
+                </div>
+                <p className="ops-note">
                   <a href="#scanner">
                     Barcode scanner — open or send to a phone
                   </a>
-                </p>
-                {button("Create user", () =>
-                  simple(
-                    "Create user",
-                    [
-                      { name: "name", label: "Name" },
-                      { name: "email", label: "Email" },
-                      {
-                        name: "password",
-                        label: "Initial password (14+ characters)",
-                        type: "password",
-                      },
-                      {
-                        name: "currentPassword",
-                        label: "Your current password",
-                        type: "password",
-                      },
-                      {
-                        name: "role",
-                        label: "Role",
-                        options: [
-                          "warehouse",
-                          "commercial",
-                          "finance",
-                          "warranty",
-                          "buyer",
-                          "support",
-                          "admin",
-                        ].map((v) => ({ value: v, label: v })),
-                      },
-                      {
-                        ...select(
-                          "accountId",
-                          "Buyer account (buyer role only)",
-                          data.accounts,
-                          (a) => a.name,
-                        ),
-                        optional: true,
-                      },
-                      {
-                        name: "sites",
-                        label: "Permitted warehouses",
-                        type: "multiselect",
-                        options: options(data.warehouses, (w) => w.name),
-                        optional: true,
-                        help: "Select each warehouse this user may operate.",
-                      },
-                    ],
-                    "user.create",
-                    (v) => ({
-                      ...v,
-                      ...(v.role !== "buyer" ? { accountId: undefined } : {}),
-                      requirePasswordChange: true,
-                      sites: v.sites ?? [],
-                    }),
-                  ),
-                )}
-                <p>
-                  New users must change their initial password. Access changes,
-                  resets and revocations end every session for the affected
-                  user.
                 </p>
                 {table(
                   ["User", "Role / scope", "Status", "Sessions", "Actions"],
                   extra.users ?? [],
                   (u: Item) => [
-                    <span>
-                      {u.name}
-                      <br />
-                      {u.email}
+                    <span className="ops-person">
+                      <strong>{u.name}</strong>
+                      <small>{u.email}</small>
                     </span>,
-                    <span>
-                      {u.role}
-                      {u.accountId ? ` · ${accountName(u.accountId)}` : ""}
-                      <br />
-                      {u.sites.map(warehouseName).join(", ") ||
-                        (u.role === "admin"
-                          ? "All warehouses"
-                          : "No warehouse operations")}
+                    <span className="ops-person">
+                      <span className="ops-role">
+                        {u.role}
+                        {u.accountId ? ` · ${accountName(u.accountId)}` : ""}
+                      </span>
+                      <small>
+                        {u.sites.map(warehouseName).join(", ") ||
+                          (u.role === "admin"
+                            ? "All warehouses"
+                            : "No warehouse operations")}
+                      </small>
                     </span>,
-                    `${u.active ? "Active" : "Inactive"}${u.passwordChangeRequired ? " · Password change required" : ""} · v${u.revision}`,
+                    <span className="ops-person">
+                      <span
+                        className="ops-state"
+                        data-state={u.active ? "active" : "inactive"}
+                      >
+                        {u.active ? "Active" : "Inactive"}
+                      </span>
+                      <small>
+                        {u.passwordChangeRequired
+                          ? "Password change required · "
+                          : ""}
+                        v{u.revision}
+                      </small>
+                    </span>,
                     u.sessions,
-                    <div className="actions">
-                      {button(`Edit access: ${u.name}`, () =>
-                        simple(
-                          `Edit access: ${u.name}`,
-                          [
-                            { name: "name", label: "Name", value: u.name },
-                            { name: "email", label: "Email", value: u.email },
-                            {
-                              name: "role",
-                              label: "Role",
-                              value: u.role,
-                              options: [
-                                "warehouse",
-                                "commercial",
-                                "finance",
-                                "warranty",
-                                "buyer",
-                                "support",
-                                "admin",
-                              ].map((value) => ({ value, label: value })),
-                            },
-                            {
-                              ...select(
-                                "accountId",
-                                "Buyer account (buyer role only)",
-                                data.accounts,
-                                (a) => a.name,
-                                u.accountId ?? "",
-                              ),
-                              optional: true,
-                            },
-                            {
-                              name: "sites",
-                              label: "Permitted warehouses",
-                              type: "multiselect",
-                              options: options(data.warehouses, (w) => w.name),
-                              optional: true,
-                              value: u.sites,
-                            },
-                            {
-                              name: "active",
-                              label: "Active user",
-                              type: "checkbox",
-                              value: u.active,
-                            },
-                            {
-                              name: "currentPassword",
-                              label: "Your current password",
-                              type: "password",
-                            },
-                            reason,
-                          ],
-                          "user.update",
-                          (v) => ({
-                            ...v,
-                            accountId:
-                              v.role === "buyer" ? v.accountId : undefined,
-                            userId: u.id,
-                            revision: u.revision,
-                          }),
-                        ),
-                      )}
-                      {button(`Reset password: ${u.name}`, () =>
-                        simple(
-                          `Reset password: ${u.name}`,
-                          [
-                            {
-                              name: "password",
-                              label: "New initial password (14+ characters)",
-                              type: "password",
-                            },
-                            {
-                              name: "currentPassword",
-                              label: "Your current password",
-                              type: "password",
-                            },
-                            reason,
-                          ],
-                          "user.password.reset",
-                          (v) => ({ ...v, userId: u.id, revision: u.revision }),
-                        ),
-                      )}
-                      {button(`Revoke sessions: ${u.name}`, () =>
-                        simple(
-                          `Revoke sessions: ${u.name}`,
-                          [
-                            {
-                              name: "currentPassword",
-                              label: "Your current password",
-                              type: "password",
-                            },
-                            reason,
-                          ],
-                          "user.sessions.revoke",
-                          (v) => ({ ...v, userId: u.id, revision: u.revision }),
-                        ),
-                      )}
+                    <div className="row-actions">
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        aria-label={`Edit access: ${u.name}`}
+                        title={`Edit access: ${u.name}`}
+                        onClick={() =>
+                          simple(
+                            `Edit access: ${u.name}`,
+                            [
+                              { name: "name", label: "Name", value: u.name },
+                              { name: "email", label: "Email", value: u.email },
+                              {
+                                name: "role",
+                                label: "Role",
+                                value: u.role,
+                                options: [
+                                  "warehouse",
+                                  "commercial",
+                                  "finance",
+                                  "warranty",
+                                  "buyer",
+                                  "support",
+                                  "admin",
+                                ].map((value) => ({ value, label: value })),
+                              },
+                              {
+                                ...select(
+                                  "accountId",
+                                  "Buyer account (buyer role only)",
+                                  data.accounts,
+                                  (a) => a.name,
+                                  u.accountId ?? "",
+                                ),
+                                optional: true,
+                              },
+                              {
+                                name: "sites",
+                                label: "Permitted warehouses",
+                                type: "multiselect",
+                                options: options(
+                                  data.warehouses,
+                                  (w) => w.name,
+                                ),
+                                optional: true,
+                                value: u.sites,
+                              },
+                              {
+                                name: "active",
+                                label: "Active user",
+                                type: "checkbox",
+                                value: u.active,
+                              },
+                              {
+                                name: "currentPassword",
+                                label: "Your current password",
+                                type: "password",
+                              },
+                              reason,
+                            ],
+                            "user.update",
+                            (v) => ({
+                              ...v,
+                              accountId:
+                                v.role === "buyer" ? v.accountId : undefined,
+                              userId: u.id,
+                              revision: u.revision,
+                            }),
+                          )
+                        }
+                      >
+                        Edit access
+                      </button>
+                      <details className="stock-actions">
+                        <summary aria-label={`Actions for user ${u.name}`}>
+                          Actions
+                        </summary>
+                        <div className="actions">
+                          {button(`Reset password: ${u.name}`, () =>
+                            simple(
+                              `Reset password: ${u.name}`,
+                              [
+                                {
+                                  name: "password",
+                                  label:
+                                    "New initial password (14+ characters)",
+                                  type: "password",
+                                },
+                                {
+                                  name: "currentPassword",
+                                  label: "Your current password",
+                                  type: "password",
+                                },
+                                reason,
+                              ],
+                              "user.password.reset",
+                              (v) => ({
+                                ...v,
+                                userId: u.id,
+                                revision: u.revision,
+                              }),
+                            ),
+                          )}
+                          {button(`Revoke sessions: ${u.name}`, () =>
+                            simple(
+                              `Revoke sessions: ${u.name}`,
+                              [
+                                {
+                                  name: "currentPassword",
+                                  label: "Your current password",
+                                  type: "password",
+                                },
+                                reason,
+                              ],
+                              "user.sessions.revoke",
+                              (v) => ({
+                                ...v,
+                                userId: u.id,
+                                revision: u.revision,
+                              }),
+                            ),
+                          )}
+                        </div>
+                      </details>
                     </div>,
                   ],
+                  "No users yet. Use Create user to invite staff or a buyer.",
                 )}
               </section>
             </PageSection>

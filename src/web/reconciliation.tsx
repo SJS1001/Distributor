@@ -6,6 +6,21 @@ import type {
   ReconciliationHistory,
   ReconciliationReceipt,
 } from "../shared/reconciliation.ts";
+import "./operations-lane.css";
+const count = (n: number, one: string, many = `${one}s`) =>
+  `${n} ${n === 1 ? one : many}`;
+function Figures({ rows }: { rows: [string, React.ReactNode][] }) {
+  return (
+    <dl className="record-figures ops-figures">
+      {rows.map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 function money(value: string, currency: string) {
   const n = BigInt(value),
     absolute = n < 0n ? -n : n;
@@ -13,10 +28,14 @@ function money(value: string, currency: string) {
 }
 function Issues({ name, issues }: { name: string; issues: ControlIssues }) {
   return (
-    <section aria-label={`${name} discrepancies`}>
-      <h3>
+    <section
+      aria-label={`${name} discrepancies`}
+      className="ops-discrepancies"
+      data-state={issues.count ? "attention" : "clear"}
+    >
+      <h4>
         {name} discrepancies: {issues.count}
-      </h3>
+      </h4>
       {issues.count === 0 ? (
         <p>No discrepancies detected in these controls.</p>
       ) : (
@@ -170,28 +189,39 @@ export function ReconciliationPanel() {
     };
   }, []);
   return (
-    <section className="panel" aria-label="Stock and billing reconciliation">
-      <h2>Stock and billing reconciliation</h2>
-      <p>
-        Control totals from one current database snapshot. Stock includes
-        quarantine and in-transit custody at original cost. Transfers do not
-        change organization-wide quantity or value.
-      </p>
-      <p>
-        These controls compare stock by product, native billing records and
-        agreement between orders, shipments, stock deductions and invoices. They
-        do not verify physical counts, bank statements or provider balances.
-      </p>
-      <button onClick={() => void load()} disabled={busy || !!action}>
-        Run reconciliation
-      </button>
+    <section
+      className="panel ops-reconciliation"
+      aria-label="Stock and billing reconciliation"
+    >
+      <div className="ops-section-header">
+        <div>
+          <h2>Stock and billing reconciliation</h2>
+          <p>
+            Control totals from one current database snapshot. Stock includes
+            quarantine and in-transit custody at original cost. Transfers do not
+            change organization-wide quantity or value.
+          </p>
+          <p>
+            These controls compare stock by product, native billing records and
+            agreement between orders, shipments, stock deductions and invoices.
+            They do not verify physical counts, bank statements or provider
+            balances.
+          </p>
+        </div>
+        <div className="ops-header-actions">
+          <button onClick={() => void load()} disabled={busy || !!action}>
+            Run reconciliation
+          </button>
+          <button
+            className="secondary"
+            onClick={() => void reportAction()}
+            disabled={!data || busy || !!action}
+          >
+            Save reviewed report
+          </button>
+        </div>
+      </div>
       {busy && <p role="status">Checking stock and billing…</p>}
-      <button
-        onClick={() => void reportAction()}
-        disabled={!data || busy || !!action}
-      >
-        Save reviewed report
-      </button>
       {action && <p role="status">{action}</p>}
       {notice && <p role="status">{notice}</p>}
       {error && (
@@ -201,79 +231,122 @@ export function ReconciliationPanel() {
       )}
       {data && (
         <>
-          <p role="status">
-            Checked {data.checkedAt} · {data.currency} ·{" "}
-            {data.stock.issues.count +
+          <p
+            role="status"
+            className="ops-banner"
+            data-tone={
+              data.stock.issues.count +
               data.billing.issues.count +
-              data.sales.issues.count}{" "}
-            discrepancies
+              data.sales.issues.count
+                ? "attention"
+                : undefined
+            }
+          >
+            Checked {data.checkedAt} · {data.currency} ·{" "}
+            {count(
+              data.stock.issues.count +
+                data.billing.issues.count +
+                data.sales.issues.count,
+              "discrepancy",
+              "discrepancies",
+            )}
           </p>
-          <h3>Stock controls</h3>
-          <dl>
-            <dt>Recorded quantity</dt>
-            <dd>{data.stock.quantity}</dd>
-            <dt>Movement quantity</dt>
-            <dd>{data.stock.movementQuantity}</dd>
-            <dt>Recorded original cost</dt>
-            <dd>{money(data.stock.value, data.currency)}</dd>
-            <dt>Movement original cost</dt>
-            <dd>{money(data.stock.movementValue, data.currency)}</dd>
-          </dl>
-          <p>
-            {data.stock.units} custody records · {data.stock.products} products
-            · {data.stock.movements} movements
-          </p>
-          <Issues name="Stock" issues={data.stock.issues} />
-          <h3>Billing controls</h3>
-          <dl>
-            <dt>Invoice total</dt>
-            <dd>{money(data.billing.total, data.currency)}</dd>
-            <dt>Credits</dt>
-            <dd>{money(data.billing.credited, data.currency)}</dd>
-            <dt>Payments</dt>
-            <dd>{money(data.billing.paid, data.currency)}</dd>
-            <dt>Completed refunds</dt>
-            <dd>{money(data.billing.refunded, data.currency)}</dd>
-            <dt>Document balance</dt>
-            <dd>{money(data.billing.balance, data.currency)}</dd>
-            <dt>Pending refunds</dt>
-            <dd>{money(data.billing.pendingRefunds, data.currency)}</dd>
-            <dt>Uncertain refunds</dt>
-            <dd>{money(data.billing.uncertainRefunds, data.currency)}</dd>
-          </dl>
-          <p>
-            {data.billing.invoices} invoices · {data.billing.credits} credits ·{" "}
-            {data.billing.payments} payments · {data.billing.refunds} refund
-            requests
-          </p>
-          <Issues name="Billing" issues={data.billing.issues} />
-          <h3>Sales agreement controls</h3>
-          <dl>
-            <dt>Shipped quantity</dt>
-            <dd>{data.sales.shippedQuantity}</dd>
-            <dt>Stock deduction quantity</dt>
-            <dd>{data.sales.movementQuantity}</dd>
-            <dt>Invoiced quantity</dt>
-            <dd>{data.sales.invoicedQuantity}</dd>
-            <dt>Shipped original cost</dt>
-            <dd>{money(data.sales.shippedCost, data.currency)}</dd>
-            <dt>Stock deduction original cost</dt>
-            <dd>{money(data.sales.movementCost, data.currency)}</dd>
-            <dt>Regional native invoice line net</dt>
-            <dd>{money(data.sales.invoiceNet, data.currency)}</dd>
-            <dt>Regional native invoice line tax</dt>
-            <dd>{money(data.sales.invoiceTax, data.currency)}</dd>
-          </dl>
-          <p>
-            {data.sales.orders} orders · {data.sales.shipments} committed
-            shipments · {data.sales.invoices} native invoices ·{" "}
-            {data.sales.openingInvoices} historical opening invoices excluded
-            from sales agreement
-          </p>
-          <Issues name="Sales agreement" issues={data.sales.issues} />
+          <section className="ops-control">
+            <h3>Stock controls</h3>
+            <Figures
+              rows={[
+                ["Recorded quantity", data.stock.quantity],
+                ["Movement quantity", data.stock.movementQuantity],
+                [
+                  "Recorded original cost",
+                  money(data.stock.value, data.currency),
+                ],
+                [
+                  "Movement original cost",
+                  money(data.stock.movementValue, data.currency),
+                ],
+              ]}
+            />
+            <p className="ops-note">
+              {count(data.stock.units, "custody record")} ·{" "}
+              {count(data.stock.products, "product")} ·{" "}
+              {count(data.stock.movements, "movement")}
+            </p>
+            <Issues name="Stock" issues={data.stock.issues} />
+          </section>
+          <section className="ops-control">
+            <h3>Billing controls</h3>
+            <Figures
+              rows={[
+                ["Invoice total", money(data.billing.total, data.currency)],
+                ["Credits", money(data.billing.credited, data.currency)],
+                ["Payments", money(data.billing.paid, data.currency)],
+                [
+                  "Completed refunds",
+                  money(data.billing.refunded, data.currency),
+                ],
+                [
+                  "Document balance",
+                  money(data.billing.balance, data.currency),
+                ],
+                [
+                  "Pending refunds",
+                  money(data.billing.pendingRefunds, data.currency),
+                ],
+                [
+                  "Uncertain refunds",
+                  money(data.billing.uncertainRefunds, data.currency),
+                ],
+              ]}
+            />
+            <p className="ops-note">
+              {count(data.billing.invoices, "invoice")} ·{" "}
+              {count(data.billing.credits, "credit")} ·{" "}
+              {count(data.billing.payments, "payment")} ·{" "}
+              {count(data.billing.refunds, "refund request")}
+            </p>
+            <Issues name="Billing" issues={data.billing.issues} />
+          </section>
+          <section className="ops-control">
+            <h3>Sales agreement controls</h3>
+            <Figures
+              rows={[
+                ["Shipped quantity", data.sales.shippedQuantity],
+                ["Stock deduction quantity", data.sales.movementQuantity],
+                ["Invoiced quantity", data.sales.invoicedQuantity],
+                [
+                  "Shipped original cost",
+                  money(data.sales.shippedCost, data.currency),
+                ],
+                [
+                  "Stock deduction original cost",
+                  money(data.sales.movementCost, data.currency),
+                ],
+                [
+                  "Regional native invoice line net",
+                  money(data.sales.invoiceNet, data.currency),
+                ],
+                [
+                  "Regional native invoice line tax",
+                  money(data.sales.invoiceTax, data.currency),
+                ],
+              ]}
+            />
+            <p className="ops-note">
+              {count(data.sales.orders, "order")} ·{" "}
+              {count(data.sales.shipments, "committed shipment")} ·{" "}
+              {count(data.sales.invoices, "native invoice")} ·{" "}
+              {count(data.sales.openingInvoices, "historical opening invoice")}{" "}
+              excluded from sales agreement
+            </p>
+            <Issues name="Sales agreement" issues={data.sales.issues} />
+          </section>
         </>
       )}
-      <section aria-label="Saved reconciliation reports">
+      <section
+        aria-label="Saved reconciliation reports"
+        className="ops-control"
+      >
         <h3>Saved reports</h3>
         <p>
           Saving checks the displayed controls again. Each dated report retains
@@ -281,6 +354,7 @@ export function ReconciliationPanel() {
           physical stock or external balances.
         </p>
         <button
+          className="secondary"
           onClick={() => void loadHistory()}
           disabled={historyBusy || !!action}
         >
@@ -288,15 +362,25 @@ export function ReconciliationPanel() {
         </button>
         {historyBusy && <p role="status">Loading saved reports…</p>}
         {historyError && <p role="alert">{historyError}</p>}
-        {history?.items.length === 0 && <p>No saved reports.</p>}
-        <ol>
+        {history?.items.length === 0 && (
+          <p className="empty">
+            No saved reports. Run reconciliation, review the controls, then use
+            Save reviewed report to keep a dated copy.
+          </p>
+        )}
+        <ol className="ops-report-list">
           {history?.items.map((r) => (
             <li key={r.id}>
               <p>
-                Checked {r.checkedAt} · {r.currency} · {r.discrepancies}{" "}
-                discrepancies · Prepared by {r.preparedBy}
+                Checked {r.checkedAt} · {r.currency} ·{" "}
+                {count(r.discrepancies, "discrepancy", "discrepancies")} ·
+                Prepared by {r.preparedBy}
               </p>
-              <button onClick={() => void reportAction(r)} disabled={!!action}>
+              <button
+                className="secondary"
+                onClick={() => void reportAction(r)}
+                disabled={!!action}
+              >
                 Download report {r.id}
               </button>
             </li>
