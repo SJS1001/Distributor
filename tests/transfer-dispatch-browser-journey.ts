@@ -11,6 +11,10 @@ const recovery = (page: Page) =>
 const nav = (page: Page, name: string) =>
   navigateWorkspace(page, name, name === "Inventory" ? "Stock" : undefined);
 async function login(page: Page, email = "dispatch@example.test") {
+  // Sign-out finishes asynchronously. Requesting the sign-in route while the
+  // workspace is still open is treated as workspace navigation, so wait for
+  // the signed-out page before asking for the sign-in form.
+  await expect(page.locator("#workspace-title")).toHaveCount(0);
   await page.goto(origin + "/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
@@ -485,9 +489,8 @@ test("browser: abandoned transfer dispatch does not repopulate another page and 
     const original = await evidence(page);
     const before = await facts(page);
     await page.reload();
-    await expect(
-      page.getByRole("heading", { name: "Overview", exact: true }),
-    ).toBeVisible();
+    // Reload restores the signed-in workspace location rather than Overview.
+    await expect(page.locator("#workspace-title")).toHaveText("Inventory");
     release();
     await nav(page, "Inventory");
     await expect(d(page)).toHaveCount(0);
@@ -555,6 +558,9 @@ test("browser: retained transfer dispatch rechecks current source grants before 
       return await response.json();
     };
     await update(user.revision, [], "synthetic-remove-dispatch-grant");
+    // The access change ended this page's session; reopen the page so it
+    // observes the signed-out state before signing in with current authority.
+    await page.reload();
     await login(page);
     await review(page);
     await retry(page);
@@ -571,6 +577,9 @@ test("browser: retained transfer dispatch rechecks current source grants before 
       user.sites,
       "synthetic-restore-dispatch-grant",
     );
+    // The access change ended this page's session; reopen the page so it
+    // observes the signed-out state before signing in with current authority.
+    await page.reload();
     await login(page);
     await review(page);
     await retry(page);
