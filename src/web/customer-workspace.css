@@ -126,8 +126,8 @@
 .customer-shell
   .workspace-main
   button:not(.secondary):not(.record-link):not([role="tab"]):not(
-    .storefront button
-  ) {
+    .text-action
+  ):not(.metric-card):not(.workflow-path > button):not(.storefront button) {
   background-color: var(--ink);
   border-color: var(--ink);
   color: white;
@@ -210,5 +210,117 @@
   .customer-shell select,
   .customer-shell textarea {
     font-size: 16px;
+  }
+}
+
+/* Buyer portal polish (lane: buyer-portal).
+   Report links, metric cards and quick-access tiles keep their light
+   dashboard treatment instead of the filled command-button style above. */
+.customer-shell .metric-card {
+  border-top: 3px solid var(--accent);
+}
+.customer-shell .metric-card strong {
+  color: var(--ink);
+}
+.customer-shell .text-action {
+  min-height: 0;
+}
+.customer-shell .record-reference.text-action {
+  min-height: 44px;
+  padding: 0;
+  color: #0b5ea8;
+  text-decoration: underline;
+  text-decoration-color: #0b5ea866;
+  text-underline-offset: 3px;
+}
+.customer-shell .account-security > hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+.customer-shell .account-security :is(input, select) {
+  max-width: 480px;
+}
+.account-security-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 24px 48px;
+  align-items: start;
+}
+.account-security-grid h3,
+.account-security > h3 {
+  margin-top: 8px;
+}
+/* Long focused records must not widen the page on phones. */
+.customer-shell .record-detail {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 760px) {
+  .customer-shell .workspace-main .text-action {
+    min-height: 44px;
+  }
+  /* Phone tables become one card per record: each cell shows its column
+     name above the value. Header cells stay in the accessibility tree. */
+  .customer-shell .table-wrap:has(td[data-label]) {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) table,
+  .customer-shell .table-wrap:has(td[data-label]) tbody,
+  .customer-shell .table-wrap:has(td[data-label]) tfoot,
+  .customer-shell .table-wrap:has(td[data-label]) tr,
+  .customer-shell .table-wrap:has(td[data-label]) td {
+    display: block;
+    width: auto;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) tbody tr {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    padding: 6px 0;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) td {
+    min-width: 0;
+    max-width: none;
+    border: 0;
+    padding: 8px 16px;
+    text-align: left;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) td + td {
+    border-top: 1px solid #edf1f6;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) tfoot tr {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    background: #fff;
+    border-top: 1px solid var(--border);
+  }
+  .customer-shell .table-wrap:has(td[data-label]) tfoot :is(th, td) {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
   }
 }

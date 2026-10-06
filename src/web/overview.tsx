@@ -324,7 +324,7 @@ export function Overview({
                 <table>
                   <thead>
                     <tr>
-                      <th>Customer</th>
+                      {staff && <th>Customer</th>}
                       <th>Order</th>
                       <th>Status</th>
                       <th>Created</th>
@@ -333,8 +333,12 @@ export function Overview({
                   <tbody>
                     {data.orders.slice(0, 8).map((order) => (
                       <tr key={order.id}>
-                        <td>{accountName(order.account_id)}</td>
-                        <td>
+                        {staff && (
+                          <td data-label="Customer">
+                            {accountName(order.account_id)}
+                          </td>
+                        )}
+                        <td data-label="Order">
                           <button
                             className="record-reference text-action"
                             onClick={() =>
@@ -348,14 +352,16 @@ export function Overview({
                             {order.id.slice(0, 8)}
                           </button>
                         </td>
-                        <td>
+                        <td data-label="Status">
                           <span
                             className={`order-state ${order.state === "open" ? "is-open" : ""}`}
                           >
                             {order.state.replaceAll("_", " ")}
                           </span>
                         </td>
-                        <td>{new Date(order.created_at).toLocaleString()}</td>
+                        <td data-label="Created">
+                          {new Date(order.created_at).toLocaleString()}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

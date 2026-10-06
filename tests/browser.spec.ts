@@ -10328,7 +10328,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
     // last startup read to publish before pagination can be replaced by it.
     await nav(p, "Security");
     await expect(
-      p.getByText(/example\.test · [1-9]\d* active sessions/),
+      p.getByText(/example\.test · [1-9]\d* active sessions?\./),
     ).toBeVisible();
     await nav(p, "Orders", "Shipments");
     const panel = p.getByRole("region", {
