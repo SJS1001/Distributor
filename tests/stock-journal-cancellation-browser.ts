@@ -19,7 +19,12 @@ const exact = (page: Page) =>
     exact: true,
   });
 async function signIn(page: Page, origin = ca, role = "admin") {
-  await page.goto(origin + "/#sign-in");
+  // Same-document navigation to a sign-in route is only meaningful once the
+  // previous principal has been fully signed out.
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
+  await page.goto(origin + "/#admin-sign-in");
   await page.getByLabel("Email", { exact: true }).fill(`${role}@example.test`);
   await page
     .getByLabel("Password", { exact: true })

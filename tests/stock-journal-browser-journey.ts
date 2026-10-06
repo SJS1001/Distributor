@@ -26,7 +26,12 @@ const exact = (page: Page) =>
     exact: true,
   });
 async function signIn(page: Page, role = "finance", url = origin) {
-  await page.goto(url + "/#sign-in");
+  // Same-document navigation to a sign-in route is only meaningful once the
+  // previous principal has been fully signed out.
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
+  await page.goto(url + "/#admin-sign-in");
   await page.getByLabel("Email", { exact: true }).fill(`${role}@example.test`);
   await page
     .getByLabel("Password", { exact: true })
@@ -40,6 +45,21 @@ async function signIn(page: Page, role = "finance", url = origin) {
     page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   await billing(page);
+}
+// Native dashboard facts. Operational analytics stamp each read with its
+// observation time, so only those read-time stamps are excluded.
+async function dashboardFacts(page: Page) {
+  const response = await page.request.get(`${origin}/api/dashboard`);
+  expect(response.status()).toBe(200);
+  const dashboard = await response.json();
+  for (const section of [
+    dashboard.analytics?.orders,
+    dashboard.analytics?.invoices,
+  ])
+    if (section?.period) delete section.period.asOf;
+  if (dashboard.analytics?.invoices)
+    delete dashboard.analytics.invoices.agingAsOf;
+  return dashboard;
 }
 async function billing(page: Page) {
   await navigateAccounting(page, "Stock journals");
@@ -134,9 +154,7 @@ test("browser: journal queue and complete observation pages retry exact cursors 
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, "admin");
-  const before = await (
-    await page.request.get(`${origin}/api/dashboard`)
-  ).json();
+  const before = await dashboardFacts(page);
   await panel(page)
     .getByRole("button", { name: "Load journal queue", exact: true })
     .click();
@@ -177,9 +195,7 @@ test("browser: journal queue and complete observation pages retry exact cursors 
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBeTruthy();
-  expect(
-    await (await page.request.get(`${origin}/api/dashboard`)).json(),
-  ).toEqual(before);
+  expect(await dashboardFacts(page)).toEqual(before);
   const ctx = await browser.newContext(),
     history = await ctx.newPage();
   try {
@@ -232,7 +248,7 @@ test("browser: journal decisions survive lost replies reload and principal chang
 }) => {
   await signIn(page);
   const journal = await ready(page, browser),
-    before = await (await page.request.get(`${origin}/api/dashboard`)).json();
+    before = await dashboardFacts(page);
   await review(page, "Synthetic retained independent rejection");
   const attempts: { key: string; body: string }[] = [];
   await page.route(
@@ -293,9 +309,7 @@ test("browser: journal decisions survive lost replies reload and principal chang
   expect(attempts).toHaveLength(2);
   expect(attempts[1]).toEqual(attempts[0]);
   expect(await retained(page)).toBeNull();
-  expect(
-    await (await page.request.get(`${origin}/api/dashboard`)).json(),
-  ).toEqual(before);
+  expect(await dashboardFacts(page)).toEqual(before);
 });
 
 test("browser: journal storage and coordination failures block transport and fixed reviews reject changed evidence", async ({
@@ -561,6 +575,9 @@ test("browser: journal authority failure retains the original and native pre-eff
     .click();
   await expect(recovery(page).getByRole("alert")).toBeVisible();
   expect(await retained(page)).not.toBeNull();
+  // The browser learns that its server session ended when it next reads the
+  // session; the retained attempt survives that reload.
+  await page.reload();
   await signIn(page);
   // A separate request records a competing decision; the old submitted attempt has no effect.
   const currentSession = await (
@@ -654,9 +671,7 @@ test("browser: malformed journal receipts and cleanup failures retain exact appr
 }) => {
   await signIn(page);
   const journal = await ready(page, browser);
-  const before = await (
-    await page.request.get(`${origin}/api/dashboard`)
-  ).json();
+  const before = await dashboardFacts(page);
   await review(page, "Synthetic independently queued approval", "approve");
   const attempts: { key: string; body: string }[] = [];
   await page.route(
@@ -719,7 +734,5 @@ test("browser: malformed journal receipts and cleanup failures retain exact appr
   expect(current.state).toBe("pending");
   expect(current.observations).toHaveLength(0);
   expect(current.dispatched).toBe(false);
-  expect(
-    await (await page.request.get(`${origin}/api/dashboard`)).json(),
-  ).toEqual(before);
+  expect(await dashboardFacts(page)).toEqual(before);
 });

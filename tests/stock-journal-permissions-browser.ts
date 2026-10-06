@@ -27,7 +27,12 @@ async function billing(p: Page) {
   await expect(panel(p)).toBeVisible();
 }
 async function signIn(p: Page, port: number, role = "admin") {
-  await p.goto(origin(port) + "/#sign-in");
+  // Same-document navigation to a sign-in route is only meaningful once the
+  // previous principal has been fully signed out.
+  await expect(
+    p.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
+  await p.goto(origin(port) + "/#admin-sign-in");
   await p.getByLabel("Email", { exact: true }).fill(`${role}@example.test`);
   await p
     .getByLabel("Password", { exact: true })

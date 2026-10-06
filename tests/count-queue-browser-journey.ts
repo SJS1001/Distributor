@@ -18,7 +18,12 @@ async function login(
   email = "count-queue@example.test",
   count = 20,
 ) {
-  await page.goto(origin + "/#sign-in");
+  // Same-document navigation to a sign-in route is only meaningful once the
+  // previous principal has been fully signed out.
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
+  await page.goto(origin + "/#admin-sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page
     .getByLabel("Password", { exact: true })
@@ -291,7 +296,15 @@ test("browser: support count filters retry exactly, show no mutation controls an
     "rejected",
   );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(q.getByLabel("Count state", { exact: true })).toHaveValue("");
+  // The count state is addressable workspace location, so a workspace refresh
+  // reloads data without discarding the selected filter.
+  await expect(
+    page.getByRole("status").filter({ hasText: "Workspace refreshed." }),
+  ).toBeVisible();
+  await expect(q.getByLabel("Count state", { exact: true })).toHaveValue(
+    "rejected",
+  );
+  expect(new URL(page.url()).hash).toContain("counts=rejected");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await login(page, "count-empty@example.test", 0);
   await expect(q.locator("tbody tr")).toHaveCount(0);
