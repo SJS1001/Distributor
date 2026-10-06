@@ -1,4 +1,7 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import {
+  navigateWorkspace,
+  openVisibleRowActions,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3129";
 async function login(page: Page, email: string) {
@@ -155,6 +158,7 @@ test("browser: warranty policy review on a phone fences stale claim dates and re
       });
     } else await route.continue();
   });
+  await openVisibleRowActions(page);
   await snapshotButton.click();
   const section = page.getByRole("region", {
     name: "Retained claim coverage",
@@ -185,6 +189,7 @@ test("browser: warranty policy review on a phone fences stale claim dates and re
         exact: true,
       }),
     ).toHaveCount(0);
+    await openVisibleRowActions(buyer);
     await buyer
       .getByRole("button", { name: "Claim coverage snapshot", exact: true })
       .click();

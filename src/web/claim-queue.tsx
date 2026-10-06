@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { claimStates, type ClaimState } from "../shared/claim-queue.ts";
 import { request } from "./api.ts";
+import "./operations-lane.css";
 
 type Claim = Record<string, any>;
 type Page = { items: Claim[]; next: string | null };
@@ -148,55 +149,63 @@ export function ClaimQueueControls({
     else pager.current?.focus();
   }, [queue.busy, queue.loaded, queue.next, queue.error]);
   return (
-    <section aria-label="Claim queue">
+    <section
+      className="queue-controls claim-queue-controls"
+      aria-label="Claim queue"
+    >
       <h2 ref={heading} tabIndex={-1}>
         Claim queue
       </h2>
-      <label htmlFor={stateId}>Claim state</label>
-      <select
-        id={stateId}
-        value={queue.state}
-        disabled={!queue.active}
-        onChange={(e) => queue.filter(e.target.value as ClaimState | "")}
-      >
-        <option value="">All states</option>
-        {claimStates.map((state) => (
-          <option key={state} value={state}>
-            {state}
-          </option>
-        ))}
-      </select>
-      <p role="status">
-        {queue.items.length} claims loaded{queue.busy ? " · Loading…" : ""}
-      </p>
       <p>
         Newest recorded claims first. Refresh reloads the queue and its current
         states.
+      </p>
+      <div className="queue-field">
+        <label htmlFor={stateId}>Claim state</label>
+        <select
+          id={stateId}
+          value={queue.state}
+          disabled={!queue.active}
+          onChange={(e) => queue.filter(e.target.value as ClaimState | "")}
+        >
+          <option value="">All states</option>
+          {claimStates.map((state) => (
+            <option key={state} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="queue-field queue-field-actions">
+        <button
+          ref={pager}
+          className="secondary"
+          disabled={
+            !queue.active ||
+            queue.busy ||
+            (queue.loaded && !queue.next && !queue.error)
+          }
+          onClick={() => {
+            restoreFocus.current = true;
+            void queue.load(queue.state, queue.next, queue.loaded);
+          }}
+        >
+          {queue.error
+            ? "Retry claim queue"
+            : queue.loaded && !queue.next
+              ? "All claims loaded"
+              : "Load more claims"}
+        </button>
+      </div>
+      <p role="status">
+        {queue.items.length} {queue.items.length === 1 ? "claim" : "claims"}{" "}
+        loaded{queue.busy ? " · Loading…" : ""}
       </p>
       {queue.error && (
         <p role="alert" className="error">
           {queue.error}
         </p>
       )}
-      <button
-        ref={pager}
-        className="secondary"
-        disabled={
-          !queue.active ||
-          queue.busy ||
-          (queue.loaded && !queue.next && !queue.error)
-        }
-        onClick={() => {
-          restoreFocus.current = true;
-          void queue.load(queue.state, queue.next, queue.loaded);
-        }}
-      >
-        {queue.error
-          ? "Retry claim queue"
-          : queue.loaded && !queue.next
-            ? "All claims loaded"
-            : "Load more claims"}
-      </button>
     </section>
   );
 }

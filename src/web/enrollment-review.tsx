@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
+import "./operations-lane.css";
 import { Modal, type Dialog } from "./modal.tsx";
 import type {
   EnrollmentApplication,
@@ -186,7 +187,7 @@ export function EnrollmentReview() {
   };
   return (
     <section className="panel">
-      <div className="section-heading">
+      <div className="section-heading ops-section-header">
         <div>
           <h2>Trade account applications</h2>
           <p>
@@ -320,7 +321,9 @@ export function EnrollmentReview() {
                     )}
                   </td>
                   <td>
-                    <strong>{application.status}</strong>
+                    <span className="ops-state" data-state={application.status}>
+                      {application.status}
+                    </span>
                     {application.reviewReason && (
                       <p className="enrollment-notes">
                         {application.reviewReason}
@@ -402,24 +405,29 @@ export function EnrollmentReview() {
           </table>
         </div>
       ) : (
-        <p>No trade account applications yet.</p>
+        <p className="empty">
+          No trade account applications yet. Applications submitted from the
+          public trade account form appear here for review.
+        </p>
       )}
-      <div className="actions">
-        <button
-          className="secondary"
-          disabled={busy || !after.current}
-          onClick={() => void load()}
-        >
-          First page
-        </button>
-        <button
-          className="secondary"
-          disabled={busy || !queue?.next}
-          onClick={() => void load(queue?.next ?? null)}
-        >
-          Next applications
-        </button>
-      </div>
+      {(after.current || queue?.next) && (
+        <div className="actions">
+          <button
+            className="secondary"
+            disabled={busy || !after.current}
+            onClick={() => void load()}
+          >
+            First page
+          </button>
+          <button
+            className="secondary"
+            disabled={busy || !queue?.next}
+            onClick={() => void load(queue?.next ?? null)}
+          >
+            Next applications
+          </button>
+        </div>
+      )}
       {dialog && (
         <Modal
           dialog={dialog}

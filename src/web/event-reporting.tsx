@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
+import "./operations-lane.css";
 
 export type Delivery = {
   event_id: string;
@@ -150,7 +151,7 @@ export function EventReporting({
     };
   }, []);
   return (
-    <section className="panel" aria-label="Event reporting">
+    <section className="panel ops-events" aria-label="Event reporting">
       <h2 ref={heading} tabIndex={-1}>
         Local event reporting
       </h2>
@@ -169,7 +170,9 @@ export function EventReporting({
         </p>
       )}
       <p role="status">
-        {data?.items.length ?? 0} deliveries loaded{busy ? " · Loading…" : ""}
+        {data?.items.length ?? 0}{" "}
+        {data?.items.length === 1 ? "delivery" : "deliveries"} loaded
+        {busy ? " · Loading…" : ""}
       </p>
       {data && (
         <>
@@ -179,18 +182,31 @@ export function EventReporting({
               are unavailable.
             </p>
           )}
-          <p>
-            {data.pending.count} unclaimed events
-            {data.pending.oldest ? ` · Oldest ${data.pending.oldest}` : ""}
-          </p>
-          <ul aria-label="Delivery totals">
+          <dl className="record-figures ops-figures">
+            <div>
+              <dt>Unclaimed events</dt>
+              <dd>{data.pending.count}</dd>
+            </div>
+            <div>
+              <dt>Oldest unclaimed</dt>
+              <dd>{data.pending.oldest ?? "None"}</dd>
+            </div>
+          </dl>
+          <ul aria-label="Delivery totals" className="ops-chips">
             {data.totals.map((total) => (
               <li key={total.state}>
                 {stateName(total.state)}: {total.count}
               </li>
             ))}
           </ul>
-          {!data.items.length && <p>No event deliveries are recorded.</p>}
+          {!data.items.length && (
+            <p className="empty">
+              No event deliveries are recorded.{" "}
+              {data.pending.count
+                ? "Unclaimed events are delivered once a local worker is enabled; use Refresh after worker activity."
+                : "Deliveries appear here after events are processed."}
+            </p>
+          )}
           {!!data.items.length && (
             <div className="table-wrap">
               <table>

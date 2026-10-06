@@ -1,0 +1,373 @@
+/* System & controls and Returns: cards, figure strips, states and row actions.
+   Builds on the shared queue/record patterns in style.css. */
+
+/* Section header: title + explanation on the left, primary actions on the right. */
+.ops-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.ops-section-header h2 {
+  margin: 0 0 6px;
+}
+.ops-section-header p {
+  margin: 4px 0 0;
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  max-width: 78ch;
+  line-height: 1.55;
+}
+.ops-section-header > button,
+.ops-header-actions {
+  flex: none;
+}
+.ops-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.ops-note {
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  line-height: 1.55;
+  margin: var(--space-2) 0;
+}
+.ops-banner {
+  margin: var(--space-3) 0;
+  padding: 10px 14px;
+  border-radius: 7px;
+  background: #e8f1ea;
+  color: #1d5c32;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+}
+.ops-banner[data-tone="attention"] {
+  background: #fff2db;
+  color: #7a5214;
+}
+
+/* Figure strips reuse .record-figures; let them size to their item count. */
+.record-figures.ops-figures {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin: var(--space-3) 0;
+}
+.ops-figures dd time {
+  font-size: var(--text-secondary);
+}
+.ops-figure-attention {
+  background: #fff8ea;
+}
+
+/* Status pill for claim, user and application states. */
+.ops-state {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  background: #eef2f6;
+  color: #34475e;
+  white-space: nowrap;
+}
+.ops-state[data-state="active"],
+.ops-state[data-state="approved"],
+.ops-state[data-state="activated"],
+.ops-state[data-state="disposed"],
+.ops-state[data-state="closed"] {
+  background: #e8f1ea;
+  color: #1d5c32;
+}
+.ops-state[data-state="submitted"],
+.ops-state[data-state="pending"],
+.ops-state[data-state="received"],
+.ops-state[data-state="inspected"],
+.ops-state[data-state="repair"] {
+  background: #fff2db;
+  color: #7a5214;
+}
+.ops-state[data-state="inactive"],
+.ops-state[data-state="rejected"],
+.ops-state[data-state="denied"] {
+  background: #fbecea;
+  color: #953d33;
+}
+
+/* Two-line cells: primary text, muted secondary line. */
+.ops-person,
+.ops-record-id {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+.ops-person small,
+.ops-record-id small {
+  margin-top: 0;
+  white-space: normal;
+}
+.ops-record-id code,
+.ops-id {
+  font-size: var(--text-caption);
+  color: #4b5f78;
+  background: #f3f6fa;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.ops-action {
+  font-size: var(--text-caption);
+  color: #23498e;
+}
+.ops-time {
+  white-space: nowrap;
+}
+.ops-time span {
+  color: #5a6c82;
+}
+
+/* One visible primary row command, the rest behind "Actions". */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.row-actions > button {
+  white-space: nowrap;
+}
+.row-actions > details.stock-actions {
+  order: 1;
+}
+.claim-actions[open] {
+  max-width: 360px;
+}
+.claim-actions section[aria-label="Retained claim coverage"] {
+  margin-top: var(--space-2);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fafc;
+  font-size: var(--text-secondary);
+}
+.claim-actions section[aria-label="Retained claim coverage"] h3 {
+  margin: 0 0 6px;
+  font-size: var(--text-control);
+}
+.claim-issue {
+  display: block;
+  max-width: 40ch;
+}
+.claim-queue-controls {
+  margin-bottom: var(--space-3);
+}
+
+/* Cards stacked inside a page panel. */
+.ops-card,
+.ops-control,
+.ops-queue {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  min-width: 0;
+}
+.ops-card h3,
+.ops-control h3,
+.ops-queue h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.ops-control {
+  margin-top: var(--space-4);
+}
+.ops-section {
+  margin-top: 0;
+}
+
+/* Security: three task cards. */
+.ops-security-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+  margin-top: var(--space-4);
+}
+.ops-security-grid form {
+  display: grid;
+  gap: var(--space-3);
+}
+.ops-security-grid form > button {
+  justify-self: start;
+}
+
+/* Operations health: queue cards with quiet empty states. */
+.ops-queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  align-items: start;
+}
+.ops-queue[data-empty="true"] {
+  background: #fafbfc;
+}
+.ops-queue[data-empty="true"] h3 {
+  color: #4b5f78;
+}
+.ops-queue[data-attention="true"] {
+  border-color: #e3c27f;
+  box-shadow: inset 3px 0 0 #d39a2c;
+}
+.ops-queue .ops-note {
+  margin: 4px 0;
+}
+.ops-queue-facts {
+  margin: 8px 0;
+  display: grid;
+  gap: 4px;
+}
+.ops-queue-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-secondary);
+}
+.ops-queue-facts dt {
+  color: #5a6c82;
+  flex: 1;
+}
+.ops-queue-facts dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.ops-queue-states {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.ops-queue-states li {
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+  font-size: var(--text-secondary);
+}
+.ops-queue-states li p {
+  margin: 4px 0 0;
+  color: #5a6c82;
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+
+/* Reconciliation discrepancies and saved reports. */
+.ops-discrepancies {
+  margin-top: var(--space-3);
+  padding: 10px 14px;
+  border-radius: 7px;
+  background: #f1f7f2;
+}
+.ops-discrepancies[data-state="attention"] {
+  background: #fff6e6;
+  border: 1px solid #ecd3a3;
+}
+.ops-discrepancies h4 {
+  margin: 0;
+  font-size: var(--text-control);
+}
+.ops-discrepancies p {
+  margin: 4px 0 0;
+  font-size: var(--text-secondary);
+}
+.ops-discrepancies ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.ops-report-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.ops-report-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 12px;
+}
+.ops-report-list li p {
+  margin: 0;
+  font-size: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Event reporting totals as chips. */
+.ops-chips {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.ops-chips li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #34475e;
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+.ops-chips:empty {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .ops-section-header {
+    flex-direction: column;
+  }
+  .ops-header-actions {
+    justify-content: flex-start;
+  }
+  .ops-header-actions button,
+  .ops-section-header > button,
+  .row-actions > button,
+  .ops-report-list button {
+    min-height: 44px;
+  }
+  .record-figures.ops-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ops-queue-grid,
+  .ops-security-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Figure strips that wrap: each cell draws its own right/bottom divider and the
+   strip clips the outer edge, so partial rows stay clean. */
+.record-figures.ops-figures {
+  overflow: hidden;
+}
+.record-figures.ops-figures > div,
+.record-figures.ops-figures > div:last-child {
+  border: 0;
+  box-shadow:
+    1px 0 0 var(--line),
+    0 1px 0 var(--line);
+}
+.ops-control > p:not(.ops-note):not(.empty) {
+  color: #5a6c82;
+  font-size: var(--text-secondary);
+  line-height: 1.55;
+}

@@ -3211,6 +3211,7 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     expect(denied.status()).toBe(401);
     await status(true);
     await signIn(worker, email, changed);
+    await openStockActions(row);
     await row
       .getByRole("button", {
         name: "Reset password: Browser lifecycle operator",
@@ -3235,6 +3236,7 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     await signIn(second, email, final);
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(row).toContainText("v7");
+    await openStockActions(row);
     await row
       .getByRole("button", {
         name: "Revoke sessions: Browser lifecycle operator",
@@ -7274,12 +7276,12 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
   const open = async () => {
     await page.reload();
     await nav(page, "Returns");
-    await page
+    const claimRow = page
       .getByRole("row")
       .filter({ hasText: claim.id.slice(0, 8) })
-      .filter({
-        has: page.getByRole("button", { name: "Evidence files", exact: true }),
-      })
+      .filter({ has: page.locator("details.stock-actions") });
+    await openStockActions(claimRow);
+    await claimRow
       .getByRole("button", { name: "Evidence files", exact: true })
       .click();
   };
@@ -7412,9 +7414,7 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
     page
       .getByRole("row")
       .filter({ hasText: claim.id.slice(0, 8) })
-      .filter({
-        has: page.getByRole("button", { name: "Evidence files", exact: true }),
-      })
+      .filter({ has: page.locator("details.stock-actions") })
       .getByRole("button", { name: "Evidence files", exact: true }),
   ).toBeFocused();
   expect(
@@ -7442,12 +7442,12 @@ test("browser: claim evidence retries across reload, verifies downloads and keep
     .fill("long-evidence-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await nav(page, "Returns");
-  await page
+  const buyerClaimRow = page
     .getByRole("row")
     .filter({ hasText: claim.id.slice(0, 8) })
-    .filter({
-      has: page.getByRole("button", { name: "Evidence files", exact: true }),
-    })
+    .filter({ has: page.locator("details.stock-actions") });
+  await openStockActions(buyerClaimRow);
+  await buyerClaimRow
     .getByRole("button", { name: "Evidence files", exact: true })
     .click();
   await expect(panel).toContainText("10 files loaded");
@@ -10328,7 +10328,7 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
     // last startup read to publish before pagination can be replaced by it.
     await nav(p, "Security");
     await expect(
-      p.getByText(/example\.test · [1-9]\d* active sessions/),
+      p.getByText(/example\.test · [1-9]\d* active sessions?\./),
     ).toBeVisible();
     await nav(p, "Orders", "Shipments");
     const panel = p.getByRole("region", {
@@ -12717,22 +12717,25 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
   expect(dashboardReads).toHaveLength(1);
   await nav(page, "Returns");
   expect(reads).toEqual([]);
-  const opener = (id: string) =>
+  const activityRow = (id: string) =>
     page
       .getByRole("row")
       .filter({ hasText: id.slice(0, 8) })
-      .filter({
-        has: page.getByRole("button", {
-          name: "Claim activity",
-          exact: true,
-        }),
-      })
-      .getByRole("button", { name: "Claim activity", exact: true });
+      .filter({ has: page.locator("details.stock-actions") });
+  const opener = (id: string) =>
+    activityRow(id).getByRole("button", {
+      name: "Claim activity",
+      exact: true,
+    });
+  const openActivity = async (id: string) => {
+    await openStockActions(activityRow(id));
+    await opener(id).click();
+  };
   const panel = page.getByRole("region", {
     name: "Claim activity",
     exact: true,
   });
-  await opener(claim.id).click();
+  await openActivity(claim.id);
   await expect(panel.getByRole("heading")).toBeFocused();
   await expect(panel.getByRole("status")).toHaveText("20 records loaded");
   await expect(panel).toContainText("Private decision approval");
@@ -12807,9 +12810,9 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
     .getByRole("button", { name: "Close claim activity", exact: true })
     .click();
   await expect(opener(claim.id)).toBeFocused();
-  await opener(claim.id).click();
+  await openActivity(claim.id);
   await expect(panel.getByRole("status")).toHaveText("20 records loaded");
-  await opener(second.id).click();
+  await openActivity(second.id);
   await expect(panel.getByRole("status")).toHaveText("1 record loaded");
   await expect(panel).toContainText("submitted");
   await expect(panel).toContainText("Synthetic second claim");
@@ -12830,7 +12833,7 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
     const aborted = page.waitForEvent("requestfailed", {
       predicate: (r) => r.url().endsWith(path),
     });
-    await opener(claim.id).click();
+    await openActivity(claim.id);
     await started;
     if (exit === "close")
       await panel
@@ -12866,7 +12869,7 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
-  await opener(claim.id).click();
+  await openActivity(claim.id);
   await expect(panel.getByRole("status")).toHaveText("20 records loaded");
   await expect(
     panel.getByRole("columnheader", { name: "Detail", exact: true }),

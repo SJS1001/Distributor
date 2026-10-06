@@ -359,6 +359,7 @@ test.describe("file delivery abandonment", () => {
       const reviewFile = async () => {
         if (kind === "evidence") {
           await nav(page, "Returns");
+          await openVisibleRowActions(page);
           await page
             .getByRole("button", { name: "Evidence files", exact: true })
             .click();
