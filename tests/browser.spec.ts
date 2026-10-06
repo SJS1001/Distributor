@@ -38,6 +38,11 @@ import "./catalog-lifecycle-browser-journey.ts";
 import "./react-render-browser-journey.ts";
 import "./catalog-entry-browser-journey.ts";
 import { stockFactsDashboard } from "./stock-browser-facts.ts";
+import {
+  expectSessionsEndedAtSignIn,
+  navigateBuyer,
+  returnToSignIn,
+} from "./browser-spec-a-support.ts";
 import "./customer-pricing-browser-journey.ts";
 import "./cart-recovery-browser-journey.ts";
 import "./stock-queue-browser-journey.ts";
@@ -69,7 +74,7 @@ test("browser: checkout rechecks stale balance, refreshes expiry, cancels naviga
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  const login = async (p: Page, email: string) => {
+  const login = async (p: Page, email: string, home = "Overview") => {
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
@@ -80,8 +85,9 @@ test("browser: checkout rechecks stale balance, refreshes expiry, cancels naviga
     );
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
     const csrf = (await (await reply).json()).csrf;
+    // Staff open Overview; buyers open the Shop customer workspace.
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
     return csrf;
   };
@@ -92,8 +98,8 @@ test("browser: checkout rechecks stale balance, refreshes expiry, cancels naviga
   const admin = await adminContext.newPage();
   try {
     const csrf = await login(admin, "admin@example.test");
-    await login(page, "checkout-buyer@example.test");
-    await nav(page, "Billing", "Provider activity");
+    await login(page, "checkout-buyer@example.test", "Shop");
+    await navigateBuyer(page, "Billing", "Provider activity");
     const effects = await (await page.request.get("/api/effects")).json();
     expect(effects).toHaveLength(3);
     expect(effects.every((e: any) => e.result === null)).toBe(true);
@@ -160,7 +166,7 @@ test("browser: checkout rechecks stale balance, refreshes expiry, cancels naviga
       }),
     ).toBeVisible();
     await page.reload();
-    await nav(page, "Billing", "Provider activity");
+    await navigateBuyer(page, "Billing", "Provider activity");
     await expect(checkoutRow(page, stale)).toContainText(
       "no amount left to pay",
     );
@@ -189,12 +195,12 @@ test("browser: checkout rechecks stale balance, refreshes expiry, cancels naviga
       .getByRole("button", { name: "Open secure checkout", exact: true })
       .click();
     await started;
-    await nav(page, "Overview");
+    await navigateBuyer(page, "Overview");
     await failed;
     finish();
     await handlerDone;
     await page.unroute(path);
-    await nav(page, "Billing", "Provider activity");
+    await navigateBuyer(page, "Billing", "Provider activity");
     await expect(
       checkoutRow(page, pending).getByRole("button", {
         name: "Open secure checkout",
@@ -513,6 +519,7 @@ test("browser: supplier finance follows credit, received replacement, reviewed c
     state: "open",
   });
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await returnToSignIn(page);
   await login(false);
   await nav(page, "Purchasing", "Receipts & returns");
   // Finance commands live in a disclosure; assert the disclosure itself is
@@ -542,10 +549,11 @@ test("browser: named carrier choices preserve legacy warning, retry once, reload
     .getByLabel("Password", { exact: true })
     .fill("long-test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  // Buyers open Shop and keep residency choices on their Account page.
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Shop", exact: true }),
   ).toBeVisible();
-  await nav(page, "Customers");
+  await navigateBuyer(page, "Account");
   await expect(
     page.getByText(/Previous carrier exception needs review/),
   ).toBeVisible();
@@ -601,7 +609,7 @@ test("browser: named carrier choices preserve legacy warning, retry once, reload
     "canada-post",
   ]);
   await page.reload();
-  await nav(page, "Customers");
+  await navigateBuyer(page, "Account");
   await choose();
   for (const name of labels) {
     if (["UPS", "Canada Post"].includes(name))
@@ -642,16 +650,26 @@ test("browser: refund notices page safely, retain personal reads after a lost re
   browser,
 }) => {
   const errors: string[] = [];
-  const login = async (p: Page, email: string, password: string) => {
+  const login = async (
+    p: Page,
+    email: string,
+    password: string,
+    buyer = false,
+  ) => {
     p.on("pageerror", (e) => errors.push(e.message));
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
+    // Staff open Overview; buyers open Shop and use the customer portal menu.
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", {
+        name: buyer ? "Shop" : "Overview",
+        exact: true,
+      }),
     ).toBeVisible();
-    await nav(p, "Billing", "Invoices");
+    if (buyer) await navigateBuyer(p, "Billing", "Invoices");
+    else await nav(p, "Billing", "Invoices");
   };
   const inbox = (p: Page) =>
     p.getByRole("region", { name: "Refund notices", exact: true });
@@ -779,6 +797,7 @@ test("browser: refund notices page safely, retain personal reads after a lost re
       buyer,
       "refund-buyer@example.test",
       "long-notice-test-password",
+      true,
     );
     const personal = await notices(buyer);
     expect(personal.unread).toBe(27);
@@ -810,13 +829,14 @@ test("browser: refund notices page safely, retain personal reads after a lost re
       .click();
     await expect(buyerRow).toContainText("Read by you");
     await buyer.reload();
-    await nav(buyer, "Billing", "Invoices");
+    await navigateBuyer(buyer, "Billing", "Invoices");
     await expect(buyerRow).toContainText("Read by you");
     expect((await notices(buyer)).unread).toBe(26);
     await login(
       other,
       "refund-other@example.test",
       "long-notice-test-password",
+      true,
     );
     expect((await notices(other)).items).toEqual([]);
     expect(
@@ -955,14 +975,19 @@ test("browser: audit history traverses older pages, retains retries and cancels 
   browser,
 }) => {
   const errors: string[] = [];
-  const login = async (p: Page, email: string, password: string) => {
+  const login = async (
+    p: Page,
+    email: string,
+    password: string,
+    home = "Overview",
+  ) => {
     p.on("pageerror", (e) => errors.push(e.message));
     await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p.getByLabel("Password", { exact: true }).fill(password);
     await p.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(
-      p.getByRole("heading", { name: "Overview", exact: true }),
+      p.getByRole("heading", { name: home, exact: true }),
     ).toBeVisible();
   };
   await login(page, "event-admin@example.test", "long-event-test-password");
@@ -1110,18 +1135,30 @@ test("browser: audit history traverses older pages, retains retries and cancels 
         .getByRole("region", { name: "Audit history", exact: true })
         .locator("tbody tr"),
     ).toHaveCount(20);
+    // Buyers open Shop; their sign-in security lives on Account and the
+    // customer portal offers no System & controls pages or Audit history.
     await login(
       buyer,
       "refund-buyer@example.test",
       "long-notice-test-password",
+      "Shop",
     );
-    await nav(buyer, "Security");
+    await navigateBuyer(buyer, "Account");
+    await expect(
+      buyer.getByRole("heading", {
+        name: "Your sign-in security",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      buyer.getByRole("navigation", {
+        name: "System & controls pages",
+        exact: true,
+      }),
+    ).toHaveCount(0);
     await expect(
       buyer
-        .getByRole("navigation", {
-          name: "System & controls pages",
-          exact: true,
-        })
+        .getByRole("navigation", { name: "Workspace", exact: true })
         .getByRole("button", { name: "Audit history", exact: true }),
     ).toHaveCount(0);
     expect((await buyer.request.get(endpoint)).status()).toBe(403);
@@ -1218,6 +1255,11 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
   const before = await stockFactsDashboard(page),
     eq = before.products.find((p: any) => p.sku === "EQ-1");
   await nav(page, "Imports");
+  // Imports now groups each review under its own section tab.
+  await page
+    .getByRole("tablist", { name: "Import sections", exact: true })
+    .getByRole("tab", { name: "Customers and catalog", exact: true })
+    .click();
   const rows = [
     {
       sourceId: "BROWSER-C-1",
@@ -1381,6 +1423,11 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
   expect(after.invoices).toEqual(before.invoices);
   await page.reload();
   await nav(page, "Imports");
+  // Imports now groups each review under its own section tab.
+  await page
+    .getByRole("tablist", { name: "Import sections", exact: true })
+    .getByRole("tab", { name: "Customers and catalog", exact: true })
+    .click();
   await expect(customers).toContainText("applied");
   await expect(catalog).toContainText("applied");
   const batches = await (await page.request.get("/api/imports/masters")).json();
@@ -1394,6 +1441,7 @@ test("browser: reviewed customer/catalog imports retain rejects, explicit matche
       .result.mappings.map((m: any) => m.action),
   ).toEqual(["match", "create"]);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await returnToSignIn(page);
   await page.getByLabel("Email", { exact: true }).fill("source@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -1585,6 +1633,7 @@ test("browser: opening dry runs reconcile independent totals and apply serial/bu
     batches.find((b: any) => b.batchRef === "BROWSER-OPEN-BLOCKED").state,
   ).toBe("rejected");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await returnToSignIn(page);
   await page.getByLabel("Email", { exact: true }).fill("source@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -1935,8 +1984,10 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
       has: page.locator('summary[aria-label^="Actions for invoice"]'),
     })
     .filter({ hasText: invoice.number });
+  // Total and balance both show CA$169.50; the total cell also carries the
+  // recorded shipping-terms summary beneath the amount.
   await expect(
-    invoiceRow.getByRole("cell", { name: "CA$169.50", exact: true }),
+    invoiceRow.getByRole("cell", { name: /^CA\$169\.50(?: |$)/ }),
   ).toHaveCount(2);
   await (
     await withRowActions(invoiceRow)
@@ -1945,11 +1996,15 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
     .click();
   await expect(page.getByRole("alert")).toContainText("RESIDENCY_BLOCKED");
   await nav(page, "Customers");
+  // Staff open the customer record; residency choices live on its Terms tab.
   await page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("cell", { name: "Synthetic buyer", exact: true }),
-    })
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
+  await page
+    .getByRole("tablist", { name: "Customer record sections", exact: true })
+    .getByRole("tab", { name: "Terms", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Residency choice", exact: true })
     .click();
   await page
@@ -2078,11 +2133,15 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Customers");
+  // Staff open the customer record; residency choices live on its Terms tab.
   await page
-    .getByRole("row")
-    .filter({
-      has: page.getByRole("cell", { name: "Synthetic buyer", exact: true }),
-    })
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
+  await page
+    .getByRole("tablist", { name: "Customer record sections", exact: true })
+    .getByRole("tab", { name: "Terms", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Residency choice", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -2531,6 +2590,7 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await nav(page, "Inventory", "Cycle counts");
   await expect(count).toContainText("6 expected · 5 observed");
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await returnToSignIn(page);
   await login(true);
   await nav(page, "Inventory", "Cycle counts");
   let lost = false;
@@ -2721,6 +2781,7 @@ test("browser: supplier handover retries one physical removal, preserves purchas
     4000,
   );
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await returnToSignIn(page);
   await login(false);
   await expect(history).toContainText("Supplier credit pending");
   await expect(
@@ -2748,6 +2809,11 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
     product = before.products.find((p: any) => p.sku === "EQ-1"),
     effectsBefore = await (await page.request.get("/api/effects")).json();
   await nav(page, "Imports");
+  // Imports now groups each review under its own section tab.
+  await page
+    .getByRole("tablist", { name: "Import sections", exact: true })
+    .getByRole("tab", { name: "Unpaid documents", exact: true })
+    .click();
   const rows = [
     {
       sourceId: "BROWSER-DOC-1",
@@ -2861,6 +2927,11 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
   await expect(blocked).toContainText("rejected");
   await page.reload();
   await nav(page, "Imports");
+  // Imports now groups each review under its own section tab.
+  await page
+    .getByRole("tablist", { name: "Import sections", exact: true })
+    .getByRole("tab", { name: "Unpaid documents", exact: true })
+    .click();
   await expect(review).toContainText("applied");
   const batches = await (
       await page.request.get("/api/imports/documents")
@@ -2952,6 +3023,7 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
   expect(csv).toContain('"origin","source_ref","source_id","cutoff_at"');
   expect(csv).toContain('"BROWSER-DOCUMENTS-CUTOFF","BROWSER-DOC-1"');
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await returnToSignIn(page);
   await page.getByLabel("Email", { exact: true }).fill("source@example.test");
   await page
     .getByLabel("Password", { exact: true })
@@ -3163,12 +3235,8 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     await p
       .getByRole("button", { name: "Change password", exact: true })
       .click();
-    await expect(
-      p.getByRole("heading", {
-        name: "Sign in to your workspace",
-        exact: true,
-      }),
-    ).toBeVisible();
+    // The ended session returns the open sign-in route to its credentials form.
+    await expectSessionsEndedAtSignIn(p);
   };
   await signIn(page, "admin@example.test", "long-test-only-password");
   await nav(page, "Administration");
@@ -3334,12 +3402,7 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
       .getByRole("dialog")
       .getByRole("button", { name: "End sessions", exact: true })
       .click();
-    await expect(
-      worker.getByRole("heading", {
-        name: "Sign in to your workspace",
-        exact: true,
-      }),
-    ).toBeVisible();
+    await expectSessionsEndedAtSignIn(worker);
     expect((await worker.request.get("/api/session")).status()).toBe(401);
     expect(errors).toEqual([]);
   } finally {
@@ -3610,8 +3673,16 @@ test("browser: camera fallback, Enter suffix and cancelled pending access preser
     name: "Scanner for Scan or enter serial",
     exact: true,
   });
+  // A missing native BarcodeDetector now falls back to the bundled decoder, so
+  // camera scanning is unavailable only when the browser offers no camera API.
   await page.evaluate(() => {
     (window as any).BarcodeDetector = undefined;
+    const harness = (window as any).__scanHarness;
+    harness.getUserMedia = navigator.mediaDevices.getUserMedia;
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: undefined,
+    });
   });
   await scanner
     .getByRole("button", { name: "Scan with camera", exact: true })
@@ -3620,6 +3691,13 @@ test("browser: camera fallback, Enter suffix and cancelled pending access preser
   expect(
     await page.evaluate(() => (window as any).__scanHarness.requests),
   ).toBe(0);
+  await page.evaluate(() => {
+    const harness = (window as any).__scanHarness;
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      configurable: true,
+      value: harness.getUserMedia,
+    });
+  });
   await page.getByLabel("Scan or enter serial", { exact: true }).fill("S1");
   await page.getByLabel("Scan or enter serial", { exact: true }).press("Enter");
   await expect(
@@ -3728,6 +3806,16 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     serialized: false,
     unitPrice: 10000,
     taxBasisPoints: 1300,
+  });
+  // Per-customer purchasing approval now rejects products the account is not
+  // approved for, so grant explicit synthetic permission for this fixture.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const dashboard = await stockFactsDashboard(page);
   const warehouseId = dashboard.warehouses[0].id;
@@ -3888,14 +3976,10 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
       await p
         .getByRole("button", { name: "Change password", exact: true })
         .click();
-      await expect(
-        p.getByRole("heading", {
-          name: "Sign in to your workspace",
-          exact: true,
-        }),
-      ).toBeVisible();
-      await signIn(p, `inbox-${suffix}@example.test`, password);
-      await nav(p, "Billing", "Invoices");
+      await expectSessionsEndedAtSignIn(p);
+      // Buyers open Shop and reach invoices from the customer portal menu.
+      await signIn(p, `inbox-${suffix}@example.test`, password, "Shop");
+      await navigateBuyer(p, "Billing", "Invoices");
     };
     await loginBuyer(buyer, "buyer");
     const otherContext = await browser.newContext();
@@ -4090,7 +4174,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     await expect(buyer.getByRole("alert")).toContainText("DOCUMENT_WITHDRAWN");
     await expect(buyer.getByRole("dialog")).toHaveCount(0);
     await buyer.reload();
-    await nav(buyer, "Billing", "Invoices");
+    await navigateBuyer(buyer, "Billing", "Invoices");
     await expect(
       buyer.getByRole("button", { name: "Download received PDF", exact: true }),
     ).toHaveCount(0);
@@ -4164,7 +4248,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     expect(creditPub.kind).toBe("credit");
     expect(creditPub.content_hash).toBe(creditHash);
     await buyer.reload();
-    await nav(buyer, "Billing", "Invoices");
+    await navigateBuyer(buyer, "Billing", "Invoices");
     const buyerCredit = buyer
       .getByRole("row")
       .filter({
@@ -4257,7 +4341,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
       staffInbox.getByRole("row").filter({ hasText: invoice.number }),
     ).toHaveCount(0);
     await buyer.reload();
-    await nav(buyer, "Billing", "Invoices");
+    await navigateBuyer(buyer, "Billing", "Invoices");
     const buyerInbox = buyer.getByRole("region", {
       name: "Customer document inbox",
       exact: true,
@@ -4382,7 +4466,7 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
     ).toContainText("does not confirm payment or agreement");
     // A colleague sees no personal requests for this same publication.
     await colleague.reload();
-    await nav(colleague, "Billing");
+    await navigateBuyer(colleague, "Billing");
     const colleagueInbox = colleague.getByRole("region", {
       name: "Customer document inbox",
       exact: true,
@@ -4506,6 +4590,16 @@ test("browser: manual manufacturer history recovers lost responses, rejects stal
     serialized: true,
     unitPrice: 10000,
     taxBasisPoints: 1300,
+  });
+  // Per-customer purchasing approval now rejects products the account is not
+  // approved for, so grant explicit synthetic permission for this fixture.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const initial = await dashboard();
   const warehouseId = initial.warehouses[0].id;
@@ -4784,6 +4878,16 @@ test("browser: replacement collection retries, cancellation, scan validation and
     serialized: true,
     unitPrice: 10000,
     taxBasisPoints: 1300,
+  });
+  // Per-customer purchasing approval now rejects products the account is not
+  // approved for, so grant explicit synthetic permission for this fixture.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const initial = await dashboard();
   const warehouseId = initial.warehouses[0].id;
@@ -5108,6 +5212,16 @@ test("browser: credited cash refund request and bank verification retry one rese
     unitPrice: 10000,
     taxBasisPoints: 1300,
   });
+  // Per-customer purchasing approval now rejects products the account is not
+  // approved for, so grant explicit synthetic permission for this fixture.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
+  });
   const initial = await stockFactsDashboard(page),
     warehouseId = initial.warehouses[0].id;
   const purchases = await (await page.request.get("/api/purchases")).json();
@@ -5328,6 +5442,16 @@ test("browser: accounting invoice, cash and credit queues retry lost responses a
     serialized: true,
     unitPrice: 10000,
     taxBasisPoints: 1300,
+  });
+  // Per-customer purchasing approval now rejects products the account is not
+  // approved for, so grant explicit synthetic permission for this fixture.
+  await cmd("catalog.purchasing.set", {
+    accountId: account.id,
+    mode: "selected",
+    requiresReview: false,
+    productIds: [product.id],
+    revision: 0,
+    reason: "Explicit synthetic browser fixture purchasing permission",
   });
   const initial = await stockFactsDashboard(page),
     warehouseId = initial.warehouses[0].id;
@@ -6096,6 +6220,10 @@ test("browser: authenticator setup retries, required second factor, recovery reu
   expect((await page.request.get("/api/session")).status()).toBe(401);
   await page.unroute("**/api/security/mfa/confirm");
   // Reload recovers the actual server state after the committed response was lost.
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Sign out", exact: true }),
+  ).toHaveCount(0);
   await enterPassword(page);
   const signInCode = page.getByLabel("Authenticator or recovery code", {
     exact: true,
@@ -6135,11 +6263,13 @@ test("browser: authenticator setup retries, required second factor, recovery reu
     await panel
       .getByRole("button", { name: "Remove authenticator", exact: true })
       .click();
+    // This page was reloaded on a workspace location, so ending its sessions
+    // closes the workspace and returns to the public entrance.
     await expect(
-      page.getByRole("heading", {
-        name: "Sign in to your workspace",
-        exact: true,
-      }),
+      page.getByRole("button", { name: "Sign out", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("navigation", { name: "Public navigation", exact: true }),
     ).toBeVisible();
     expect((await second.request.get("/api/session")).status()).toBe(401);
     expect((await page.request.get("/api/session")).status()).toBe(401);
