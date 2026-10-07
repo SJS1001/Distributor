@@ -155,6 +155,94 @@ test("320px staff customer label passes actual cascade contrast and retains cred
   await screenshot(page, "customer-record-320");
 });
 
+test("320px staff Security contains current and other session recognition, legacy unknown details and reachable End controls", async ({
+  page,
+  browser,
+}) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  const other = await browser.newContext({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36",
+  });
+  try {
+    const otherPage = await other.newPage();
+    await adaptWebkitHttp(otherPage);
+    await login(otherPage);
+    // Native sign-ins supply the current/other recognition records. Only the
+    // legacy presentation row is synthetic: historical sessions have no dates
+    // or device attribution. No session-ending command is submitted here.
+    const legacyReference = "f".repeat(32);
+    await page.route("**/api/security", async (route) => {
+      const response = await route.fetch();
+      const security = await response.json();
+      security.sessionDetails.push({
+        label: "Synthetic historical session",
+        reference: legacyReference,
+        expiresAt: Date.now() + 3600000,
+        current: false,
+        createdAt: null,
+        lastActivityAt: null,
+        deviceDescription: null,
+      });
+      security.sessions += 1;
+      await route.fulfill({ response, json: security });
+    });
+    await login(page);
+    await navigateWorkspace(page, "Security");
+    const sessions = page.getByRole("list", {
+      name: "Your active sessions",
+      exact: true,
+    });
+    const current = sessions.getByRole("listitem").filter({
+      hasText: "This session",
+    });
+    const recognizedOther = sessions
+      .getByRole("listitem")
+      .filter({ hasText: "Chrome on Windows", hasNotText: "This session" })
+      .first();
+    const legacy = sessions.getByRole("listitem").filter({
+      hasText: legacyReference,
+    });
+    await expect(current).toHaveCount(1);
+    await expect(recognizedOther).toBeVisible();
+    for (const row of [current, recognizedOther]) {
+      await expect(row.locator("strong")).not.toHaveText("Unknown device");
+      await expect(row.locator("time")).toHaveCount(3);
+      await expect(row).toContainText("Signed in:");
+      await expect(row).toContainText("Last recorded API activity:");
+      await expect(row.locator("small")).toHaveText(
+        /^Session reference: [a-f0-9]{32}$/,
+      );
+    }
+    await expect(legacy.locator("strong")).toHaveText("Unknown device");
+    await expect(legacy).toContainText("Signed in: Unknown");
+    await expect(legacy).toContainText("Last recorded API activity: Unknown");
+    await expect(legacy.locator("time")).toHaveCount(1);
+    await noOverflow(page);
+    for (const row of [current, recognizedOther, legacy]) {
+      const end = row.getByRole("button", { name: /^End / });
+      await end.scrollIntoViewIfNeeded();
+      await expect(end).toBeEnabled();
+      await expect(end).toBeInViewport();
+      const bounds = await end.boundingBox();
+      if (!bounds) throw new Error("Session End control has no visible bounds");
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+      await end.click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByLabel("Your current password")).toBeVisible();
+      await noOverflow(page);
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(end).toBeFocused();
+    }
+    await noOverflow(page);
+    await screenshot(page, "security-sessions-320");
+  } finally {
+    await other.close();
+  }
+});
+
 test("long financial transaction report retains visible sticky columns while vertically and horizontally scrolled", async ({
   page,
 }) => {

@@ -18,7 +18,7 @@ export function SessionList({
   disabled = false,
 }: {
   sessions?: readonly SessionDetail[];
-  onRevoke?: (session: SessionDetail) => void;
+  onRevoke?: (session: SessionDetail, opener: HTMLButtonElement) => void;
   disabled?: boolean;
 }) {
   return (
@@ -54,7 +54,7 @@ export function SessionList({
                   <button
                     type="button"
                     disabled={disabled}
-                    onClick={() => onRevoke(session)}
+                    onClick={(event) => onRevoke(session, event.currentTarget)}
                     aria-label={`End ${session.current ? "this session" : (session.deviceDescription ?? "unknown device session")} ${session.reference}`}
                   >
                     End {session.current ? "this session" : "session"}

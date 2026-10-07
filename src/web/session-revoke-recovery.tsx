@@ -55,10 +55,14 @@ function SessionRevokeForm({
   const open = (
     session: Pick<SessionDetail, "reference" | "current">,
     recovering: boolean,
+    returnFocus: HTMLElement,
   ) => {
     setError("");
     setNotice("");
     setDialog({
+      // WebKit pointer activation can blur a button before Modal's effect runs.
+      // Capture the actual triggering control instead of later activeElement.
+      returnFocus,
       title: recovering
         ? "Recover saved session end"
         : session.current
@@ -161,10 +165,11 @@ function SessionRevokeForm({
           <button
             type="button"
             disabled={busy || disabled}
-            onClick={() =>
+            onClick={(event) =>
               open(
                 { reference: retained.reference, current: retained.current },
                 true,
+                event.currentTarget,
               )
             }
           >
@@ -174,9 +179,10 @@ function SessionRevokeForm({
             type="button"
             className="secondary"
             disabled={busy || disabled}
-            onClick={() =>
+            onClick={(event) =>
               setDialog({
                 title: "Forget saved session end",
+                returnFocus: event.currentTarget,
                 fields: [],
                 submitLabel: "Forget saved attempt",
                 description: `Forget the local retry details for session ${retained.reference}. This does not end a session or undo an earlier request. Refresh the session list to check current access.`,
@@ -199,7 +205,7 @@ function SessionRevokeForm({
       <SessionList
         sessions={sessions}
         disabled={busy || disabled || retained !== null}
-        onRevoke={(session) => open(session, false)}
+        onRevoke={(session, opener) => open(session, false, opener)}
       />
       {notice && <p role="status">{notice}</p>}
       {error && !dialog && <p role="alert">{error}</p>}

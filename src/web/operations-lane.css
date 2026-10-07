@@ -196,6 +196,9 @@
 .ops-security-grid form > button {
   justify-self: start;
 }
+.ops-security ul[aria-label="Your active sessions"] {
+  overflow-wrap: anywhere;
+}
 
 /* Operations health: queue cards with quiet empty states. */
 .ops-queue-grid {
