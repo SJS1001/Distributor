@@ -117,3 +117,5 @@ UX-034 provides account-balance investigation context rather than claiming a dir
 An initial independent read-only source review found no actionable regressions, but the subsequent frozen browser run exposed the two focus defects above. The reviewer independently reproduced the closed-details visibility behavior in Chromium and reviewed both repairs with no further concrete issue found. Source review complements the browser evidence and does not independently establish acceptance.
 
 Final default and additional browser checks passed against the recorded final production snapshot. Historical failed and interrupted checks remain part of the chronology. The original review is immutable; this implementation ledger records the changes and their verification limits.
+
+Implementation snapshot `0c5d39afe7d8dfe97043d63fd96a12671f920ba5` was committed and pushed to `SJS1001/Distributor` on `codex/local-distributor-checkpoint`; the remote branch SHA matched local HEAD. Publication does not establish deployment or product-gate approval.
