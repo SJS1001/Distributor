@@ -4,16 +4,16 @@ Prepared 2026-10-05 for the real application and one or two testers. The owner a
 
 ## Live installation
 
-| Item | Prepared choice |
-| --- | --- |
-| App name | `distributor-ca-sjs1001` (created) |
-| Region | Toronto, `yyz` |
-| Compute | One shared CPU, 1 GB RAM; always running |
-| Data | One 3 GB volume, `/data/distributor.db`, CA/CAD |
-| Network | New custom private network `distributor-ca-sjs1001` |
-| Public access | https://dstrbtr.ca/; website, native login and reviewed contractor enrollment |
-| Image | Local Linux/amd64 build; no remote builder or CI runner |
-| External integrations | Payment, accounting and carrier access disabled |
+| Item                  | Prepared choice                                                               |
+| --------------------- | ----------------------------------------------------------------------------- |
+| App name              | `distributor-ca-sjs1001` (created)                                            |
+| Region                | Toronto, `yyz`                                                                |
+| Compute               | One shared CPU, 1 GB RAM; always running                                      |
+| Data                  | One 3 GB volume, `/data/distributor.db`, CA/CAD                               |
+| Network               | New custom private network `distributor-ca-sjs1001`                           |
+| Public access         | https://dstrbtr.ca/; website, native login and reviewed contractor enrollment |
+| Image                 | Local Linux/amd64 build; no remote builder or CI runner                       |
+| External integrations | Payment, accounting and carrier access disabled                               |
 
 The same process serves the compiled React interface and native Fastify API.
 Keep exactly one Machine: independent SQLite volumes do not replicate. This
@@ -187,7 +187,6 @@ remote builder, scheduled worker or scale-out is configured.
 
 Schema 25 and the four storefront features are now active on the same Toronto Machine. The [storefront release receipt](evidence/LIVE-STOREFRONT-2026-10-05.md) records the exact image, encrypted archive restore, source-preserving clone checks, sample access grants, live verification and retained schema-24 rollback pair. Earlier schema-23/24 receipts above remain historical; use the current image/schema pair when operating the pilot.
 
-
 ## Temporary public administrator pre-fill — 2026-10-05
 
 The owner explicitly approved filling the existing pilot administrator email and
@@ -214,7 +213,6 @@ Before adding real data, disable `PUBLIC_PILOT_ADMIN_SIGN_IN` and redeploy/resta
 remove both credential configuration values, rotate the now-public administrator
 password, and revoke existing sessions using the native security controls. Merely
 hiding the UI is insufficient. No real-data readiness is asserted by this option.
-
 
 ## Temporary public customer pre-fill and phone scanner — 2026-10-05
 
@@ -244,7 +242,6 @@ Current pilot source is `d65610e`, schema27, image `workflow27-20261005` on the 
 ## Navigation and notes upgrade, 2026-10-05
 
 Source `a5ca594`, schema28, image `notes28-20261005` supersedes the pricing release above on the same Toronto Machine. See [navigation/notes release receipt](evidence/LIVE-NAVIGATION-NOTES-2026-10-05.md) for backup restoration,837-row conservation and live read-only checks. Five subsequent review/fix passes are tracked [here](evidence/FIVE-PASS-POLISH-2026-10-05.md).
-
 
 ## Five-pass polish release, 2026-10-05
 
@@ -359,3 +356,15 @@ A read-only text check (no screenshots, by owner instruction) had 0 page errors 
 - The Orders queue bubble opened with its guidance and closed on Escape.
 
 `fullseed-20261006` is retained for rollback.
+
+## UI/UX completion schema31 release, 2026-10-07
+
+Owner requested completion of the remaining software work and the existing pilot release. The first candidate source `90daf3f2933bf6ebf3d82042b8b125c330586837` ran on the existing single Toronto Machine. Image `uiux31-20261007`, digest `sha256:af181902a4538e416e907ff88c7f72be4ded30cfd9b4340498534fcd038f6a3d`, matches all 424 tracked source/package files offline and on the running Machine. No Machine, volume, provider account, CI workflow, PR or merge was created. Existing environment, services, volume, resource limits and disabled provider/carrier flags were preserved; only the image and equivalent explicit startup command changed.
+
+Writers were stopped before an encrypted schema30 backup was downloaded privately and successfully restored in an isolated old-image container. A fresh schema31 clone preserved all 5,462 original rows across 192 nonmetadata tables, with unchanged source database hash, clean integrity/foreign-key checks and unknown historical session metadata. The clone was activated at the existing database path. Schema31 reports-enabled fingerprint is `faecb731c45c86a1dff0d8e7a96ac7786df2426068189fd505dad3d6200a8d76`, region CA.
+
+Startup health and HTTPS `/api/health` pass. Running integrity/foreign-key checks pass, with 27 products, 10 accounts, 10 applications, 28 orders and 21 invoices unchanged. Session/detail counts match (26 before final browser acceptance). The runtime root filesystem resets on Machine update; private verification helpers were reuploaded after startup, and failed missing-helper receipts were retained. The first text-only HTTPS browser acceptance completed 16/18 checks; both failures were staff Security document overflow at 320px. Those failed receipts remain retained.
+
+The encrypted archive and isolated restore remain private; the original schema30 database/WAL is retained under `/data/rollback-schema30-bubbles-20261007`, and `bubbles-20261006` remains available. Recovery must reconcile any writes since activation and use a compatible image/database pair; changing the image alone is insufficient after schema31. No product/provider/physical-device gate is advanced. Full receipt: [UI-UX-COMPLETION-2026-10-07.md](evidence/UI-UX-COMPLETION-2026-10-07.md).
+
+The code-only follow-up source `b916ebb4f9f4ce8b1537ee5384d444eab4e41ccf` is now running as `uiux31b-20261007`, digest `sha256:5e24721dea7ad1ec8a0ec2af840fcebcd976048f41990037370eb167a2e30813`. It wraps long session references and captures the clicked session-dialog opener for reliable WebKit cancellation focus. All 424 source/package hashes match both offline and on the running Machine. Relative to the first schema31 candidate, only the image changed; schema, startup command, environment, services, volume and resource settings are identical. Runtime integrity, foreign keys, session-detail count parity and HTTPS health pass. The expanded completion suite passes 24/24, and focused session tests pass 16/16. Final text-only HTTPS acceptance passed 18/18 across Chromium 153.0.8010.12 and WebKit 26.6, at 1440/390/320px for guest/staff/buyer. Both 320px Security pages fit the viewport. All six staff aging invoice-return and all six buyer invoice samples were exercised; none skipped. All 18 contexts signed out, with zero page errors, business writes or screenshots and unmodified production CSP. The first `uiux31-20261007` image remains a compatible schema31 rollback option; the schema30 pair and encrypted backup above remain retained.
