@@ -45,6 +45,7 @@ export function PublicSite({
   activationToken,
   login,
   workspaceHref,
+  catalogHref,
   sessionAudience,
   signOut,
   signOutPending = false,
@@ -54,6 +55,7 @@ export function PublicSite({
   activationToken: string;
   login: ReactNode;
   workspaceHref?: string;
+  catalogHref?: string;
   sessionAudience?: "customer" | "staff";
   signOut?: () => void;
   signOutPending?: boolean;
@@ -136,6 +138,7 @@ export function PublicSite({
           )}
           {signedIn ? (
             <>
+              {catalogHref && <a href={catalogHref}>Manage catalog</a>}
               <a href={accountHref}>{accountLabel}</a>
               <button
                 className="public-sign-out"

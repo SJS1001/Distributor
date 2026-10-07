@@ -280,7 +280,9 @@ function App() {
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [dialog, setDialog] = useState<Dialog | null>(null),
+    [dialog, setDialog] = useState<
+      (Dialog & { afterSaved?: (result: Item) => void }) | null
+    >(null),
     [extra, setExtra] = useState<Item>({}),
     [extraLoadFailed, setExtraLoadFailed] = useState(false);
   const [receiptSearch, setReceiptSearch] = useState("");
@@ -587,6 +589,10 @@ function App() {
     orderEntryRead.current = null;
   };
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
+  const [createdCatalogProductId, setCreatedCatalogProductId] = useState<
+    string | null
+  >(null);
+  const createdProductReturnFocus = useRef<HTMLElement | null>(null);
   const shipmentRequest = useRef<number | null>(null);
   const shipmentHeading = useRef<HTMLHeadingElement | null>(null);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
@@ -962,6 +968,7 @@ function App() {
     setData(null);
     setExtra({});
     setDialog(null);
+    setCreatedCatalogProductId(null);
     const currentHash = window.location.hash;
     // Public routes own their equipment/filter context through session changes.
     if (currentHash === "#home" || readPublicRoute(currentHash) !== "home")
@@ -1149,6 +1156,7 @@ function App() {
     submitLabel?: string,
     readOnly = false,
     returnFocus?: HTMLElement | null,
+    afterSaved?: (result: Item) => void,
   ) => {
     setNotice("");
     setError("");
@@ -1159,6 +1167,7 @@ function App() {
       description,
       submitLabel,
       returnFocus,
+      afterSaved,
       readOnly:
         readOnly || (fields.length === 0 && /^Close\b/.test(submitLabel ?? "")),
     });
@@ -2039,7 +2048,11 @@ function App() {
     ) : (
       <div className="empty">{empty}</div>
     );
-  const button = (label: string, action: () => void, unavailable = false) => (
+  const button = (
+    label: string,
+    action: (event: React.MouseEvent<HTMLButtonElement>) => void,
+    unavailable = false,
+  ) => (
     <button
       className="secondary"
       disabled={busy || unavailable}
@@ -2171,6 +2184,11 @@ function App() {
     return (
       <PublicSite
         route={publicRoute}
+        catalogHref={
+          actor && ["admin", "commercial"].includes(actor.role)
+            ? navigationHash({ page: "Catalog" })
+            : undefined
+        }
         sessionAudience={
           actor ? (actor.role === "buyer" ? "customer" : "staff") : undefined
         }
@@ -5446,8 +5464,9 @@ function App() {
           <>
             <div className="actions">
               {can("commercial") &&
-                button("Add product", () =>
-                  simple(
+                button("Add product", (event) => {
+                  createdProductReturnFocus.current = event.currentTarget;
+                  return open(
                     "Add product",
                     [
                       { name: "sku", label: "SKU" },
@@ -5470,13 +5489,34 @@ function App() {
                         help: "100 basis points = 1%. Tax registrations/rules require finance approval.",
                       },
                     ],
-                    "product.create",
-                  ),
-                )}
+                    async (values) => ({
+                      ...(await command("product.create", values)),
+                      skipRefresh: true,
+                    }),
+                    "Create the product first, then add its images and documents. Administrators can upload and publish resources; commercial staff can review them.",
+                    "Create product & add images",
+                    false,
+                    createdProductReturnFocus.current,
+                    (result) => {
+                      setCreatedCatalogProductId(result.id);
+                      void refreshNotice(
+                        "Product created. Add images and documents below.",
+                        "Product created; catalog refresh failed: ",
+                      ).catch(() => {});
+                    },
+                  );
+                })}
             </div>
+            <p>
+              Add products here, then open a product to manage its images,
+              documents and customer availability.
+            </p>
             <CatalogMaintenance
+              openProductId={createdCatalogProductId}
+              returnFocus={createdProductReturnFocus.current}
+              clearOpenProduct={() => setCreatedCatalogProductId(null)}
               recoveryScope={`${actor.orgId}:${actor.id}`}
-              key={eventViewEpoch}
+              key={createdCatalogProductId ?? eventViewEpoch}
               canManage={can("commercial")}
               canManageAvailability={actor.role === "admin"}
               busy={busy}
@@ -9036,7 +9076,10 @@ function App() {
                 return;
               }
               const result = await run(() => dialog.perform(values));
-              if (!(result as Item)?.keepDialog) setDialog(null);
+              if (!(result as Item)?.keepDialog) {
+                setDialog(null);
+                dialog.afterSaved?.(result as Item);
+              }
             } catch {}
           }}
         />

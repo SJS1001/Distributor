@@ -12,7 +12,10 @@ import type {
   CustomerProduct,
   CustomerProductPage,
 } from "../shared/customer-products.ts";
-import type { CatalogResource } from "../shared/catalog-media.ts";
+import {
+  catalogImageLinkUrl,
+  type CatalogResource,
+} from "../shared/catalog-media.ts";
 import {
   AddToCart,
   CartFeedbackContext,
@@ -67,13 +70,21 @@ export function ProductImage({
   resource?: CatalogResource;
 }) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [resource?.id, resource?.version]);
-  return resource && !resource.externalUrl && !failed ? (
+  useEffect(
+    () => setFailed(false),
+    [resource?.id, resource?.version, resource?.externalUrl],
+  );
+  const source = resource?.externalUrl
+    ? catalogImageLinkUrl(resource.externalUrl)
+    : resource &&
+      `${resourcePath(resource.productId, resource.id)}/bytes?v=${resource.version}`;
+  return resource && source && !failed ? (
     <img
       className="product-image"
-      src={`${resourcePath(resource.productId, resource.id)}/bytes?v=${resource.version}`}
+      src={source}
       alt={resource.altText}
       loading="lazy"
+      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
     />
   ) : (

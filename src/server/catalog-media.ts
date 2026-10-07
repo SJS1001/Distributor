@@ -20,6 +20,7 @@ import {
   catalogDocumentMaxBytes,
   catalogResourceMaxFiles,
   catalogOrganizationMaxBytes,
+  catalogImageLinkUrl,
   resourceKinds,
   type ResourceMetadata,
   type ResourceUpload,
@@ -210,26 +211,35 @@ export class CatalogMedia {
       inspection: CatalogResource["inspection"] = "link";
     if (input.externalUrl !== undefined) {
       check(
-        input.contentBase64 === undefined &&
-          input.mediaType === undefined &&
-          m.kind !== "image",
+        input.contentBase64 === undefined && input.mediaType === undefined,
         "VALIDATION",
-        "Choose one document link or file upload.",
+        "Choose one resource link or file upload.",
         400,
       );
-      let url: URL;
-      try {
-        url = new URL(text(input.externalUrl, "Document URL", 2000));
-      } catch {
-        check(false, "VALIDATION", "Use a valid HTTPS document URL.", 400);
+      if (m.kind === "image") {
+        const imageUrl = catalogImageLinkUrl(input.externalUrl);
+        check(
+          imageUrl,
+          "VALIDATION",
+          "Image links must use HTTPS on cdn.shopify.com without credentials or a custom port.",
+          400,
+        );
+        externalUrl = imageUrl;
+      } else {
+        let url: URL;
+        try {
+          url = new URL(text(input.externalUrl, "Document URL", 2000));
+        } catch {
+          check(false, "VALIDATION", "Use a valid HTTPS document URL.", 400);
+        }
+        check(
+          url!.protocol === "https:" && !url!.username && !url!.password,
+          "VALIDATION",
+          "Document links must use HTTPS without credentials.",
+          400,
+        );
+        externalUrl = url!.href;
       }
-      check(
-        url!.protocol === "https:" && !url!.username && !url!.password,
-        "VALIDATION",
-        "Document links must use HTTPS without credentials.",
-        400,
-      );
-      externalUrl = url!.href;
       originalHash = digest(externalUrl);
     } else {
       const max =

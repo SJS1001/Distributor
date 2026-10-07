@@ -3,7 +3,7 @@ import { InfoBubble } from "./info-bubble.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import { UnitCostEditor } from "./price-authority.tsx";
 import { ReferenceMappingEditor } from "./gree-reference-loader.tsx";
-import React, { useState } from "react";
+import React, { lazy, Suspense, useState } from "react";
 import { resourceMutation } from "./api.ts";
 import { PageSection, PageSections } from "./workspace.tsx";
 import {
@@ -19,11 +19,15 @@ import "./record-forms.css";
 import {
   catalogImageMaxBytes,
   catalogDocumentMaxBytes,
+  catalogImageLinkUrl,
   type CatalogResource,
   type ResourceKind,
   type ResourceMetadata,
 } from "../shared/catalog-media.ts";
 import type { CatalogProduct } from "../shared/catalog-lifecycle.ts";
+const ManufacturerImagePicker = lazy(
+  () => import("./manufacturer-image-picker.tsx"),
+);
 const defaults: ResourceMetadata = {
   kind: "image",
   title: "",
@@ -132,8 +136,10 @@ function ResourceEditor({
   resource,
   product,
   changed,
+  canManage,
 }: {
   resource: CatalogResource;
+  canManage: boolean;
   product: CatalogProduct;
   changed: () => void;
 }) {
@@ -166,7 +172,7 @@ function ResourceEditor({
         {resource.state} · Version {resource.version} · {resource.inspection} ·{" "}
         {resource.bytes.toLocaleString()} bytes
       </p>
-      {resource.kind === "image" && !resource.externalUrl ? (
+      {resource.kind === "image" ? (
         <ProductImage product={product} resource={resource} />
       ) : (
         <a
@@ -192,104 +198,108 @@ function ResourceEditor({
           {error}
         </p>
       )}
-      <details>
-        <summary>Edit resource metadata</summary>
-        <p>
-          Saving metadata returns this resource to draft. Review and publish it
-          again to make the changes available to buyers.
-        </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(
-              resourcePath(product.id, resource.id),
-              {
-                kind: metadata.kind,
-                title: metadata.title,
-                altText: metadata.altText,
-                models: metadata.models,
-                language: metadata.language,
-                revision: metadata.revision,
-                source: metadata.source,
-                position: metadata.position,
-                expectedVersion: resource.version,
-              },
-              "PATCH",
-            );
-          }}
-        >
-          <fieldset disabled={busy}>
-            <MetadataFields value={metadata} change={setMetadata} />
-            <button type="submit">Save metadata</button>
-          </fieldset>
-        </form>
-      </details>
-      {resource.state !== "published" && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(`${resourcePath(product.id, resource.id)}/publish`, {
-              expectedVersion: resource.version,
-              permissionAffirmed: permission,
-              permissionBasis: basis,
-            });
-          }}
-        >
-          <fieldset disabled={busy}>
-            <legend>Publish resource</legend>
-            <label>
-              <input
-                type="checkbox"
-                required
-                checked={permission}
-                onChange={(e) => setPermission(e.target.checked)}
-              />
-              I confirm ownership or permission to distribute this resource
-            </label>
-            <label>
-              Permission basis
-              <textarea
-                required
-                maxLength={1000}
-                value={basis}
-                onChange={(e) => setBasis(e.target.value)}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={resource.inspection === "quarantined"}
+      {canManage && (
+        <>
+          <details>
+            <summary>Edit resource metadata</summary>
+            <p>
+              Saving metadata returns this resource to draft. Review and publish
+              it again to make the changes available to buyers.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(
+                  resourcePath(product.id, resource.id),
+                  {
+                    kind: metadata.kind,
+                    title: metadata.title,
+                    altText: metadata.altText,
+                    models: metadata.models,
+                    language: metadata.language,
+                    revision: metadata.revision,
+                    source: metadata.source,
+                    position: metadata.position,
+                    expectedVersion: resource.version,
+                  },
+                  "PATCH",
+                );
+              }}
             >
-              Publish to eligible buyers
-            </button>
-          </fieldset>
-        </form>
-      )}
-      {resource.state !== "retired" && (
-        <details>
-          <summary>Retire resource</summary>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(`${resourcePath(product.id, resource.id)}/retire`, {
-                expectedVersion: resource.version,
-                reason,
-              });
-            }}
-          >
-            <fieldset disabled={busy}>
-              <label>
-                Reason for retirement
-                <input
-                  required
-                  maxLength={1000}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </label>
-              <button type="submit">Retire resource</button>
-            </fieldset>
-          </form>
-        </details>
+              <fieldset disabled={busy}>
+                <MetadataFields value={metadata} change={setMetadata} />
+                <button type="submit">Save metadata</button>
+              </fieldset>
+            </form>
+          </details>
+          {resource.state !== "published" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(`${resourcePath(product.id, resource.id)}/publish`, {
+                  expectedVersion: resource.version,
+                  permissionAffirmed: permission,
+                  permissionBasis: basis,
+                });
+              }}
+            >
+              <fieldset disabled={busy}>
+                <legend>Publish resource</legend>
+                <label>
+                  <input
+                    type="checkbox"
+                    required
+                    checked={permission}
+                    onChange={(e) => setPermission(e.target.checked)}
+                  />
+                  I confirm ownership or permission to distribute this resource
+                </label>
+                <label>
+                  Permission basis
+                  <textarea
+                    required
+                    maxLength={1000}
+                    value={basis}
+                    onChange={(e) => setBasis(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={resource.inspection === "quarantined"}
+                >
+                  Publish to eligible buyers
+                </button>
+              </fieldset>
+            </form>
+          )}
+          {resource.state !== "retired" && (
+            <details>
+              <summary>Retire resource</summary>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void run(`${resourcePath(product.id, resource.id)}/retire`, {
+                    expectedVersion: resource.version,
+                    reason,
+                  });
+                }}
+              >
+                <fieldset disabled={busy}>
+                  <label>
+                    Reason for retirement
+                    <input
+                      required
+                      maxLength={1000}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                    />
+                  </label>
+                  <button type="submit">Retire resource</button>
+                </fieldset>
+              </form>
+            </details>
+          )}
+        </>
       )}
     </article>
   );
@@ -302,7 +312,11 @@ async function prepareResourceUpload(
   images: boolean,
 ) {
   let upload: Record<string, unknown> = { ...metadata };
-  if (mode === "link") {
+  if (mode !== "upload") {
+    if (images && !catalogImageLinkUrl(url))
+      throw Error(
+        "Use an HTTPS image URL hosted on cdn.shopify.com, or upload the image file.",
+      );
     upload.externalUrl = url;
   } else {
     if (!file) throw Error("Choose a file.");
@@ -341,107 +355,155 @@ function ResourceDraftForm({
     [file, setFile] = useState<File | null>(null),
     [url, setUrl] = useState(""),
     [mode, setMode] = useState("upload"),
+    [expanded, setExpanded] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
   return (
     <>
-      <details>
-        <summary>Add {images ? "image" : "document"}</summary>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError("");
-            setNotice("");
-            try {
-              const upload = await prepareResourceUpload(
-                metadata,
-                mode,
-                url,
-                file,
-                images,
-              );
-              await resourceMutation(resourcePath(product.id), "POST", upload);
-              setNotice(
-                "Draft resource added. Review metadata and permission before publishing.",
-              );
-              changed();
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
+      <div className="resource-add">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
         >
-          <fieldset disabled={busy}>
-            <legend>Add draft resource</legend>
-            {!images && (
+          Add {images ? "image" : "document"}
+        </button>
+        {expanded && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError("");
+              setNotice("");
+              try {
+                const upload = await prepareResourceUpload(
+                  metadata,
+                  mode,
+                  url,
+                  file,
+                  images,
+                );
+                await resourceMutation(
+                  resourcePath(product.id),
+                  "POST",
+                  upload,
+                );
+                setNotice(
+                  "Draft resource added. Review metadata and permission before publishing.",
+                );
+                changed();
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <fieldset disabled={busy}>
+              <legend>Add draft resource</legend>
+              {!images && (
+                <label>
+                  Document category
+                  <select
+                    value={metadata.kind}
+                    onChange={(e) =>
+                      setMetadata({
+                        ...metadata,
+                        kind: e.target.value as ResourceKind,
+                      })
+                    }
+                  >
+                    <option value="literature">Sales literature</option>
+                    <option value="installation">Installation guide</option>
+                    <option value="maintenance">
+                      Maintenance / service guide
+                    </option>
+                    <option value="other">Other document</option>
+                  </select>
+                </label>
+              )}
               <label>
-                Document category
+                {images ? "Image source" : "Resource source"}
                 <select
-                  value={metadata.kind}
-                  onChange={(e) =>
-                    setMetadata({
-                      ...metadata,
-                      kind: e.target.value as ResourceKind,
-                    })
-                  }
-                >
-                  <option value="literature">Sales literature</option>
-                  <option value="installation">Installation guide</option>
-                  <option value="maintenance">
-                    Maintenance / service guide
-                  </option>
-                  <option value="other">Other document</option>
-                </select>
-              </label>
-            )}
-            <MetadataFields value={metadata} change={setMetadata} />
-            {!images && (
-              <label>
-                Resource source
-                <select
-                  aria-label="Resource source"
+                  aria-label={images ? "Image source" : "Resource source"}
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
                 >
-                  <option value="upload">Upload PDF</option>
-                  <option value="link">Official HTTPS document link</option>
+                  <option value="upload">
+                    {images ? "Upload image" : "Upload PDF"}
+                  </option>
+                  <option value="link">
+                    {images
+                      ? "Manufacturer image URL"
+                      : "Official HTTPS document link"}
+                  </option>
+                  {images && (
+                    <option value="library">Choose from GREE library</option>
+                  )}
                 </select>
               </label>
-            )}
-            {mode === "link" ? (
-              <label>
-                HTTPS document URL
-                <input
-                  type="url"
-                  required
-                  pattern="https://.*"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                />
-              </label>
-            ) : (
-              <label>
-                {images
-                  ? "Image file (JPEG, PNG or WebP; maximum 8 MB)"
-                  : "PDF file (maximum 16 MB)"}
-                <input
-                  type="file"
-                  required
-                  accept={
-                    images
-                      ? "image/jpeg,image/png,image/webp"
-                      : "application/pdf"
-                  }
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
-            )}
-            <button type="submit">Save draft resource</button>
-          </fieldset>
-        </form>
-      </details>
+              {mode === "library" && (
+                <Suspense
+                  fallback={<p role="status">Loading manufacturer images…</p>}
+                >
+                  <ManufacturerImagePicker
+                    reset={() => setUrl("")}
+                    choose={(image) => {
+                      setUrl(image.url);
+                      setMetadata({
+                        ...metadata,
+                        title: image.title,
+                        altText: image.alt,
+                        source: image.source,
+                      });
+                    }}
+                  />
+                </Suspense>
+              )}
+              {mode !== "upload" ? (
+                <>
+                  <label>
+                    {images ? "HTTPS image URL" : "HTTPS document URL"}
+                    <input
+                      type="url"
+                      required
+                      pattern="https://.*"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                    />
+                  </label>
+                  {images && (
+                    <p>
+                      Links support cdn.shopify.com. For other image hosts,
+                      upload a JPEG, PNG or WebP file. Linked photographs load
+                      from the publisher; confirm permission and the matching
+                      equipment before publishing.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <label>
+                  {images
+                    ? "Image file (JPEG, PNG or WebP; maximum 8 MB)"
+                    : "PDF file (maximum 16 MB)"}
+                  <input
+                    type="file"
+                    required
+                    accept={
+                      images
+                        ? "image/jpeg,image/png,image/webp"
+                        : "application/pdf"
+                    }
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+              )}
+              <MetadataFields value={metadata} change={setMetadata} />
+              <button type="submit">Save draft resource</button>
+            </fieldset>
+          </form>
+        )}
+      </div>
       {error && (
         <p role="alert" className="error">
           {error}
@@ -454,9 +516,11 @@ function ResourceDraftForm({
 function ResourceCollection({
   product,
   images,
+  canManage,
 }: {
   product: CatalogProduct;
   images: boolean;
+  canManage: boolean;
 }) {
   const [epoch, setEpoch] = useState(0),
     rows = useResources(product.id, epoch),
@@ -479,10 +543,21 @@ function ResourceCollection({
         !rows.error &&
         !rows.items.some((r) => (r.kind === "image") === images) && (
           <p className="empty">
-            No {images ? "images" : "documents"} recorded. Use Add{" "}
-            {images ? "image" : "document"} below to attach a resource.
+            No {images ? "images" : "documents"} recorded.
+            {canManage
+              ? ` Use Add ${images ? "image" : "document"} to attach a resource.`
+              : " Ask an administrator to attach a resource."}
           </p>
         )}
+      {canManage && (
+        <ResourceDraftForm
+          product={product}
+          images={images}
+          busy={busy}
+          setBusy={setBusy}
+          changed={() => setEpoch((value) => value + 1)}
+        />
+      )}
       <div className="resource-grid">
         {rows.items
           .filter((r) => (r.kind === "image") === images)
@@ -490,18 +565,12 @@ function ResourceCollection({
             <ResourceEditor
               key={`${r.id}:${r.version}`}
               resource={r}
+              canManage={canManage}
               product={product}
               changed={() => setEpoch((value) => value + 1)}
             />
           ))}
       </div>
-      <ResourceDraftForm
-        product={product}
-        images={images}
-        busy={busy}
-        setBusy={setBusy}
-        changed={() => setEpoch((value) => value + 1)}
-      />
     </>
   );
 }
@@ -510,12 +579,15 @@ export function CatalogResourceWorkspace({
   canManageAvailability,
   recoveryScope,
   close,
+  initialSection = "catalog-details",
 }: {
   product: CatalogProduct;
   canManageAvailability: boolean;
   recoveryScope: string;
   close: () => void;
+  initialSection?: string;
 }) {
+  const [section, setSection] = useState(initialSection);
   return (
     <section className="panel catalog-product-manager">
       <header className="catalog-product-header">
@@ -548,6 +620,8 @@ export function CatalogResourceWorkspace({
       </header>
       <PageSections
         label="Catalog product management"
+        selectedSection={section}
+        selectSection={setSection}
         items={[
           { id: "catalog-details", label: "Details" },
           { id: "catalog-notes", label: "Staff notes" },
@@ -625,10 +699,18 @@ export function CatalogResourceWorkspace({
           />
         </PageSection>
         <PageSection id="catalog-images">
-          <ResourceCollection product={product} images />
+          <ResourceCollection
+            product={product}
+            images
+            canManage={canManageAvailability}
+          />
         </PageSection>
         <PageSection id="catalog-documents">
-          <ResourceCollection product={product} images={false} />
+          <ResourceCollection
+            product={product}
+            images={false}
+            canManage={canManageAvailability}
+          />
         </PageSection>
         <PageSection id="catalog-rules">
           <ProductPurchasingRules productId={product.id} />

@@ -1,3 +1,5 @@
+import { request } from "./api.ts";
+import type { CatalogReview } from "../shared/catalog-lifecycle.ts";
 import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import { ProductAvailabilityEditor } from "./product-availability.tsx";
@@ -13,6 +15,9 @@ const priceFormatters = {
   USD: new Intl.NumberFormat("en", { style: "currency", currency: "USD" }),
 };
 type Actions = {
+  openProductId?: string | null;
+  clearOpenProduct?: () => void;
+  returnFocus?: HTMLElement | null;
   recoveryScope: string;
   canManage: boolean;
   canManageAvailability: boolean;
@@ -28,7 +33,11 @@ function Products({
 }: Actions & {
   search: string;
   state: string;
-  manage: (product: CatalogProduct) => void;
+  manage: (
+    product: CatalogProduct,
+    opener: HTMLButtonElement,
+    images?: boolean,
+  ) => void;
 }) {
   const rows = useCursorPage<CatalogProduct>(
     `/api/catalog/products/page?state=${state}&q=${encodeURIComponent(search)}`,
@@ -75,7 +84,24 @@ function Products({
             {rows.items.map((p) => (
               <tr key={p.id}>
                 <td>{p.sku}</td>
-                <td>{p.name}</td>
+                <td>
+                  {actions.canManage ? (
+                    <button
+                      className="secondary"
+                      disabled={actions.busy}
+                      aria-label={`Images & documents for ${p.name} (${p.sku})`}
+                      onClick={(event) =>
+                        actions.manage(p, event.currentTarget, true)
+                      }
+                    >
+                      {p.name}
+                      <br />
+                      <small>Images & documents</small>
+                    </button>
+                  ) : (
+                    p.name
+                  )}
+                </td>
                 <td>{p.serialized ? "Required" : "Bulk"}</td>
                 <td>
                   {priceFormatters[
@@ -98,7 +124,9 @@ function Products({
                     <div className="actions">
                       <button
                         disabled={actions.busy}
-                        onClick={() => actions.manage(p)}
+                        onClick={(event) =>
+                          actions.manage(p, event.currentTarget)
+                        }
                       >
                         Manage {p.sku}
                       </button>
@@ -165,6 +193,26 @@ function Products({
 }
 export function CatalogMaintenance(actions: Actions) {
   const [product, setProduct] = useState<CatalogProduct | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const [openImages, setOpenImages] = useState(false);
+  const [openError, setOpenError] = useState("");
+  const [openAttempt, setOpenAttempt] = useState(0);
+  useEffect(() => {
+    if (!actions.openProductId || !actions.canManage) return;
+    const controller = new AbortController();
+    setOpenError("");
+    void request<CatalogReview>(
+      `/api/catalog/products/${encodeURIComponent(actions.openProductId)}/review`,
+      { signal: controller.signal },
+    )
+      .then((review) => {
+        if (!controller.signal.aborted) setProduct(review.product);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setOpenError(error.message);
+      });
+    return () => controller.abort();
+  }, [actions.openProductId, actions.canManage, openAttempt]);
   const [search, setSearch] = useState("");
   const [state, setState] = useState("active");
   const [selection, setSelection] = useState({
@@ -174,13 +222,32 @@ export function CatalogMaintenance(actions: Actions) {
   });
   return (
     <>
+      {openError && (
+        <p role="alert">
+          Product created; images and documents could not be opened: {openError}{" "}
+          <button onClick={() => setOpenAttempt((value) => value + 1)}>
+            Retry opening product
+          </button>
+        </p>
+      )}
       {product && (
         <ProductDialog
           key={product.id}
           product={product}
+          returnFocus={
+            actions.openProductId ? actions.returnFocus : opener.current
+          }
           canManageAvailability={actions.canManageAvailability}
           recoveryScope={actions.recoveryScope}
-          close={() => setProduct(null)}
+          initialSection={
+            actions.openProductId === product.id || openImages
+              ? "catalog-images"
+              : undefined
+          }
+          close={() => {
+            setProduct(null);
+            actions.clearOpenProduct?.();
+          }}
         />
       )}
       <form
@@ -223,18 +290,25 @@ export function CatalogMaintenance(actions: Actions) {
         search={selection.search}
         state={selection.state}
         {...actions}
-        manage={setProduct}
+        manage={(selected, clickedButton, images = false) => {
+          opener.current = clickedButton;
+          setOpenImages(images);
+          setProduct(selected);
+        }}
       />
     </>
   );
 }
 function ProductDialog(
-  props: React.ComponentProps<typeof CatalogResourceWorkspace>,
+  props: React.ComponentProps<typeof CatalogResourceWorkspace> & {
+    returnFocus?: HTMLElement | null;
+  },
 ) {
   const dialog = useRef<HTMLDialogElement>(null),
     pressedBackdrop = useRef(false);
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
+    const previous =
+      props.returnFocus ?? (document.activeElement as HTMLElement | null);
     dialog.current?.showModal();
     return () => previous?.focus();
   }, []);

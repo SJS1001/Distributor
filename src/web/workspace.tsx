@@ -68,7 +68,8 @@ export const pageDescriptions: Record<string, string> = {
   Overview: "A clear view of orders, availability and outstanding balances.",
   Orders: "Prepare orders, manage reservations and follow fulfillment.",
   Customers: "Manage customer accounts, terms and service access.",
-  Catalog: "Organize the products your customers can order.",
+  Catalog:
+    "Add products and manage their images, documents, prices and customer availability.",
   Inventory: "Find stock, trace serials and manage warehouse movements.",
   Purchasing: "Manage suppliers, incoming stock and purchase receipts.",
   Returns: "Review returns, warranty coverage and replacement decisions.",
@@ -226,6 +227,21 @@ export function WorkspaceNavigation({
         })}
       </nav>
       <div className="sidebar-bottom">
+        {["admin", "commercial"].includes(role) &&
+          pages.includes("Catalog") && (
+            <button
+              className="sidebar-resource-link"
+              aria-current={page === "Catalog" ? "page" : undefined}
+              onClick={() => {
+                navigate("Catalog");
+                setExpanded(false);
+                document.getElementById("workspace-title")?.focus();
+              }}
+            >
+              <WorkspaceIcon name="Catalog" />
+              <span>Catalog · Add products</span>
+            </button>
+          )}
         <a className="sidebar-resource-link" href="#products">
           <WorkspaceIcon name="Catalog" />
           <span>GREE product library</span>

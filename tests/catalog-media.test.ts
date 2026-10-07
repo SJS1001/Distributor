@@ -8,6 +8,7 @@ import { Application } from "../src/server/application.ts";
 import { fixture } from "./fixtures.ts";
 import { CatalogMedia } from "../src/server/catalog-media.ts";
 import { normalizeCatalogPdf } from "../src/server/catalog-pdf.ts";
+import { catalogImageLinkUrl } from "../src/shared/catalog-media.ts";
 const image = () => {
   const canvas = createCanvas(10, 10);
   canvas.getContext("2d").fillRect(0, 0, 10, 10);
@@ -190,6 +191,219 @@ test("HTTPS resource links never fetch, remain draft and require permission", as
     ...permission,
   });
   assert.throws(() => m.bytes(f.actor, f.product, r.id), /external link/);
+});
+test("linked equipment images retain exact rights-reviewed lifecycle, scope and zero bytes", async (t) => {
+  const f = fixture(t),
+    m = media(f),
+    b = buyer(f);
+  let fetches = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    fetches++;
+    throw new Error("Catalog image links must never fetch");
+  });
+  const input = {
+    kind: "image" as const,
+    title: "Official equipment image",
+    altText: "Equipment indoor unit and outdoor unit",
+    externalUrl: "https://cdn.shopify.com/s/files/fixture/equipment.png?v=1",
+    source: "Owner-authorized manufacturer image reference; fixture only",
+  };
+  const r = await m.upload(f.actor, "linked-image", f.product, input);
+  assert.equal(r.state, "draft");
+  assert.equal(r.inspection, "link");
+  assert.equal(r.mediaType, "text/uri-list");
+  assert.equal(r.bytes, 0);
+  assert.equal(r.externalUrl, input.externalUrl);
+  assert.equal(
+    f.app.database
+      .owned("catalog")
+      .get<{ bytes: number }>(
+        "SELECT length(content) AS bytes FROM catalog_resources WHERE id=?",
+        r.id,
+      )!.bytes,
+    0,
+  );
+  assert.deepEqual(
+    await m.upload(f.actor, "linked-image", f.product, input),
+    r,
+  );
+  await assert.rejects(
+    m.upload(f.actor, "linked-image", f.product, {
+      ...input,
+      externalUrl: `${input.externalUrl}2`,
+    }),
+    /different inputs/,
+  );
+  assert.deepEqual(m.list(b, f.product).items, []);
+  assert.throws(() => m.bytes(b, f.product, r.id), /not found/);
+  await assert.rejects(
+    m.publish(f.actor, "missing-rights", f.product, r.id, {
+      expectedVersion: 1,
+      ...permission,
+      permissionAffirmed: false,
+    }),
+    /Confirm/,
+  );
+  const published = await m.publish(
+    f.actor,
+    "linked-publish",
+    f.product,
+    r.id,
+    {
+      expectedVersion: 1,
+      ...permission,
+    },
+  );
+  assert.deepEqual(m.list(b, f.product).items, [published]);
+  assert.throws(() => m.bytes(b, f.product, r.id), /external link/);
+  assert.throws(() => m.history(b, f.product, r.id), /not permitted/);
+  const policy = f.app.catalog.purchasingPolicy(f.actor, f.buyer);
+  f.app.catalog.setPurchasingPolicy(f.actor, "linked-revoke", {
+    ...policy,
+    mode: "none",
+    productIds: [],
+    reason: "Image access entitlement revoked",
+  });
+  assert.throws(() => m.list(b, f.product));
+  assert.throws(() => m.bytes(b, f.product, r.id));
+  f.app.catalog.setPurchasingPolicy(f.actor, "linked-restore", {
+    ...policy,
+    revision: f.app.catalog.purchasingPolicy(f.actor, f.buyer).revision,
+    reason: "Restore fixture image entitlement",
+  });
+  const p = f.app.catalog.create(f.actor, "linked-other", {
+    sku: "LINKED-OTHER",
+    name: "Other product",
+    serialized: false,
+    unitPrice: 100,
+    taxBasisPoints: 0,
+  });
+  assert.throws(() => m.bytes(f.actor, p.id, r.id), /not found/);
+  assert.throws(() => m.list({ ...b, orgId: "other" }, f.product));
+  assert.throws(
+    () =>
+      m.update(f.actor, "linked-stale", f.product, r.id, {
+        expectedVersion: 1,
+        title: "Stale edit",
+      }),
+    /changed/,
+  );
+  const updated = m.update(f.actor, "linked-edit", f.product, r.id, {
+    expectedVersion: 2,
+    position: 5,
+  });
+  assert.equal(updated.state, "draft");
+  assert.deepEqual(m.list(b, f.product).items, []);
+  const republished = await m.publish(
+    f.actor,
+    "linked-republish",
+    f.product,
+    r.id,
+    {
+      expectedVersion: updated.version,
+      ...permission,
+    },
+  );
+  const retired = m.retire(f.actor, "linked-retire", f.product, r.id, {
+    expectedVersion: republished.version,
+    reason: "Image source superseded",
+  });
+  assert.equal(retired.state, "retired");
+  assert.deepEqual(m.list(b, f.product).items, []);
+  assert.throws(() => m.bytes(b, f.product, r.id), /not found/);
+  assert.equal(
+    m.list(f.actor, f.product).items[0]!.externalUrl,
+    input.externalUrl,
+  );
+  assert.equal(m.history(f.actor, f.product, r.id).items.length, 5);
+  assert.equal(fetches, 0);
+});
+test("linked images share bounded HTTPS host validation and reject mixed inputs and malicious URLs", async (t) => {
+  const f = fixture(t),
+    m = media(f),
+    b = buyer(f);
+  const input = {
+    kind: "image" as const,
+    title: "Equipment image",
+    altText: "Equipment unit",
+    externalUrl: "https://cdn.shopify.com/fixture.png",
+  };
+  assert.equal(
+    catalogImageLinkUrl(" HTTPS://CDN.SHOPIFY.COM:443/fixture.png "),
+    input.externalUrl,
+  );
+  const invalid = [
+    "http://cdn.shopify.com/fixture.png",
+    "javascript:alert(1)",
+    "data:image/png;base64,AAAA",
+    "//cdn.shopify.com/fixture.png",
+    "https:cdn.shopify.com/fixture.png",
+    "https://user:pass@cdn.shopify.com/fixture.png",
+    "https://cdn.shopify.com@evil.test/fixture.png",
+    "https://cdn.shopify.com.evil.test/fixture.png",
+    "https://sub.cdn.shopify.com/fixture.png",
+    "https://cdn.shopify.com./fixture.png",
+    "https://127.0.0.1/fixture.png",
+    "https://cdn.shopify.com:444/fixture.png",
+    "https://cdn.shopify.com\\@evil.test/fixture.png",
+    "https://cdn.shopify.com/fixture\n.png",
+    `https://cdn.shopify.com/${"x".repeat(2000)}`,
+  ];
+  for (const [i, externalUrl] of invalid.entries()) {
+    assert.equal(catalogImageLinkUrl(externalUrl), null, externalUrl);
+    await assert.rejects(
+      m.upload(f.actor, `bad-image-link-${i}`, f.product, {
+        ...input,
+        externalUrl,
+      }),
+      /Image links/,
+    );
+  }
+  await assert.rejects(
+    m.upload(f.actor, "linked-mixed-bytes", f.product, {
+      ...image(),
+      externalUrl: input.externalUrl,
+    }),
+    /Choose one/,
+  );
+  await assert.rejects(
+    m.upload(f.actor, "linked-mixed-type", f.product, {
+      ...input,
+      mediaType: "image/png",
+    }),
+    /Choose one/,
+  );
+  await assert.rejects(
+    m.upload(f.actor, "linked-no-alt", f.product, { ...input, altText: "" }),
+    /alternative text/,
+  );
+  await assert.rejects(
+    m.upload(b, "linked-buyer", f.product, input),
+    /not permitted/,
+  );
+  assert.deepEqual(m.list(f.actor, f.product).items, []);
+});
+test("retired linked images remain retained and count toward the product resource quota", async (t) => {
+  const f = fixture(t),
+    m = media(f);
+  const input = {
+    kind: "image" as const,
+    title: "Equipment image",
+    altText: "Equipment unit",
+    externalUrl: "https://cdn.shopify.com/fixture.png",
+  };
+  const first = await m.upload(f.actor, "linked-quota-0", f.product, input);
+  m.retire(f.actor, "linked-quota-retire", f.product, first.id, {
+    expectedVersion: 1,
+    reason: "Retained image source history",
+  });
+  for (let i = 1; i < 40; i++)
+    await m.upload(f.actor, `linked-quota-${i}`, f.product, input);
+  await assert.rejects(
+    m.upload(f.actor, "linked-quota-overflow", f.product, input),
+    /quota/,
+  );
+  assert.equal(m.list(f.actor, f.product).items.length, 40);
 });
 test("PDF normalization removes original active actions and admits uploaded manuals after explicit rights", async (t) => {
   const f = fixture(t),

@@ -1,6 +1,29 @@
 /* Grouped record forms (customer record tabs, catalog product dialog).
    A fieldset reads as one titled card; fields sit in a responsive grid and
    the primary command leads a footer row with its secondary companions. */
+.resource-add {
+  margin: 16px 0;
+}
+.manufacturer-image-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 16px;
+}
+.manufacturer-image-options figure {
+  min-width: 0;
+  margin: 0;
+}
+.manufacturer-image-options img {
+  display: block;
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+  background: white;
+}
+.manufacturer-image-options button {
+  width: 100%;
+  white-space: normal;
+}
 fieldset.record-form-card {
   min-width: 0;
   margin: var(--space-4) 0 0;
