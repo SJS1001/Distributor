@@ -1,4 +1,5 @@
 import { CustomerDirectory, CustomerRecord } from "./customer-record.tsx";
+import { InfoBubble } from "./info-bubble.tsx";
 import { WorkspaceBreadcrumbs } from "./workspace-breadcrumbs.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import { PriceOverridesEditor } from "./price-overrides.tsx";
@@ -1936,7 +1937,7 @@ function App() {
       )}
       <p>
         {pilotPrefilled
-          ? `Test ${publicRoute === "customer-sign-in" ? "customer" : "administrator"} details are filled in. Click Sign in to explore the sample pilot.`
+          ? `Demonstration ${publicRoute === "customer-sign-in" ? "customer" : "administrator"} details are filled in. Click Sign in to continue.`
           : "Enter the email and password for your account."}
       </p>
       <form
@@ -2575,10 +2576,17 @@ function App() {
         </header>
         <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
         <div className="qualification">
-          {staff
-            ? "Operational qualification pending · storage region "
-            : "Pilot workspace · "}
-          {data.organization.region} · {currency}
+          {staff ? (
+            <>
+              Storage region {data.organization.region} · {currency}
+              <InfoBubble label="operational status">
+                Operational qualification is pending. Records for this
+                organization are stored in region {data.organization.region}.
+              </InfoBubble>
+            </>
+          ) : (
+            <>All prices in {currency}</>
+          )}
         </div>
         {error && (
           <p role="alert" className="error">
@@ -4070,11 +4078,13 @@ function App() {
               )}
               {extra.labels?.length > 0 && (
                 <>
-                  <h2>Prepared stock labels</h2>
-                  <p>
-                    These receipts record file preparation only. Printing and
-                    attachment require physical verification.
-                  </p>
+                  <div className="info-heading">
+                    <h2>Prepared stock labels</h2>
+                    <InfoBubble label="Prepared stock labels">
+                      These receipts record file preparation only. Printing and
+                      attachment require physical verification.
+                    </InfoBubble>
+                  </div>
                   {table(
                     ["SKU / serial", "Output", "Copies", "Prepared", "Receipt"],
                     extra.labels,
@@ -4700,13 +4710,15 @@ function App() {
               />
             </PageSection>
             <PageSection id="purchasing-drafts">
-              <h2 id="purchasing-drafts" tabIndex={-1}>
-                Saved receipt scans
-              </h2>
-              <p className="purchasing-intro">
-                Drafts do not reserve or receive stock. Review the saved SKU,
-                quantity, serials, bin and inspection choice before receiving.
-              </p>
+              <div className="info-heading">
+                <h2 id="purchasing-drafts" tabIndex={-1}>
+                  Saved receipt scans
+                </h2>
+                <InfoBubble label="Saved receipt scans">
+                  Drafts do not reserve or receive stock. Review the saved SKU,
+                  quantity, serials, bin and inspection choice before receiving.
+                </InfoBubble>
+              </div>
               {table(
                 ["Delivery", "Warehouse / SKU", "Scans", "Status", "Actions"],
                 extra.purchases?.drafts ?? [],
@@ -4832,15 +4844,18 @@ function App() {
               )}
             </PageSection>
             <PageSection id="purchasing-receipts">
-              <h2 id="purchasing-receipts" tabIndex={-1}>
-                Purchase receipts and supplier returns
-              </h2>
-              <p className="purchasing-intro">
-                Confirm physical handover at original stock cost. Record
-                supplier credit evidence or link a separately received
-                replacement, then review the outcome. Accounting reconciliation
-                remains separate; the original purchase order stays received.
-              </p>
+              <div className="info-heading">
+                <h2 id="purchasing-receipts" tabIndex={-1}>
+                  Purchase receipts and supplier returns
+                </h2>
+                <InfoBubble label="Purchase receipts and supplier returns">
+                  Confirm physical handover at original stock cost. Record
+                  supplier credit evidence or link a separately received
+                  replacement, then review the outcome. Accounting
+                  reconciliation remains separate; the original purchase order
+                  stays received.
+                </InfoBubble>
+              </div>
               {table(
                 ["Delivery", "Purchased / returned", "Held stock", "Actions"],
                 extra.purchases?.receipts ?? [],
@@ -5547,12 +5562,14 @@ function App() {
                 )}
                 {extra.downloads?.length > 0 && (
                   <>
-                    <h2>Prepared document downloads</h2>
-                    <p>
-                      These receipts record an authorized request and prepared
-                      bytes. They do not establish receipt, reading or delivery
-                      to the customer.
-                    </p>
+                    <div className="info-heading">
+                      <h2>Prepared document downloads</h2>
+                      <InfoBubble label="Prepared document downloads">
+                        These receipts record an authorized request and prepared
+                        bytes. They do not establish receipt, reading or
+                        delivery to the customer.
+                      </InfoBubble>
+                    </div>
                     {table(
                       ["Document", "Requested", "Bytes", "SHA-256", "State"],
                       extra.downloads,
@@ -5780,13 +5797,15 @@ function App() {
             <PageSection id="billing-accounting">
               {can("finance") && (
                 <section className="accounting-section">
-                  <h2 id="billing-accounting" tabIndex={-1}>
-                    Accounting connections & stock journals
-                  </h2>
-                  <p>
-                    Provider connections, inventory costs and ledger
-                    reconciliation.
-                  </p>
+                  <div className="info-heading">
+                    <h2 id="billing-accounting" tabIndex={-1}>
+                      Accounting connections & stock journals
+                    </h2>
+                    <InfoBubble label="Accounting connections & stock journals">
+                      Provider connections, inventory costs and ledger
+                      reconciliation.
+                    </InfoBubble>
+                  </div>
                   <details className="workspace-disclosure">
                     <summary>
                       <span>
@@ -5860,14 +5879,16 @@ function App() {
             <PageSection id="billing-aging">
               {extra.aging && (
                 <>
-                  <h2 id="billing-aging" tabIndex={-1}>
-                    Account aging
-                  </h2>
-                  <p>
-                    Current ledger balances · due dates use UTC calendar days.
-                    Missing due dates remain unknown. Credit balances and
-                    pending refunds appear separately.
-                  </p>
+                  <div className="info-heading">
+                    <h2 id="billing-aging" tabIndex={-1}>
+                      Account aging
+                    </h2>
+                    <InfoBubble label="Account aging">
+                      Current ledger balances · due dates use UTC calendar days.
+                      Missing due dates remain unknown. Credit balances and
+                      pending refunds appear separately.
+                    </InfoBubble>
+                  </div>
                   {can("finance") && (
                     <a
                       className="button secondary"
@@ -5908,12 +5929,14 @@ function App() {
               )}
               {extra.billingProfiles && (
                 <>
-                  <h2>Billing identities and terms</h2>
-                  <p>
-                    Changes apply to new invoices. Existing native documents
-                    retain issuance details; reconstructed documents identify
-                    missing historical details.
-                  </p>
+                  <div className="info-heading">
+                    <h2>Billing identities and terms</h2>
+                    <InfoBubble label="Billing identities and terms">
+                      Changes apply to new invoices. Existing native documents
+                      retain issuance details; reconstructed documents identify
+                      missing historical details.
+                    </InfoBubble>
+                  </div>
                   {table(
                     [
                       "Party",
@@ -6661,13 +6684,15 @@ function App() {
                 className="ledger-section ops-section"
                 aria-label="Replacement history"
               >
-                <h2>Replacement history</h2>
-                <p>
-                  Approved serials are held for customer collection or carrier
-                  dispatch. Handover records the scanned serial and recipient,
-                  retains original invoice and coverage, and applies the
-                  approved returned-unit disposition.
-                </p>
+                <div className="info-heading">
+                  <h2>Replacement history</h2>
+                  <InfoBubble label="Replacement history">
+                    Approved serials are held for customer collection or carrier
+                    dispatch. Handover records the scanned serial and recipient,
+                    retains original invoice and coverage, and applies the
+                    approved returned-unit disposition.
+                  </InfoBubble>
+                </div>
                 {table(
                   [
                     "Claim",
@@ -6918,13 +6943,15 @@ function App() {
                   className="ledger-section ops-section"
                   aria-label="Manufacturer case history"
                 >
-                  <h2>Manufacturer case history</h2>
-                  <p>
-                    Staff record referrals and responses obtained outside
-                    Distributor. Acceptance does not move equipment, approve a
-                    replacement or issue a credit. Follow the separate
-                    authorized return and billing tasks.
-                  </p>
+                  <div className="info-heading">
+                    <h2>Manufacturer case history</h2>
+                    <InfoBubble label="Manufacturer case history">
+                      Staff record referrals and responses obtained outside
+                      Distributor. Acceptance does not move equipment, approve a
+                      replacement or issue a credit. Follow the separate
+                      authorized return and billing tasks.
+                    </InfoBubble>
+                  </div>
                   {table(
                     [
                       "Claim",
@@ -7242,13 +7269,15 @@ function App() {
             <PageSection id="customer-providers">
               {admin && (
                 <section className="panel">
-                  <h2>Provider disclosures</h2>
-                  <p>
-                    Publish vendor-reviewed terms before offering an exception.
-                    Each new version requires renewed customer acceptance.
-                    Qualification evidence must refer to the applicable contract
-                    and processing locations.
-                  </p>
+                  <div className="info-heading">
+                    <h2>Provider disclosures</h2>
+                    <InfoBubble label="Provider disclosures">
+                      Publish vendor-reviewed terms before offering an
+                      exception. Each new version requires renewed customer
+                      acceptance. Qualification evidence must refer to the
+                      applicable contract and processing locations.
+                    </InfoBubble>
+                  </div>
                   <DisclosureReview disclosures={data.providerDisclosures} />
                   {button("Publish provider disclosure", () =>
                     open(
@@ -7374,13 +7403,15 @@ function App() {
             <PageSection id="imports-opening">
               {" "}
               <section className="panel">
-                <h2>Opening stock review</h2>
-                <p>
-                  Import a reviewed opening balance before this product has
-                  stock at its destination warehouse. A dry run changes no
-                  stock. Any rejected row or unmatched quantity/value blocks the
-                  whole batch.
-                </p>
+                <div className="info-heading">
+                  <h2>Opening stock review</h2>
+                  <InfoBubble label="Opening stock review">
+                    Import a reviewed opening balance before this product has
+                    stock at its destination warehouse. A dry run changes no
+                    stock. Any rejected row or unmatched quantity/value blocks
+                    the whole batch.
+                  </InfoBubble>
+                </div>
                 {button("Dry run opening stock", () =>
                   open(
                     "Dry run opening stock",
@@ -7551,15 +7582,18 @@ function App() {
             <PageSection id="imports-masters">
               {" "}
               <section className="panel">
-                <h2>Customer and catalog review</h2>
-                <p>
-                  Dry runs create no accounts or products. Every row explicitly
-                  creates a new record (targetId null) or matches an existing ID
-                  with all reviewed fields equal. Approval applies the whole
-                  batch. New customers start with strict residency; matching
-                  preserves existing choices. No users, provider consent, stock,
-                  unpaid balances or accounting entries are imported here.
-                </p>
+                <div className="info-heading">
+                  <h2>Customer and catalog review</h2>
+                  <InfoBubble label="Customer and catalog review">
+                    Dry runs create no accounts or products. Every row
+                    explicitly creates a new record (targetId null) or matches
+                    an existing ID with all reviewed fields equal. Approval
+                    applies the whole batch. New customers start with strict
+                    residency; matching preserves existing choices. No users,
+                    provider consent, stock, unpaid balances or accounting
+                    entries are imported here.
+                  </InfoBubble>
+                </div>
                 <details>
                   <summary>Existing record IDs for explicit matching</summary>
                   {table(
@@ -7767,13 +7801,15 @@ function App() {
             <PageSection id="imports-documents">
               {" "}
               <section className="panel">
-                <h2>Unpaid document review</h2>
-                <p>
-                  Carry forward original invoices and their reconciled
-                  outstanding balances. Historical credits, payments and refunds
-                  remain source evidence. Approval creates no stock, shipment,
-                  new cash receipt or accounting delivery.
-                </p>
+                <div className="info-heading">
+                  <h2>Unpaid document review</h2>
+                  <InfoBubble label="Unpaid document review">
+                    Carry forward original invoices and their reconciled
+                    outstanding balances. Historical credits, payments and
+                    refunds remain source evidence. Approval creates no stock,
+                    shipment, new cash receipt or accounting delivery.
+                  </InfoBubble>
+                </div>
                 <details>
                   <summary>
                     Customer and product IDs for document mapping
@@ -8079,12 +8115,14 @@ function App() {
               <section className="panel ops-access">
                 <div className="ops-section-header">
                   <div>
-                    <h2>Staff and buyer access</h2>
-                    <p>
-                      New users must change their initial password. Access
-                      changes, resets and revocations end every session for the
-                      affected user.
-                    </p>
+                    <div className="info-heading">
+                      <h2>Staff and buyer access</h2>
+                      <InfoBubble label="Staff and buyer access">
+                        New users must change their initial password. Access
+                        changes, resets and revocations end every session for
+                        the affected user.
+                      </InfoBubble>
+                    </div>
                   </div>
                   {button("Create user", () =>
                     simple(

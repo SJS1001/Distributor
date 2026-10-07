@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import { CustomerPrice, usePricingChange } from "./customer-pricing.tsx";
 import catalog from "./gree-catalog-data.json" with { type: "json" };
@@ -52,11 +53,14 @@ export function ReferenceMappingEditor({
   const family = catalog.products.find((p) => p.id === familyId);
   return (
     <section>
-      <h3>Reviewed manufacturer reference</h3>
-      <p>
-        Link this native SKU only after verifying the exact equipment and system
-        configuration. This mapping does not copy images, documents or prices.
-      </p>
+      <div className="info-heading">
+        <h3>Reviewed manufacturer reference</h3>
+        <InfoBubble label="Reviewed manufacturer reference">
+          Link this native SKU only after verifying the exact equipment and
+          system configuration. This mapping does not copy images, documents or
+          prices.
+        </InfoBubble>
+      </div>
       {change.recoveryUi}
       <form
         onSubmit={(e) => {

@@ -1,4 +1,5 @@
 import { ProductAddonsEditor } from "./product-addons.tsx";
+import { InfoBubble } from "./info-bubble.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import { UnitCostEditor } from "./price-authority.tsx";
 import { ReferenceMappingEditor } from "./gree-reference-loader.tsx";
@@ -43,8 +44,12 @@ function MetadataFields({
   return (
     <div className="resource-metadata">
       <div className="resource-field-group">
-        <h4>Identify the resource</h4>
-        <p>Name it clearly and specify the equipment it applies to.</p>
+        <div className="info-heading">
+          <h4>Identify the resource</h4>
+          <InfoBubble label="Identify the resource">
+            Name it clearly and specify the equipment it applies to.
+          </InfoBubble>
+        </div>
         <label>
           Resource title
           <input
@@ -75,8 +80,12 @@ function MetadataFields({
         </label>
       </div>
       <div className="resource-field-group">
-        <h4>Edition &amp; source</h4>
-        <p>Keep the language, revision and publisher reference together.</p>
+        <div className="info-heading">
+          <h4>Edition &amp; source</h4>
+          <InfoBubble label="Edition & source">
+            Keep the language, revision and publisher reference together.
+          </InfoBubble>
+        </div>
         <label>
           Language
           <input

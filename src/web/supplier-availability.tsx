@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request, RequestError } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { Modal } from "./modal.tsx";
@@ -517,11 +518,13 @@ export function SupplierAvailability({
       className="ledger-section supplier-directory"
       aria-label="Supplier purchasing availability"
     >
-      <h2>Suppliers</h2>
-      <p>
-        Review purchasing availability and its history. Search includes
-        suspended suppliers.
-      </p>
+      <div className="info-heading">
+        <h2>Suppliers</h2>
+        <InfoBubble label="Suppliers">
+          Review purchasing availability and its history. Search includes
+          suspended suppliers.
+        </InfoBubble>
+      </div>
       {notice && <p role="status">{notice}</p>}
       {recovery.error && (
         <p role="alert" className="error">

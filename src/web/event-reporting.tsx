@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import "./operations-lane.css";
@@ -152,18 +153,17 @@ export function EventReporting({
   }, []);
   return (
     <section className="panel ops-events" aria-label="Event reporting">
-      <h2 ref={heading} tabIndex={-1}>
-        Local event reporting
-      </h2>
-      <p>
-        Optional metadata reporting. Native stock, orders and billing remain
-        authoritative. A reviewed retry queues an event; processing requires a
-        separately enabled local worker.
-      </p>
-      <p>
-        Delivery pages are live. Use Refresh after worker activity to reload
-        current states.
-      </p>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Local event reporting
+        </h2>
+        <InfoBubble label="Local event reporting">
+          Optional metadata reporting. Native stock, orders and billing remain
+          authoritative. A reviewed retry queues an event; processing requires a
+          separately enabled local worker. Delivery pages are live. Use Refresh
+          after worker activity to reload current states.
+        </InfoBubble>
+      </div>
       {error && (
         <p role="alert" className="error">
           {error}

@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React from "react";
 import { usePages } from "./billing-inbox.tsx";
 import "./fulfillment-queues.css";
@@ -30,18 +31,20 @@ export function SerialCustody({
   return (
     <section aria-label="Serial custody reviews" className="fulfillment-queue">
       <div className="queue-controls">
-        <h2 id="inventory-serials" tabIndex={-1}>
-          Serial custody reviews
-        </h2>
+        <div className="info-heading">
+          <h2 id="inventory-serials" tabIndex={-1}>
+            Serial custody reviews
+          </h2>
+          <InfoBubble label="Serial custody reviews">
+            Missing observations preserve expected book stock until
+            administrator review. Approved losses retain the serial identity
+            with zero book quantity. Scanned recovery returns it to quarantine
+            at original cost; inspect it before making it available.
+          </InfoBubble>
+        </div>
         <p role="status">
           {count} {count === 1 ? "review" : "reviews"} loaded
           {rows.busy ? " · Loading…" : ""}
-        </p>
-        <p>
-          Missing observations preserve expected book stock until administrator
-          review. Approved losses retain the serial identity with zero book
-          quantity. Scanned recovery returns it to quarantine at original cost;
-          inspect it before making it available.
         </p>
         {rows.error && (
           <p role="alert" className="error">

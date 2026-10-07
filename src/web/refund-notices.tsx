@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { usePages } from "./billing-inbox.tsx";
 
 type Notice = {
@@ -82,14 +83,16 @@ export function RefundNotices({
   const opener = useRef<HTMLButtonElement | null>(null);
   return (
     <section className="ledger-section" aria-label="Refund notices">
-      <h2>Refund notices</h2>
-      <p>
-        {personal
-          ? "Refund exceptions for your customer account."
-          : "Refund exceptions for authorized customer accounts."}{" "}
-        Read status is personal. Refresh to see new notices and updated
-        outcomes.
-      </p>
+      <div className="info-heading">
+        <h2>Refund notices</h2>
+        <InfoBubble label="Refund notices">
+          {personal
+            ? "Refund exceptions for your customer account."
+            : "Refund exceptions for authorized customer accounts."}{" "}
+          Read status is personal. Refresh to see new notices and updated
+          outcomes.
+        </InfoBubble>
+      </div>
       <p role="status">
         {initial.unread} unread refund notices · {rows.items.length} loaded
         {rows.busy ? " · Loading…" : ""}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type { CartPriceOverrides } from "../shared/price-overrides.ts";
 import { usePricingChange } from "./customer-pricing.tsx";
 import { reviewedCents } from "./price-authority.tsx";
@@ -71,13 +72,16 @@ export function PriceOverridesEditor({
   }
   return (
     <section aria-label="Saved cart selling prices">
-      <h3>One-off selling prices</h3>
-      <p>
-        Review an offered net price for a saved cart line. A reason is required
-        for every change. Offers outside reviewed limits, missing reviewed cost
-        or unconfigured limits require a different authorized administrator's
-        approval. Product or quantity changes require another review.
-      </p>
+      <div className="info-heading">
+        <h3>One-off selling prices</h3>
+        <InfoBubble label="One-off selling prices">
+          Review an offered net price for a saved cart line. A reason is
+          required for every change. Offers outside reviewed limits, missing
+          reviewed cost or unconfigured limits require a different authorized
+          administrator's approval. Product or quantity changes require another
+          review.
+        </InfoBubble>
+      </div>
       {change.recoveryUi}
       {error && <p role="alert">{error}</p>}
       <form

@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef } from "react";
 import { usePages } from "./billing-inbox.tsx";
 
@@ -37,18 +38,20 @@ export function OrderReservations({
   }, []);
   return (
     <section aria-label="Order reservation history">
-      <h3 ref={heading} tabIndex={-1}>
-        Order reservation history
-      </h3>
+      <div className="info-heading">
+        <h3 ref={heading} tabIndex={-1}>
+          Order reservation history
+        </h3>
+        <InfoBubble label="Order reservation history">
+          Newest first. Reasons are visible to the buyer. Expiry releases
+          unpicked units to backorder; original ordered quantities, accepted
+          prices, tax, total and credit exposure remain intact. Picked and
+          packed stock is preserved. Refresh reloads current status.
+        </InfoBubble>
+      </div>
       <button type="button" onClick={onClose}>
         Close reservation history
       </button>
-      <p>
-        Newest first. Reasons are visible to the buyer. Expiry releases unpicked
-        units to backorder; original ordered quantities, accepted prices, tax,
-        total and credit exposure remain intact. Picked and packed stock is
-        preserved. Refresh reloads current status.
-      </p>
       {history.error && (
         <p role="alert" className="error">
           {history.error}

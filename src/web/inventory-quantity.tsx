@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import type { Actor } from "../server/core.ts";
 import type { StockHistoryPage } from "../shared/stock-history.ts";
@@ -653,12 +654,14 @@ export function InventoryQuantity({
           ) : (
             <>
               <section aria-label="Quantity source movements">
-                <h3>Select original source movement</h3>
-                <p>
-                  Choose an eligible nonzero receipt, opening, count or quantity
-                  correction with matching original unit cost. Configure
-                  policies in Stock valuation.
-                </p>
+                <div className="info-heading">
+                  <h3>Select original source movement</h3>
+                  <InfoBubble label="Select original source movement">
+                    Choose an eligible nonzero receipt, opening, count or
+                    quantity correction with matching original unit cost.
+                    Configure policies in Stock valuation.
+                  </InfoBubble>
+                </div>
                 {movements?.items
                   .filter((m) => eligibleSource(m, movements.unit.cost))
                   .map((m) => (

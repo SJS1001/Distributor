@@ -1,4 +1,5 @@
 import React from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type { Application } from "../server/application.ts";
 import type { NavigationIntent } from "./navigation.ts";
 import { Attention, OperationalAnalytics } from "./operational-analytics.tsx";
@@ -250,8 +251,12 @@ export function Overview({
     <div className="overview">
       <div className="overview-intro">
         <div>
-          <h2>{staff ? "At a glance" : "Your account at a glance"}</h2>
-          <p>Current totals across your accessible records</p>
+          <div className="info-heading">
+            <h2>{staff ? "At a glance" : "Your account at a glance"}</h2>
+            <InfoBubble label="these totals">
+              Current totals across your accessible records
+            </InfoBubble>
+          </div>
         </div>
         {canPrepare && (
           <button className="primary-action" disabled={busy} onClick={prepare}>

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import type {
   CheckoutHistoryPage,
@@ -72,14 +73,16 @@ export function CheckoutHistory({
         }
       }}
     >
-      <h4 ref={heading} tabIndex={-1}>
-        Checkout history
-      </h4>
-      <p>
-        Invoice-wide observations across all checkout generations, newest first.
-        These are retained observations, not the current invoice balance. Older
-        observations were not backfilled.
-      </p>
+      <div className="info-heading">
+        <h4 ref={heading} tabIndex={-1}>
+          Checkout history
+        </h4>
+        <InfoBubble label="Checkout history">
+          Invoice-wide observations across all checkout generations, newest
+          first. These are retained observations, not the current invoice
+          balance. Older observations were not backfilled.
+        </InfoBubble>
+      </div>
       <button onClick={close}>Close checkout history</button>
       <button disabled={busy} onClick={() => void load()}>
         Reload checkout history

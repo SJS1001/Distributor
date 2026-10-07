@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import { CarrierClaim } from "./carrier-claim.tsx";
 import { command, downloadCanadaPostManifest, request } from "./api.ts";
@@ -36,16 +37,19 @@ export function CanadaPostWarehouse({
       aria-label="Canada Post warehouse groups"
       style={{ overflowWrap: "anywhere" }}
     >
-      <h3 ref={heading} tabIndex={-1}>
-        Canada Post warehouse groups
-      </h3>
+      <div className="info-heading">
+        <h3 ref={heading} tabIndex={-1}>
+          Canada Post warehouse groups
+        </h3>
+        <InfoBubble label="Canada Post warehouse groups">
+          Review domestic bookings together. Create each shipment, then review
+          and transmit its group manifest. Physical handover is recorded
+          separately.
+        </InfoBubble>
+      </div>
       <button type="button" onClick={onClose}>
         Close Canada Post groups
       </button>
-      <p>
-        Review domestic bookings together. Create each shipment, then review and
-        transmit its group manifest. Physical handover is recorded separately.
-      </p>
       <label>
         Canada Post warehouse
         <select

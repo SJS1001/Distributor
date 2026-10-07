@@ -1,4 +1,5 @@
 import { CostCorrectionsPanel } from "./cost-corrections.tsx";
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import { command, downloadCostFile, request } from "./api.ts";
 import type {
@@ -127,13 +128,15 @@ export function AccountingCosts({
   );
   return (
     <section aria-label="Stock cost accounting handoffs">
-      <h2>Stock cost accounting handoffs</h2>
-      <p>
-        Prepare and review an original-cost journal for a regional file
-        receiver. Approval freezes the file and advances the stock cutoff.
-        Record receiver acceptance separately after verifying its evidence.
-        Check for duplicate inventory postings in the receiving ledger.
-      </p>
+      <div className="info-heading">
+        <h2>Stock cost accounting handoffs</h2>
+        <InfoBubble label="Stock cost accounting handoffs">
+          Prepare and review an original-cost journal for a regional file
+          receiver. Approval freezes the file and advances the stock cutoff.
+          Record receiver acceptance separately after verifying its evidence.
+          Check for duplicate inventory postings in the receiving ledger.
+        </InfoBubble>
+      </div>
       <button disabled={busy} onClick={() => void run(refresh)}>
         {source ? "Refresh stock cost review" : "Load stock cost review"}
       </button>
@@ -227,13 +230,15 @@ export function AccountingCosts({
                 })
               }
             >
-              <h3>Prepare a saved review</h3>
-              <p>
-                Enter controls from an independently reconciled source. All
-                amounts below are whole cents. Map every type with a nonzero
-                value change to an explicit offset account. Types in this
-                window: {source.byType.map((t) => t.type).join(", ")}.
-              </p>
+              <div className="info-heading">
+                <h3>Prepare a saved review</h3>
+                <InfoBubble label="Prepare a saved review">
+                  Enter controls from an independently reconciled source. All
+                  amounts below are whole cents. Map every type with a nonzero
+                  value change to an explicit offset account. Types in this
+                  window: {source.byType.map((t) => t.type).join(", ")}.
+                </InfoBubble>
+              </div>
               <fieldset disabled={busy || source.recoveryHold}>
                 {field("Cost batch reference", "batchRef", false, 100)}
                 {field("Inventory account code", "inventoryAccount", false, 80)}
@@ -491,12 +496,14 @@ export function AccountingCosts({
                     })
                   }
                 >
-                  <h4>Record verified receiver acceptance</h4>
-                  <p>
-                    Confirm the exact downloaded hash, original region and
-                    independent receiver totals. No external request is sent by
-                    this form.
-                  </p>
+                  <div className="info-heading">
+                    <h4>Record verified receiver acceptance</h4>
+                    <InfoBubble label="Record verified receiver acceptance">
+                      Confirm the exact downloaded hash, original region and
+                      independent receiver totals. No external request is sent
+                      by this form.
+                    </InfoBubble>
+                  </div>
                   <fieldset disabled={busy || source?.recoveryHold}>
                     {field("Accepted file SHA-256", "contentHash", false, 64)}
                     {field(

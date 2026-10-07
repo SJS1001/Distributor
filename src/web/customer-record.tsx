@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request, RequestError } from "./api.ts";
 import { PageSections, PageSection } from "./workspace.tsx";
 import {
@@ -893,11 +894,13 @@ function CustomerContactsEditor({
     <section className="panel customer-contacts">
       <div className="customer-panel-header">
         <div>
-          <h3>Company contacts</h3>
-          <p className="customer-panel-intro">
-            Staff-only contact directory. Archiving retains the person’s
-            recorded details.
-          </p>
+          <div className="info-heading">
+            <h3>Company contacts</h3>
+            <InfoBubble label="Company contacts">
+              Staff-only contact directory. Archiving retains the person’s
+              recorded details.
+            </InfoBubble>
+          </div>
         </div>
         {!attempt && page?.canManage && !recovery.error && !editing && (
           <button

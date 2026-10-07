@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type { LedgerDisclosure } from "../server/organization-residency.ts";
 import type { PermissionReview } from "../server/stock-journal-permissions.ts";
 import { request } from "./api.ts";
@@ -381,12 +382,14 @@ export function StockJournalPermissions({
     submitting || reading || !!recovery.error || !!recovery.attempt || !!review;
   return (
     <section aria-label="Journal permission replacement" ref={root}>
-      <h3>Journal permission replacement</h3>
-      <p>
-        Review the current organization choice separately from the frozen
-        journal. A different finance principal approves or rejects the
-        replacement. Unknown or expired delivery outcomes permit lookup only.
-      </p>
+      <div className="info-heading">
+        <h3>Journal permission replacement</h3>
+        <InfoBubble label="Journal permission replacement">
+          Review the current organization choice separately from the frozen
+          journal. A different finance principal approves or rejects the
+          replacement. Unknown or expired delivery outcomes permit lookup only.
+        </InfoBubble>
+      </div>
       {recovery.error && <p role="alert">{recovery.error}</p>}
       {recovery.attempt && !review && (
         <>

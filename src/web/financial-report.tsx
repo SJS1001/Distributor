@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type {
   SalesReport,
   SalesReportEntry,
@@ -180,15 +181,17 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
     >
       <header className="financial-report-heading">
         <span className="section-kicker">History & adjustments</span>
-        <h2>
-          {customer
-            ? "Your purchases, credits & payments"
-            : "Sales, credits & payments"}
-        </h2>
-        <p>
-          Original sale prices and later adjustments, kept separate from money
-          received or refunded.
-        </p>
+        <div className="info-heading">
+          <h2>
+            {customer
+              ? "Your purchases, credits & payments"
+              : "Sales, credits & payments"}
+          </h2>
+          <InfoBubble label="this report">
+            Original sale prices and later adjustments, kept separate from money
+            received or refunded.
+          </InfoBubble>
+        </div>
       </header>
       <form
         className="financial-report-filters"

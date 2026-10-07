@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, {
   useEffect,
   useId,
@@ -275,18 +276,20 @@ export function StockQueueControls({
           ))}
         </select>
       </div>
-      <p role="status">
-        {queue.items.length} stock records loaded
-        {queue.busy
-          ? " · Loading…"
-          : queue.loaded && !queue.next && !queue.error
-            ? " · All results shown"
-            : ""}
-      </p>
-      <p>
-        Search by serial or bin, or narrow the list by product, warehouse and
-        condition. Refresh to see the latest stock availability.
-      </p>
+      <div className="status-line">
+        <p role="status">
+          {queue.items.length} stock records loaded
+          {queue.busy
+            ? " · Loading…"
+            : queue.loaded && !queue.next && !queue.error
+              ? " · All results shown"
+              : ""}
+        </p>
+        <InfoBubble label="stock list">
+          Search by serial or bin, or narrow the list by product, warehouse and
+          condition. Refresh to see the latest stock availability.
+        </InfoBubble>
+      </div>
       {queue.error && (
         <p role="alert" className="error">
           {queue.error}

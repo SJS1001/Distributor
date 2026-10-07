@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { usePages } from "./billing-inbox.tsx";
 import type {
   RefundPage,
@@ -35,14 +36,16 @@ function Observations({
   useEffect(() => heading.current?.focus(), []);
   return (
     <section aria-label="Refund provider history">
-      <h3 tabIndex={-1} ref={heading}>
-        Provider history — {refund.reference}
-      </h3>
-      <p>
-        Newest observations first. Applied entries changed the refund when
-        observed; retained entries did not. Refresh shows current status and
-        resets this history view.
-      </p>
+      <div className="info-heading">
+        <h3 tabIndex={-1} ref={heading}>
+          Provider history — {refund.reference}
+        </h3>
+        <InfoBubble label="provider history">
+          Newest observations first. Applied entries changed the refund when
+          observed; retained entries did not. Refresh shows current status and
+          resets this history view.
+        </InfoBubble>
+      </div>
       <button className="secondary" onClick={close}>
         Close refund history
       </button>
@@ -117,13 +120,15 @@ export function CashRefunds({
   const opener = useRef<HTMLButtonElement | null>(null);
   return (
     <section className="ledger-section" aria-label="Cash refunds">
-      <h2 ref={heading} tabIndex={-1}>
-        Cash refunds
-      </h2>
-      <p>
-        Newest refunds first. Provider history is loaded when selected. Refresh
-        resets the loaded pages.
-      </p>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Cash refunds
+        </h2>
+        <InfoBubble label="Cash refunds">
+          Newest refunds first. Provider history is loaded when selected.
+          Refresh resets the loaded pages.
+        </InfoBubble>
+      </div>
       {rows.error && (
         <p role="alert" className="error">
           {rows.error}

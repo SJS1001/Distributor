@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { IncomingSupply } from "./incoming-supply.tsx";
@@ -51,11 +52,13 @@ function OrderTimeline({ order }: { order: Item }) {
       className="record-detail-panel"
       aria-label="Recorded order timeline"
     >
-      <h3>Recorded history</h3>
-      <p className="record-detail-note order-timeline-intro">
-        Recorded milestones, newest first. Planned fulfillment steps are not
-        completed events.
-      </p>
+      <div className="info-heading">
+        <h3>Recorded history</h3>
+        <InfoBubble label="Recorded history">
+          Recorded milestones, newest first. Planned fulfillment steps are not
+          completed events.
+        </InfoBubble>
+      </div>
       <ol className="order-timeline">
         {events.map((e) => (
           <li key={e.id}>

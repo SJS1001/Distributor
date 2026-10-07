@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request, command, downloadReconciliation } from "./api.ts";
 import type {
   ControlIssues,
@@ -195,18 +196,17 @@ export function ReconciliationPanel() {
     >
       <div className="ops-section-header">
         <div>
-          <h2>Stock and billing reconciliation</h2>
-          <p>
-            Control totals from one current database snapshot. Stock includes
-            quarantine and in-transit custody at original cost. Transfers do not
-            change organization-wide quantity or value.
-          </p>
-          <p>
-            These controls compare stock by product, native billing records and
-            agreement between orders, shipments, stock deductions and invoices.
-            They do not verify physical counts, bank statements or provider
-            balances.
-          </p>
+          <div className="info-heading">
+            <h2>Stock and billing reconciliation</h2>
+            <InfoBubble label="Stock and billing reconciliation">
+              Control totals from one current database snapshot. Stock includes
+              quarantine and in-transit custody at original cost. Transfers do
+              not change organization-wide quantity or value. These controls
+              compare stock by product, native billing records and agreement
+              between orders, shipments, stock deductions and invoices. They do
+              not verify physical counts, bank statements or provider balances.
+            </InfoBubble>
+          </div>
         </div>
         <div className="ops-header-actions">
           <button onClick={() => void load()} disabled={busy || !!action}>
@@ -347,12 +347,14 @@ export function ReconciliationPanel() {
         aria-label="Saved reconciliation reports"
         className="ops-control"
       >
-        <h3>Saved reports</h3>
-        <p>
-          Saving checks the displayed controls again. Each dated report retains
-          its original bytes and discrepancy details. It does not verify
-          physical stock or external balances.
-        </p>
+        <div className="info-heading">
+          <h3>Saved reports</h3>
+          <InfoBubble label="Saved reports">
+            Saving checks the displayed controls again. Each dated report
+            retains its original bytes and discrepancy details. It does not
+            verify physical stock or external balances.
+          </InfoBubble>
+        </div>
         <button
           className="secondary"
           onClick={() => void loadHistory()}

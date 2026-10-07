@@ -1,4 +1,5 @@
 import { ReferenceMatches } from "./gree-reference-loader.tsx";
+import { InfoBubble } from "./info-bubble.tsx";
 import type { ReferenceRequest } from "./reference-context.ts";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import { AvailabilityBadge } from "./product-availability.tsx";
@@ -312,8 +313,12 @@ export function ProductDetail({
             <div className="sf-information-layout">
               <div>
                 <p className="sf-kicker">Technical library</p>
-                <h3>Product documents</h3>
-                <p>Check model, language and revision before use.</p>
+                <div className="info-heading">
+                  <h3>Product documents</h3>
+                  <InfoBubble label="Product documents">
+                    Check model, language and revision before use.
+                  </InfoBubble>
+                </div>
               </div>
               <div>
                 {resources.busy && <p role="status">Loading documents…</p>}

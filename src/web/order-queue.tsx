@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import { SavedFilters } from "./saved-filters.tsx";
 import React, {
   useEffect,
@@ -254,19 +255,21 @@ export function OrderQueueControls({
           Clear order state filter
         </button>
       )}
-      <p role="status">
-        {queue.items.length} {queue.items.length === 1 ? "order" : "orders"}{" "}
-        loaded
-        {queue.busy
-          ? " · Loading…"
-          : queue.loaded && !queue.next && !queue.error
-            ? " · All results shown"
-            : ""}
-      </p>
-      <p>
-        Newest recorded orders first. Refresh reloads the queue and its current
-        states.
-      </p>
+      <div className="status-line">
+        <p role="status">
+          {queue.items.length} {queue.items.length === 1 ? "order" : "orders"}{" "}
+          loaded
+          {queue.busy
+            ? " · Loading…"
+            : queue.loaded && !queue.next && !queue.error
+              ? " · All results shown"
+              : ""}
+        </p>
+        <InfoBubble label="order list">
+          Newest recorded orders first. Refresh reloads the queue and its
+          current states.
+        </InfoBubble>
+      </div>
       {queue.error && (
         <p role="alert" className="error">
           {queue.error}

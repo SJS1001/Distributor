@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 
 type Item = Record<string, any>;
@@ -164,17 +165,19 @@ function DocumentHistory({
   useEffect(() => heading.current?.focus(), []);
   return (
     <section aria-label="Document history">
-      <h2 ref={heading} tabIndex={-1}>
-        Document history — {publication.number}
-      </h2>
-      <p>
-        Publication {publication.id} · {publication.state} when selected.{" "}
-        {personal
-          ? "Your own PDF requests and receipt confirmations."
-          : "Authorized customer PDF requests and receipt confirmations."}{" "}
-        Prepared requests do not prove delivery, saving or reading. Receipt
-        confirmation does not confirm payment or agreement.
-      </p>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Document history — {publication.number}
+        </h2>
+        <InfoBubble label="this section">
+          Publication {publication.id} · {publication.state} when selected.{" "}
+          {personal
+            ? "Your own PDF requests and receipt confirmations."
+            : "Authorized customer PDF requests and receipt confirmations."}{" "}
+          Prepared requests do not prove delivery, saving or reading. Receipt
+          confirmation does not confirm payment or agreement.
+        </InfoBubble>
+      </div>
       <button className="secondary" onClick={close}>
         Close document history
       </button>
@@ -201,13 +204,15 @@ export function BillingInbox({
   return (
     <>
       <section className="ledger-section" aria-label="Customer document inbox">
-        <h2>Customer document inbox</h2>
-        <p>
-          Published PDFs are available to the customer account. Only a buyer's
-          explicit confirmation records receipt. Withdrawing a publication
-          preserves its history and the original invoice or credit. Refresh
-          shows the newest documents and resets the history view.
-        </p>
+        <div className="info-heading">
+          <h2>Customer document inbox</h2>
+          <InfoBubble label="Customer document inbox">
+            Published PDFs are available to the customer account. Only a buyer's
+            explicit confirmation records receipt. Withdrawing a publication
+            preserves its history and the original invoice or credit. Refresh
+            shows the newest documents and resets the history view.
+          </InfoBubble>
+        </div>
         <p>
           {personal
             ? "Confirmations and history show your own activity."

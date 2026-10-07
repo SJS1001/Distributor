@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, {
   useEffect,
   useId,
@@ -153,13 +154,15 @@ export function ClaimQueueControls({
       className="queue-controls claim-queue-controls"
       aria-label="Claim queue"
     >
-      <h2 ref={heading} tabIndex={-1}>
-        Claim queue
-      </h2>
-      <p>
-        Newest recorded claims first. Refresh reloads the queue and its current
-        states.
-      </p>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Claim queue
+        </h2>
+        <InfoBubble label="Claim queue">
+          Newest recorded claims first. Refresh reloads the queue and its
+          current states.
+        </InfoBubble>
+      </div>
       <div className="queue-field">
         <label htmlFor={stateId}>Claim state</label>
         <select

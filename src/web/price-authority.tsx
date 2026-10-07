@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import type {
   PriceAuthorityHistoryEntry,
   PriceAuthorityHistoryPage,
@@ -115,11 +116,13 @@ export function UnitCostEditor({
   }, [change.value]);
   return (
     <section>
-      <h3>Reviewed wholesale unit cost</h3>
-      <p>
-        Staff pricing baseline for margin review. Historical receipt costs
-        remain in inventory accounting. This value is never shown to buyers.
-      </p>
+      <div className="info-heading">
+        <h3>Reviewed wholesale unit cost</h3>
+        <InfoBubble label="Reviewed wholesale unit cost">
+          Staff pricing baseline for margin review. Historical receipt costs
+          remain in inventory accounting. This value is never shown to buyers.
+        </InfoBubble>
+      </div>
       {change.recoveryUi}
       {error && <p role="alert">{error}</p>}
       <form

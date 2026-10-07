@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { usePages } from "./billing-inbox.tsx";
 import "./operations-lane.css";
 
@@ -45,13 +46,15 @@ export function AuditHistory() {
   }, [rows.loaded, rows.busy, rows.next, rows.error]);
   return (
     <section className="panel ops-audit" aria-label="Audit history">
-      <h2 ref={heading} tabIndex={-1}>
-        Audit history
-      </h2>
-      <p>
-        Newest recorded entries appear first. Use Refresh to include new
-        activity.
-      </p>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Audit history
+        </h2>
+        <InfoBubble label="Audit history">
+          Newest recorded entries appear first. Use Refresh to include new
+          activity.
+        </InfoBubble>
+      </div>
       {rows.error && (
         <p role="alert" className="error">
           {rows.error}

@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, {
   useEffect,
   useId,
@@ -190,17 +191,19 @@ export function CountQueue({
             </button>
           )}
         </div>
-        <p role="status">
-          {busy
-            ? "Loading counts…"
-            : page && active
-              ? `${count} ${count === 1 ? "count" : "counts"} on this page · Page ${selection.trail.length + 1}`
-              : "No count page available."}
-        </p>
-        <p>
-          Newest recorded counts first. States and observations are current when
-          each page is read.
-        </p>
+        <div className="status-line">
+          <p role="status">
+            {busy
+              ? "Loading counts…"
+              : page && active
+                ? `${count} ${count === 1 ? "count" : "counts"} on this page · Page ${selection.trail.length + 1}`
+                : "No count page available."}
+          </p>
+          <InfoBubble label="count list">
+            Newest recorded counts first. States and observations are current
+            when each page is read.
+          </InfoBubble>
+        </div>
         {error && (
           <>
             <p role="alert" className="error">

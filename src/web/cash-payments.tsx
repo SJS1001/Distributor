@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { usePages } from "./billing-inbox.tsx";
 import type { PaymentPage, PaymentSummary } from "../shared/payment-history.ts";
 
@@ -24,13 +25,15 @@ export function CashPayments({
   }, [rows.busy, rows.next, rows.loaded]);
   return (
     <section className="ledger-section" aria-label="Recorded cash payments">
-      <h2 ref={heading} tabIndex={-1}>
-        Recorded cash payments
-      </h2>
-      <p>
-        Newest payments first, in the original invoice currency. Refresh resets
-        the loaded pages.
-      </p>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Recorded cash payments
+        </h2>
+        <InfoBubble label="Recorded cash payments">
+          Newest payments first, in the original invoice currency. Refresh
+          resets the loaded pages.
+        </InfoBubble>
+      </div>
       {rows.error && (
         <p role="alert" className="error">
           {rows.error}

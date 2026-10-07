@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import "./operations-lane.css";
 import { Modal, type Dialog } from "./modal.tsx";
@@ -189,11 +190,13 @@ export function EnrollmentReview() {
     <section className="panel">
       <div className="section-heading ops-section-header">
         <div>
-          <h2>Trade account applications</h2>
-          <p>
-            Review Canadian business applications before granting buyer access.
-            Invitations require a manual private handoff.
-          </p>
+          <div className="info-heading">
+            <h2>Trade account applications</h2>
+            <InfoBubble label="Trade account applications">
+              Review Canadian business applications before granting buyer
+              access. Invitations require a manual private handoff.
+            </InfoBubble>
+          </div>
         </div>
         <button
           className="secondary"

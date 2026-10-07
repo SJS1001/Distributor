@@ -201,9 +201,9 @@ h2 {
   margin: 0;
 }
 .qualification {
-  border: 1px solid #e0cf9b;
-  background: #fff9e9;
-  color: #705d25;
+  border: 1px solid #dfe7ef;
+  background: #f6f9fc;
+  color: #4f6378;
   padding: 0.7rem 1rem;
   border-radius: 7px;
   font-size: 0.8rem;
@@ -673,9 +673,12 @@ main.workspace-main {
   margin-top: 20px;
 }
 .qualification {
-  border-color: #e4d6b5;
-  background: #faf6ed;
-  color: #775e2c;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-color: #dfe7ef;
+  background: #f6f9fc;
+  color: #4f6378;
   font-size: var(--text-caption);
   padding: 9px 12px;
   margin-bottom: 24px;
@@ -2371,4 +2374,91 @@ nav[aria-label="Catalog pages"] button:disabled {
   display: inline-block;
   margin: 6px 0 0;
   text-align: inherit;
+}
+
+.info-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.info-heading > :is(h1, h2, h3, h4) {
+  margin: 0;
+}
+.info-bubble {
+  display: inline-flex;
+  position: relative;
+}
+.info-bubble-trigger {
+  /* Fixed circle: overrides the workspace-wide button sizing rules. */
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  min-height: 22px !important;
+  padding: 0 !important;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid #b8c8d8;
+  background: #fff;
+  color: #2d5f8a;
+  font:
+    italic 700 12px/1 Georgia,
+    "Times New Roman",
+    serif;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+}
+.info-bubble-trigger::before {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+.info-bubble-trigger:hover,
+.info-bubble-trigger[aria-expanded="true"] {
+  background: #1f5f94;
+  border-color: #1f5f94;
+  color: #fff;
+}
+.info-bubble-trigger:focus-visible {
+  outline: 2px solid #1476bd;
+  outline-offset: 2px;
+}
+.info-bubble-panel {
+  position: fixed;
+  z-index: 2000;
+  display: block;
+  width: min(340px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border: 1px solid #d5e0ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #2b3e52;
+  box-shadow: 0 12px 32px #10345424;
+  font: 400 13px/1.5 inherit;
+  font-family: inherit;
+  text-align: left;
+  white-space: normal;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.status-line {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.status-line > p {
+  margin: 0;
+  font-size: var(--text-caption);
+  line-height: 1.55;
+}
+.status-line > p[role="status"] {
+  color: #34475e;
+  font-weight: 600;
+}
+.queue-controls > .info-heading {
+  grid-column: 1 / -1;
 }

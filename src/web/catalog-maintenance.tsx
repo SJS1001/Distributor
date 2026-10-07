@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import { ProductAvailabilityEditor } from "./product-availability.tsx";
 import { CatalogResourceWorkspace } from "./catalog-resources.tsx";
@@ -147,12 +148,12 @@ function Products({
             Retry catalog page
           </button>
         )}
+        <InfoBubble label="catalog pages">
+          Pages show current status, ordered by SKU. Refresh after changes. Base
+          prices are staff reference prices; customer quotes apply their
+          account's pricing rules.
+        </InfoBubble>
       </nav>
-      <p>
-        Pages show current status, ordered by SKU. Refresh after changes. Base
-        prices are staff reference prices; customer quotes apply their account's
-        pricing rules.
-      </p>
     </section>
   );
 }

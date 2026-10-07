@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, {
   useEffect,
   useId,
@@ -187,16 +188,18 @@ export function SupplierReturnQueueControls({
           </button>
         </div>
       </form>
-      <p role="status">
-        {queue.items.length}{" "}
-        {queue.items.length === 1 ? "supplier return" : "supplier returns"}{" "}
-        loaded
-        {queue.busy ? " · Loading…" : ""}
-      </p>
-      <p>
-        Newest recorded supplier returns first. Search by return reference,
-        serial or reason. Refresh reloads the queue and clears the search.
-      </p>
+      <div className="status-line">
+        <p role="status">
+          {queue.items.length}{" "}
+          {queue.items.length === 1 ? "supplier return" : "supplier returns"}{" "}
+          loaded
+          {queue.busy ? " · Loading…" : ""}
+        </p>
+        <InfoBubble label="supplier return list">
+          Newest recorded supplier returns first. Search by return reference,
+          serial or reason. Refresh reloads the queue and clears the search.
+        </InfoBubble>
+      </div>
       {queue.error && (
         <p role="alert" className="error">
           {queue.error}

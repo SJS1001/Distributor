@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type {
   StockJournalDelivery,
   JournalDeliveryInput,
@@ -499,13 +500,15 @@ export function StockJournalPreparation({
       );
   return (
     <section aria-label="Prepare stock journal">
-      <h3>Prepare stock journal</h3>
-      <p>
-        Select an approved stock-cost packet or correction. Review one unchanged
-        source date and map each source account to a distinct QuickBooks sandbox
-        account. Creation retains a local review; company credentials,
-        independent approval and delivery are separate steps.
-      </p>
+      <div className="info-heading">
+        <h3>Prepare stock journal</h3>
+        <InfoBubble label="Prepare stock journal">
+          Select an approved stock-cost packet or correction. Review one
+          unchanged source date and map each source account to a distinct
+          QuickBooks sandbox account. Creation retains a local review; company
+          credentials, independent approval and delivery are separate steps.
+        </InfoBubble>
+      </div>
       {recovery.error && <p role="alert">{recovery.error}</p>}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}

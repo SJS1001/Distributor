@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type {
   LedgerChoice,
   LedgerDisclosure,
@@ -422,14 +423,17 @@ export function OrganizationQuickBooksRevocation({ orgId }: { orgId: string }) {
     });
   return (
     <section aria-label="Organization QuickBooks revocation">
-      <h2 tabIndex={-1} ref={heading}>
-        Organization QuickBooks revocation
-      </h2>
-      <p>
-        Revoke the organization sandbox grant with one explicit provider
-        request. Local credentials are disabled first. An uncertain result
-        requires receipt recovery and external evidence; it must not be resent.
-      </p>
+      <div className="info-heading">
+        <h2 tabIndex={-1} ref={heading}>
+          Organization QuickBooks revocation
+        </h2>
+        <InfoBubble label="Organization QuickBooks revocation">
+          Revoke the organization sandbox grant with one explicit provider
+          request. Local credentials are disabled first. An uncertain result
+          requires receipt recovery and external evidence; it must not be
+          resent.
+        </InfoBubble>
+      </div>
       {summary?.enabled === false && (
         <p>
           Organization provider revocation is disabled. An administrator must

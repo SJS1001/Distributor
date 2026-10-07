@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef } from "react";
 import { usePages } from "./billing-inbox.tsx";
 
@@ -25,16 +26,18 @@ export function OrderAmendments({
     );
   return (
     <section aria-label="Order amendment history">
-      <h3 ref={heading} tabIndex={-1}>
-        Order amendment history
-      </h3>
+      <div className="info-heading">
+        <h3 ref={heading} tabIndex={-1}>
+          Order amendment history
+        </h3>
+        <InfoBubble label="Order amendment history">
+          Quantity changes retain accepted unit prices and tax. Reasons are
+          visible to the buyer. Newest first.
+        </InfoBubble>
+      </div>
       <button type="button" onClick={onClose}>
         Close amendment history
       </button>
-      <p>
-        Quantity changes retain accepted unit prices and tax. Reasons are
-        visible to the buyer. Newest first.
-      </p>
       {history.error && (
         <p role="alert" className="error">
           {history.error}

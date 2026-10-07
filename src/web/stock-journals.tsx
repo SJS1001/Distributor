@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import type { StockJournalDelivery } from "../server/stock-journal-delivery.ts";
 import type { JournalLine } from "../server/integration-costs.ts";
 import { request } from "./api.ts";
@@ -169,13 +170,15 @@ export function StockJournals({
   const money = (value: number) => formatter.format(value / 100);
   return (
     <section aria-label="Stock journal delivery reviews">
-      <h2>Stock journal delivery reviews</h2>
-      <p>
-        Review frozen stock-cost journals for a named QuickBooks sandbox
-        company. Approval reserves the reference and queues the journal;
-        delivery runs separately. Uncertain delivery remains held for
-        reconciliation.
-      </p>
+      <div className="info-heading">
+        <h2>Stock journal delivery reviews</h2>
+        <InfoBubble label="Stock journal delivery reviews">
+          Review frozen stock-cost journals for a named QuickBooks sandbox
+          company. Approval reserves the reference and queues the journal;
+          delivery runs separately. Uncertain delivery remains held for
+          reconciliation.
+        </InfoBubble>
+      </div>
       <StockJournalPreparation
         orgId={orgId}
         actorId={actorId}
@@ -380,11 +383,13 @@ export function StockJournals({
             </table>
           </div>
           <section aria-label="Journal observation history">
-            <h4>Journal observation history</h4>
-            <p>
-              Retained observations report delivery evidence. Reading history
-              does not reconcile or resend a journal.
-            </p>
+            <div className="info-heading">
+              <h4>Journal observation history</h4>
+              <InfoBubble label="Journal observation history">
+                Retained observations report delivery evidence. Reading history
+                does not reconcile or resend a journal.
+              </InfoBubble>
+            </div>
             {history && (
               <>
                 <p role="status">

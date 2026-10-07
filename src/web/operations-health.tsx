@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import "./operations-lane.css";
 import type { OperationsHealth } from "../shared/operations-health.ts";
@@ -84,11 +85,13 @@ export function OperationsHealthPanel() {
     <section className="panel ops-health" aria-label="Operations health">
       <div className="ops-section-header">
         <div>
-          <h2>Operations health</h2>
-          <p>
-            Current organization totals across all recorded work. Refresh after
-            operator or worker activity.
-          </p>
+          <div className="info-heading">
+            <h2>Operations health</h2>
+            <InfoBubble label="Operations health">
+              Current organization totals across all recorded work. Refresh
+              after operator or worker activity.
+            </InfoBubble>
+          </div>
         </div>
         <button type="button" className="secondary" onClick={() => void load()}>
           Refresh operations health

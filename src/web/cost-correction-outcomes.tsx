@@ -1,4 +1,5 @@
 import { CostCorrectionRetryReview } from "./cost-correction-retry-review.tsx";
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import type {
   CostCorrections,
@@ -63,12 +64,14 @@ export function CostCorrectionOutcomes({
   };
   return (
     <section aria-label="Correction ledger observations">
-      <h4>Correction ledger observations</h4>
-      <p>
-        Record evidence obtained from the receiver. This does not send a journal
-        or independently verify posting. Uncertain requests retain their
-        reference. Posted and cancelled observations are final.
-      </p>
+      <div className="info-heading">
+        <h4>Correction ledger observations</h4>
+        <InfoBubble label="Correction ledger observations">
+          Record evidence obtained from the receiver. This does not send a
+          journal or independently verify posting. Uncertain requests retain
+          their reference. Posted and cancelled observations are final.
+        </InfoBubble>
+      </div>
       {error && <p role="alert">{error}</p>}
       <button disabled={busy} onClick={() => void run(load)}>
         {state ? "Refresh ledger observations" : "Load ledger observations"}

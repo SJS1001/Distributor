@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useId, useLayoutEffect, useRef, useState } from "react";
 import {
   transferQueueStates,
@@ -172,17 +173,19 @@ export function TransferQueue({
             </button>
           )}
         </div>
-        <p role="status">
-          {busy
-            ? "Loading transfers…"
-            : page && active
-              ? `${count} ${count === 1 ? "transfer" : "transfers"} on this page · Page ${selection.trail.length + 1}`
-              : "No transfer page available."}
-        </p>
-        <p>
-          Newest recorded transfers first. States and quantities are current
-          when each page is read.
-        </p>
+        <div className="status-line">
+          <p role="status">
+            {busy
+              ? "Loading transfers…"
+              : page && active
+                ? `${count} ${count === 1 ? "transfer" : "transfers"} on this page · Page ${selection.trail.length + 1}`
+                : "No transfer page available."}
+          </p>
+          <InfoBubble label="transfer list">
+            Newest recorded transfers first. States and quantities are current
+            when each page is read.
+          </InfoBubble>
+        </div>
         {error && (
           <>
             <p role="alert" className="error">

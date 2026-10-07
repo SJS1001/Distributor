@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, {
   useCallback,
   useEffect,
@@ -111,9 +112,16 @@ export function StockHistory({
     );
   return (
     <section className="stock-history" aria-label="Stock movement history">
-      <h2 ref={heading} tabIndex={-1}>
-        Stock movement history
-      </h2>
+      <div className="info-heading">
+        <h2 ref={heading} tabIndex={-1}>
+          Stock movement history
+        </h2>
+        <InfoBubble label="Stock movement history">
+          Newest committed movements first. Each page shows this stock record
+          and its current position when read. Warehouse staff see movements at
+          their permitted sites. Split bulk records have separate histories.
+        </InfoBubble>
+      </div>
       <div className="actions">
         <button type="button" onClick={onClose}>
           Close stock history
@@ -122,11 +130,6 @@ export function StockHistory({
           Refresh movement history
         </button>
       </div>
-      <p>
-        Newest committed movements first. Each page shows this stock record and
-        its current position when read. Warehouse staff see movements at their
-        permitted sites. Split bulk records have separate histories.
-      </p>
       {busy && <p role="status">Loading stock history…</p>}
       {error && (
         <>

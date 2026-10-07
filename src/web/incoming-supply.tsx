@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request, RequestError } from "./api.ts";
 import "./purchasing-workspace.css";
 
@@ -184,12 +185,14 @@ export function IncomingSupply({
   const locked = busy || !!pending || !!review || !!storageError;
   return (
     <section className="incoming-supply" aria-labelledby={`${id}-title`}>
-      <h3 id={`${id}-title`}>Incoming stock for this order</h3>
-      <p>
-        Assign purchased goods to this customer before arrival. Incoming and
-        inspection-held quantities cannot be picked or shipped. Usable receipts
-        become reserved stock for the assigned order.
-      </p>
+      <div className="info-heading">
+        <h3 id={`${id}-title`}>Incoming stock for this order</h3>
+        <InfoBubble label="Incoming stock for this order">
+          Assign purchased goods to this customer before arrival. Incoming and
+          inspection-held quantities cannot be picked or shipped. Usable
+          receipts become reserved stock for the assigned order.
+        </InfoBubble>
+      </div>
       {message && <p role="status">{message}</p>}
       {error && (
         <p role="alert" className="error">
@@ -637,11 +640,13 @@ export function IncomingSupplyWorkspace({
   }, [cursor, retry]);
   return (
     <section className="incoming-workspace">
-      <h2>Incoming allocations</h2>
-      <p className="purchasing-intro">
-        Choose a customer order to assign incoming purchase quantities and
-        review what is still uncovered.
-      </p>
+      <div className="info-heading">
+        <h2>Incoming allocations</h2>
+        <InfoBubble label="Incoming allocations">
+          Choose a customer order to assign incoming purchase quantities and
+          review what is still uncovered.
+        </InfoBubble>
+      </div>
       {error && (
         <>
           <p role="alert" className="error">

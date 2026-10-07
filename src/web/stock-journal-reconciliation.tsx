@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { request } from "./api.ts";
 import {
   type Attempt,
@@ -228,11 +229,13 @@ export function StockJournalReconciliation({
   const selected = review?.snapshot ?? (source ? snapshot(source) : null);
   return (
     <section aria-label="Original journal reconciliation">
-      <h3>Original journal reconciliation</h3>
-      <p>
-        Reconcile every posting date of one approved original packet against
-        independent ledger evidence. This records a local finance receipt.
-      </p>
+      <div className="info-heading">
+        <h3>Original journal reconciliation</h3>
+        <InfoBubble label="Original journal reconciliation">
+          Reconcile every posting date of one approved original packet against
+          independent ledger evidence. This records a local finance receipt.
+        </InfoBubble>
+      </div>
       {recovery.error && <p role="alert">{recovery.error}</p>}
       {status && <p role="status">{status}</p>}
       {error && <p role="alert">{error}</p>}

@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, { useEffect, useRef } from "react";
 import { usePages } from "./billing-inbox.tsx";
 
@@ -27,17 +28,19 @@ export function SupplierReturnHistory({
     );
   return (
     <section aria-label="Supplier follow-up history">
-      <h3 ref={heading} tabIndex={-1}>
-        Supplier follow-up history
-      </h3>
+      <div className="info-heading">
+        <h3 ref={heading} tabIndex={-1}>
+          Supplier follow-up history
+        </h3>
+        <InfoBubble label="Supplier follow-up history">
+          Supplier observations retain their evidence after corrections.
+          Recording a credit does not post it to accounting; linking a receipt
+          does not receive stock.
+        </InfoBubble>
+      </div>
       <button type="button" onClick={onClose}>
         Close supplier history
       </button>
-      <p>
-        Supplier observations retain their evidence after corrections. Recording
-        a credit does not post it to accounting; linking a receipt does not
-        receive stock.
-      </p>
       {history.error && (
         <p role="alert" className="error">
           {history.error}

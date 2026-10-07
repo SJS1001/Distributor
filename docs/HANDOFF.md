@@ -1,3 +1,21 @@
+## Info bubbles and neutral status bar — 2026-10-06
+
+Owner request: put guidance text in info bubbles and remove the remaining "pilot" wording. Owner choice: clean UI, keep one demonstration notice.
+
+Changed:
+
+- **Info bubble:** new `src/web/info-bubble.tsx`. An (i) button beside a heading or status line opens the guidance as an overlay. It closes on a second click, an outside click or Escape (focus returns to the button). Only one is open at a time, and the panel stays inside the viewport.
+- **Guidance moved:** 54 heading-adjacent guidance paragraphs, seven queue "Newest … first" notes and 11 section notes (history panels, Canada Post groups, catalog pages, reconciliation, event reporting, serial custody).
+- **Kept visible:** the coverage-lookup and provider-history caveats (browser tests require them on screen), empty and error states, recovery instructions, permission notices, pre-action warnings, record data and page descriptions.
+- **Status bar:** the yellow "Pilot workspace · CA · CAD / Operational qualification pending" bar is now a neutral "Storage region CA · CAD" line for staff, with the qualification note in a bubble. Customers see "All prices in CAD".
+- **Sign-in note:** the prefilled note now reads "Demonstration … details are filled in."
+
+Data-borne words that remain (not interface text):
+
+- Tier "Sample-Contractor" on three accounts. No tier rename command exists.
+- Serials `SAMPLE-GREE-…`, which are immutable, and the historical payment reference `SAMPLE-PAYMENT-001`.
+- User names "Public sample customer" and "Sample HVAC contractor". An administrator can rename these in Administration.
+
 ## Full pilot data, home carousel and demonstration notice — 2026-10-06
 
 Changed:
@@ -20,8 +38,6 @@ Deployed to the Fly pilot as image `fullseed-20261006` (source `3f0a316`); see t
 
 Still open:
 
-- The info-bubble guidance pass.
-- The "Pilot workspace" and other pilot wording in the interface.
 - A rename UI.
 
 ## Shop cart, staff add-ons and dialog close controls — 2026-10-06

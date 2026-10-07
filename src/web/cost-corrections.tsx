@@ -1,4 +1,5 @@
 import { CostCorrectionSuccessor } from "./cost-correction-successor.tsx";
+import { InfoBubble } from "./info-bubble.tsx";
 import { CostCorrectionOutcomes } from "./cost-correction-outcomes.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import type { CostPacketView } from "../server/integration-costs.ts";
@@ -113,13 +114,15 @@ export function CostCorrectionsPanel({
   };
   return (
     <section aria-label="Approved cost corrections">
-      <h4>Correct approved account mappings</h4>
-      <p>
-        Preserve this original file and its stock cutoff. Verify the ledger
-        outcome before preparing a linked replacement or reversal. A different
-        finance reviewer must approve it. This workflow keeps original
-        quantities and values.
-      </p>
+      <div className="info-heading">
+        <h4>Correct approved account mappings</h4>
+        <InfoBubble label="Correct approved account mappings">
+          Preserve this original file and its stock cutoff. Verify the ledger
+          outcome before preparing a linked replacement or reversal. A different
+          finance reviewer must approve it. This workflow keeps original
+          quantities and values.
+        </InfoBubble>
+      </div>
       <button disabled={busy} onClick={() => void run(load)}>
         {loaded ? "Refresh cost corrections" : "Load cost corrections"}
       </button>

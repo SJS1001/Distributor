@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { InfoBubble } from "./info-bubble.tsx";
 import { CarrierClaim } from "./carrier-claim.tsx";
 import { command, request } from "./api.ts";
 import {
@@ -588,14 +589,16 @@ export function CarrierBooking({
       )}
       {review && packed && (!booking || booking.state === "canceled") && (
         <form onSubmit={prepare}>
-          <h4>Prepare reviewed carrier booking</h4>
-          <p>
-            Enter the actual structured addresses. Compare the destination with
-            the delivery address and confirm the origin belongs to this
-            warehouse. Preparation records a review; it does not send a provider
-            request. Missing named customer acceptance will be explained by the
-            returned error; acceptance is managed separately.
-          </p>
+          <div className="info-heading">
+            <h4>Prepare reviewed carrier booking</h4>
+            <InfoBubble label="Prepare reviewed carrier booking">
+              Enter the actual structured addresses. Compare the destination
+              with the delivery address and confirm the origin belongs to this
+              warehouse. Preparation records a review; it does not send a
+              provider request. Missing named customer acceptance will be
+              explained by the returned error; acceptance is managed separately.
+            </InfoBubble>
+          </div>
           <fieldset disabled={busy || loading} style={{ minWidth: 0 }}>
             <legend>Carrier and service</legend>
             {replacementId && (

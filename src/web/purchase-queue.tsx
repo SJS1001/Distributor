@@ -1,3 +1,4 @@
+import { InfoBubble } from "./info-bubble.tsx";
 import React, {
   useEffect,
   useId,
@@ -179,19 +180,22 @@ export function PurchaseQueueControls({
         </select>
       </div>
       {actions && <div className="queue-field-actions">{actions}</div>}
-      <p role="status">
-        {queue.items.length}{" "}
-        {queue.items.length === 1 ? "purchase order" : "purchase orders"} loaded
-        {queue.busy
-          ? " · Loading…"
-          : queue.loaded && !queue.next && !queue.error
-            ? " · All results shown"
-            : ""}
-      </p>
-      <p>
-        Newest recorded purchase orders first. Refresh reloads the queue and its
-        current states.
-      </p>
+      <div className="status-line">
+        <p role="status">
+          {queue.items.length}{" "}
+          {queue.items.length === 1 ? "purchase order" : "purchase orders"}{" "}
+          loaded
+          {queue.busy
+            ? " · Loading…"
+            : queue.loaded && !queue.next && !queue.error
+              ? " · All results shown"
+              : ""}
+        </p>
+        <InfoBubble label="purchase order list">
+          Newest recorded purchase orders first. Refresh reloads the queue and
+          its current states.
+        </InfoBubble>
+      </div>
       {queue.error && (
         <p role="alert" className="error">
           {queue.error}
