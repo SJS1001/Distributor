@@ -48,3 +48,7 @@ Use actual database transactions/concurrency for stock/money boundaries and actu
 Statuses: NOT VERIFIED, IN VERIFICATION, PASS, FAIL, BLOCKED, SUPERSEDED. Skipped/pending/missing critical tests are not PASS. Changes to relevant code, contracts, schema, fixture/oracle, dependencies or configuration invalidate affected receipts; retain them as historical evidence and rerun the affected gates. Unrelated changes need not cause indiscriminate full reruns, but final G8 uses one exact integrated candidate.
 
 No arbitrary coverage percentage or pass-count target replaces the business scenarios. Scope reductions and accepted manual fallbacks must be explicit in the decision register and readiness record.
+
+## Scoped engineering receipt — 2026-10-07 photographs/minimums
+
+The [photographs, customer minimums and spacing receipt](evidence/PHOTOS-MINIMUMS-2026-10-07.md) binds source `1e28654e712bbf586f41100b2cde7fdec905fa64` to native6108/6108, default browser343/343, focused enforcement/media checks, schema32 backup/clone conservation and read-only live18/18. It does not qualify G0–G8 or replace integrated operational/operator/provider/hardware acceptance. The [handoff blind-spot review](reviews/task-handoff-blind-spots-2026-10-07.md) records remaining ownership, deadlines, notification/escalation and manual exception procedures.
