@@ -4,7 +4,9 @@ D-009/D-036/D-037/D-039 engineering work. All product tasks/gates remain NOT VER
 
 ## Supported contracts
 
-**Current version: 30.** Version 30 adds two Catalog-owned tables:
+**Current version: 31.** Version 31 adds IAM-owned `iam_session_details` keyed by the existing session hash. It records a separate random opaque reference, trustworthy creation/activity timestamps and a coarse browser/device description for new sessions. The session credential layout is unchanged. Explicit clone upgrade gives retained historical sessions only a random reference; dates and device descriptions stay unknown. No IP address, raw user-agent or location is stored. Session recognition and schema-upgrade tests verify organization/actor isolation, password reauthentication, exact replay, recovery holds, historical row conservation and both reporting profiles. This is not device or operational acceptance.
+
+Version 30 added two Catalog-owned tables:
 - `catalog_product_addon_sets` holds one revision per main unit.
 - `catalog_product_addons` holds the ordered add-on products, with at most 12 per unit and never the unit itself.
 

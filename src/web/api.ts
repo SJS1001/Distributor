@@ -41,6 +41,7 @@ function noticeSessionEnd(status: number, code: unknown) {
 export async function request<T = any>(
   path: string,
   options: RequestInit = {},
+  notifySessionEnded = true,
 ): Promise<T> {
   const response = await fetch(path, {
     credentials: "same-origin",
@@ -53,7 +54,7 @@ export async function request<T = any>(
   });
   const result = await response.json();
   if (!response.ok) {
-    noticeSessionEnd(response.status, result.code);
+    if (notifySessionEnded) noticeSessionEnd(response.status, result.code);
     throw new RequestError(
       `${result.message ?? "Request failed."}${result.code ? ` (${result.code})` : ""}`,
       response.status,

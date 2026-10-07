@@ -1,5 +1,7 @@
 import { CustomerDirectory, CustomerRecord } from "./customer-record.tsx";
-import { SessionList } from "./session-list.tsx";
+import { SessionRevokeRecovery } from "./session-revoke-recovery.tsx";
+import { AgingInvestigation } from "./aging-investigation.tsx";
+import type { AgingFilter } from "./aging-investigation-contract.ts";
 import { ReadableTime, RecordIdentifier } from "./record-display.tsx";
 import { InfoBubble } from "./info-bubble.tsx";
 import { WorkspaceBreadcrumbs } from "./workspace-breadcrumbs.tsx";
@@ -204,6 +206,37 @@ const money = (value: number, currency = "CAD") =>
   );
 const purchaseLineName = (line: Item) =>
   `${line.product_sku} · ${line.product_name}${line.product_active === 0 ? " · retired from customer ordering" : ""}`;
+function ShippingObservationRows({
+  items,
+  empty,
+}: {
+  items: Item[];
+  empty: string;
+}) {
+  if (!items.length) return <p>{empty}</p>;
+  return (
+    <ol>
+      {items.map((h) => (
+        <li key={h.revision}>
+          <strong>
+            {h.state === "handed_over"
+              ? "Handed to carrier"
+              : h.state.replaceAll("_", " ")}
+          </strong>{" "}
+          · Revision {h.revision}
+          <p>
+            <ReadableTime value={h.observedAt} />
+          </p>
+          {h.reference && (
+            <p>
+              {h.reference}: {h.evidence}
+            </p>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
 function App() {
   const [publicRoute, setPublicRoute] = useState(() =>
     readPublicRoute(window.location.hash),
@@ -470,6 +503,11 @@ function App() {
   const [lossSelection, setLossSelection] = useState<LossSelection | null>(
     null,
   );
+  const [agingInvestigation, setAgingInvestigation] = useState<{
+    accountId: string;
+    filter: AgingFilter;
+  } | null>(null);
+  const [agingInvoiceId, setAgingInvoiceId] = useState<string | null>(null);
   const [purchaseEntryOpen, setPurchaseEntryOpen] = useState(false);
   const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
   const [evidenceClaim, setEvidenceClaim] = useState<string | null>(null);
@@ -918,6 +956,8 @@ function App() {
     supplierHistoryOpener.current = null;
     providerHistoryOpener.current = null;
     evidenceOpener.current = null;
+    setAgingInvestigation(null);
+    setAgingInvoiceId(null);
     setActor(null);
     setData(null);
     setExtra({});
@@ -952,7 +992,11 @@ function App() {
     // Older note attempts migrate when their record mounts. Keep them through
     // sign-out from public pages so an uncertain command never loses its key.
     for (const key of Object.keys(sessionStorage)) {
-      if (!key.startsWith("distributor-notes:")) sessionStorage.removeItem(key);
+      if (
+        !key.startsWith("distributor-notes:") &&
+        !key.startsWith("distributor-session-revoke:")
+      )
+        sessionStorage.removeItem(key);
     }
   };
   // Any reply refusing the session returns the workspace to sign-in.
@@ -1104,6 +1148,7 @@ function App() {
     description?: React.ReactNode,
     submitLabel?: string,
     readOnly = false,
+    returnFocus?: HTMLElement | null,
   ) => {
     setNotice("");
     setError("");
@@ -1113,6 +1158,7 @@ function App() {
       perform,
       description,
       submitLabel,
+      returnFocus,
       readOnly:
         readOnly || (fields.length === 0 && /^Close\b/.test(submitLabel ?? "")),
     });
@@ -1324,33 +1370,10 @@ function App() {
       },
       <>
         <RecordIdentifier value={shipmentId} label="Shipment ID" />
-        {rows.length ? (
-          <ol>
-            {rows.map((h) => (
-              <li key={h.revision}>
-                <strong>
-                  {h.state === "handed_over"
-                    ? "Handed to carrier"
-                    : h.state.replaceAll("_", " ")}
-                </strong>{" "}
-                · Revision {h.revision}
-                <p>
-                  <ReadableTime value={h.observedAt} />
-                </p>
-                {h.reference && (
-                  <p>
-                    {h.reference}: {h.evidence}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p>
-            No delivery observations recorded. Handover remains recorded on the
-            shipment.
-          </p>
-        )}
+        <ShippingObservationRows
+          items={rows}
+          empty="No delivery observations recorded. Handover remains recorded on the shipment."
+        />
       </>,
       result.next ? "Load more delivery observations" : "Close",
     );
@@ -1375,30 +1398,10 @@ function App() {
       },
       <>
         <RecordIdentifier value={replacementId} label="Replacement ID" />
-        {rows.length ? (
-          <ol>
-            {rows.map((h) => (
-              <li key={h.revision}>
-                <strong>
-                  {h.state === "handed_over"
-                    ? "Handed to carrier"
-                    : h.state.replaceAll("_", " ")}
-                </strong>{" "}
-                · Revision {h.revision}
-                <p>
-                  <ReadableTime value={h.observedAt} />
-                </p>
-                {h.reference && (
-                  <p>
-                    {h.reference}: {h.evidence}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p>No shipping observations recorded.</p>
-        )}
+        <ShippingObservationRows
+          items={rows}
+          empty="No shipping observations recorded."
+        />
       </>,
       result.next ? "Load more shipping observations" : "Close",
     );
@@ -1672,6 +1675,7 @@ function App() {
     entry: OrderEntry,
     resubmission?: OrderRequest,
     saved?: () => void,
+    returnFocus?: HTMLElement | null,
   ) => {
     const editorVersion = cartEditorEpoch.current;
     const current = () => cartEditorEpoch.current === editorVersion;
@@ -1811,6 +1815,9 @@ function App() {
           quantities.
         </InfoBubble>
       </>,
+      undefined,
+      false,
+      returnFocus,
     );
   };
   // Load the saved cart for one customer and warehouse, add any requested
@@ -1821,7 +1828,12 @@ function App() {
     requestedLines?: { productId: string; quantity: number }[],
     resubmission?: OrderRequest,
     saved?: () => void,
+    opener?: HTMLElement | null,
   ) => {
+    const returnFocus =
+      opener ??
+      dialog?.returnFocus ??
+      (document.activeElement as HTMLElement | null);
     stopOrderEntryRead();
     const controller = new AbortController();
     orderEntryRead.current = controller;
@@ -1943,6 +1955,7 @@ function App() {
           entry,
           resubmission,
           saved,
+          returnFocus,
         );
       }
       return { keepDialog: true, skipRefresh: true };
@@ -2812,12 +2825,13 @@ function App() {
                 id: String(w.id),
                 name: String(w.name),
               }))}
-              checkout={(warehouseId, lines, saved) =>
+              checkout={(warehouseId, lines, saved, returnFocus) =>
                 loadOrderEntry(
                   { accountId: data.accounts[0].id, warehouseId },
                   lines,
                   undefined,
                   saved,
+                  returnFocus,
                 )
               }
             />
@@ -5516,8 +5530,22 @@ function App() {
                   key={`${actor.orgId}:${actor.id}:${route.invoiceId}`}
                   invoiceId={route.invoiceId}
                   accountName={accountName}
-                  backLabel={staff ? "All invoices" : "Invoices & payments"}
-                  back={() => updateRoute({ invoiceId: undefined })}
+                  backLabel={
+                    agingInvoiceId === route.invoiceId && agingInvestigation
+                      ? "Account balance investigation"
+                      : staff
+                        ? "All invoices"
+                        : "Invoices & payments"
+                  }
+                  back={() =>
+                    updateRoute({
+                      invoiceId: undefined,
+                      ...(agingInvoiceId === route.invoiceId &&
+                      agingInvestigation
+                        ? { section: "billing-aging" }
+                        : {}),
+                    })
+                  }
                   canSeePayments={can("finance", "support")}
                   openOrder={(orderId) => navigate({ page: "Orders", orderId })}
                   actions={
@@ -6264,13 +6292,13 @@ function App() {
                     (a: Item) => [
                       <button
                         className="record-link"
-                        onClick={() =>
-                          navigate({
-                            page: "Customers",
-                            customerId: a.accountId,
-                            customerTab: "history",
-                          })
-                        }
+                        onClick={() => {
+                          setAgingInvoiceId(null);
+                          setAgingInvestigation({
+                            accountId: a.accountId,
+                            filter: "open",
+                          });
+                        }}
                       >
                         {a.name} · Investigate account balance
                       </button>,
@@ -6279,7 +6307,19 @@ function App() {
                       money(a.days31to60, a.currency),
                       money(a.days61to90, a.currency),
                       money(a.daysOver90, a.currency),
-                      money(a.unknownDue, a.currency),
+                      <button
+                        className="record-link"
+                        onClick={() => {
+                          setAgingInvoiceId(null);
+                          setAgingInvestigation({
+                            accountId: a.accountId,
+                            filter: "unknownDue",
+                          });
+                        }}
+                        aria-label={`Investigate unknown due dates for ${a.name}`}
+                      >
+                        {money(a.unknownDue, a.currency)}
+                      </button>,
                       money(a.creditBalance, a.currency),
                       money(a.net, a.currency),
                       `${money(a.holds, a.currency)} / ${money(a.pendingRefunds, a.currency)}`,
@@ -6289,6 +6329,36 @@ function App() {
                     Observed <ReadableTime value={extra.aging.observedAt} />
                   </small>
                 </>
+              )}
+              {extra.aging && agingInvestigation && (
+                <AgingInvestigation
+                  key={`${actor.orgId}:${actor.id}:${agingInvestigation.accountId}:${agingInvestigation.filter}`}
+                  accountId={agingInvestigation.accountId}
+                  initialFilter={agingInvestigation.filter}
+                  initialReport={extra.aging}
+                  active={route.section === "billing-aging"}
+                  onClose={() => {
+                    setAgingInvestigation(null);
+                    setAgingInvoiceId(null);
+                  }}
+                  onReport={(aging) =>
+                    setExtra((current) => ({ ...current, aging }))
+                  }
+                  onInvoice={(invoiceId) => {
+                    setAgingInvoiceId(invoiceId);
+                    updateRoute({ section: "billing-invoices", invoiceId });
+                  }}
+                  onCustomer={
+                    can("admin", "sales", "finance", "support")
+                      ? (customerId) =>
+                          navigate({
+                            page: "Customers",
+                            customerId,
+                            customerTab: "history",
+                          })
+                      : undefined
+                  }
+                />
               )}
               {extra.billingProfiles && (
                 <>
@@ -8610,7 +8680,21 @@ function App() {
               </section>
               <section className="ops-card">
                 <h3>Signed-in sessions</h3>
-                <SessionList sessions={extra.security?.sessionDetails} />
+                <SessionRevokeRecovery
+                  actor={{ id: String(actor.id), orgId: String(actor.orgId) }}
+                  sessions={extra.security?.sessionDetails}
+                  disabled={busy}
+                  onSessionEnded={() =>
+                    clearSession(
+                      "The selected session ended or is no longer accepted. Sign in again to recover any saved attempt.",
+                    )
+                  }
+                  onChanged={() =>
+                    refreshNotice(
+                      "The selected session has ended. Your current sign-in stays active.",
+                    )
+                  }
+                />
                 <p className="ops-note">
                   You will need to sign in again on every device.
                 </p>

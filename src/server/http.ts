@@ -101,7 +101,12 @@ const choice = (...values: string[]): Schema => ({
 const line = obj({ productId: str, quantity: num });
 type Spec = {
   schema: Schema;
-  run: (actor: Actor, key: string, payload: any) => unknown;
+  run: (
+    actor: Actor,
+    key: string,
+    payload: any,
+    sessionToken?: string,
+  ) => unknown;
 }; // Schemas validate this boundary before domain dispatch.
 export function commands(
   app: Application,
@@ -967,6 +972,13 @@ export function commands(
     "user.sessions.end-own": {
       schema: obj({}),
       run: (a, k) => app.identity.revokeOwnSessions(a, k),
+    },
+    "user.session.end-own": {
+      schema: obj({
+        sessionReference: { type: "string", pattern: "^[a-f0-9]{32}$" },
+        currentPassword: { type: "string", maxLength: 256 },
+      }),
+      run: (a, k, p, token) => app.identity.revokeOwnSession(a, k, p, token),
     },
     "warehouse.create": {
       schema: obj({ name: str }),
@@ -2025,6 +2037,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
           "/api/security",
           "/api/commands/user.password.change",
           "/api/commands/user.sessions.end-own",
+          "/api/commands/user.session.end-own",
         ].includes(request.url.split("?")[0]!),
       "PASSWORD_CHANGE_REQUIRED",
       "Change your password before entering the workspace.",
@@ -2040,11 +2053,13 @@ export async function createHttp(app: Application, options: HttpOptions) {
           "/api/security/mfa/confirm",
           "/api/commands/user.password.change",
           "/api/commands/user.sessions.end-own",
+          "/api/commands/user.session.end-own",
         ].includes(request.url.split("?")[0]!),
       "MFA_ENROLLMENT_REQUIRED",
       "Set up an authenticator before opening the workspace.",
       403,
     );
+    app.identity.recordSessionActivity(request.cookies.distributor_session!);
   });
   http.setErrorHandler((error, request, reply) => {
     if (error instanceof DomainError) {
@@ -2234,7 +2249,12 @@ export async function createHttp(app: Application, options: HttpOptions) {
           password: string;
           code?: string;
         },
-        session = app.identity.login(p.email, p.password, p.code);
+        session = app.identity.login(
+          p.email,
+          p.password,
+          p.code,
+          request.headers["user-agent"],
+        );
       reply.setCookie("distributor_session", session.token, cookieOptions);
       return {
         actor: session.actor,
@@ -4770,6 +4790,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
           actor(request),
           String(request.headers["idempotency-key"]),
           request.body,
+          request.cookies.distributor_session,
         );
         if (
           result &&

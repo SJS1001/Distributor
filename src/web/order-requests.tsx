@@ -23,6 +23,244 @@ const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
 const units = (value: OrderRequest) =>
   value.lines.reduce((total, l) => total + l.quantity, 0);
+function RequestSummary({
+  value,
+  buyer,
+  now,
+  accountName,
+  order,
+}: {
+  value: OrderRequest;
+  buyer: boolean;
+  now: number;
+  accountName?: (id: string) => string;
+  order: (id: string) => void;
+}) {
+  return (
+    <>
+      {" "}
+      <header className="record-detail-header">
+        <div>
+          <p className="record-detail-eyebrow">
+            Order request{" "}
+            <code className="queue-id" title={value.id}>
+              {value.id.slice(0, 8)}
+            </code>
+          </p>
+          <h3 data-tone={tones[value.status]}>{labels[value.status]}</h3>
+          <p>
+            {!buyer &&
+              `${accountName ? accountName(value.accountId) : `Customer ${value.accountId}`} · `}
+            Submitted {new Date(value.createdAt).toLocaleString()} · Revision{" "}
+            {value.revision}
+          </p>
+        </div>
+      </header>
+      <dl className="record-figures request-figures">
+        <div className="record-figure-emphasis">
+          <dt>Submitted total</dt>
+          <dd>{displayMoney(value.total, value.currency)}</dd>
+        </div>
+        <div>
+          <dt>Requested units</dt>
+          <dd>
+            {plural(units(value), "unit")} ·{" "}
+            {plural(value.lines.length, "product")}
+          </dd>
+        </div>
+        <div>
+          <dt>Backorders</dt>
+          <dd>{value.allowBackorder ? "Accepted" : "Not accepted"}</dd>
+        </div>
+        <div>
+          <dt>Quote expires</dt>
+          <dd>
+            <time
+              dateTime={new Date(value.expiresAt).toISOString()}
+              title={new Date(value.expiresAt).toISOString()}
+            >
+              {new Date(value.expiresAt).toLocaleString(undefined, {
+                timeZoneName: "short",
+              })}
+            </time>
+            {value.status !== "accepted" && value.expiresAt <= now && (
+              <p role="status">
+                <strong>Expired</strong> · The buyer must review current
+                quantities, prices and terms and resubmit before approval.
+              </p>
+            )}
+          </dd>
+        </div>
+      </dl>
+      <div className="record-detail-panel">
+        <h3>Requested lines</h3>
+        <ul className="request-lines">
+          {value.lines.map((l) => (
+            <li key={l.productId}>
+              <span>
+                <strong>{l.quantity} ×</strong> {l.description}
+              </span>
+              <span>
+                {displayMoney(l.unitPrice, value.currency)} +{" "}
+                {displayMoney(l.unitTax, value.currency)} tax per unit
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="request-facts">
+          <p>{shippingSummary(value.shipping, value.currency)}</p>
+          {value.status !== "accepted" && (
+            <p>
+              No stock is reserved and no payment is taken for this request.
+              Price and availability are confirmed on acceptance.
+            </p>
+          )}
+          {value.reviewReason && <p>Review required: {value.reviewReason}</p>}
+        </div>
+        {value.message && (
+          <blockquote className="request-message">{value.message}</blockquote>
+        )}
+        {value.orderId && (
+          <div className="record-detail-actions request-next">
+            <button onClick={() => order(value.orderId!)}>
+              View accepted order
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+type RequestCommand = (name: string, payload: unknown) => Promise<void>;
+function BuyerRequestActions({
+  value,
+  busy,
+  run,
+  resubmit,
+}: {
+  value: OrderRequest;
+  busy: boolean;
+  run: RequestCommand;
+  resubmit: (value: OrderRequest) => void;
+}) {
+  return (
+    <div className="record-detail-panel">
+      <h3>Your next step</h3>
+      <div className="actions">
+        {["awaiting_approval", "information_needed"].includes(value.status) && (
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() =>
+              void run("order.review.withdraw", {
+                requestId: value.id,
+                revision: value.revision,
+              })
+            }
+          >
+            Withdraw request
+          </button>
+        )}
+        <button disabled={busy} onClick={() => resubmit(value)}>
+          Review quantities and resubmit
+        </button>
+      </div>
+      <p className="record-detail-note">
+        Resubmission opens the current cart for this warehouse using these
+        request quantities. Review any existing draft, current prices and terms
+        before submitting a new revision.
+      </p>
+    </div>
+  );
+}
+type RequestDecision = { action: string; message: string; note: string };
+function DistributorRequestDecision({
+  value,
+  busy,
+  run,
+  decision,
+  change,
+}: {
+  value: OrderRequest;
+  busy: boolean;
+  run: RequestCommand;
+  decision: RequestDecision;
+  change: (field: keyof RequestDecision, value: string) => void;
+}) {
+  return (
+    <form
+      className="record-detail-panel request-decision"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void run("order.review.decide", {
+          requestId: value.id,
+          revision: value.revision,
+          expectedHash: value.expectedHash,
+          action: decision.action,
+          message: decision.message,
+          staffNote: decision.note,
+        });
+      }}
+    >
+      <fieldset disabled={busy}>
+        <legend>Distributor decision</legend>
+        <label>
+          Decision
+          <select
+            aria-label="Decision"
+            value={decision.action}
+            onChange={(e) => change("action", e.target.value)}
+          >
+            <option value="request_information">
+              Request more information
+            </option>
+            <option value="approve">Approve order</option>
+            <option value="decline">Decline request</option>
+          </select>
+        </label>
+        <label>
+          Message to customer (Required)
+          <textarea
+            required
+            maxLength={1000}
+            value={decision.message}
+            onChange={(e) => change("message", e.target.value)}
+          />
+        </label>
+        <label>
+          Private staff note (Optional)
+          <textarea
+            maxLength={2000}
+            value={decision.note}
+            onChange={(e) => change("note", e.target.value)}
+          />
+        </label>
+        <p>
+          Approval rechecks current access, price, credit and supply. If the
+          quote expired or terms changed, ask the buyer to review and resubmit.
+        </p>
+        <button type="submit">Record decision</button>
+      </fieldset>
+    </form>
+  );
+}
+function RequestHistory({ history }: { history: OrderRequest["history"] }) {
+  return (
+    <div className="record-detail-panel">
+      <h3>Request history</h3>
+      <ol className="request-history">
+        {history.map((h) => (
+          <li key={h.revision}>
+            <strong>{h.action.replaceAll("_", " ")}</strong> ·{" "}
+            {new Date(h.createdAt).toLocaleString()}
+            {h.message && <p>{h.message}</p>}
+            {h.staffNote && <p>Private note: {h.staffNote}</p>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 function RequestDetail({
   id,
   buyer,
@@ -113,186 +351,33 @@ function RequestDetail({
       )}
       {value ? (
         <>
-          <header className="record-detail-header">
-            <div>
-              <p className="record-detail-eyebrow">
-                Order request{" "}
-                <code className="queue-id" title={value.id}>
-                  {value.id.slice(0, 8)}
-                </code>
-              </p>
-              <h3 data-tone={tones[value.status]}>{labels[value.status]}</h3>
-              <p>
-                {!buyer &&
-                  `${accountName ? accountName(value.accountId) : `Customer ${value.accountId}`} · `}
-                Submitted {new Date(value.createdAt).toLocaleString()} ·
-                Revision {value.revision}
-              </p>
-            </div>
-          </header>
-          <dl className="record-figures request-figures">
-            <div className="record-figure-emphasis">
-              <dt>Submitted total</dt>
-              <dd>{displayMoney(value.total, value.currency)}</dd>
-            </div>
-            <div>
-              <dt>Requested units</dt>
-              <dd>
-                {plural(units(value), "unit")} ·{" "}
-                {plural(value.lines.length, "product")}
-              </dd>
-            </div>
-            <div>
-              <dt>Backorders</dt>
-              <dd>{value.allowBackorder ? "Accepted" : "Not accepted"}</dd>
-            </div>
-            <div>
-              <dt>Quote expires</dt>
-              <dd>
-                <time
-                  dateTime={new Date(value.expiresAt).toISOString()}
-                  title={new Date(value.expiresAt).toISOString()}
-                >
-                  {new Date(value.expiresAt).toLocaleString(undefined, {
-                    timeZoneName: "short",
-                  })}
-                </time>
-                {value.status !== "accepted" && value.expiresAt <= now && (
-                  <p role="status">
-                    <strong>Expired</strong> · The buyer must review current
-                    quantities, prices and terms and resubmit before approval.
-                  </p>
-                )}
-              </dd>
-            </div>
-          </dl>
-          <div className="record-detail-panel">
-            <h3>Requested lines</h3>
-            <ul className="request-lines">
-              {value.lines.map((l) => (
-                <li key={l.productId}>
-                  <span>
-                    <strong>{l.quantity} ×</strong> {l.description}
-                  </span>
-                  <span>
-                    {displayMoney(l.unitPrice, value.currency)} +{" "}
-                    {displayMoney(l.unitTax, value.currency)} tax per unit
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="request-facts">
-              <p>{shippingSummary(value.shipping, value.currency)}</p>
-              {value.status !== "accepted" && (
-                <p>
-                  No stock is reserved and no payment is taken for this request.
-                  Price and availability are confirmed on acceptance.
-                </p>
-              )}
-              {value.reviewReason && (
-                <p>Review required: {value.reviewReason}</p>
-              )}
-            </div>
-            {value.message && (
-              <blockquote className="request-message">
-                {value.message}
-              </blockquote>
-            )}
-            {value.orderId && (
-              <div className="record-detail-actions request-next">
-                <button onClick={() => order(value.orderId!)}>
-                  View accepted order
-                </button>
-              </div>
-            )}
-          </div>
+          <RequestSummary
+            value={value}
+            buyer={buyer}
+            now={now}
+            accountName={accountName}
+            order={order}
+          />
           {buyer && value.status !== "accepted" && (
-            <div className="record-detail-panel">
-              <h3>Your next step</h3>
-              <div className="actions">
-                {["awaiting_approval", "information_needed"].includes(
-                  value.status,
-                ) && (
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void run("order.review.withdraw", {
-                        requestId: value.id,
-                        revision: value.revision,
-                      })
-                    }
-                  >
-                    Withdraw request
-                  </button>
-                )}
-                <button disabled={busy} onClick={() => resubmit(value)}>
-                  Review quantities and resubmit
-                </button>
-              </div>
-              <p className="record-detail-note">
-                Resubmission opens the current cart for this warehouse using
-                these request quantities. Review any existing draft, current
-                prices and terms before submitting a new revision.
-              </p>
-            </div>
+            <BuyerRequestActions
+              value={value}
+              busy={busy}
+              run={run}
+              resubmit={resubmit}
+            />
           )}
           {!buyer && canReview && value.status === "awaiting_approval" && (
-            <form
-              className="record-detail-panel request-decision"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run("order.review.decide", {
-                  requestId: value.id,
-                  revision: value.revision,
-                  expectedHash: value.expectedHash,
-                  action,
-                  message,
-                  staffNote: note,
-                });
-              }}
-            >
-              <fieldset disabled={busy}>
-                <legend>Distributor decision</legend>
-                <label>
-                  Decision
-                  <select
-                    aria-label="Decision"
-                    value={action}
-                    onChange={(e) => setAction(e.target.value)}
-                  >
-                    <option value="request_information">
-                      Request more information
-                    </option>
-                    <option value="approve">Approve order</option>
-                    <option value="decline">Decline request</option>
-                  </select>
-                </label>
-                <label>
-                  Message to customer (Required)
-                  <textarea
-                    required
-                    maxLength={1000}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Private staff note (Optional)
-                  <textarea
-                    maxLength={2000}
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                </label>
-                <p>
-                  Approval rechecks current access, price, credit and supply. If
-                  the quote expired or terms changed, ask the buyer to review
-                  and resubmit.
-                </p>
-                <button>Record decision</button>
-              </fieldset>
-            </form>
+            <DistributorRequestDecision
+              value={value}
+              busy={busy}
+              run={run}
+              decision={{ action, message, note }}
+              change={(field, text) =>
+                ({ action: setAction, message: setMessage, note: setNote })[
+                  field
+                ](text)
+              }
+            />
           )}
           {!buyer && value.status === "information_needed" && (
             <p className="record-detail-panel record-detail-note">
@@ -300,19 +385,7 @@ function RequestDetail({
               decision.
             </p>
           )}
-          <div className="record-detail-panel">
-            <h3>Request history</h3>
-            <ol className="request-history">
-              {value.history.map((h, i) => (
-                <li key={`${h.revision}:${i}`}>
-                  <strong>{h.action.replaceAll("_", " ")}</strong> ·{" "}
-                  {new Date(h.createdAt).toLocaleString()}
-                  {h.message && <p>{h.message}</p>}
-                  {h.staffNote && <p>Private note: {h.staffNote}</p>}
-                </li>
-              ))}
-            </ol>
-          </div>
+          <RequestHistory history={value.history} />
         </>
       ) : (
         !error && (

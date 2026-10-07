@@ -1,3 +1,8 @@
+import { SESSION_DETAILS_INITIALIZE } from "./session-details-schema.ts";
+import {
+  sessionDeviceDescription,
+  type SessionDetail,
+} from "../shared/session-details.ts";
 import { OrganizationResidency } from "./organization-residency.ts";
 import { CustomerContactsModule } from "./iam-customer-contacts.ts";
 import { coverageDays, readCoveragePolicy } from "./coverage-policy.ts";
@@ -19,6 +24,7 @@ import {
   canonical,
   check,
   digest,
+  DomainError,
   id,
   integer,
   now,
@@ -97,6 +103,7 @@ export class Identity {
       CREATE TABLE IF NOT EXISTS iam_attempts(email TEXT PRIMARY KEY,count INTEGER NOT NULL,reset_at INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS iam_user_security(user_id TEXT PRIMARY KEY,revision INTEGER NOT NULL CHECK(revision>0),password_change_required INTEGER NOT NULL CHECK(password_change_required IN(0,1)),updated_at TEXT NOT NULL) STRICT;
     `);
+    this.store.migrate(SESSION_DETAILS_INITIALIZE);
     this.residency = new ProviderResidency(
       database,
       platform,
@@ -398,7 +405,7 @@ export class Identity {
       timestamp,
     );
   }
-  login(email: string, password: string, code?: string) {
+  login(email: string, password: string, code?: string, userAgent?: unknown) {
     email = text(email, "email", 254).toLowerCase();
     check(
       typeof password === "string" && password.length <= 256,
@@ -476,6 +483,14 @@ export class Identity {
           csrf,
           timestamp + 8 * 3600000,
         );
+        this.store.run(
+          "INSERT INTO iam_session_details VALUES(?,?,?,?,?)",
+          digest(token),
+          randomBytes(16).toString("hex"),
+          timestamp,
+          timestamp,
+          sessionDeviceDescription(userAgent),
+        );
         this.platform.audit(actor, "session.login", actor.id, {});
         return {
           token,
@@ -514,6 +529,39 @@ export class Identity {
   }
   logout(token: string) {
     this.store.run("DELETE FROM iam_sessions WHERE hash=?", digest(token));
+  }
+  // HTTP composition calls this after cookie/CSRF/security fences, never for
+  // assets. Sample at most once per minute; restored evidence stays unchanged.
+  recordSessionActivity(token: string) {
+    const timestamp = Date.now(),
+      hash = digest(token);
+    const row = this.store.get(
+      "SELECT last_activity_at FROM iam_session_details WHERE session_hash=?",
+      hash,
+    );
+    if (
+      !row ||
+      (row.last_activity_at !== null &&
+        Number(row.last_activity_at) > timestamp - 60000)
+    )
+      return;
+    this.database.transaction(() => {
+      try {
+        if (this.platform.recoveryHold()) return;
+        this.platform.restore.assertCommandAccess();
+      } catch (error) {
+        if (error instanceof DomainError) return;
+        throw error;
+      }
+      this.store.run(
+        "UPDATE iam_session_details SET last_activity_at=? WHERE session_hash=? AND (last_activity_at IS NULL OR last_activity_at<=?) AND EXISTS(SELECT 1 FROM iam_sessions WHERE hash=? AND expires_at>?)",
+        timestamp,
+        hash,
+        timestamp - 60000,
+        hash,
+        timestamp,
+      );
+    });
   }
   // Filesystem-authorized recovery invalidates copied sessions across this regional store.
   invalidateRestoredSessions() {
@@ -601,12 +649,26 @@ export class Identity {
           ? undefined
           : this.store
               .all(
-                "SELECT s.hash,s.expires_at FROM iam_sessions s JOIN iam_users u ON u.id=s.user_id WHERE u.id=? AND u.org_id=? AND u.active=1 AND s.expires_at>? ORDER BY s.expires_at,s.hash",
+                "SELECT s.hash,s.expires_at,d.reference,d.created_at,d.last_activity_at,d.device_description FROM iam_sessions s LEFT JOIN iam_session_details d ON d.session_hash=s.hash JOIN iam_users u ON u.id=s.user_id WHERE u.id=? AND u.org_id=? AND u.active=1 AND s.expires_at>? ORDER BY s.expires_at,s.hash",
                 current.id,
                 current.orgId,
                 Date.now(),
               )
-              .map((session, index) => ({
+              .map((session, index): SessionDetail => ({
+                reference:
+                  session.reference === null ? null : String(session.reference),
+                createdAt:
+                  session.created_at === null
+                    ? null
+                    : Number(session.created_at),
+                lastActivityAt:
+                  session.last_activity_at === null
+                    ? null
+                    : Number(session.last_activity_at),
+                deviceDescription:
+                  session.device_description === null
+                    ? null
+                    : String(session.device_description),
                 // Ordinal labels are presentation only, never session credentials or handles.
                 label: `Session ${index + 1}`,
                 expiresAt: Number(session.expires_at),
@@ -1095,6 +1157,77 @@ export class Identity {
         return { id: actor.id, sessionsEnded, sessionEnded: true };
       },
     );
+  }
+  revokeOwnSession(
+    actor: Actor,
+    key: string,
+    input: { sessionReference: string; currentPassword: string },
+    currentSessionToken: string | undefined,
+  ) {
+    const caller = this.session(currentSessionToken);
+    check(
+      caller.actor.id === actor.id && caller.actor.orgId === actor.orgId,
+      "FORBIDDEN",
+      "Session does not belong to the current principal.",
+      403,
+    );
+    const reference = text(input.sessionReference, "session reference", 32);
+    check(
+      /^[a-f0-9]{32}$/.test(reference),
+      "VALIDATION",
+      "Invalid session reference.",
+      400,
+    );
+    this.reauthenticate(actor, input.currentPassword, false, true);
+    const currentReference = this.store.get(
+      "SELECT reference FROM iam_session_details WHERE session_hash=?",
+      digest(currentSessionToken!),
+    )?.reference;
+    const receipt = this.platform.command(
+      actor,
+      "user.session.end-own",
+      key,
+      {
+        sessionReference: reference,
+        currentPassword: digest(input.currentPassword),
+      },
+      () => {
+        const authenticated = this.session(currentSessionToken);
+        check(
+          authenticated.actor.id === actor.id &&
+            authenticated.actor.orgId === actor.orgId,
+          "FORBIDDEN",
+          "Session does not belong to the current principal.",
+          403,
+        );
+        this.reauthenticate(actor, input.currentPassword, false);
+      },
+      () => {
+        const target = this.store.get(
+          "SELECT s.hash FROM iam_session_details d JOIN iam_sessions s ON s.hash=d.session_hash JOIN iam_users u ON u.id=s.user_id WHERE d.reference=? AND u.id=? AND u.org_id=? AND u.active=1 AND s.expires_at>?",
+          reference,
+          actor.id,
+          actor.orgId,
+          Date.now(),
+        );
+        check(
+          target,
+          "NOT_FOUND",
+          "Active session not found. Refresh your sessions.",
+          404,
+        );
+        this.store.run(
+          "DELETE FROM iam_sessions WHERE hash=?",
+          String(target.hash),
+        );
+        this.platform.audit(actor, "user.session.ended", reference, {
+          sessionsEnded: 1,
+        });
+        return { id: actor.id, sessionReference: reference, sessionsEnded: 1 };
+      },
+    );
+    // Replays from a fresh login must never clear that replacement session.
+    return { ...receipt, sessionEnded: currentReference === reference };
   }
   private customerActor(actor: Actor, allowed: Role[]) {
     actor = this.currentActor(actor);

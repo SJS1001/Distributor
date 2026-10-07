@@ -118,9 +118,10 @@ function MetadataFields({
             max={9999}
             required
             value={value.position ?? 0}
-            onChange={(e) =>
-              change({ ...value, position: Number(e.target.value) })
-            }
+            onChange={(e) => {
+              const position = e.target.valueAsNumber;
+              if (Number.isFinite(position)) change({ ...value, position });
+            }}
           />
         </label>
       </div>
@@ -219,7 +220,7 @@ function ResourceEditor({
         >
           <fieldset disabled={busy}>
             <MetadataFields value={metadata} change={setMetadata} />
-            <button>Save metadata</button>
+            <button type="submit">Save metadata</button>
           </fieldset>
         </form>
       </details>
@@ -254,7 +255,10 @@ function ResourceEditor({
                 onChange={(e) => setBasis(e.target.value)}
               />
             </label>
-            <button disabled={resource.inspection === "quarantined"}>
+            <button
+              type="submit"
+              disabled={resource.inspection === "quarantined"}
+            >
               Publish to eligible buyers
             </button>
           </fieldset>
@@ -282,7 +286,7 @@ function ResourceEditor({
                   onChange={(e) => setReason(e.target.value)}
                 />
               </label>
-              <button>Retire resource</button>
+              <button type="submit">Retire resource</button>
             </fieldset>
           </form>
         </details>
@@ -290,59 +294,57 @@ function ResourceEditor({
     </article>
   );
 }
-function ResourceCollection({
+async function prepareResourceUpload(
+  metadata: ResourceMetadata,
+  mode: string,
+  url: string,
+  file: File | null,
+  images: boolean,
+) {
+  let upload: Record<string, unknown> = { ...metadata };
+  if (mode === "link") {
+    upload.externalUrl = url;
+  } else {
+    if (!file) throw Error("Choose a file.");
+    const limit = images ? catalogImageMaxBytes : catalogDocumentMaxBytes;
+    if (file.size > limit)
+      throw Error(`File exceeds ${limit / 1024 / 1024} MB.`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32768)
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+    upload = {
+      ...upload,
+      mediaType: file.type,
+      contentBase64: btoa(binary),
+    };
+  }
+  return upload;
+}
+function ResourceDraftForm({
   product,
   images,
+  busy,
+  setBusy,
+  changed,
 }: {
   product: CatalogProduct;
   images: boolean;
+  busy: boolean;
+  setBusy: (value: boolean) => void;
+  changed: () => void;
 }) {
-  const [epoch, setEpoch] = useState(0),
-    rows = useResources(product.id, epoch),
-    [metadata, setMetadata] = useState<ResourceMetadata>({
+  const [metadata, setMetadata] = useState<ResourceMetadata>({
       ...defaults,
       kind: images ? "image" : "literature",
     }),
     [file, setFile] = useState<File | null>(null),
     [url, setUrl] = useState(""),
     [mode, setMode] = useState("upload"),
-    [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
   return (
     <>
-      <h3>{images ? "Product images" : "Product documents"}</h3>
-      <p>
-        {images
-          ? "The first published image by display position is the primary image. Add a replacement as a draft, publish it, then retire the previous resource."
-          : "Attach literature, installation and service documents to the exact applicable models."}
-      </p>
-      {rows.error && <p role="alert">{rows.error}</p>}
-      {rows.busy && <p role="status">Loading resources…</p>}
-      <button disabled={busy} onClick={() => setEpoch(epoch + 1)}>
-        Refresh resources
-      </button>
-      {rows.loaded &&
-        !rows.busy &&
-        !rows.error &&
-        !rows.items.some((r) => (r.kind === "image") === images) && (
-          <p className="empty">
-            No {images ? "images" : "documents"} recorded. Use Add{" "}
-            {images ? "image" : "document"} below to attach a resource.
-          </p>
-        )}
-      <div className="resource-grid">
-        {rows.items
-          .filter((r) => (r.kind === "image") === images)
-          .map((r) => (
-            <ResourceEditor
-              key={`${r.id}:${r.version}`}
-              resource={r}
-              product={product}
-              changed={() => setEpoch((value) => value + 1)}
-            />
-          ))}
-      </div>
       <details>
         <summary>Add {images ? "image" : "document"}</summary>
         <form
@@ -352,33 +354,18 @@ function ResourceCollection({
             setError("");
             setNotice("");
             try {
-              let upload: Record<string, unknown> = { ...metadata };
-              if (mode === "link") {
-                upload.externalUrl = url;
-              } else {
-                if (!file) throw Error("Choose a file.");
-                const limit = images
-                  ? catalogImageMaxBytes
-                  : catalogDocumentMaxBytes;
-                if (file.size > limit)
-                  throw Error(`File exceeds ${limit / 1024 / 1024} MB.`);
-                const bytes = new Uint8Array(await file.arrayBuffer());
-                let binary = "";
-                for (let offset = 0; offset < bytes.length; offset += 32768)
-                  binary += String.fromCharCode(
-                    ...bytes.subarray(offset, offset + 32768),
-                  );
-                upload = {
-                  ...upload,
-                  mediaType: file.type,
-                  contentBase64: btoa(binary),
-                };
-              }
+              const upload = await prepareResourceUpload(
+                metadata,
+                mode,
+                url,
+                file,
+                images,
+              );
               await resourceMutation(resourcePath(product.id), "POST", upload);
               setNotice(
                 "Draft resource added. Review metadata and permission before publishing.",
               );
-              setEpoch((value) => value + 1);
+              changed();
             } catch (e) {
               setError((e as Error).message);
             } finally {
@@ -451,7 +438,7 @@ function ResourceCollection({
                 />
               </label>
             )}
-            <button>Save draft resource</button>
+            <button type="submit">Save draft resource</button>
           </fieldset>
         </form>
       </details>
@@ -461,6 +448,60 @@ function ResourceCollection({
         </p>
       )}
       {notice && <p role="status">{notice}</p>}
+    </>
+  );
+}
+function ResourceCollection({
+  product,
+  images,
+}: {
+  product: CatalogProduct;
+  images: boolean;
+}) {
+  const [epoch, setEpoch] = useState(0),
+    rows = useResources(product.id, epoch),
+    [busy, setBusy] = useState(false);
+  return (
+    <>
+      <h3>{images ? "Product images" : "Product documents"}</h3>
+      <p>
+        {images
+          ? "The first published image by display position is the primary image. Add a replacement as a draft, publish it, then retire the previous resource."
+          : "Attach literature, installation and service documents to the exact applicable models."}
+      </p>
+      {rows.error && <p role="alert">{rows.error}</p>}
+      {rows.busy && <p role="status">Loading resources…</p>}
+      <button disabled={busy} onClick={() => setEpoch(epoch + 1)}>
+        Refresh resources
+      </button>
+      {rows.loaded &&
+        !rows.busy &&
+        !rows.error &&
+        !rows.items.some((r) => (r.kind === "image") === images) && (
+          <p className="empty">
+            No {images ? "images" : "documents"} recorded. Use Add{" "}
+            {images ? "image" : "document"} below to attach a resource.
+          </p>
+        )}
+      <div className="resource-grid">
+        {rows.items
+          .filter((r) => (r.kind === "image") === images)
+          .map((r) => (
+            <ResourceEditor
+              key={`${r.id}:${r.version}`}
+              resource={r}
+              product={product}
+              changed={() => setEpoch((value) => value + 1)}
+            />
+          ))}
+      </div>
+      <ResourceDraftForm
+        product={product}
+        images={images}
+        busy={busy}
+        setBusy={setBusy}
+        changed={() => setEpoch((value) => value + 1)}
+      />
     </>
   );
 }

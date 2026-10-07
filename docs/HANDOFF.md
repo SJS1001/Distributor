@@ -47,6 +47,7 @@ Still open:
 ## Shop cart, staff add-ons and dialog close controls — 2026-10-06
 
 Owner requests, 2026-10-06:
+
 - Shop: add to cart with a quantity, and replace "Prepare order with this product".
 - Show only the chosen product on its page.
 - Choose the warehouse in the cart.
@@ -95,6 +96,7 @@ Owner decision 2 in the [owner guide](OWNER-GUIDE-REMAINING-WORK-2026-10-06.md),
   - the journal expired-session decision (`tests/stock-journal-browser-journey.ts`).
 
   Each expected the stale panel's alert after the server ended the session. User access updates always end that user's sessions (`updateUser` in `src/server/iam.ts`). Both still prove that the refused attempt has no effect and that the retained `localStorage` attempt survives.
+
 - **Follow-up (owner request, same day).** The next sign-in attempt now clears the notice. A wrong password shows only the login error, and an earlier notice cannot carry into the workspace after a successful sign-in. Verification for this follow-up:
   - `npm test`: 6,060 passed, 0 failed.
   - 27 browser configs passed. In the first attempt the main suite never started, because machine load near 50 timed out its server.
@@ -144,6 +146,7 @@ Changed behaviour:
   - fulfillment queues.
 
   Rows have one primary action, with secondary commands in an Actions disclosure. Ids are shortened. Plurals are correct. Single-page tab strips are hidden. Empty, loading and error states are explicit, and touch targets are 44px at phone width.
+
 - **Product fixes.**
   - Ending a workspace session now always shows sign-in with its reason; after a reload it used to land on the public home.
   - Application Refresh no longer re-applies a stale free-text stock search.
@@ -3505,7 +3508,7 @@ and Customers tabs (Sol medium), spec_gap_audit performs independent source/spec
 audit (Astra high). Parent owns catalog paging/product focus and reporting. Active
 ledger: WORKFLOW-COMPLETION-2026-10-05.md. No separate cloud launch claimed. Prior
 release evidence pushed486880f, deployed source8476731/schema26 remains live. No
-CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
+CI/PR/merge. Preserve unrelated sites-demo and scripts/**pycache**.
 
 ### 2026-10-05 workflow continuation — reporting and shipping
 
@@ -3603,13 +3606,12 @@ CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
 
 - Pass5 final frozen regression6,049/6,049 passed (166.0s, no failures/skips/cancellations). Local image polish28-20261005 verified395 source/package hashes and metadata exclusion; registry digest sha256:010d3013ada2ad079e5506b22466c8da3e26cee02519a4f1f5b66186f957e68c. Code-only schema28 release prepared; previous notes28 image and encrypted backup retained. GitHub CLI identity currently SJS1001 with repository push access; no PR/merge operation.
 
-
 ### 2026-10-05 five-pass review complete and live
 
 - Final source fa48391 pushed and deployed as polish28-20261005, digest sha256:010d3013ada2ad079e5506b22466c8da3e26cee02519a4f1f5b66186f957e68c. All395 tracked source/package files match the local image and deployed Toronto machine. Schema28 unchanged; live integrity/FK checks pass, regionCA, HTTP health passes. Prior image and encrypted backup retained.
 - All five passes complete. Final workstation backend6049/6049, public19/19, workspace5/5 pass; pass-specific purchasing/admin/recovery evidence is in docs/evidence/FIVE-PASS-POLISH-2026-10-05.md.
 - Final live read-only1440/390 guest/customer/admin journeys passed: session navigation/sign-out, public filter URL/history/reload/return, Administration tab breadcrumbs/history, customer product deep links, phone staff identity, five staff note-history kinds and buyer403. Zero page errors, page overflow or attempted business writes. Two stale harness label/menu selectors corrected; failed receipts retained. Source required no post-deploy fix.
-- Remaining limits: actual SMS/email relay and payment/accounting/carrier providers unqualified; physical iPhone Safari/camera untested; browser-local preferences/recovery; bundle-size advisory; infrastructure/provider operating gates unchanged. No PR/merge/CI/new cloud session. Unrelated sites-demo/ and scripts/__pycache__/ stay untracked. Final release documentation is a separate follow-up commit.
+- Remaining limits: actual SMS/email relay and payment/accounting/carrier providers unqualified; physical iPhone Safari/camera untested; browser-local preferences/recovery; bundle-size advisory; infrastructure/provider operating gates unchanged. No PR/merge/CI/new cloud session. Unrelated sites-demo/ and scripts/**pycache**/ stay untracked. Final release documentation is a separate follow-up commit.
 
 ### 2026-10-05 public/customer/staff separation and customer records
 
@@ -3631,8 +3633,7 @@ CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
 - Feature source8e2e219 and final browser patchc724406 committed/pushed. Final image customers29b-20261005 digestsha256:390276cd8f84923f44b89fd98b392551916dca7c2a4148309ae6a177c6ebb085 is live on the existing Toronto machine. All401 source/package files match. Schema29 reports-enabled fingerprint5593a454c0963d61d717eb07c41e3fb008602656833dd1fb07a438c0defa62e6, integrity/FK and HTTP health passed. Prior schema28 database, encrypted backup and images retained.
 - Final browser patch preserves public product context on sign-out and aligns/bounds customer purchasing checkboxes. Public20/20, notes recovery8/8 and desktop/phone purchasing-layout1/1 passed, plus typecheck/build/format/diff. The full6057 backend pass belongs to8e2e219; final patch has no backend/schema changes.
 - Final live read-only1440/390 journeys passed at21:28UTC: public/staff customer-pricing entrance, equipment retention, buyer pricing, all six customer tabs, reload/back/breadcrumbs, buyer403 for staff contacts, staff-note exclusion, and product sign-out/session401. Zero page errors or attempted business writes. Final Terms/Contacts screenshots inspected. Owner's actual product tab refreshed and pricing CTA confirmed. Receipt docs/evidence/CUSTOMER-RECORD-RELEASE-2026-10-05.md.
-- Physical iPhone Safari remains untested; invoice history has no standalone invoice detail route; provider/operational qualification remains separate. No PR, merge, CI or new cloud session. Unrelated sites-demo/ and scripts/__pycache__/ remain untracked. Release evidence committed separately from deployed source.
-
+- Physical iPhone Safari remains untested; invoice history has no standalone invoice detail route; provider/operational qualification remains separate. No PR, merge, CI or new cloud session. Unrelated sites-demo/ and scripts/**pycache**/ remain untracked. Release evidence committed separately from deployed source.
 
 ### 2026-10-07 Stage 2 UI/UX fixes — implementation and verification underway
 
@@ -3641,7 +3642,6 @@ CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
 - Historical broad unit runs include an initial scalar-preflight regression (repaired), a 6,072/6,072 pass before actor annotations, then six strict quantity-movement failures from the new optional annotation. The narrow validator now validates and strips current display names before native quantity evidence comparison/hashing; focused quantity/name75, carrier source42 and count7 checks pass. Final full unit and browser regressions are underway. Interrupted runs, startup/port collisions and obsolete UI-selector failures are retained; no final consolidated pass is claimed yet.
 - Public5, shop2, staff7 and integrated7 focused browser checks passed locally against synthetic fixtures; additional regression and final source receipts will follow. React Doctor diagnostics require qualified assessment in the review ledger; no clean-score claim. All product/provider/operating gates remain NOT VERIFIED; physical-device acceptance and deployment are outside this task.
 - Commit/push the verified source, tests and documentation on the current authorized `codex/local-distributor-checkpoint` branch after final self-review. Preserve unrelated `scripts/__pycache__/` and `sites-demo/` untracked; exclude private runtime/evidence data.
-
 
 ### 2026-10-07 Stage 2 UI/UX fixes — implementation and workstation verification complete
 
@@ -3652,3 +3652,12 @@ CI/PR/merge. Preserve unrelated sites-demo and scripts/__pycache__.
 - Verified source, tests and documentation are prepared for the authorized current-branch snapshot push. Private runtime/evidence and unrelated `scripts/__pycache__/` and `sites-demo/` remain excluded. No PR, merge, deployment, CI or workflow was created. All product/provider/operating gates remain NOT VERIFIED; physical-device acceptance remains unverified.
 
 - Implementation snapshot `0c5d39afe7d8dfe97043d63fd96a12671f920ba5` committed and pushed to `SJS1001/Distributor` on `codex/local-distributor-checkpoint`; remote branch SHA independently matched local HEAD. This follow-up records publication only; production source/test manifests and verification outcomes are unchanged. No deployment, PR, merge or CI was started.
+
+### 2026-10-07 remaining UI work — completion underway
+
+- Owner explicitly requested finishing all remaining work after the remaining list included pilot deployment, aging exception investigation, individual session controls, diagnostics and further browser/device checks. Root is preparing the existing single-Machine pilot release; no new infrastructure, providers, accounts, CI, PR or merge.
+- Sol 6.1 delegated lanes own aging components, IAM/session metadata and schema31 with focused tests, and additional 320px/short-height browser coverage. Root owns integration, diagnostics, complete regression and the backed-up release. Responsibilities preserve concurrent edits. Requested model/effort were accepted by the launcher; effective runtime settings are not exposed.
+- Live read-only preflight confirms existing Toronto Machine817052c44d9028, volumevol_re1jk0pykok3pdd4 and bubbles-20261006 image digest5eb7b22de4e6fba02707aa361eb3d17306047ccdee2a7bf3793bbd8910e44995. Schema-changing activation must stop writers, retain an encrypted old-image backup, restore it offline, compare a fresh upgraded clone and preserve the old image/database pair.
+- Additional browser checks found customer-record eyebrow contrast and asynchronous quantity-modal opener restoration defects; repairs are underway. No connected iPhone was found and Xcode device tooling is unavailable. Native device/provider qualification remains dependent on actual evidence; no product gate is advanced. New private receipts remain under local-evidence/ui-ux-completion-2026-10-07/.
+
+2026-10-07 completion pre-release: UX-034 invoice investigation and UX-047 stable session recognition/individual revoke/exact lost-reply recovery implemented. Independent reviewed recovery integration uses cancellable refresh. Expanded Chromium/WebKit suite22/22 passed; physical phone unavailable. Frozen source/typecheck/format pass, full regression running. Preparing clean committed image for the existing single Toronto Machine; preserve all runtime configuration, stop writers before encrypted old-image restore-verified backup and schema31 clone conservation/activation. No CI, provider activation or new resources.

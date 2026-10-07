@@ -178,7 +178,10 @@ export function ShopCart({
   setQuantity: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
   close: () => void;
-  checkout: (warehouseId: string) => Promise<void>;
+  checkout: (
+    warehouseId: string,
+    returnFocus?: HTMLElement | null,
+  ) => Promise<void>;
 }) {
   const [warehouseId, setWarehouseId] = useState(
       warehouses.length === 1 ? warehouses[0]!.id : "",
@@ -261,7 +264,14 @@ export function ShopCart({
               if (!warehouseId || busy) return;
               setBusy(true);
               setError("");
-              checkout(warehouseId)
+              checkout(
+                warehouseId,
+                ((e.nativeEvent as SubmitEvent)
+                  .submitter as HTMLElement | null) ??
+                  e.currentTarget.querySelector<HTMLButtonElement>(
+                    'button[type="submit"]',
+                  ),
+              )
                 .catch((e: unknown) => setError((e as Error).message))
                 .finally(() => setBusy(false));
             }}

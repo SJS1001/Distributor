@@ -83,9 +83,13 @@ test("self-scoped sessions exclude other users, organizations and expiry without
   );
   for (const session of security.sessionDetails)
     assert.deepEqual(Object.keys(session).sort(), [
+      "createdAt",
       "current",
+      "deviceDescription",
       "expiresAt",
       "label",
+      "lastActivityAt",
+      "reference",
     ]);
   const serialized = JSON.stringify(security);
   for (const secret of [
@@ -295,8 +299,24 @@ test("session UI distinguishes current sessions, exposes semantic expiry and sta
   const html = renderToStaticMarkup(
     React.createElement(SessionList, {
       sessions: [
-        { label: "Session 1", expiresAt, current: false },
-        { label: "Session 2", expiresAt, current: true },
+        {
+          label: "Session 1",
+          reference: "a".repeat(32),
+          expiresAt,
+          current: false,
+          createdAt: null,
+          lastActivityAt: null,
+          deviceDescription: null,
+        },
+        {
+          label: "Session 2",
+          reference: "b".repeat(32),
+          expiresAt,
+          current: true,
+          createdAt: null,
+          lastActivityAt: null,
+          deviceDescription: null,
+        },
       ],
     }),
   );
@@ -306,8 +326,10 @@ test("session UI distinguishes current sessions, exposes semantic expiry and sta
     (html.match(/dateTime="2026-10-07T12:30:00.000Z"/g) ?? []).length,
     2,
   );
-  assert.match(html, /Device, location and last activity are not recorded/);
-  assert.match(html, /may change when the list changes/);
+  assert.match(html, /Location is not recorded/);
+  assert.match(html, /Unknown device/);
+  assert.match(html, /Unknown/);
+  assert.match(html, /Session references stay the same/);
   assert.ok(!html.includes("button"));
   assert.match(
     renderToStaticMarkup(React.createElement(SessionList, { sessions: [] })),

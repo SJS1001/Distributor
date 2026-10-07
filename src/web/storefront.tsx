@@ -4,7 +4,7 @@ import type { ReferenceRequest } from "./reference-context.ts";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import { AvailabilityBadge } from "./product-availability.tsx";
 import { ManufacturerCollection } from "./manufacturer-collection.tsx";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { PageSection, PageSections } from "./workspace.tsx";
@@ -692,6 +692,7 @@ export function Storefront({
     warehouseId: string,
     lines: { productId: string; quantity: number }[],
     saved: () => void,
+    returnFocus?: HTMLElement | null,
   ) => Promise<unknown>;
 }) {
   const cart = useShopCart(cartScope),
@@ -777,19 +778,21 @@ export function Storefront({
       </button>
     </form>
   );
+  const cartFeedback = useMemo(
+    () => ({
+      productId: addedProductId,
+      message: added,
+      viewCart: () => {
+        setCartOpen(true);
+        document
+          .querySelector(".sf-cart-entry")
+          ?.scrollIntoView({ block: "start" });
+      },
+    }),
+    [addedProductId, added],
+  );
   return (
-    <CartFeedbackContext.Provider
-      value={{
-        productId: addedProductId,
-        message: added,
-        viewCart: () => {
-          setCartOpen(true);
-          document
-            .querySelector(".sf-cart-entry")
-            ?.scrollIntoView({ block: "start" });
-        },
-      }}
-    >
+    <CartFeedbackContext.Provider value={cartFeedback}>
       <div className="storefront">
         <div className="sf-cart-entry">
           <p role="status">{added}</p>
@@ -822,7 +825,7 @@ export function Storefront({
             setQuantity={cart.setQuantity}
             remove={cart.remove}
             close={() => setCartOpen(false)}
-            checkout={async (warehouseId) => {
+            checkout={async (warehouseId, returnFocus) => {
               await checkout(
                 warehouseId,
                 cart.lines.map((l) => ({
@@ -833,6 +836,7 @@ export function Storefront({
                   cart.clear();
                   setCartOpen(false);
                 },
+                returnFocus,
               );
             }}
           />

@@ -30,6 +30,7 @@ export type Dialog = {
   description?: React.ReactNode;
   submitLabel?: string;
   readOnly?: boolean;
+  returnFocus?: HTMLElement | null;
 };
 const visibleFocusTarget = (item: HTMLElement) =>
   !item.closest("[hidden], [inert]") &&
@@ -49,19 +50,17 @@ function focusModal(element: HTMLElement) {
   ).focus();
   if (!element.contains(document.activeElement)) element.focus();
 }
-export function Modal({
-  dialog,
-  busy,
-  error,
-  close,
-  submit,
-}: {
+type ModalProps = {
   dialog: Dialog;
   busy: boolean;
   error: string;
   close: () => void;
   submit: (values: Item) => Promise<void>;
-}) {
+};
+export function Modal(props: ModalProps) {
+  return <ModalForm key={props.dialog.title} {...props} />;
+}
+function ModalForm({ dialog, busy, error, close, submit }: ModalProps) {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const enabled = (field: Field) =>
     !field.enabledWhen ||
@@ -87,10 +86,6 @@ export function Modal({
     }
     focusValidation.current = false;
   }, [invalidFields]);
-  useEffect(() => {
-    setInvalidFields([]);
-    setFieldValues({});
-  }, [dialog.title]);
   const closeRef = useRef(close);
   const busyRef = useRef(busy);
   // A suspended render must not replace the visible dialog's keyboard actions.
@@ -99,7 +94,8 @@ export function Modal({
     busyRef.current = busy;
   }, [close, busy]);
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
+    const previous =
+      dialog.returnFocus ?? (document.activeElement as HTMLElement | null);
     const element = ref.current!;
     const focusables = () => modalFocusables(element);
     // Open on the first field or action; the corner close button stays
@@ -111,21 +107,24 @@ export function Modal({
         closeRef.current();
       }
       if (event.key === "Tab") {
-        const items = focusables(),
-          first = items[0],
-          last = items.at(-1);
+        const items = focusables();
+        event.preventDefault();
         if (!items.length) {
-          event.preventDefault();
           element.focus();
           return;
         }
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
+        // macOS WebKit can skip buttons in native Tab order. Traverse the
+        // visible modal controls explicitly so focus stays inside on every OS.
+        const index = items.findIndex(
+          (item) => item === document.activeElement,
+        );
+        const next =
+          index < 0
+            ? event.shiftKey
+              ? items.length - 1
+              : 0
+            : (index + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+        items[next]?.focus();
       }
     };
     element.addEventListener("keydown", keyboard);
