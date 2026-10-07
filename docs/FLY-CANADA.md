@@ -275,3 +275,18 @@ Source `fd560fd`, schema 29, image `polish29c-20261006` supersedes `polish29b-20
 - Health is 200 and the Fly health check passes.
 
 A read-only live capture took 26 screenshots with 0 page errors and 0 business writes. It removed one administrator browser's cookie and then made an in-app read; that browser landed on "Administration sign in." with "Your session has ended. Sign in again." The abandoned server session was then signed out (200). `polish29b-20261006` is retained for rollback.
+
+## Sign-in notice clearing release, 2026-10-06
+
+Source `8b92c2f`, schema 29, image `polish29d-20261006` supersedes `polish29c-20261006` on the same Toronto Machine (version 15). Digest `sha256:9018b6ac1158a621e4615011ff022d41ded73d4c205582d881c13ae9407fd7c6`. This code-only release has no migration. It was deployed from a clean export of the pushed commit.
+
+- All 409 tracked source and package files matched the machine.
+- Database integrity and foreign-key checks passed (0 violations).
+- Health is 200 and the Fly health check passes.
+
+A read-only live capture took 28 screenshots with 0 page errors and 0 business writes. It confirmed:
+
+- The session-ended notice appears at "Administration sign in.", and the abandoned session was signed out (200).
+- Signing in again from that page leaves no notice (0 found).
+
+`polish29c-20261006` is retained for rollback.

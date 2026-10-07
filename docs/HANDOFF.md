@@ -16,6 +16,7 @@ Owner decision 2 in the [owner guide](OWNER-GUIDE-REMAINING-WORK-2026-10-06.md),
   - 27 browser configs passed. In the first attempt the main suite never started, because machine load near 50 timed out its server.
   - On rerun, the main suite passed 342 of 343. The failure was the customer-pricing recovery journey: `route.abort` reported "Route is already handled!" in its own interception.
   - That journey passed 3 of 3 targeted reruns on the same build and does not use the sign-in form. It is recorded as an intermittent test-harness race, not a fix.
+  - Deployed as `polish29d-20261006`; see the receipt in [FLY-CANADA.md](FLY-CANADA.md).
 
 Verification, run serially on the same workstation and toolchain, against the working tree that became this commit:
 
