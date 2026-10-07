@@ -1,3 +1,39 @@
+## Shop cart, staff add-ons and dialog close controls — 2026-10-06
+
+Owner requests, 2026-10-06:
+- Shop: add to cart with a quantity, and replace "Prepare order with this product".
+- Show only the chosen product on its page.
+- Choose the warehouse in the cart.
+- Staff-configured add-ons (owner said "build staff-configured add-ons now").
+- Every popup gets an X and closes on an outside click.
+
+Details are in [CUSTOMER-STOREFRONT.md](CUSTOMER-STOREFRONT.md) and [SCHEMA-UPGRADES.md](SCHEMA-UPGRADES.md).
+
+- **Schema 30.** Adds `catalog_product_addon_sets` and `catalog_product_addons`. The frozen schema 29 fixture is `tests/schema-version-twenty-nine.json`; its reports-enabled hash `5593a454…` matches the live pilot. The schema 30 reports-enabled hash is `19ee63df46b5a22cebfe5b0c316b0512c18bb21f42ad416438839fd3803c20dc`.
+- **Server.** Commands and routes:
+  - `catalog.product-addons.set`: admin only, with a revision check, an audit record and at most 12 add-ons.
+  - `GET /api/catalog/products/:id/addons`: staff read.
+  - `GET /api/catalog/customer-products/addons`: returns only add-ons the account may buy, priced for that account.
+- **Web.**
+  - New files: `src/web/shop-cart.tsx` and `src/web/product-addons.tsx`.
+  - `placeOrder` is split into a reusable `loadOrderEntry`.
+  - When opened from the Shop cart, the order editor lists only the cart's products (`cartOnly`).
+  - Added quantities add to a product's saved quantity.
+  - `Modal` has a corner X labelled "Close dialog" and closes on a backdrop click. Focus still starts on, and returns to, the first field.
+  - The product breadcrumb now displays in a row; the global `nav` column rule had stacked it.
+- **Tests.**
+  - New: `tests/catalog-addons.test.ts` and `tests/schema30-product-addons.test.ts`.
+  - New browser journey in `tests/storefront-browser-journey.ts`: staff add-on setup, buyer product-page and cart suggestions, and closing by X and by an outside click.
+  - The cart flow replaced the old "Prepare order" steps in the storefront, discovery and manufacturer-reference journeys.
+- **Verification.**
+  - `npm test`: 6,064 passed, 0 failed.
+  - 26 of 28 browser configs passed.
+  - The main and shared-navigation configs each failed 1 test: the event-retry dialog's focus after a refused save went to the new X. The fix excludes the X from that focus return. The targeted test then passed, and the full main suite rerun passed 343 of 343.
+  - Earlier runs failed because the test server used a stale `dist/` build, and because a `<select>` nested inside its label broke the label lookup. Both were fixed; the logs are kept under `local-evidence/visual-20261005/tests/`.
+- **Not in this release.** Nothing pairs add-ons on live data; staff configure them.
+
+The next owner request is pending: move guidance text into info bubbles and remove the "SAMPLE" markers, keeping one footer notice. That needs an audited product name/SKU change command, because no rename exists.
+
 ## Global session-ended handling — 2026-10-06
 
 Owner decision 2 in the [owner guide](OWNER-GUIDE-REMAINING-WORK-2026-10-06.md), approved 2026-10-06.

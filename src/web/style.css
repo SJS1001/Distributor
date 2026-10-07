@@ -2325,3 +2325,38 @@ a.record-title-link:hover {
 nav[aria-label="Catalog pages"] button:disabled {
   opacity: 0.55;
 }
+/* Every dialog keeps a close control in its top-right corner while scrolling. */
+.modal-header {
+  position: sticky;
+  top: -1.6rem;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: -1.6rem -1.6rem 0.75rem;
+  padding: 1.6rem 1.6rem 0.5rem;
+  background: #fff;
+}
+.modal-header h2 {
+  margin: 0;
+}
+.modal-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -0.6rem -0.6rem 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #102c32;
+  cursor: pointer;
+}
+.modal-close:hover,
+.modal-close:focus-visible {
+  background: #e7efed;
+}

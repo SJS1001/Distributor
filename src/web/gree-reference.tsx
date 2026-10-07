@@ -124,11 +124,11 @@ export function ReferenceMappingEditor({
 export function ReferenceMatches({
   reference,
   accountId,
-  prepare,
+  add,
 }: {
   reference: ReferenceRequest;
   accountId: string;
-  prepare: (product: CustomerProduct) => void;
+  add: (product: CustomerProduct, quantity: number) => void;
 }) {
   const [result, setResult] = useState<CustomerReferenceResult | null>(null),
     [error, setError] = useState(""),
@@ -187,7 +187,7 @@ export function ReferenceMatches({
         <ProductDetail
           product={selected}
           back={() => setSelected(null)}
-          prepare={() => prepare(selected)}
+          add={(quantity) => add(selected, quantity)}
         />
       ) : (
         result?.products.map((product) => (

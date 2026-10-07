@@ -129,13 +129,15 @@ export function usePricingChange(
               ? `Multiplier: ${attempt.payload.multiplierBp === null ? "existing tier prices" : Number(attempt.payload.multiplierBp) / 10000}. Display: ${attempt.payload.displayMode === "detailed" ? "MSRP, discount, savings and net" : "net price only"}.`
               : command === "catalog.reference.set"
                 ? `Reference: ${attempt.payload.familyId ?? "unmapped"} · model ${attempt.payload.modelId ?? "none"}.`
-                : command === "catalog.unit-cost.set"
-                  ? `Reviewed unit cost: ${attempt.payload.unitCostCents === null ? "not set" : Number(attempt.payload.unitCostCents) / 100}.`
-                  : command === "catalog.price-approval-policy.set"
-                    ? `Maximum discount: ${attempt.payload.maxDiscountBp === null ? "unconfigured" : Number(attempt.payload.maxDiscountBp) / 100}%. Minimum margin: ${attempt.payload.minMarginBp === null ? "unconfigured" : Number(attempt.payload.minMarginBp) / 100}%.`
-                    : command === "cart.price-override.set"
-                      ? `Product: ${attempt.payload.productId}. Action: ${attempt.command ?? command}. Offered net unit price: ${attempt.payload.unitPrice === undefined ? "unchanged" : `${Number(attempt.payload.unitPrice) / 100} ${value?.currency ?? "currency units"}`}. Decision: ${attempt.payload.decision ?? "none"}.`
-                      : `MSRP: ${attempt.payload.msrpCents === null ? "not set" : Number(attempt.payload.msrpCents) / 100}.`}{" "}
+                : command === "catalog.product-addons.set"
+                  ? `Add-ons: ${Array.isArray(attempt.payload.addonIds) ? attempt.payload.addonIds.length : 0} products in the reviewed order.`
+                  : command === "catalog.unit-cost.set"
+                    ? `Reviewed unit cost: ${attempt.payload.unitCostCents === null ? "not set" : Number(attempt.payload.unitCostCents) / 100}.`
+                    : command === "catalog.price-approval-policy.set"
+                      ? `Maximum discount: ${attempt.payload.maxDiscountBp === null ? "unconfigured" : Number(attempt.payload.maxDiscountBp) / 100}%. Minimum margin: ${attempt.payload.minMarginBp === null ? "unconfigured" : Number(attempt.payload.minMarginBp) / 100}%.`
+                      : command === "cart.price-override.set"
+                        ? `Product: ${attempt.payload.productId}. Action: ${attempt.command ?? command}. Offered net unit price: ${attempt.payload.unitPrice === undefined ? "unchanged" : `${Number(attempt.payload.unitPrice) / 100} ${value?.currency ?? "currency units"}`}. Decision: ${attempt.payload.decision ?? "none"}.`
+                        : `MSRP: ${attempt.payload.msrpCents === null ? "not set" : Number(attempt.payload.msrpCents) / 100}.`}{" "}
             Reason: {String(attempt.payload.reason)}
           </p>
           <button

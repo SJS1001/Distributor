@@ -4,7 +4,20 @@ D-009/D-036/D-037/D-039 engineering work. All product tasks/gates remain NOT VER
 
 ## Supported contracts
 
-**Current version: 26.** Normal startup accepts only the exact current schema profile and receipt; older stores require the explicit fresh-file upgrade. Version 26 adds one Catalog-owned `catalog_product_availability` table for administrator-controlled global customer hiding, advisory Out of stock labels and an optional expected availability date. Missing rows default to visible with no availability advice. The clone upgrade creates empty storage; it does not alter inventory, existing account entitlements, orders, request history or sample data. Hidden products fail current customer eligibility checks for browsing, resources, cart selection, quoting and acceptance, including staff ordering for a customer and approval of an earlier request. Existing order and request history remains accessible within its original scope. The public manufacturer reference library has no verified native SKU mapping and is outside these controls.
+**Current version: 30.** Version 30 adds two Catalog-owned tables:
+- `catalog_product_addon_sets` holds one revision per main unit.
+- `catalog_product_addons` holds the ordered add-on products, with at most 12 per unit and never the unit itself.
+
+The clone upgrade creates them empty; no pairings are inferred or seeded. `tests/schema-version-twenty-nine.json` freezes both version-29 reporting profiles from the code before this change. The reports-enabled hash `5593a454…` matches the Canadian pilot. `tests/schema30-product-addons.test.ts` verifies the upgrade from version 29:
+- the original file's bytes are unchanged;
+- every earlier table's rows are unchanged;
+- the new tables start empty;
+- an old database is refused at normal startup;
+- an add-on can be saved after the upgrade.
+
+Versions 27–29 are described in their release receipts in [FLY-CANADA.md](FLY-CANADA.md). The paragraphs below are historical.
+
+Earlier text: **Current version: 26.** Normal startup accepts only the exact current schema profile and receipt; older stores require the explicit fresh-file upgrade. Version 26 adds one Catalog-owned `catalog_product_availability` table for administrator-controlled global customer hiding, advisory Out of stock labels and an optional expected availability date. Missing rows default to visible with no availability advice. The clone upgrade creates empty storage; it does not alter inventory, existing account entitlements, orders, request history or sample data. Hidden products fail current customer eligibility checks for browsing, resources, cart selection, quoting and acceptance, including staff ordering for a customer and approval of an earlier request. Existing order and request history remains accessible within its original scope. The public manufacturer reference library has no verified native SKU mapping and is outside these controls.
 
 Version 26 was activated on the existing Canadian pilot on 2026-10-05 under the owner’s deployment authorization; see the [Gree and availability live receipt](evidence/LIVE-GREE-AVAILABILITY-2026-10-05.md). The reviewed clone preserved all 173 prior business tables and 768 rows, with the original source retained. Version 25 was activated in the Canadian pilot on 2026-10-05; the [portal redesign live receipt](evidence/LIVE-PORTAL-REDESIGN-2026-10-05.md) records the subsequent schema-25 code release and backup verification. Stop all writers, preserve an encrypted backup, inspect the approved exact source, clone to a new destination and reconcile business/access facts before activating version 26. `tests/schema-version-twenty-five.json` freezes both reporting profiles from the actual archived source commit `8db1d6c4c9100480018020b48131f5b4cb4158e1`; `tests/schema26-product-availability.test.ts` verifies original-file byte conservation, prior-table contents, empty availability storage, old-startup refusal and the explicit clone/restart. This local test does not qualify production encrypted recovery, cutover or containment.
 

@@ -1472,6 +1472,15 @@ export function commands(
       }),
       run: (a, k, p) => app.catalog.setProductReference(a, k, p),
     },
+    "catalog.product-addons.set": {
+      schema: obj({
+        productId: str,
+        addonIds: { type: "array", maxItems: 12, items: str },
+        revision: num,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.setProductAddons(a, k, p),
+    },
     "catalog.product-msrp.set": {
       schema: obj({
         productId: str,
@@ -2291,6 +2300,29 @@ export async function createHttp(app: Application, options: HttpOptions) {
     "/api/catalog/products/:id/reference",
     { schema: { params: obj({ id: str }) } },
     async (r) => app.catalog.productReference(actor(r), r.params.id),
+  );
+  http.get<{ Params: { id: string } }>(
+    "/api/catalog/products/:id/addons",
+    { schema: { params: obj({ id: str }) } },
+    async (r) => app.catalog.productAddons(actor(r), r.params.id),
+  );
+  // Product IDs are comma-separated; the catalog validates count and shape.
+  http.get<{ Querystring: { accountId: string; productIds: string } }>(
+    "/api/catalog/customer-products/addons",
+    {
+      schema: {
+        querystring: obj({
+          accountId: { type: "string", minLength: 1, maxLength: 128 },
+          productIds: { type: "string", minLength: 1, maxLength: 13000 },
+        }),
+      },
+    },
+    async (r) =>
+      app.catalog.customerAddons(
+        actor(r),
+        r.query.accountId,
+        r.query.productIds.split(","),
+      ),
   );
   http.get<{
     Querystring: { familyId: string; modelId?: string; accountId?: string };

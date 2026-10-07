@@ -45,6 +45,19 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   await page.getByLabel("Search products").fill("EQ-1");
   await page.getByLabel("Search products").press("Enter");
   await expect(page.getByLabel("Search products")).toBeFocused();
+  // Product cards add a chosen quantity without leaving the catalog.
+  await page
+    .getByLabel("Quantity of Synthetic equipment", { exact: true })
+    .fill("2");
+  await page
+    .getByRole("button", {
+      name: "Add Synthetic equipment to cart",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByText("Added 2 × Synthetic equipment to your cart."),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "View Synthetic equipment", exact: true })
     .click();
@@ -64,22 +77,43 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   await expect(
     page.getByText("No documents have been published for this product."),
   ).toBeVisible();
+  // The product page shows that product only, with Add to cart in place of
+  // the old prepare button; the warehouse is chosen in the cart.
+  await expect(
+    page.getByRole("region", { name: "Product catalog" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Prepare order with this product" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Quantity", { exact: true })).toHaveValue("1");
+  await page.getByRole("button", { name: "Add to cart", exact: true }).click();
+  await expect(
+    page.getByText("Added 1 × Synthetic equipment to your cart."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "View cart (3 items)" }).click();
+  await expect(
+    page.getByLabel("Quantity of Synthetic equipment in cart"),
+  ).toHaveValue("3");
   await page
-    .getByRole("button", { name: "Prepare order with this product" })
-    .click();
-  await page
-    .getByLabel("Warehouse", { exact: true })
+    .getByLabel("Ship from warehouse", { exact: true })
     .selectOption({ label: "Toronto" });
+  await page.screenshot({
+    path: "/tmp/distributor-shop-cart-mobile.png",
+    fullPage: true,
+  });
   await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Review order quantities", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Edit order quantities" }),
   ).toBeVisible();
   await expect(
     page.getByLabel("EQ-1 · Synthetic equipment", { exact: true }),
-  ).toHaveValue("1");
+  ).toHaveValue("3");
+  // Only the cart's products are listed, without catalog browsing.
+  await expect(
+    page.getByRole("dialog").getByRole("region", { name: "Catalog page" }),
+  ).toHaveCount(0);
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Continue", exact: true })
@@ -87,6 +121,14 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   await expect(
     page.getByRole("heading", { name: "Review and accept order" }),
   ).toBeVisible();
+  // Saving the warehouse cart releases the Shop cart lines.
+  expect(
+    await page.evaluate(() =>
+      Object.keys(sessionStorage).filter((k) =>
+        k.startsWith("distributor-shop-cart:"),
+      ),
+    ),
+  ).toEqual([]);
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Continue", exact: true })
@@ -231,6 +273,109 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
     ),
   ).toBe(true);
   expect(errors).toEqual([]);
+});
+
+test("staff suggest add-ons that buyers add from the product page and cart; dialogs close from the corner or outside", async ({
+  page,
+  browser,
+}) => {
+  await login(page, false);
+  await navigateWorkspace(page, "Catalog");
+  await page.getByRole("button", { name: "Manage EQ-1", exact: true }).click();
+  await page.getByRole("tab", { name: "Add-ons", exact: true }).click();
+  await page.getByLabel("Find a product to add").fill("PART-2");
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Add Synthetic replacement part as an add-on",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByLabel("Reason for add-on change")
+    .fill("Replacement part is installed with this unit");
+  await page
+    .getByRole("button", { name: "Save suggested add-ons", exact: true })
+    .click();
+  await expect(
+    page.getByText("Suggested add-ons saved.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Chosen add-ons" }),
+  ).toContainText("PART-2");
+  // A click outside the product management dialog closes it.
+  await page.mouse.click(4, 4);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const context = await browser.newContext();
+  try {
+    const buyer = await context.newPage();
+    const errors: string[] = [];
+    buyer.on("pageerror", (e) => errors.push(e.message));
+    await login(buyer, true);
+    await buyer
+      .getByRole("button", { name: "View Synthetic equipment", exact: true })
+      .click();
+    const suggested = buyer.getByRole("region", { name: "Suggested add-ons" });
+    await expect(suggested).toContainText("Synthetic replacement part");
+    await buyer.screenshot({
+      path: "/tmp/distributor-product-addons.png",
+      fullPage: true,
+    });
+    await suggested
+      .getByRole("button", {
+        name: "Add add-on Synthetic replacement part to cart",
+        exact: true,
+      })
+      .click();
+    await expect(
+      buyer.getByText("Added 1 × Synthetic replacement part to your cart."),
+    ).toBeVisible();
+    await buyer
+      .getByRole("button", { name: "Add to cart", exact: true })
+      .click();
+    await buyer.getByRole("button", { name: "View cart (2 items)" }).click();
+    const cartAddons = buyer.getByRole("region", {
+      name: "Add-ons for products in your cart",
+    });
+    // An add-on already in the cart is not suggested again.
+    await expect(
+      buyer.getByLabel("Quantity of Synthetic replacement part in cart"),
+    ).toHaveValue("1");
+    await expect(cartAddons).toHaveCount(0);
+    await buyer
+      .getByRole("button", {
+        name: "Remove Synthetic replacement part from cart",
+        exact: true,
+      })
+      .click();
+    await expect(cartAddons).toContainText("Synthetic replacement part");
+    await buyer
+      .getByLabel("Ship from warehouse", { exact: true })
+      .selectOption({ label: "Toronto" });
+    const review = buyer.getByRole("button", {
+      name: "Review order quantities",
+      exact: true,
+    });
+    await review.click();
+    await expect(
+      buyer.getByRole("heading", { name: "Edit order quantities" }),
+    ).toBeVisible();
+    await buyer
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
+    await expect(buyer.getByRole("dialog")).toHaveCount(0);
+    await review.click();
+    await expect(
+      buyer.getByRole("heading", { name: "Edit order quantities" }),
+    ).toBeVisible();
+    await buyer.mouse.click(4, 4);
+    await expect(buyer.getByRole("dialog")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });
 
 test("staff uploads and publishes permitted resources, edits rules and buyer sees only published resources", async ({
@@ -437,14 +582,14 @@ test("revoked saved products require explicit removal before replacing a cart", 
       })
       .click();
     await buyer
-      .getByRole("button", { name: "Prepare order with this product" })
+      .getByRole("button", { name: "Add to cart", exact: true })
       .click();
+    await buyer.getByRole("button", { name: "View cart (1 item)" }).click();
     await buyer
-      .getByLabel("Warehouse", { exact: true })
+      .getByLabel("Ship from warehouse", { exact: true })
       .selectOption({ label: "Toronto" });
     await buyer
-      .getByRole("dialog")
-      .getByRole("button", { name: "Continue", exact: true })
+      .getByRole("button", { name: "Review order quantities", exact: true })
       .click();
     await expect(
       buyer.getByRole("region", { name: "Unavailable saved items" }),

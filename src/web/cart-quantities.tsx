@@ -19,11 +19,14 @@ export function CartQuantities({
   initial,
   selected,
   lines,
+  cartOnly = false,
 }: {
   accountId: string;
   initial: CustomerProductPage;
   selected: SelectedCustomerProduct[];
   lines: CartLine[];
+  // From the Shop cart: list only the cart's products, without catalog browsing.
+  cartOnly?: boolean;
 }) {
   const [page, setPage] = useState(initial);
   const [query, setQuery] = useState("");
@@ -171,91 +174,103 @@ export function CartQuantities({
             .sort((a, b) => a.productId.localeCompare(b.productId)),
         )}
       />
-      <p role="status">
-        {chosen.length} selected products. Quantities stay selected across
-        catalog pages.
-      </p>
-      {chosen.some(
-        ({ product }) => !page.items.some((p) => p.id === product.id),
-      ) && (
-        <section aria-label="Selected products">
-          <h3>Selected products from other pages</h3>
-          {chosen
-            .filter(
-              ({ product }) => !page.items.some((p) => p.id === product.id),
-            )
-            .map(({ product }) => input(product))}
+      {cartOnly ? (
+        <section aria-label="Products in this order">
+          <p role="status">
+            {chosen.length} {chosen.length === 1 ? "product" : "products"} in
+            this order. Add more products from the Shop.
+          </p>
+          {chosen.map(({ product }) => input(product))}
         </section>
-      )}
-      <label htmlFor={`${prefix}-search`}>Search catalog</label>
-      <input
-        id={`${prefix}-search`}
-        ref={searchInput}
-        value={query}
-        maxLength={120}
-        disabled={busy}
-        onChange={(event) => setQuery(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            void load();
-          }
-        }}
-      />
-      <div className="actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => void load()}
-        >
-          Search catalog
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => void load("", null)}
-        >
-          Clear catalog search
-        </button>
-      </div>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      {error && failed && (
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => {
-            if (failed) void load(failed.query, failed.after);
-          }}
-        >
-          Retry catalog page
-        </button>
-      )}
-      <section aria-label="Catalog page">
-        <h3>Catalog page</h3>
-        <p role="status">
-          {busy
-            ? "Loading catalog…"
-            : `${page.items.length} products on this page`}
-        </p>
-        {page.items.map(input)}
-        {!page.items.length && <p>No matching products.</p>}
-      </section>
-      {page.next && (
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy}
-          onClick={() => void load(appliedQuery, page.next)}
-        >
-          Next catalog page
-        </button>
+      ) : (
+        <>
+          <p role="status">
+            {chosen.length} selected products. Quantities stay selected across
+            catalog pages.
+          </p>
+          {chosen.some(
+            ({ product }) => !page.items.some((p) => p.id === product.id),
+          ) && (
+            <section aria-label="Selected products">
+              <h3>Selected products from other pages</h3>
+              {chosen
+                .filter(
+                  ({ product }) => !page.items.some((p) => p.id === product.id),
+                )
+                .map(({ product }) => input(product))}
+            </section>
+          )}
+          <label htmlFor={`${prefix}-search`}>Search catalog</label>
+          <input
+            id={`${prefix}-search`}
+            ref={searchInput}
+            value={query}
+            maxLength={120}
+            disabled={busy}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void load();
+              }
+            }}
+          />
+          <div className="actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => void load()}
+            >
+              Search catalog
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => void load("", null)}
+            >
+              Clear catalog search
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+          {error && failed && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                if (failed) void load(failed.query, failed.after);
+              }}
+            >
+              Retry catalog page
+            </button>
+          )}
+          <section aria-label="Catalog page">
+            <h3>Catalog page</h3>
+            <p role="status">
+              {busy
+                ? "Loading catalog…"
+                : `${page.items.length} products on this page`}
+            </p>
+            {page.items.map(input)}
+            {!page.items.length && <p>No matching products.</p>}
+          </section>
+          {page.next && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => void load(appliedQuery, page.next)}
+            >
+              Next catalog page
+            </button>
+          )}
+        </>
       )}
     </div>
   );

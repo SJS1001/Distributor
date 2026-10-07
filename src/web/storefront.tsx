@@ -12,6 +12,13 @@ import type {
   CustomerProductPage,
 } from "../shared/customer-products.ts";
 import type { CatalogResource } from "../shared/catalog-media.ts";
+import {
+  AddToCart,
+  ShopCart,
+  useShopCart,
+  type ShopWarehouse,
+} from "./shop-cart.tsx";
+import { AddonSuggestions, useAddonSuggestions } from "./product-addons.tsx";
 import "./storefront.css";
 
 export const displayMoney = (cents: number, currency: string) =>
@@ -116,10 +123,12 @@ function Arrow({ back = false }: { back?: boolean }) {
 function ProductCard({
   product,
   select,
+  add,
   buttonRef,
 }: {
   product: CustomerProduct;
   select: () => void;
+  add: (quantity: number) => void;
   buttonRef: (element: HTMLButtonElement | null) => void;
 }) {
   const resources = useResources(product.id);
@@ -151,6 +160,7 @@ function ProductCard({
         >
           View product <Arrow />
         </button>
+        <AddToCart product={product} add={add} compact />
       </div>
     </article>
   );
@@ -158,11 +168,14 @@ function ProductCard({
 export function ProductDetail({
   product,
   back,
-  prepare,
+  add,
+  addons,
 }: {
   product: CustomerProduct;
   back: () => void;
-  prepare: () => void;
+  add: (quantity: number) => void;
+  // Suggested add-ons for this unit, when the caller knows the account.
+  addons?: React.ReactNode;
 }) {
   const resources = useResources(product.id),
     [imageIndex, setImageIndex] = useState(0);
@@ -231,14 +244,14 @@ export function ProductDetail({
             <p className="sf-tax">
               + {displayMoney(product.unit_tax, product.currency)} tax per unit
             </p>
-            <button className="sf-primary" onClick={prepare}>
-              Prepare order with this product <Arrow />
-            </button>
+            <AddToCart product={product} add={add} />
             <p className="sf-purchase-note">
-              Review quantities and current terms before submitting. Distributor
-              approval may be required; availability is confirmed at acceptance.
+              Choose the warehouse in your cart. Review quantities and current
+              terms before submitting. Distributor approval may be required;
+              availability is confirmed at acceptance.
             </p>
           </div>
+          {addons}
         </div>
       </div>
       <div className="sf-information">
@@ -355,16 +368,34 @@ export function ProductDetail({
     </section>
   );
 }
+function ProductAddons({
+  accountId,
+  product,
+  add,
+}: {
+  accountId: string;
+  product: CustomerProduct;
+  add: (product: CustomerProduct, quantity: number) => void;
+}) {
+  const suggestions = useAddonSuggestions(accountId, [product.id]);
+  return (
+    <AddonSuggestions
+      title="Suggested add-ons"
+      addons={suggestions[0]?.addons ?? []}
+      add={(addon) => add(addon, 1)}
+    />
+  );
+}
 function FocusedProduct({
   accountId,
   productId,
   back,
-  prepare,
+  add,
 }: {
   accountId: string;
   productId: string;
   back: () => void;
-  prepare: (product: CustomerProduct) => void;
+  add: (product: CustomerProduct, quantity: number) => void;
 }) {
   const [product, setProduct] = useState<CustomerProduct | null>(null);
   const [error, setError] = useState("");
@@ -401,7 +432,10 @@ function FocusedProduct({
         key={product.id}
         product={product}
         back={back}
-        prepare={() => prepare(product)}
+        add={(quantity) => add(product, quantity)}
+        addons={
+          <ProductAddons accountId={accountId} product={product} add={add} />
+        }
       />
     );
   return (
@@ -426,7 +460,7 @@ function ProductResults({
   accountId,
   search,
   category,
-  prepare,
+  add,
   filters,
   productId,
   selectProduct,
@@ -434,7 +468,7 @@ function ProductResults({
   accountId: string;
   search: string;
   category: string;
-  prepare: (product: CustomerProduct) => void;
+  add: (product: CustomerProduct, quantity: number) => void;
   filters: React.ReactNode;
   productId?: string;
   selectProduct: (productId?: string) => void;
@@ -473,7 +507,7 @@ function ProductResults({
         accountId={accountId}
         productId={productId}
         back={() => selectProduct(undefined)}
-        prepare={prepare}
+        add={add}
       />
     );
   return (
@@ -584,6 +618,7 @@ function ProductResults({
               product={p}
               buttonRef={trigger(p.id)}
               select={() => select(p, p.id)}
+              add={(quantity) => add(p, quantity)}
             />
           ))}
         </div>
@@ -622,7 +657,9 @@ export function Storefront({
   reference,
   accountId,
   accountName,
-  prepare,
+  cartScope,
+  warehouses,
+  checkout,
   productId,
   selectProduct,
   resumeCart,
@@ -635,8 +672,29 @@ export function Storefront({
   accountId: string;
   accountName: string;
   reference?: ReferenceRequest;
-  prepare: (product: CustomerProduct) => void;
+  cartScope: string;
+  warehouses: ShopWarehouse[];
+  // Saves the lines into the warehouse cart and opens the quantity review;
+  // `saved` runs once the server cart holds them.
+  checkout: (
+    warehouseId: string,
+    lines: { productId: string; quantity: number }[],
+    saved: () => void,
+  ) => Promise<unknown>;
 }) {
+  const cart = useShopCart(cartScope),
+    [cartOpen, setCartOpen] = useState(false),
+    [added, setAdded] = useState("");
+  const units = cart.lines.reduce((sum, l) => sum + l.quantity, 0);
+  function add(product: CustomerProduct, quantity: number) {
+    const refused = cart.add(product, quantity);
+    setAdded(refused || `Added ${quantity} × ${product.name} to your cart.`);
+  }
+  useEffect(() => {
+    // Opening a product shows that product from the top of the page.
+    if (productId) window.scrollTo({ top: 0, behavior: "instant" });
+    setAdded("");
+  }, [productId]);
   const [search, setSearch] = useState(""),
     [category, setCategory] = useState(""),
     [query, setQuery] = useState("");
@@ -707,36 +765,79 @@ export function Storefront({
   );
   return (
     <div className="storefront">
-      {reference && (
-        <ReferenceMatches
-          reference={reference}
-          accountId={accountId}
-          prepare={prepare}
-        />
-      )}
-      {!productId && (
-        <div className="sf-cart-entry">
-          <p>Your saved order quantities are available in Orders.</p>
-          <button className="sf-primary" onClick={resumeCart}>
-            Resume a saved cart
+      <div className="sf-cart-entry">
+        <p role="status">{added}</p>
+        <div className="sf-cart-actions">
+          {!productId && !cartOpen && (
+            <button className="sf-back" onClick={resumeCart}>
+              Resume a saved cart
+            </button>
+          )}
+          <button
+            className="sf-primary"
+            aria-expanded={cartOpen}
+            onClick={() => {
+              setCartOpen(!cartOpen);
+              setAdded("");
+            }}
+          >
+            {cartOpen
+              ? "Close cart"
+              : `View cart (${units} ${units === 1 ? "item" : "items"})`}
           </button>
         </div>
+      </div>
+      {cartOpen && (
+        <ShopCart
+          accountId={accountId}
+          add={add}
+          lines={cart.lines}
+          warehouses={warehouses}
+          setQuantity={cart.setQuantity}
+          remove={cart.remove}
+          close={() => setCartOpen(false)}
+          checkout={async (warehouseId) => {
+            await checkout(
+              warehouseId,
+              cart.lines.map((l) => ({
+                productId: l.product.id,
+                quantity: l.quantity,
+              })),
+              () => {
+                cart.clear();
+                setCartOpen(false);
+              },
+            );
+          }}
+        />
       )}
-      {!productId && <ManufacturerCollection />}
-      <p className="sf-account-context">
-        Curated for <strong>{accountName}</strong>
-        <span>Approved products & account pricing</span>
-      </p>
-      <ProductResults
-        key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
-        accountId={accountId}
-        productId={productId}
-        selectProduct={selectProduct}
-        search={query}
-        category={category}
-        prepare={prepare}
-        filters={filters}
-      />
+      {/* Product results stay mounted behind the cart to keep loaded pages. */}
+      <div hidden={cartOpen}>
+        {reference && !productId && (
+          <ReferenceMatches
+            reference={reference}
+            accountId={accountId}
+            add={add}
+          />
+        )}
+        {!productId && <ManufacturerCollection />}
+        {!productId && (
+          <p className="sf-account-context">
+            Curated for <strong>{accountName}</strong>
+            <span>Approved products & account pricing</span>
+          </p>
+        )}
+        <ProductResults
+          key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
+          accountId={accountId}
+          productId={productId}
+          selectProduct={selectProduct}
+          search={query}
+          category={category}
+          add={add}
+          filters={filters}
+        />
+      </div>
     </div>
   );
 }

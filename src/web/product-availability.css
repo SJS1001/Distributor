@@ -268,3 +268,26 @@ nav.catalog-product-breadcrumbs button.text-action {
     align-items: stretch;
   }
 }
+.product-addons-list,
+.product-addons-results {
+  display: grid;
+  gap: 8px;
+  margin: 0.75rem 0;
+  padding: 0;
+  list-style: none;
+}
+.product-addons-list li,
+.product-addons-results li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #c9d3df;
+  border-radius: 6px;
+}
+.product-addons-list li > span:first-child,
+.product-addons-results li > span:first-child {
+  overflow-wrap: anywhere;
+}

@@ -12,6 +12,13 @@ import type {
   CustomerReferenceResult,
 } from "../shared/catalog-reference.ts";
 import { CUSTOMER_PRICING_INITIALIZE } from "./customer-pricing-schema.ts";
+import { CATALOG_ADDONS_INITIALIZE } from "./catalog-addons-schema.ts";
+import {
+  MAX_ADDONS,
+  type CustomerAddonSuggestions,
+  type ProductAddons,
+  type ProductAddonsInput,
+} from "../shared/catalog-addons.ts";
 import type {
   PricingPolicy,
   PricingPolicyInput,
@@ -87,6 +94,7 @@ export class Catalog {
     this.store.migrate(PRODUCT_AVAILABILITY_INITIALIZE);
     this.store.migrate(CUSTOMER_PRICING_INITIALIZE);
     this.store.migrate(CATALOG_REFERENCE_INITIALIZE);
+    this.store.migrate(CATALOG_ADDONS_INITIALIZE);
     this.store.migrate(`
       CREATE TABLE IF NOT EXISTS catalog_products(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,sku TEXT NOT NULL,name TEXT NOT NULL,serialized INTEGER NOT NULL CHECK(serialized IN(0,1)),unit_price INTEGER NOT NULL CHECK(unit_price>=0),tax_bp INTEGER NOT NULL CHECK(tax_bp BETWEEN 0 AND 10000),currency TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,UNIQUE(org_id,sku)) STRICT;
       CREATE TABLE IF NOT EXISTS catalog_prices(org_id TEXT NOT NULL,product_id TEXT NOT NULL,tier TEXT NOT NULL,unit_price INTEGER NOT NULL CHECK(unit_price>=0),PRIMARY KEY(org_id,product_id,tier)) STRICT;
@@ -656,6 +664,156 @@ export class Catalog {
         return reference;
       },
     );
+  }
+  private addons(orgId: string, productId: string): ProductAddons {
+    const revision =
+      this.store.get<{ revision: number }>(
+        "SELECT revision FROM catalog_product_addon_sets WHERE org_id=? AND product_id=?",
+        orgId,
+        productId,
+      )?.revision ?? 0;
+    const addons = this.store
+      .all<{ id: string; sku: string; name: string; active: number }>(
+        "SELECT p.id,p.sku,p.name,p.active FROM catalog_product_addons a JOIN catalog_products p ON p.org_id=a.org_id AND p.id=a.addon_product_id WHERE a.org_id=? AND a.product_id=? ORDER BY a.position",
+        orgId,
+        productId,
+      )
+      .map((p) => ({ id: p.id, sku: p.sku, name: p.name, active: !!p.active }));
+    return { productId, addons, revision };
+  }
+  productAddons(actor: Actor, productId: string): ProductAddons {
+    return this.database.transaction(() => {
+      actor = this.catalogReader(actor);
+      this.product(actor, text(productId, "Product ID", 128));
+      return this.addons(actor.orgId, productId);
+    });
+  }
+  // Staff choose which existing products are suggested with a main unit. Only
+  // this explicit list is suggested; nothing is inferred from names or SKUs.
+  setProductAddons(actor: Actor, key: string, input: ProductAddonsInput) {
+    return this.platform.command(
+      actor,
+      "catalog.product-addons.set",
+      key,
+      input,
+      () => {
+        actor = this.catalogActor(actor, []);
+        this.product(actor, text(input.productId, "Product ID", 128));
+      },
+      () => {
+        integer(
+          input.revision,
+          "Add-on revision",
+          0,
+          Number.MAX_SAFE_INTEGER - 1,
+        );
+        const reason = text(input.reason, "Reason", 1000);
+        check(
+          Array.isArray(input.addonIds) &&
+            input.addonIds.length <= MAX_ADDONS &&
+            new Set(input.addonIds).size === input.addonIds.length,
+          "VALIDATION",
+          `Choose at most ${MAX_ADDONS} different add-on products.`,
+          400,
+        );
+        for (const addonId of input.addonIds) {
+          text(addonId, "Add-on product ID", 128);
+          check(
+            addonId !== input.productId,
+            "VALIDATION",
+            "A product cannot be its own add-on.",
+            400,
+          );
+          this.product(actor, addonId);
+        }
+        const before = this.addons(actor.orgId, input.productId);
+        check(
+          before.revision === input.revision,
+          "REVISION",
+          "Product add-ons changed; reload before saving.",
+        );
+        this.store.run(
+          "DELETE FROM catalog_product_addons WHERE org_id=? AND product_id=?",
+          actor.orgId,
+          input.productId,
+        );
+        input.addonIds.forEach((addonId, position) =>
+          this.store.run(
+            "INSERT INTO catalog_product_addons VALUES(?,?,?,?)",
+            actor.orgId,
+            input.productId,
+            addonId,
+            position,
+          ),
+        );
+        this.store.run(
+          "INSERT INTO catalog_product_addon_sets VALUES(?,?,?) ON CONFLICT(org_id,product_id) DO UPDATE SET revision=excluded.revision",
+          actor.orgId,
+          input.productId,
+          input.revision + 1,
+        );
+        const addons = this.addons(actor.orgId, input.productId);
+        this.platform.audit(
+          actor,
+          "catalog.product-addons.changed",
+          input.productId,
+          { before, addons, reason },
+        );
+        return addons;
+      },
+    );
+  }
+  // Suggestions for products a customer is viewing or has in a cart: only
+  // configured add-ons this account may buy now, at its own prices.
+  customerAddons(
+    actor: Actor,
+    accountId: string,
+    productIds: string[],
+  ): CustomerAddonSuggestions {
+    return this.database.transaction(() => {
+      actor = this.catalogActor(actor, ["commercial", "buyer"]);
+      const customer = this.identity.customer(
+        actor,
+        text(accountId, "Customer ID", 128),
+      );
+      check(
+        Array.isArray(productIds) &&
+          productIds.length >= 1 &&
+          productIds.length <= 100 &&
+          new Set(productIds).size === productIds.length,
+        "VALIDATION",
+        "Request add-ons for 1 to 100 different products.",
+        400,
+      );
+      productIds.forEach((value) => text(value, "Product ID", 128));
+      const suggestions: CustomerAddonSuggestions["suggestions"] = [];
+      for (const productId of productIds) {
+        // A main unit the account cannot see discloses nothing about its add-ons.
+        if (!this.eligible(actor, accountId, productId)) continue;
+        const ids = this.store
+          .all<{ id: string }>(
+            `SELECT p.id FROM catalog_product_addons a JOIN catalog_products p ON p.org_id=a.org_id AND p.id=a.addon_product_id WHERE a.org_id=? AND a.product_id=? AND p.active=1 AND p.currency=? AND ${this.entitlementPredicate()} AND ${this.priceablePredicate()} ORDER BY a.position`,
+            actor.orgId,
+            productId,
+            customer.currency,
+            accountId,
+            accountId,
+          )
+          .map((r) => r.id);
+        if (!ids.length) continue;
+        const priced = new Map(
+          this.selectedCustomerProducts(actor, accountId, ids)
+            .filter((p) => p.active === 1)
+            .map(({ active: _active, ...p }) => [p.id, p]),
+        );
+        const addons = ids.flatMap((id) => {
+          const product = priced.get(id);
+          return product ? [product] : [];
+        });
+        if (addons.length) suggestions.push({ productId, addons });
+      }
+      return { suggestions };
+    });
   }
   customerReference(
     actor: Actor,

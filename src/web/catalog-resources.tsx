@@ -1,3 +1,4 @@
+import { ProductAddonsEditor } from "./product-addons.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import { UnitCostEditor } from "./price-authority.tsx";
 import { ReferenceMappingEditor } from "./gree-reference-loader.tsx";
@@ -495,6 +496,7 @@ export function CatalogResourceWorkspace({
             ? [
                 { id: "catalog-pricing", label: "Pricing" },
                 { id: "catalog-reference", label: "Reference mapping" },
+                { id: "catalog-addons", label: "Add-ons" },
               ]
             : []),
           { id: "catalog-images", label: "Images" },
@@ -541,6 +543,14 @@ export function CatalogResourceWorkspace({
         {canManageAvailability && (
           <PageSection id="catalog-reference">
             <ReferenceMappingEditor
+              productId={product.id}
+              recoveryScope={recoveryScope}
+            />
+          </PageSection>
+        )}
+        {canManageAvailability && (
+          <PageSection id="catalog-addons">
+            <ProductAddonsEditor
               productId={product.id}
               recoveryScope={recoveryScope}
             />

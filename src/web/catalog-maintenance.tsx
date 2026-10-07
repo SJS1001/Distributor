@@ -224,7 +224,8 @@ export function CatalogMaintenance(actions: Actions) {
 function ProductDialog(
   props: React.ComponentProps<typeof CatalogResourceWorkspace>,
 ) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null),
+    pressedBackdrop = useRef(false);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
@@ -238,6 +239,16 @@ function ProductDialog(
       onCancel={(event) => {
         event.preventDefault();
         props.close();
+      }}
+      // The dialog element fills only its box; a click on the dialog itself
+      // (not its content) is a click on the backdrop outside the box.
+      onMouseDown={(event) => {
+        pressedBackdrop.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (pressedBackdrop.current && event.target === event.currentTarget)
+          props.close();
+        pressedBackdrop.current = false;
       }}
     >
       <CatalogResourceWorkspace {...props} />

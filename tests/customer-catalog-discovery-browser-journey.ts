@@ -90,7 +90,7 @@ test("whole-catalog categories, scoped product routes and saved cart entry", asy
     "unavailable in your current approved catalog",
   );
   await expect(
-    page.getByRole("button", { name: "Prepare order with this product" }),
+    page.getByRole("button", { name: "Add to cart", exact: true }),
   ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Return to Shop", exact: true })

@@ -76,7 +76,12 @@ export function Modal({
           !item.closest("[hidden], [inert]") &&
           item.getClientRects().length > 0,
       );
-    (focusables()[0] ?? element).focus();
+    // Open on the first field or action; the corner close button stays
+    // reachable by Tab and Escape.
+    (
+      focusables().find((item) => !item.classList.contains("modal-close")) ??
+      element
+    ).focus();
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) {
         event.preventDefault();
@@ -118,12 +123,29 @@ export function Modal({
     if (!busy && error && element && !element.contains(document.activeElement))
       element
         .querySelector<HTMLElement>(
-          "input,select,textarea,button:not(:disabled)",
+          "input,select,textarea,button:not(:disabled):not(.modal-close)",
         )
         ?.focus();
   }, [busy, error]);
+  // Close only when both press and release land on the backdrop, so selecting
+  // text inside the dialog and releasing outside it never discards entries.
+  const pressedBackdrop = useRef(false);
   return (
-    <div className="modal-backdrop">
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        pressedBackdrop.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (
+          pressedBackdrop.current &&
+          event.target === event.currentTarget &&
+          !busy
+        )
+          close();
+        pressedBackdrop.current = false;
+      }}
+    >
       <section
         ref={ref}
         className="modal"
@@ -133,7 +155,30 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="dialog-title"
       >
-        <h2 id="dialog-title">{dialog.title}</h2>
+        <div className="modal-header">
+          <h2 id="dialog-title">{dialog.title}</h2>
+          <button
+            type="button"
+            className="modal-close"
+            aria-label="Close dialog"
+            title="Close"
+            disabled={busy}
+            onClick={close}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
         {dialog.description && (
           <div className="description">{dialog.description}</div>
         )}

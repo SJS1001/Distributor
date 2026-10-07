@@ -119,7 +119,7 @@ test("exact reference survives application and login, explicit admin mapping ena
     .getByRole("button", { name: "View Synthetic equipment", exact: true })
     .click();
   await expect(
-    matches.getByRole("button", { name: /Prepare order/ }),
+    matches.getByRole("button", { name: "Add to cart", exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(

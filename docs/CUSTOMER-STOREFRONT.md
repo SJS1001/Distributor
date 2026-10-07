@@ -8,6 +8,19 @@ Historical checkpoint `0f41a55` lacked product media, customer purchasing restri
 
 Catalog resources use bounded SQLite BLOB storage, generated IDs, fresh account/tenant/eligibility checks and immutable history. Images normalize to PNG; PDFs are reconstructed as raster-only documents in a bounded child process. Draft publication requires an explicit permission basis. Metadata edits return published resources to draft; retirement preserves history. HTTPS document links never trigger a server fetch. See [resource limits and operating policy](CATALOG-RESOURCES.md).
 
+## Shop cart and suggested add-ons — 2026-10-06
+
+Owner requests, 2026-10-06:
+- add to cart with a quantity;
+- "View product" opens only that product;
+- choose the warehouse in the cart;
+- suggest add-ons such as install kits or brackets with main units.
+
+- **Cart.** Product cards and the product page have a quantity and **Add to cart**, replacing "Prepare order with this product". Lines wait in the buyer's browser tab (`sessionStorage`), because the saved server cart belongs to one customer and one warehouse. In the cart the buyer changes quantities, removes lines and picks **Ship from warehouse**. **Review order quantities** merges the lines into that warehouse's saved cart, adding to any saved quantity up to the 100,000 limit. It then opens the quantity review listing only those products. The tab's cart clears once the server cart is saved. Prices in the cart are estimates; the quote confirms current price, tax and availability.
+- **Product page.** Shows only the chosen product. The manufacturer collection, reference matches and catalog list are hidden.
+- **Add-ons (schema 30).** Administrators choose up to 12 existing products per main unit in Catalog → Manage product → Add-ons, in display order, with a reason. Saves use a revision check and are audited. Customers see an add-on only if their account may buy it now (entitlement, visibility, currency and MSRP pricing rules), at their own price. Add-ons of a main unit the account cannot buy are not disclosed. Nothing is inferred from names or SKUs; no pairings are seeded.
+- **Dialogs.** Every workspace dialog has a close button (X) in the top-right corner and closes on a click outside it, unless a save is in progress. The catalog product dialog keeps its close button and also closes on an outside click.
+
 ## Requested experience
 
 | Area | Required behavior | Existing task coverage |

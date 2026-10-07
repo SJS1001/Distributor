@@ -9,6 +9,8 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture } from "./fixtures.ts";
 const laterTables = [
+  "catalog_product_addons",
+  "catalog_product_addon_sets",
   "iam_customer_contacts",
   "notes_verifications",
   "notes_records",
