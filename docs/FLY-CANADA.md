@@ -290,3 +290,25 @@ A read-only live capture took 28 screenshots with 0 page errors and 0 business w
 - Signing in again from that page leaves no notice (0 found).
 
 `polish29c-20261006` is retained for rollback.
+
+## Shop cart and staff add-ons release (schema 30), 2026-10-06
+
+Source `6956983`, schema 30, image `addons30-20261006` supersedes `polish29d-20261006` on the same Toronto Machine (version 15). Digest `sha256:8be27831b6d430302dd3c4a0b62e55b8494541c91d20d34cb83c91a428fbb902`. It was deployed from a clean export of the pushed commit, and all 413 tracked source and package files matched inside the image (checked offline) and on the machine.
+
+The schema 29 to 30 upgrade used the established procedure:
+
+- The writer was stopped for maintenance.
+- An encrypted backup was taken with the old image and downloaded, and an isolated offline restore passed.
+- A schema 30 clone was staged and verified: source hash `5593a454…` to `19ee63df…`, with 190 tables and 994 rows preserved.
+- It was activated with the schema 29 database retained in `/data/rollback-schema29-polish29d-20261006`.
+- After restart: version 30, hash `19ee63df46b5a22cebfe5b0c316b0512c18bb21f42ad416438839fd3803c20dc`, region CA, quick check ok, 0 foreign-key violations, health 200, and the Fly health check passes.
+
+A read-only live capture took 12 screenshots with 0 page errors and 0 business writes. It confirmed:
+
+- The staff Catalog Add-ons tab loads, and the product dialog closes on an outside click.
+- A buyer's product page shows only that product.
+- Add to cart (quantity 2) fills the cart with a warehouse choice.
+- Review order quantities lists only cart products.
+- That dialog closes by its X and by an outside click.
+
+No add-on pairings are seeded; staff configure them. `polish29d-20261006` and the schema 29 database are retained for rollback.

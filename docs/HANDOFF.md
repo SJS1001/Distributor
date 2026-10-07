@@ -32,6 +32,8 @@ Details are in [CUSTOMER-STOREFRONT.md](CUSTOMER-STOREFRONT.md) and [SCHEMA-UPGR
   - Earlier runs failed because the test server used a stale `dist/` build, and because a `<select>` nested inside its label broke the label lookup. Both were fixed; the logs are kept under `local-evidence/visual-20261005/tests/`.
 - **Not in this release.** Nothing pairs add-ons on live data; staff configure them.
 
+Deployed to the Fly pilot as schema 30 (image `addons30-20261006`, source `6956983`); see the receipt in docs/FLY-CANADA.md. The live capture had 0 errors and 0 writes, and the schema 29 database is retained for rollback.
+
 The next owner request is pending: move guidance text into info bubbles and remove the "SAMPLE" markers, keeping one footer notice. That needs an audited product name/SKU change command, because no rename exists.
 
 ## Global session-ended handling — 2026-10-06
