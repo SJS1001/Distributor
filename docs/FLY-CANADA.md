@@ -339,3 +339,23 @@ A read-only live check had 0 page errors and 0 business writes. It confirmed:
 - No SAMPLE wording appears on the staff pages checked.
 
 By owner instruction, screenshots were taken but not sent for this deploy. The onboarding administrator account (Elena Vasquez) remains active with an unrecorded random password; see docs/GREE-PILOT-SAMPLE.md. `addons30-20261006` and the previous database are retained for rollback.
+
+## Info bubbles and neutral status bar release, 2026-10-06
+
+Source `a725eed`, schema 30 (unchanged), image `bubbles-20261006` supersedes `fullseed-20261006` on the same Toronto Machine. Digest `sha256:5eb7b22de4e6fba02707aa361eb3d17306047ccdee2a7bf3793bbd8910e44995`. All 416 tracked source and package files matched, both in the image (checked offline) and on the machine.
+
+This was a code-only release: no data change, so no maintenance stop, backup or staging was needed.
+
+After restart:
+
+- Schema 30, hash `19ee63df…`, quick check ok and 0 foreign-key violations.
+- 27 products, 0 SAMPLE labels, 10 accounts, 10 applications, 28 orders and 21 invoices, all unchanged.
+- Health ok.
+
+A read-only text check (no screenshots, by owner instruction) had 0 page errors and 0 business writes. It confirmed:
+
+- No "Pilot workspace" or "qualification pending" wording on the public home, six staff pages or two customer pages.
+- Staff see "Storage region CA · CAD" with an info bubble; customers see "All prices in CAD".
+- The Orders queue bubble opened with its guidance and closed on Escape.
+
+`fullseed-20261006` is retained for rollback.

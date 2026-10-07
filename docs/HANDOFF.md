@@ -10,6 +10,10 @@ Changed:
 - **Status bar:** the yellow "Pilot workspace · CA · CAD / Operational qualification pending" bar is now a neutral "Storage region CA · CAD" line for staff, with the qualification note in a bubble. Customers see "All prices in CAD".
 - **Sign-in note:** the prefilled note now reads "Demonstration … details are filled in."
 
+Verification: 6,065 unit tests passed. 26 of 28 browser configurations passed on the first run; the 2 failures were tests that require the coverage and provider-history caveats on screen, so those caveats were restored and the 19 affected tests then passed.
+
+Deployed to the Fly pilot as image `bubbles-20261006` (source `a725eed`); see the receipt in docs/FLY-CANADA.md. The text-only live check had 0 errors and 0 writes.
+
 Data-borne words that remain (not interface text):
 
 - Tier "Sample-Contractor" on three accounts. No tier rename command exists.
