@@ -16,6 +16,8 @@ Verification:
 - An offline rehearsal on a restored copy of live data passed. Integrity and foreign-key checks pass, 900 prior rows are unchanged, and only the expected label, policy, stock and cart rows changed.
 - A private local screenshot pass had 0 page errors and found no "sample/fictional" wording on the staff pages checked.
 
+Deployed to the Fly pilot as image `fullseed-20261006` (source `3f0a316`); see the receipt in docs/FLY-CANADA.md. The live check had 0 errors and 0 writes.
+
 Still open:
 
 - The info-bubble guidance pass.
