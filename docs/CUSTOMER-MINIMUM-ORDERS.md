@@ -1,0 +1,15 @@
+# Individual customer minimum orders
+
+Administrators and commercial staff open **Customers → the exact customer → Terms**. The minimum-order panel has **Minimum merchandise subtotal (CAD)** and **Minimum equipment units**. Enter both values, provide the reason and select **Save minimum order**. Zero disables that individual threshold; both thresholds must be satisfied when positive. Existing customers start with both zero after the schema32 upgrade. No threshold is inferred from tier, credit limit or past orders.
+
+The amount is the selected customer's merchandise subtotal at their current quoted prices, before tax and freight. Equipment quantity counts products classified as serialized equipment. Bulk accessories contribute to the amount but do not count as equipment units. An accessory-only order is still subject to any positive equipment threshold; setting a quantity minimum therefore prevents that customer accepting an accessory-only order. Verify the product's classification when creating equipment.
+
+Buyers see their current requirements under **Account** and progress in the cart and quantity editor. Quote review also shows the current requirements. The server checks the current policy when accepting an order, submitting/resubmitting an approval request, approving a request or amending quantities. A historical quote or policy display cannot bypass a subsequent policy change. Being above the minimum does not establish stock, credit, payment or approved terms; those checks remain separate.
+
+Already accepted orders retain their fulfillment and cancellation paths when the minimum changes. A quantity amendment must satisfy the current minimum. Customer approval requests reserve no stock and collect no payment; a minimum-compliant request still needs its separate distributor decision.
+
+Each save uses the exact customer, expected policy revision, reviewed values, reason and a retained request key. A competing change is refused instead of silently overwritten. If a response is lost, the same submitted attempt can be reconciled after reload/sign-in before replacing it. Retention is scoped to the signed-in identity and organization. A failed read offers Retry. The IAM-owned native command is `account.minimum-order.save`; the read endpoint is `GET /api/accounts/:id/minimum-order`. Buyers can read only their assigned customer; warehouse/finance-only roles cannot change this policy. Native mutation audit retains the change and reason.
+
+The policy is stored in IAM-owned `iam_customer_minimum_orders`, added by an explicit schema31→32 clone upgrade. The upgrade conserves historical rows and starts policy storage empty. Normal startup refuses an older schema. Follow [schema upgrades](SCHEMA-UPGRADES.md) and [recovery](RECOVERY.md); an old container alone is not a rollback after activating schema32.
+
+Focused native, browser and clone/recovery checks are engineering evidence. Actual staff/customer usability, approved operating policies and live external integrations remain separate acceptance work. See the [task handoff review](reviews/task-handoff-blind-spots-2026-10-07.md) for ownership and exception checkpoints.

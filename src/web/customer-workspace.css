@@ -19,7 +19,7 @@
   display: flex;
   align-items: center;
   gap: 24px;
-  min-height: 92px;
+  min-height: 72px;
   border-bottom: 1px solid #ffffff26;
 }
 .customer-shell .customer-wordmark {
@@ -75,8 +75,8 @@
   border: 0;
   border-bottom: 3px solid transparent;
   border-radius: 0;
-  min-height: 58px;
-  padding: 16px 0 13px;
+  min-height: 48px;
+  padding: 11px 0 8px;
   color: #d4dfdf;
   background: transparent;
 }
@@ -93,18 +93,19 @@
   width: 100%;
   max-width: 1328px;
   margin: 0 auto;
-  padding: 36px 24px 64px;
+  padding: 24px 24px 48px;
 }
 .customer-shell .workspace-header {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 .customer-shell .workspace-header h1 {
-  font-size: clamp(30px, 3vw, 42px);
+  font-size: clamp(30px, 3vw, 36px);
   letter-spacing: -1.2px;
   color: var(--ink);
 }
 .customer-shell .workspace-header .eyebrow {
   color: #0067b9;
+  margin: 0 0 6px;
 }
 .customer-shell .workspace-header .page-description {
   color: #5c6d73;
@@ -115,9 +116,14 @@
   border: 0;
   border-bottom: 1px solid #dce5ef;
   border-radius: 0;
-  padding: 0 0 14px;
-  margin-bottom: 24px;
+  padding: 0 0 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
   font-size: 12px;
+}
+.customer-shell .qualification .demo-notice {
+  margin: 0;
+  text-align: left;
 }
 .customer-shell button {
   min-height: 44px;
@@ -200,13 +206,13 @@
     min-height: 48px;
   }
   .customer-shell main.workspace-main {
-    padding: 26px 20px 40px;
+    padding: 20px 20px 40px;
   }
   .customer-shell .workspace-header {
     gap: 12px;
   }
   .customer-shell .workspace-header > button {
-    margin-top: 22px;
+    margin-top: 0;
   }
   .customer-shell input,
   .customer-shell select,

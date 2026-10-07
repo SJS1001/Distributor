@@ -9,6 +9,7 @@ export type CustomerProduct = {
   sku: string;
   name: string;
   serialized: number;
+  hasPublishedImage?: boolean;
   unit_price: number;
   unit_tax: number;
   tax_bp: number;

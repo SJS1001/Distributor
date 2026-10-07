@@ -164,6 +164,7 @@ for (const region of ["CA", "US"] as const)
         serialized: 1,
         outOfStock: false,
         expectedAvailableOn: null,
+        hasPublishedImage: false,
         unit_price: 8199,
         unit_tax: 1066,
         tax_bp: 1300,

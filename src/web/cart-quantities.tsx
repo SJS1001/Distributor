@@ -1,3 +1,4 @@
+import { MinimumOrderProgress } from "./customer-minimum-order.tsx";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import React, { useEffect, useId, useRef, useState } from "react";
 import type {
@@ -169,10 +170,28 @@ export function CartQuantities({
               quantity: Number(quantity),
               sku: product.sku,
               name: product.name,
+              serialized: product.serialized,
             }))
             .filter((l) => l.quantity > 0)
             .sort((a, b) => a.productId.localeCompare(b.productId)),
         )}
+      />
+      <MinimumOrderProgress
+        accountId={accountId}
+        lines={chosen
+          .filter((l) => {
+            const quantity = Number(l.quantity);
+            return (
+              Number.isSafeInteger(quantity) &&
+              quantity > 0 &&
+              quantity <= 100000
+            );
+          })
+          .map((l) => ({
+            quantity: Number(l.quantity),
+            unitPrice: l.product.unit_price,
+            serialized: l.product.serialized,
+          }))}
       />
       {cartOnly ? (
         <section aria-label="Products in this order">

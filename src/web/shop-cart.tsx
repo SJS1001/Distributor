@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useId, useState } from "react";
+import { MinimumOrderProgress } from "./customer-minimum-order.tsx";
 import type { CustomerProduct } from "../shared/customer-products.ts";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import { AddonSuggestions, useAddonSuggestions } from "./product-addons.tsx";
@@ -328,6 +329,14 @@ export function ShopCart({
               before you accept.
             </p>
           </form>
+          <MinimumOrderProgress
+            accountId={accountId}
+            lines={lines.map((l) => ({
+              quantity: l.quantity,
+              unitPrice: l.product.unit_price,
+              serialized: l.product.serialized,
+            }))}
+          />
           <AddonSuggestions
             title="Add-ons for products in your cart"
             addons={addons}

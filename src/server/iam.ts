@@ -1,3 +1,4 @@
+import { CustomerMinimumOrders } from "./iam-customer-minimum-order.ts";
 import { SESSION_DETAILS_INITIALIZE } from "./session-details-schema.ts";
 import {
   sessionDeviceDescription,
@@ -80,6 +81,7 @@ export class Identity {
   private readonly mfaRequiredRoles: readonly Role[];
   readonly residency: ProviderResidency;
   readonly organizationResidency: OrganizationResidency;
+  readonly minimumOrders: CustomerMinimumOrders;
   readonly contacts: CustomerContactsModule;
   constructor(
     private database: Database,
@@ -112,6 +114,7 @@ export class Identity {
       (actor, accountId) => this.customer(actor, accountId),
     );
     this.contacts = new CustomerContactsModule(database, platform, this);
+    this.minimumOrders = new CustomerMinimumOrders(database, platform, this);
     this.organizationResidency = new OrganizationResidency(
       database,
       platform,

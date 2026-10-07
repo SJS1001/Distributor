@@ -9,6 +9,10 @@ import { RecordNotes } from "./record-notes.tsx";
 import { PriceOverridesEditor } from "./price-overrides.tsx";
 import { PriceApprovalPolicyEditor } from "./price-authority.tsx";
 import { readReference } from "./reference-context.ts";
+import {
+  CustomerMinimumOrderControls,
+  MinimumOrderProgress,
+} from "./customer-minimum-order.tsx";
 import { ShippingTermsEditor } from "./shipping-terms.tsx";
 import { shippingSummary } from "../shared/shipping-terms.ts";
 import { InvoiceDetail } from "./invoice-detail.tsx";
@@ -1721,6 +1725,8 @@ function App() {
     cart: Item,
     current: () => boolean,
     resubmission?: OrderRequest,
+    equipment: { productId: string; serialized: number }[] = [],
+    minimumAccountId?: string,
   ) => {
     if (!current()) return { keepDialog: true, skipRefresh: true };
     const quote = await command("cart.quote", {
@@ -1764,7 +1770,21 @@ function App() {
         )),
         skipRefresh: true,
       }),
-      `${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit${l.priceOverride ? " · reviewed one-off selling price" : ""}`).join("\n")}\n${shippingSummary(quote.shipping, quote.currency)}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes. Orders requiring verification await distributor approval without reserving stock or taking payment.`,
+      <>
+        <p
+          style={{ whiteSpace: "pre-line" }}
+        >{`${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit${l.priceOverride ? " · reviewed one-off selling price" : ""}`).join("\n")}\n${shippingSummary(quote.shipping, quote.currency)}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes. Orders requiring verification await distributor approval without reserving stock or taking payment.`}</p>
+        <MinimumOrderProgress
+          accountId={minimumAccountId ?? cart.account_id}
+          lines={quote.lines.map((l: Item) => ({
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            serialized:
+              equipment.find((p) => p.productId === l.productId)?.serialized ??
+              0,
+          }))}
+        />
+      </>,
       resubmission ? "Resubmit for review" : "Accept order",
       false,
       undefined,
@@ -1886,6 +1906,7 @@ function App() {
           quantity: number;
           sku: string;
           name: string;
+          serialized: number;
         }[];
         const lines = reviewedLines.map(({ productId, quantity }) => ({
           productId,
@@ -1910,7 +1931,13 @@ function App() {
         saved?.();
         // Quote retries reuse the observed saved revision rather than writing
         // again. A new native quote still refuses another session's newer cart.
-        return reviewCart(savedCart!, current, resubmission);
+        return reviewCart(
+          savedCart!,
+          current,
+          resubmission,
+          reviewedLines,
+          accountId,
+        );
       },
       <>
         <p>
@@ -8116,6 +8143,9 @@ function App() {
                       a.held ? "On hold" : "Clear",
                     ],
                   )}
+                  {data.accounts.map((a: Item) => (
+                    <CustomerMinimumOrderControls key={a.id} accountId={a.id} />
+                  ))}
                   <h2 id="account-data-location" tabIndex={-1}>
                     Data location
                   </h2>

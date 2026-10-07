@@ -9,6 +9,7 @@ import {
   navigationHash,
 } from "./navigation.ts";
 import { CustomerPricingControls } from "./customer-pricing.tsx";
+import { CustomerMinimumOrderControls } from "./customer-minimum-order.tsx";
 import { CustomerPurchasingRules } from "./purchasing-rules.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import type {
@@ -305,6 +306,12 @@ export function CustomerRecord({
               </p>
             </section>
           )}
+          <CustomerMinimumOrderControls
+            key={`minimum:${account.id}`}
+            accountId={account.id}
+            recoveryScope={recoveryScope}
+            editable={commercial}
+          />
           {commercial && (
             <CustomerPurchasingRules
               key={account.id}

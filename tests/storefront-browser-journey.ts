@@ -41,7 +41,10 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
     path: "/tmp/distributor-storefront-mobile.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Next featured product" }).click();
+  // This fixture has one equipment item; accessories stay in the catalog.
+  await expect(
+    page.getByRole("button", { name: "Next featured product" }),
+  ).toBeDisabled();
   await page.getByLabel("Search products").fill("EQ-1");
   await page.getByLabel("Search products").press("Enter");
   await expect(page.getByLabel("Search products")).toBeFocused();
@@ -383,6 +386,22 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
   browser,
 }) => {
   await login(page, false);
+  const csrf = (await (await page.request.get("/api/session")).json()).csrf;
+  const created = await page.request.post("/api/commands/product.create", {
+    headers: {
+      origin: "http://127.0.0.1:3216",
+      "x-csrf-token": csrf,
+      "idempotency-key": "storefront-photo-priority-fixture",
+    },
+    data: {
+      sku: "AA-NO-PHOTO",
+      name: "Synthetic unphotographed equipment",
+      serialized: true,
+      unitPrice: 9900,
+      taxBasisPoints: 1300,
+    },
+  });
+  expect(created.ok()).toBe(true);
   await navigateWorkspace(page, "Catalog");
   await page.getByRole("button", { name: "Manage EQ-1", exact: true }).click();
   await page.getByRole("tab", { name: "Images", exact: true }).click();
@@ -479,6 +498,11 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
     .selectOption("selected");
   await page.getByLabel("EQ-1 — Synthetic equipment", { exact: true }).check();
   await page
+    .getByLabel("AA-NO-PHOTO — Synthetic unphotographed equipment", {
+      exact: true,
+    })
+    .check();
+  await page
     .getByLabel("Reason for purchasing rule change")
     .fill("Approved synthetic equipment only");
   await page
@@ -491,6 +515,25 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
   try {
     const buyer = await context.newPage();
     await login(buyer, true);
+    const featured = buyer.getByRole("region", { name: "Featured products" });
+    await expect(
+      featured.getByRole("heading", {
+        name: "Synthetic equipment",
+        exact: true,
+      }),
+    ).toBeVisible();
+    const photo = featured.getByRole("img", {
+      name: "Synthetic equipment test graphic",
+    });
+    await expect(photo).toBeVisible();
+    await expect(photo).toHaveJSProperty("naturalWidth", 40);
+    // A photographed eligible equipment item outranks the earlier unpictured SKU.
+    await expect(
+      buyer.getByRole("button", {
+        name: "View Synthetic unphotographed equipment",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(
       buyer.getByRole("button", {
         name: "View Synthetic replacement part",

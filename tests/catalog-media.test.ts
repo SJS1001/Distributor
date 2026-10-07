@@ -48,11 +48,31 @@ test("resource image draft/publish/order/edit/retire and exact retries retain im
   const m = media(f),
     b = buyer(f);
   const input = image();
+  const checkPublishedProjection = (expected: boolean) => {
+    assert.equal(
+      f.app.catalog.customerProducts(b, f.buyer).find((p) => p.id === f.product)
+        ?.hasPublishedImage,
+      expected,
+    );
+    assert.equal(
+      f.app.catalog
+        .customerProductPage(b, f.buyer, undefined, "", "", f.product)
+        .items.find((p) => p.id === f.product)?.hasPublishedImage,
+      expected,
+    );
+    assert.equal(
+      f.app.catalog.selectedCustomerProducts(b, f.buyer, [f.product])[0]
+        ?.hasPublishedImage,
+      expected,
+    );
+  };
+  checkPublishedProjection(false);
   const r = await m.upload(f.actor, "upload", f.product, input);
   assert.equal(r.state, "draft");
   assert.equal(r.inspection, "normalized");
   assert.deepEqual(await m.upload(f.actor, "upload", f.product, input), r);
   assert.equal(m.list(b, f.product).items.length, 0);
+  checkPublishedProjection(false);
   assert.throws(() => m.bytes(b, f.product, r.id), /not found/);
   await assert.rejects(
     m.publish(f.actor, "bad-permission", f.product, r.id, {
@@ -74,6 +94,7 @@ test("resource image draft/publish/order/edit/retire and exact retries retain im
     published,
   );
   assert.equal(m.list(b, f.product).items.length, 1);
+  checkPublishedProjection(true);
   assert.equal(m.bytes(b, f.product, r.id).bytes.length, r.bytes);
   assert.throws(
     () =>
@@ -89,16 +110,19 @@ test("resource image draft/publish/order/edit/retire and exact retries retain im
     position: 4,
   });
   assert.equal(edited.state, "draft");
+  checkPublishedProjection(false);
   assert.equal(m.list(b, f.product).items.length, 0);
   const republished = await m.publish(f.actor, "republish", f.product, r.id, {
     expectedVersion: 3,
     ...permission,
   });
+  checkPublishedProjection(true);
   const retired = m.retire(f.actor, "retire", f.product, r.id, {
     expectedVersion: republished.version,
     reason: "Superseded fixture",
   });
   assert.equal(retired.state, "retired");
+  checkPublishedProjection(false);
   assert.equal(m.list(b, f.product).items.length, 0);
   assert.throws(() => m.bytes(b, f.product, r.id), /not found/);
   assert.equal(m.history(f.actor, f.product, r.id).items.length, 5);

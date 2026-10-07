@@ -1304,6 +1304,13 @@ export class Catalog {
       },
     );
   }
+  private hasPublishedImage(orgId: string, productId: string): boolean {
+    return !!this.store.get(
+      "SELECT id FROM catalog_resources WHERE org_id=? AND product_id=? AND kind='image' AND state='published' LIMIT 1",
+      orgId,
+      productId,
+    );
+  }
   customerProducts(actor: Actor, accountId: string): CustomerProduct[] {
     return this.database.transaction(() => {
       actor = this.catalogActor(actor, ["commercial", "buyer"]);
@@ -1315,6 +1322,7 @@ export class Catalog {
         Omit<
           CustomerProduct,
           | "unit_tax"
+          | "hasPublishedImage"
           | "outOfStock"
           | "expectedAvailableOn"
           | "pricing"
@@ -1342,6 +1350,7 @@ export class Catalog {
           ...product,
           ...resolved,
           ...this.availabilityDisplay(actor.orgId, product.id),
+          hasPublishedImage: this.hasPublishedImage(actor.orgId, product.id),
           unit_tax: tax(resolved.unit_price, product.tax_bp),
         };
       });
@@ -1395,6 +1404,7 @@ export class Catalog {
         Omit<
           CustomerProduct,
           | "unit_tax"
+          | "hasPublishedImage"
           | "outOfStock"
           | "expectedAvailableOn"
           | "pricing"
@@ -1431,6 +1441,7 @@ export class Catalog {
           ...product,
           ...resolved,
           ...this.availabilityDisplay(actor.orgId, product.id),
+          hasPublishedImage: this.hasPublishedImage(actor.orgId, product.id),
           unit_tax: tax(resolved.unit_price, product.tax_bp),
         };
       });
@@ -1470,6 +1481,7 @@ export class Catalog {
       Omit<
         SelectedCustomerProduct,
         | "unit_tax"
+        | "hasPublishedImage"
         | "outOfStock"
         | "expectedAvailableOn"
         | "pricing"
@@ -1512,6 +1524,7 @@ export class Catalog {
             }
           : {}),
         ...this.availabilityDisplay(actor.orgId, product.id),
+        hasPublishedImage: this.hasPublishedImage(actor.orgId, product.id),
         unit_tax: tax(resolved.unit_price, product.tax_bp),
       };
     });

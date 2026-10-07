@@ -505,7 +505,16 @@ function ProductResults({
     }
   }, [productId]);
   const products = rows.items,
-    featured = products[featuredIndex % Math.max(1, products.length)];
+    photographedEquipment = products.filter(
+      (product) => product.serialized === 1 && product.hasPublishedImage,
+    ),
+    equipment = products.filter((product) => product.serialized === 1),
+    spotlights = photographedEquipment.length
+      ? photographedEquipment
+      : equipment.length
+        ? equipment
+        : products,
+    featured = spotlights[featuredIndex % Math.max(1, spotlights.length)];
   function select(product: CustomerProduct, key: string) {
     returnTo.current = { key, scroll: window.scrollY };
     selectProduct(product.id);
@@ -569,10 +578,10 @@ function ProductResults({
               <button
                 className="sf-arrow"
                 aria-label="Previous featured product"
-                disabled={products.length < 2}
+                disabled={spotlights.length < 2}
                 onClick={() =>
                   setFeaturedIndex(
-                    (featuredIndex + products.length - 1) % products.length,
+                    (featuredIndex + spotlights.length - 1) % spotlights.length,
                   )
                 }
               >
@@ -580,19 +589,19 @@ function ProductResults({
               </button>
               <span className="sf-carousel-position">
                 <strong>
-                  {String((featuredIndex % products.length) + 1).padStart(
+                  {String((featuredIndex % spotlights.length) + 1).padStart(
                     2,
                     "0",
                   )}
                 </strong>
-                <span>/ {String(products.length).padStart(2, "0")}</span>
+                <span>/ {String(spotlights.length).padStart(2, "0")}</span>
               </span>
               <button
                 className="sf-arrow"
                 aria-label="Next featured product"
-                disabled={products.length < 2}
+                disabled={spotlights.length < 2}
                 onClick={() =>
-                  setFeaturedIndex((featuredIndex + 1) % products.length)
+                  setFeaturedIndex((featuredIndex + 1) % spotlights.length)
                 }
               >
                 <Arrow />
@@ -806,7 +815,17 @@ export function Storefront({
     <CartFeedbackContext.Provider value={cartFeedback}>
       <div className="storefront">
         <div className="sf-cart-entry">
-          <p role="status">{added}</p>
+          <div className="sf-shop-context">
+            {!productId && !cartOpen && (
+              <p className="sf-account-context">
+                Curated for <strong>{accountName}</strong>
+                <span>Approved products & account pricing</span>
+              </p>
+            )}
+            <p className="sf-cart-status" role="status">
+              {added}
+            </p>
+          </div>
           <div className="sf-cart-actions">
             {!productId && !cartOpen && (
               <button className="sf-back" onClick={resumeCart}>
@@ -862,12 +881,6 @@ export function Storefront({
             />
           )}
 
-          {!productId && (
-            <p className="sf-account-context">
-              Curated for <strong>{accountName}</strong>
-              <span>Approved products & account pricing</span>
-            </p>
-          )}
           <ProductResults
             key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
             accountId={accountId}

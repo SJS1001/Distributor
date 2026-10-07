@@ -329,7 +329,9 @@ for (const eventReports of [false, true])
       target = join(dirname(source), "schema31.db");
     f.app.close();
     const db = new DatabaseSync(source);
-    db.exec("DROP TABLE iam_session_details");
+    db.exec(
+      "DROP TABLE iam_session_details; DROP TABLE iam_customer_minimum_orders",
+    );
     const hash = schemaFingerprint(db);
     db.prepare(
       "UPDATE platform_schema_version SET version=30,schema_hash=?",
@@ -354,8 +356,8 @@ for (const eventReports of [false, true])
       code("SCHEMA_UPGRADE_REQUIRED"),
     );
     const receipt = await upgradeSchema(source, target, hash, "CA");
-    assert.equal(receipt.version, 31);
-    assert.equal(SCHEMA_VERSION, 31);
+    assert.equal(receipt.version, SCHEMA_VERSION);
+    assert.equal(SCHEMA_VERSION, 32);
     assert.deepEqual(readFileSync(source), bytes);
     const migrated = new DatabaseSync(target);
     for (const table of tables)

@@ -1,3 +1,4 @@
+import { minimumOrderAssessment } from "../shared/customer-minimum-order.ts";
 import { OrderPriceOverrides } from "./order-price-overrides.ts";
 import { shippingTermsInitialize } from "./shipping-terms-schema.ts";
 import {
@@ -976,7 +977,29 @@ export class Orders {
         "Price or tax changed; obtain and accept a new quote.",
       );
     }
+    this.assertMinimumOrder(actor, customer.id, String(q.currency), lines);
     return policy;
+  }
+  private assertMinimumOrder(
+    actor: Actor,
+    accountId: string,
+    currency: string,
+    lines: CommercialLine[],
+  ) {
+    const policy = this.identity.minimumOrders.current(actor, accountId);
+    check(
+      policy.currency === currency,
+      "CURRENCY",
+      "Order currency must match this customer's minimum order currency.",
+    );
+    const assessment = minimumOrderAssessment(
+      policy,
+      lines.map((line) => ({
+        ...line,
+        serialized: this.catalog.product(actor, line.productId).serialized,
+      })),
+    );
+    check(assessment.met, "MINIMUM_ORDER", assessment.message, 409);
   }
   private acceptQuote(
     actor: Actor,
@@ -2332,6 +2355,20 @@ export class Orders {
           quantity >= line.shipped + line.canceled,
           "QUANTITY",
           "Shipped or canceled units cannot be removed by amendment.",
+        );
+        this.assertMinimumOrder(
+          actor,
+          order.account_id,
+          order.currency,
+          this.lines(actor, order.id).map((current) => ({
+            productId: current.product_id,
+            description: current.description,
+            quantity:
+              (current.id === line.id ? quantity : current.quantity) -
+              current.canceled,
+            unitPrice: current.unit_price,
+            unitTax: current.unit_tax,
+          })),
         );
         const delta = quantity - line.quantity,
           amount = delta * (line.unit_price + line.unit_tax),

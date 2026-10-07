@@ -746,6 +746,20 @@ export function commands(
       ),
       run: (a, k, p) => app.identity.contacts.save(a, k, p),
     },
+    "account.minimum-order.save": {
+      schema: obj({
+        accountId: str,
+        expectedRevision: { type: "integer", minimum: 0, maximum: 1e9 },
+        minimumSubtotal: { type: "integer", minimum: 0, maximum: 1e12 },
+        minimumEquipmentQuantity: {
+          type: "integer",
+          minimum: 0,
+          maximum: 100000,
+        },
+        reason: { type: "string", minLength: 1, maxLength: 1000 },
+      }),
+      run: (a, k, p) => app.identity.minimumOrders.save(a, k, p),
+    },
     "account.hold": {
       schema: obj({ accountId: str, held: bool, reason: str }),
       run: (a, k, p) => app.identity.setHold(a, k, p),
@@ -2428,6 +2442,14 @@ export async function createHttp(app: Application, options: HttpOptions) {
     "/api/carts/:id/price-overrides",
     { schema: { params: obj({ id: str }) } },
     async (r) => app.orders.priceOverrides.cart(actor(r), r.params.id),
+  );
+  http.get<{ Params: { accountId: string } }>(
+    "/api/accounts/:accountId/minimum-order",
+    { schema: { params: obj({ accountId: str }), querystring: obj({}) } },
+    async (r, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return app.identity.minimumOrders.get(actor(r), r.params.accountId);
+    },
   );
   http.get("/api/users", async (request) => app.identity.users(actor(request)));
   http.get<{ Params: { accountId: string } }>(

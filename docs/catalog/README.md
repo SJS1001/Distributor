@@ -39,3 +39,7 @@ The first current SharePoint manual request returned HTTP 403. Other SharePoint 
 ## Application work
 
 The [customer storefront specification](../CUSTOMER-STOREFRONT.md) records the administrator media library, customer-facing product pages and conditional order approval requested in the same discussion. These features remain implementation work. Research counts do not mark a task or product gate verified.
+
+## Authorized native family photographs — 2026-10-07
+
+The owner subsequently confirmed Gree material reuse on 2026-10-05 and explicitly requested adding these photographs on 2026-10-07. The historical research-only rights statements above record the earlier state. The [native image operation](GREE-FAMILY-IMAGES.md) pins the eight reviewed files, exact seed-product IDs and truthful representative-family metadata. Local rehearsal is verified; live execution and buyer acceptance are recorded separately by the parent operator. No exact-model verification or open-source binary licence is inferred.

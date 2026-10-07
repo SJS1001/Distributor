@@ -61,3 +61,7 @@ Browser recovery stores customer/warehouse/product descriptors and quantities in
 The [local receipt](evidence/LOCAL-CUSTOMER-PRICING-2026-10-02.md) records synthetic CA/US cases, phone-width Chromium workflows, retained failures and tested inputs. It does not establish country-specific tax obligations, actual provider/device behavior, infrastructure residency, production load/security/recovery or operator acceptance. This is partial D-008/D-018/D-019/D-020 and REQ-03/REQ-12/REQ-13 engineering; it does not pass G3 or any other product gate.
 
 The [catalog and cart paging receipt](evidence/LOCAL-CATALOG-ENTRY-2026-10-02.md) records the current bounded reads, exact selected-product resolution and local recovery checks. It supersedes the earlier full-catalog dependency for unavailable-item classification.
+
+## Individual customer minimums
+
+Set the customer’s minimum merchandise amount and equipment quantity under Customers → the exact customer → Terms. Both thresholds apply before acceptance or approval; buyers see the requirements under Account and in the cart. See [individual customer minimum orders](CUSTOMER-MINIMUM-ORDERS.md) for calculation, accessory-only orders, exact save recovery and existing-order behavior.
