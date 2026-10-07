@@ -131,7 +131,7 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   ).toEqual([]);
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Accept order", exact: true })
     .click();
   await expect(
     page.getByText("Awaiting distributor approval. No stock is reserved", {
@@ -172,7 +172,7 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
     .fill("Please verify this model for our installation.");
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Resubmit for review", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Refresh request", exact: true })
@@ -228,7 +228,7 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
       .fill("Installation confirmed with a new quote.");
     await page
       .getByRole("dialog")
-      .getByRole("button", { name: "Continue", exact: true })
+      .getByRole("button", { name: "Resubmit for review", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await admin
@@ -627,7 +627,7 @@ test("revoked saved products require explicit removal before replacing a cart", 
       .check();
     await buyer
       .getByRole("dialog")
-      .getByRole("button", { name: "Continue", exact: true })
+      .getByRole("button", { name: "Accept order", exact: true })
       .click();
     await expect(
       buyer.getByText("Awaiting distributor approval. No stock is reserved", {

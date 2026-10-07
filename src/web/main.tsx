@@ -28,6 +28,7 @@ import {
   type NavigationIntent,
 } from "./navigation.ts";
 import { OrderDetail } from "./order-detail.tsx";
+import { FulfillmentGuide } from "./fulfillment-guide.tsx";
 import { DemoNotice } from "./demo-notice.tsx";
 import { IncomingSupplyWorkspace } from "./incoming-supply.tsx";
 import { savedFilterKey } from "./saved-filters.tsx";
@@ -75,6 +76,10 @@ import { SupplierAvailability } from "./supplier-availability.tsx";
 import { useOrderQueue, OrderQueueControls } from "./order-queue.tsx";
 import { useClaimQueue, ClaimQueueControls } from "./claim-queue.tsx";
 import { ClaimSerialReview, RetainedClaimCoverage } from "./claim-coverage.tsx";
+import {
+  CustomerReturnsGuide,
+  CustomerReturnStatus,
+} from "./customer-returns.tsx";
 import type { WarrantyCoverage } from "../shared/warranty-coverage.ts";
 import type {
   CustomerProduct,
@@ -286,6 +291,16 @@ function App() {
     [extra, setExtra] = useState<Item>({}),
     [extraLoadFailed, setExtraLoadFailed] = useState(false);
   const [receiptSearch, setReceiptSearch] = useState("");
+  const [receivingDraft, setReceivingDraft] = useState<Item | null>(null);
+  const [receivedDelivery, setReceivedDelivery] = useState<Item | null>(null);
+  const [createdPurchaseId, setCreatedPurchaseId] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    setReceivingDraft(null);
+    setReceivedDelivery(null);
+    setCreatedPurchaseId(null);
+  }, [actor?.orgId, actor?.id, actor?.role, actor?.sites.join("|")]);
   const [accessSearch, setAccessSearch] = useState("");
   const page = route.page;
   const customerPricingSignIn =
@@ -1483,7 +1498,65 @@ function App() {
       `Queue ${invoice.number} for ${money(invoice.total, invoice.currency)} using verified company mappings. Customer permission is required. Sending is a separate action; uncertain outcomes require reconciliation.`,
       "Queue invoice",
     );
-  const receiptDraft = (po: Item, draft?: Item) => {
+  const retainReceiptDraft = (draft: Item) => {
+    // Command replies are authoritative even when navigation aborts the
+    // supplemental dashboard refresh. Keep only this exact returned record.
+    setExtra((current) => ({
+      ...current,
+      purchases: {
+        ...current.purchases,
+        drafts: [
+          draft,
+          ...(current.purchases?.drafts ?? []).filter(
+            (existing: Item) => existing.id !== draft.id,
+          ),
+        ],
+      },
+    }));
+  };
+  const reviewReceipt = (draft: Item, opener?: HTMLElement) => {
+    open(
+      "Review physical receipt",
+      [],
+      async () => ({
+        ...(await command("purchase.draft.confirm", {
+          draftId: draft.id,
+          revision: draft.revision,
+        })),
+        skipRefresh: true,
+      }),
+      `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required: quarantined stock cannot be allocated until inspection releases it" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "none scanned; serialized equipment requires one unique serial per unit"}. Confirm only after checking the physical delivery. Saving a draft has not changed stock.`,
+      "Receive stock",
+      false,
+      opener,
+      (result) => {
+        retainReceiptDraft({
+          ...draft,
+          id: result.draftId,
+          revision: result.draftRevision,
+          state: "received",
+          result: {
+            id: result.id,
+            unitIds: result.unitIds,
+            draftId: result.draftId,
+            draftRevision: result.draftRevision,
+          },
+        });
+        setReceivingDraft(null);
+        setReceivedDelivery({
+          ...draft,
+          receiptId: result.id,
+          unitIds: result.unitIds,
+        });
+        setPage("Inventory");
+        void refreshNotice(
+          "Delivery received. Review the exact stock records below.",
+          "Delivery received; refresh failed: ",
+        ).catch(() => {});
+      },
+    );
+  };
+  const receiptDraft = (po: Item, draft?: Item, opener?: HTMLElement) => {
     const saved = draft?.input;
     open(
       draft ? "Resume receipt scans" : "Start receipt draft",
@@ -1529,8 +1602,8 @@ function App() {
           value: saved?.quarantine ?? true,
         },
       ],
-      (v) =>
-        command("purchase.draft.save", {
+      async (v) => ({
+        ...(await command("purchase.draft.save", {
           ...v,
           draftId: draft?.id ?? null,
           revision: draft?.revision ?? 0,
@@ -1541,9 +1614,22 @@ function App() {
             .split(/\r?\n/)
             .map((serial: string) => serial.trim())
             .filter(Boolean),
-        }),
-      "Save incomplete scans to resume later. Stock changes only after Review and receive. Unsaved changes stay in this dialog; saving requires a connection.",
+        })),
+        skipRefresh: true,
+      }),
+      "Match the physical delivery to a purchase line. Save incomplete scans to resume later. Stock changes only after Review and receive. Serialized equipment requires one unique serial per unit before confirmation. Quarantine is the default until inspection.",
       "Save draft",
+      false,
+      opener,
+      (result) => {
+        retainReceiptDraft(result);
+        setReceivingDraft(result);
+        updateRoute({ page: "Purchasing", section: "purchasing-drafts" });
+        void refreshNotice(
+          "Draft saved. Stock is unchanged; review and receive when the delivery is checked.",
+          "Draft saved; refresh failed: ",
+        ).catch(() => {});
+      },
     );
   };
   const staff = actor?.role !== "buyer",
@@ -1661,19 +1747,39 @@ function App() {
             ]
           : []),
       ],
-      (v) =>
-        command(resubmission ? "order.review.resubmit" : "order.accept", {
-          quoteId: quote.id,
-          allowBackorder: !!v.allowBackorder,
-          ...(resubmission
-            ? {
-                requestId: resubmission.id,
-                revision: resubmission.revision,
-                message: v.message,
-              }
-            : {}),
-        }),
+      async (v) => ({
+        ...(await command(
+          resubmission ? "order.review.resubmit" : "order.accept",
+          {
+            quoteId: quote.id,
+            allowBackorder: !!v.allowBackorder,
+            ...(resubmission
+              ? {
+                  requestId: resubmission.id,
+                  revision: resubmission.revision,
+                  message: v.message,
+                }
+              : {}),
+          },
+        )),
+        skipRefresh: true,
+      }),
       `${quote.lines.map((l: Item) => `${l.quantity} × ${l.description} ${money(l.unitPrice, quote.currency)} + ${money(l.unitTax, quote.currency)} tax per unit${l.priceOverride ? " · reviewed one-off selling price" : ""}`).join("\n")}\n${shippingSummary(quote.shipping, quote.currency)}\nTotal: ${money(quote.total, quote.currency)}. Quote valid for 15 minutes. Orders requiring verification await distributor approval without reserving stock or taking payment.`,
+      resubmission ? "Resubmit for review" : "Accept order",
+      false,
+      undefined,
+      (result) => {
+        let message = "";
+        if (result.status === "accepted" && result.orderId)
+          message = `Order ${result.orderId} accepted. View fulfillment progress in Orders.`;
+        else if (result.status === "awaiting_approval")
+          message = `Awaiting distributor approval. No stock is reserved and no payment is taken. View request ${result.requestId ?? result.id} in Orders → Approval requests.`;
+        setNotice(message);
+        void refreshNotice(
+          message,
+          `Order submission ${result.orderId ?? result.requestId ?? result.id} saved; refresh failed: `,
+        ).catch(() => {});
+      },
     );
     return { keepDialog: true };
   };
@@ -2911,6 +3017,14 @@ function App() {
                   {can("commercial", "buyer") &&
                     button("Prepare order", () => placeOrder())}
                 </div>
+                {can("warehouse") && (
+                  <FulfillmentGuide
+                    shipments={false}
+                    navigate={() =>
+                      updateRoute({ section: "orders-shipments" })
+                    }
+                  />
+                )}
                 <OrderQueueControls
                   queue={orderQueue}
                   scope={savedFilterKey(actor.orgId, actor.id, "orders")}
@@ -3623,6 +3737,12 @@ function App() {
               />
             </PageSection>
             <PageSection id="orders-shipments">
+              {can("warehouse") && (
+                <FulfillmentGuide
+                  shipments
+                  navigate={() => updateRoute({ section: "orders-queue" })}
+                />
+              )}
               <section
                 aria-label="Shipment history"
                 className="fulfillment-queue"
@@ -3977,7 +4097,59 @@ function App() {
             ]}
           >
             <PageSection id="inventory-stock">
+              <p>
+                Catalog products describe SKUs. Physical stock appears here only
+                after a delivery is received. Use supplier receipts for daily
+                deliveries; Imports → Opening stock is for reviewed initial
+                balances.
+              </p>
+              {receivedDelivery && (
+                <section
+                  className="panel"
+                  aria-label="Received delivery stock evidence"
+                >
+                  <h2>Delivery received: {receivedDelivery.delivery_ref}</h2>
+                  <p>
+                    {receivedDelivery.input.quantity} units of{" "}
+                    {receivedDelivery.input.observedSku} ·{" "}
+                    {warehouseName(receivedDelivery.warehouse_id)} · bin{" "}
+                    {receivedDelivery.input.bin} ·{" "}
+                    {receivedDelivery.input.quarantine
+                      ? "Quarantined: inspect each stock record before it becomes available."
+                      : "Available stock"}
+                  </p>
+                  <p>
+                    Receipt <code>{receivedDelivery.receiptId}</code> ·{" "}
+                    {receivedDelivery.unitIds.length} stock records created.
+                  </p>
+                  <div className="actions">
+                    {receivedDelivery.unitIds.map(
+                      (unitId: string, index: number) => (
+                        <button
+                          key={unitId}
+                          type="button"
+                          onClick={(event) => {
+                            stockHistoryOpener.current = event.currentTarget;
+                            setStockHistory({ unitId });
+                          }}
+                        >
+                          Review received stock{" "}
+                          {receivedDelivery.input.serials[index] ??
+                            `${index + 1}`}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </section>
+              )}
               <div className="actions">
+                {can("warehouse", "commercial") &&
+                  button("Receive equipment", () => {
+                    updateRoute({
+                      page: "Purchasing",
+                      section: "purchasing-queue",
+                    });
+                  })}
                 {admin &&
                   button("Add warehouse", () =>
                     simple(
@@ -4887,6 +5059,50 @@ function App() {
             ]}
           >
             <PageSection id="purchasing-queue">
+              <section className="panel" aria-label="Receive equipment">
+                <h2>Receive equipment</h2>
+                <p>
+                  1. Choose the supplier purchase order for the delivery. 2.
+                  Save its SKU, quantity, bin and serial scans as a draft. 3.
+                  Review and receive to create physical stock. Quarantined units
+                  need inspection before they are available.
+                </p>
+                <p>
+                  {can("warehouse")
+                    ? "Use Receive delivery beside the purchase order below, or continue saved receipt drafts."
+                    : "Commercial staff create purchase orders; a warehouse user assigned to the receiving site confirms deliveries."}
+                </p>
+                <div className="actions">
+                  {button("Continue receipt drafts", () =>
+                    updateRoute({ section: "purchasing-drafts" }),
+                  )}
+                  {can("commercial") &&
+                    button("Create purchase order for delivery", () =>
+                      setPurchaseEntryOpen(true),
+                    )}
+                </div>
+                {createdPurchaseId && (
+                  <div role="status">
+                    <p>
+                      Purchase order <code>{createdPurchaseId}</code> created.
+                      Stock is unchanged.
+                    </p>
+                    {can("warehouse") &&
+                      button("Receive this purchase order", (event) => {
+                        const opener = event.currentTarget;
+                        void run(async (signal) => {
+                          const po = await request<Item>(
+                            `/api/purchases/orders/${createdPurchaseId}`,
+                            { signal },
+                          );
+                          if (!signal.aborted)
+                            receiptDraft(po, undefined, opener);
+                          return { keepDialog: true, skipRefresh: true };
+                        }, false).catch(() => {});
+                      })}
+                  </div>
+                )}
+              </section>
               <PurchaseQueueControls
                 queue={purchaseQueue}
                 actions={
@@ -4923,6 +5139,11 @@ function App() {
                       <span>
                         PO <code title={po.id}>{po.id.slice(0, 8)}</code>
                       </span>
+                      {po.state === "open" &&
+                        can("warehouse") &&
+                        button("Receive delivery", (event) =>
+                          receiptDraft(po, undefined, event.currentTarget),
+                        )}
                     </div>,
                     warehouseName(po.warehouse_id),
                     po.lines.map((l: Item) => (
@@ -4943,7 +5164,9 @@ function App() {
                     </span>,
                     po.state === "open" &&
                       can("warehouse") &&
-                      button("Start receipt draft", () => receiptDraft(po)),
+                      button("Start receipt draft", (event) =>
+                        receiptDraft(po, undefined, event.currentTarget),
+                      ),
                   ];
                 },
                 purchaseQueue.busy && !purchaseQueue.items.length
@@ -4974,6 +5197,34 @@ function App() {
               />
             </PageSection>
             <PageSection id="purchasing-drafts">
+              {receivingDraft && (
+                <section
+                  className="panel"
+                  aria-label="Saved delivery next step"
+                >
+                  <h2>Draft saved: {receivingDraft.delivery_ref}</h2>
+                  <p>
+                    Stock is unchanged. {receivingDraft.input.quantity} units ·
+                    SKU {receivingDraft.input.observedSku} ·{" "}
+                    {receivingDraft.input.serials.length} serials scanned · bin{" "}
+                    {receivingDraft.input.bin}.
+                  </p>
+                  <div className="actions">
+                    {can("warehouse") &&
+                      button("Review and receive saved delivery", (event) =>
+                        reviewReceipt(receivingDraft, event.currentTarget),
+                      )}
+                    {can("warehouse") &&
+                      button("Continue scanning saved delivery", (event) =>
+                        receiptDraft(
+                          { id: receivingDraft.po_id },
+                          receivingDraft,
+                          event.currentTarget,
+                        ),
+                      )}
+                  </div>
+                </section>
+              )}
               <div className="info-heading">
                 <h2 id="purchasing-drafts" tabIndex={-1}>
                   Saved receipt scans
@@ -5012,7 +5263,7 @@ function App() {
                       <span>
                         {serials
                           ? `${serials} ${serials === 1 ? "serial" : "serials"} scanned`
-                          : "Bulk (no serials)"}
+                          : "No serials scanned; required for serialized items"}
                       </span>
                       <span
                         className="stock-condition"
@@ -5042,18 +5293,8 @@ function App() {
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() =>
-                            open(
-                              "Review physical receipt",
-                              [],
-                              () =>
-                                command("purchase.draft.confirm", {
-                                  draftId: draft.id,
-                                  revision: draft.revision,
-                                }),
-                              `Delivery ${draft.delivery_ref} · ${warehouseName(draft.warehouse_id)} · SKU ${draft.input.observedSku} · ${draft.input.quantity} units · bin ${draft.input.bin} · ${draft.input.quarantine ? "inspection required" : "available stock"}. Serials: ${draft.input.serials.join(", ") || "bulk (no serials)"}. Confirm only after checking the physical delivery.`,
-                              "Receive stock",
-                            )
+                          onClick={(event) =>
+                            reviewReceipt(draft, event.currentTarget)
                           }
                         >
                           Review and receive
@@ -5072,10 +5313,14 @@ function App() {
                             Actions
                           </summary>
                           <div className="actions">
-                            {button("Resume scans", () =>
+                            {button("Resume scans", (event) =>
                               // The draft already owns the exact purchase and line IDs;
                               // resuming never depends on the visible queue page.
-                              receiptDraft({ id: draft.po_id }, draft),
+                              receiptDraft(
+                                { id: draft.po_id },
+                                draft,
+                                event.currentTarget,
+                              ),
                             )}
                             {button(
                               "View draft history",
@@ -6844,12 +7089,18 @@ function App() {
             ]}
           >
             <PageSection id="returns-claims">
-              {" "}
+              {!staff && (
+                <CustomerReturnsGuide
+                  hasSoldEquipment={data.soldUnits.length > 0}
+                />
+              )}
               <div className="actions">
                 {can("warranty", "commercial", "buyer") && (
                   <button
                     id="submit-claim"
-                    onClick={() => {
+                    disabled={!staff && !data.soldUnits.length}
+                    onClick={(event) => {
+                      const returnFocus = event.currentTarget;
                       let selected: SoldSerial | null =
                         data.soldUnits[0] ?? null;
                       let reviewed: WarrantyCoverage | null = null;
@@ -6891,7 +7142,7 @@ function App() {
                             type: "textarea",
                           },
                         ],
-                        (v) => {
+                        async (v) => {
                           if (!selected || selected.id !== v.unitId)
                             throw new Error(
                               "Select a currently loaded sold serial.",
@@ -6900,18 +7151,33 @@ function App() {
                             throw new Error(
                               "Load and review the claim coverage dates before submitting.",
                             );
-                          return command("warranty.submit", {
-                            ...v,
-                            accountId: selected.accountId,
-                            ...(reviewed.policy
-                              ? { policyRevision: reviewed.policy.revision }
-                              : {}),
-                          });
+                          return {
+                            ...(await command("warranty.submit", {
+                              ...v,
+                              accountId: selected.accountId,
+                              ...(reviewed.policy
+                                ? { policyRevision: reviewed.policy.revision }
+                                : {}),
+                            })),
+                            skipRefresh: true,
+                          };
+                        },
+                        "Describe the issue and provide an evidence reference, such as an inspection report or photo reference. You can attach evidence files after submitting. Wait for distributor authorization and return instructions before sending equipment.",
+                        undefined,
+                        false,
+                        returnFocus,
+                        (result) => {
+                          const message = `Request ${result.id} submitted for distributor review. Track its status in Returns & warranty. Wait for authorization and return instructions before sending equipment.`;
+                          setNotice(message);
+                          void refreshNotice(
+                            message,
+                            `Request ${result.id} submitted; refresh failed: `,
+                          ).catch(() => {});
                         },
                       );
                     }}
                   >
-                    Submit claim / return
+                    {staff ? "Submit claim / return" : "Request RMA"}
                   </button>
                 )}
                 {can("warranty", "commercial", "buyer") && (
@@ -6949,7 +7215,19 @@ function App() {
                   accountName(c.account_id),
                   <span className="claim-issue">{c.issue}</span>,
                   <span className="ops-state" data-state={c.state}>
-                    {c.state}
+                    {staff ? (
+                      c.state
+                    ) : (
+                      <CustomerReturnStatus
+                        state={c.state}
+                        credited={!!c.credit_id}
+                        replaced={
+                          c.replacements?.some(
+                            (r: Item) => r.state === "handed_over",
+                          ) ?? false
+                        }
+                      />
+                    )}
                   </span>,
                   <div className="row-actions claim-row-actions">
                     {c.state === "submitted" && can("warranty") && (
@@ -7000,7 +7278,7 @@ function App() {
                                   <p>
                                     {approved
                                       ? "Authorize this return for receiving. This does not issue a credit or replacement."
-                                      : "Reject this request. Record the reason for the customer and claim history."}
+                                      : "Reject this request. Record the reason in the internal claim history; contact the customer separately to explain the decision."}
                                   </p>
                                 </>,
                                 approved ? "Approve return" : "Reject request",
@@ -7218,13 +7496,12 @@ function App() {
                 ) : actor.role === "buyer" ? (
                   <>
                     <p>No claims or returns yet.</p>
-                    <button
-                      onClick={() =>
-                        document.getElementById("submit-claim")?.click()
-                      }
-                    >
-                      Start a claim or return
-                    </button>
+                    {data.soldUnits.length > 0 && (
+                      <p>
+                        Use Request RMA above to start a return or warranty
+                        review.
+                      </p>
+                    )}
                   </>
                 ) : can("warranty", "commercial") ? (
                   <>
@@ -7785,12 +8062,27 @@ function App() {
                 <>
                   {" "}
                   {!staff && (
-                    <button
-                      className="secondary"
-                      onClick={() => navigate({ page: "Returns" })}
+                    <section
+                      className="record-detail-panel"
+                      aria-label="Returns and warranty"
                     >
-                      Returns and warranty requests
-                    </button>
+                      <h2>Need to return equipment?</h2>
+                      <p>
+                        Request an RMA or warranty review for a sold serial and
+                        follow your distributor’s decision in Returns &
+                        warranty.
+                      </p>
+                      <button
+                        onClick={() =>
+                          navigate({
+                            page: "Returns",
+                            section: "returns-claims",
+                          })
+                        }
+                      >
+                        Returns and warranty requests
+                      </button>
+                    </section>
                   )}
                   <nav aria-label="Account topics" className="actions">
                     {[
@@ -9047,6 +9339,8 @@ function App() {
           close={() => setPurchaseEntryOpen(false)}
           created={(id) => {
             setPurchaseEntryOpen(false);
+            setCreatedPurchaseId(id);
+            updateRoute({ section: "purchasing-queue" });
             void refreshNotice(
               `Purchase order ${id.slice(0, 8)} created.`,
               `Purchase order ${id.slice(0, 8)} created; refresh failed: `,

@@ -25,6 +25,17 @@ const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3217",
   secureCookies: false,
 });
+// Localhost fixture has no TLS listener; WebKit otherwise upgrades assets.
+// Production policy is unchanged, and every other fixture directive remains.
+http.addHook("onSend", async (_request, reply, payload) => {
+  const policy = reply.getHeader("Content-Security-Policy");
+  if (typeof policy === "string")
+    reply.header(
+      "Content-Security-Policy",
+      policy.replace(/upgrade-insecure-requests;?/g, ""),
+    );
+  return payload;
+});
 await http.listen({ host: "127.0.0.1", port: 3217 });
 async function stop() {
   await http.close();

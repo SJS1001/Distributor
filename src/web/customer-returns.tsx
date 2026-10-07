@@ -1,0 +1,102 @@
+import React from "react";
+import "./customer-returns.css";
+
+export function CustomerReturnsGuide({
+  hasSoldEquipment,
+}: {
+  hasSoldEquipment: boolean;
+}) {
+  return (
+    <section className="record-detail-panel" aria-label="Request an RMA">
+      <h2>Returns & warranty</h2>
+      <p>
+        Request an RMA (return authorization) or warranty review for equipment
+        sold to your account. Your distributor reviews the request before
+        authorizing a return.
+      </p>
+      <ol>
+        <li>
+          Select your sold serial, explain the issue and provide an evidence
+          reference.
+        </li>
+        <li>
+          Follow the request status below while your distributor reviews it.
+        </li>
+        <li>
+          Wait for authorization and confirm return instructions with your
+          distributor before sending equipment.
+        </li>
+      </ol>
+      <p>Submitting a request does not approve a refund or replacement.</p>
+      {!hasSoldEquipment && (
+        <p role="status">
+          No eligible sold equipment is available for a new request. Only
+          serialized equipment already handed over to your account appears here.
+          If a purchased serial is missing, contact your distributor with the
+          serial and order or invoice reference to check its records.
+        </p>
+      )}
+    </section>
+  );
+}
+
+export function CustomerReturnStatus({
+  state,
+  credited,
+  replaced,
+}: {
+  state: string;
+  credited: boolean;
+  replaced: boolean;
+}) {
+  const statuses: Record<string, [string, string]> = {
+    submitted: [
+      "Awaiting distributor review",
+      "Wait for authorization and return instructions before sending equipment.",
+    ],
+    approved: [
+      "Return authorized",
+      "Confirm the return address, reference and handover instructions with your distributor before sending equipment.",
+    ],
+    rejected: [
+      "Request not authorized",
+      "Contact your distributor to discuss the review before sending equipment.",
+    ],
+    received: [
+      "Received for inspection",
+      "Your returned equipment is in quarantine awaiting inspection.",
+    ],
+    inspected: [
+      "Inspection recorded",
+      "Your distributor will decide the equipment disposition and any remedy.",
+    ],
+    repair: [
+      "Under repair",
+      "Your distributor will record the outcome after repair.",
+    ],
+    disposed: credited
+      ? [
+          "Credit issued",
+          "View your credit and invoice balance in Invoices & payments.",
+        ]
+      : replaced
+        ? [
+            "Replacement handed over",
+            "View collection or shipping details in Replacements.",
+          ]
+        : [
+            "Equipment disposition recorded",
+            "A credit or replacement is a separate decision. Contact your distributor about the outcome.",
+          ],
+  };
+  const [label, next] = statuses[state] ?? [
+    state,
+    "Contact your distributor about the current request status.",
+  ];
+  return (
+    <div className="customer-return-status">
+      <strong>{label}</strong>
+      <p>{next}</p>
+    </div>
+  );
+}

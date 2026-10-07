@@ -66,6 +66,7 @@ export async function navigateWorkspace(
 const customerLabels: Record<string, string> = {
   Billing: "Invoices & payments",
   Overview: "Reports",
+  Returns: "Returns & warranty",
   // A buyer's own customer record is their Account page.
   Customers: "Account",
 };
@@ -76,26 +77,17 @@ export async function navigateCustomerWorkspace(
 ) {
   const label = customerLabels[destination] ?? destination;
   await expect(page.locator("#workspace-title")).toBeVisible();
-  if (destination === "Returns") {
-    // Returns is not a header page for buyers; Account links to it.
-    await navigateCustomerWorkspace(page, "Account");
-    await page
-      .getByRole("button", {
-        name: "Returns and warranty requests",
-        exact: true,
-      })
-      .click();
-  } else {
-    const link = page
-      .locator("#customer-navigation")
-      .getByRole("button", { name: label, exact: true });
-    if (!(await link.isVisible())) {
-      const menu = page.getByRole("button", { name: "Menu", exact: true });
-      if (await menu.isVisible()) await menu.click();
-    }
-    await link.click();
+  const link = page
+    .locator("#customer-navigation")
+    .getByRole("button", { name: label, exact: true });
+  if (!(await link.isVisible())) {
+    const menu = page.getByRole("button", { name: "Menu", exact: true });
+    if (await menu.isVisible()) await menu.click();
   }
-  await expect(page.locator("#workspace-title")).toHaveText(label);
+  await link.click();
+  await expect(page.locator("#workspace-title")).toHaveText(
+    destination === "Returns" ? "Returns" : label,
+  );
   if (section)
     await page
       .getByRole("tablist", { name: `${destination} sections`, exact: true })

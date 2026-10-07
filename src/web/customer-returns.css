@@ -1,0 +1,15 @@
+.customer-shell .ops-state:has(.customer-return-status) {
+  max-width: 100%;
+  white-space: normal;
+  border-radius: 8px;
+  font-weight: normal;
+}
+
+.customer-return-status {
+  max-width: 34ch;
+  overflow-wrap: anywhere;
+}
+
+.customer-return-status p {
+  margin: 6px 0 0;
+}

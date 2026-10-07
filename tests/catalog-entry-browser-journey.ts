@@ -108,7 +108,7 @@ test("browser: paged catalog preserves saved off-page quantities, literal search
     .check();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Accept order", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const after = await (

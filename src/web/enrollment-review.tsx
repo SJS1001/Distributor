@@ -140,6 +140,7 @@ function invitationDialog(
   };
 }
 type PrivateInvitation = {
+  applicationId: string;
   url: string;
   expiresAt: string;
   businessName: string;
@@ -153,6 +154,10 @@ function PrivateInvitationPanel({
   setNotice: (value: string) => void;
   dismiss: () => void;
 }) {
+  const linkRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    linkRef.current?.focus();
+  }, [invitation]);
   return (
     <section
       className="enrollment-invitation"
@@ -168,6 +173,7 @@ function PrivateInvitationPanel({
       <label>
         Activation link
         <input
+          ref={linkRef}
           readOnly
           value={invitation.url}
           onFocus={(e) => e.currentTarget.select()}
@@ -213,10 +219,12 @@ function ApplicationTable({
   review: (
     application: EnrollmentApplication,
     decision: "approve" | "reject",
+    opener: HTMLButtonElement,
   ) => void;
   invitationAction: (
     application: EnrollmentApplication,
     action: "reissue" | "revoke",
+    opener: HTMLButtonElement,
   ) => void;
 }) {
   return (
@@ -292,14 +300,18 @@ function ApplicationTable({
                       <button
                         className="secondary"
                         disabled={busy}
-                        onClick={() => review(application, "approve")}
+                        onClick={(event) =>
+                          review(application, "approve", event.currentTarget)
+                        }
                       >
                         Approve {application.businessName}
                       </button>
                       <button
                         className="secondary"
                         disabled={busy}
-                        onClick={() => review(application, "reject")}
+                        onClick={(event) =>
+                          review(application, "reject", event.currentTarget)
+                        }
                       >
                         Reject {application.businessName}
                       </button>
@@ -310,7 +322,13 @@ function ApplicationTable({
                       <button
                         className="secondary"
                         disabled={busy}
-                        onClick={() => invitationAction(application, "reissue")}
+                        onClick={(event) =>
+                          invitationAction(
+                            application,
+                            "reissue",
+                            event.currentTarget,
+                          )
+                        }
                       >
                         Replace invitation
                       </button>
@@ -318,8 +336,12 @@ function ApplicationTable({
                         <button
                           className="secondary"
                           disabled={busy}
-                          onClick={() =>
-                            invitationAction(application, "revoke")
+                          onClick={(event) =>
+                            invitationAction(
+                              application,
+                              "revoke",
+                              event.currentTarget,
+                            )
                           }
                         >
                           Revoke invitation
@@ -381,11 +403,7 @@ export function EnrollmentReview() {
 
   const [notice, setNotice] = useState(""),
     [dialog, setDialog] = useState<Dialog | null>(null);
-  const [invitation, setInvitation] = useState<{
-    url: string;
-    expiresAt: string;
-    businessName: string;
-  } | null>(null);
+  const [invitation, setInvitation] = useState<PrivateInvitation | null>(null);
   const [view, setView] = useState("pending");
   const shown =
     queue?.items.filter(
@@ -398,6 +416,7 @@ export function EnrollmentReview() {
     setDialog(null);
     if (result.activationToken && result.expiresAt) {
       setInvitation({
+        applicationId: application.id,
         url: `${window.location.origin}/#activate=${encodeURIComponent(result.activationToken)}`,
         expiresAt: result.expiresAt,
         businessName: application.businessName,
@@ -405,24 +424,38 @@ export function EnrollmentReview() {
       setNotice(
         "Invitation created. Deliver it privately to the reviewed contact; no email has been sent.",
       );
-    } else setNotice("Application updated. No email has been sent.");
+    } else {
+      // A completed revocation must remove the now-unusable displayed link.
+      if (
+        invitation?.applicationId === application.id &&
+        result.status === "approved"
+      )
+        setInvitation(null);
+      setNotice("Application updated. No email has been sent.");
+    }
     await load(after.current);
   };
   const review = (
     application: EnrollmentApplication,
     decision: "approve" | "reject",
+    opener: HTMLButtonElement,
   ) => {
     setError("");
-    setInvitation(null);
-    setDialog(decisionDialog(application, decision, finish));
+    setDialog({
+      ...decisionDialog(application, decision, finish),
+      returnFocus: opener,
+    });
   };
   const invitationAction = (
     application: EnrollmentApplication,
     action: "reissue" | "revoke",
+    opener: HTMLButtonElement,
   ) => {
     setError("");
-    setInvitation(null);
-    setDialog(invitationDialog(application, action, finish));
+    setDialog({
+      ...invitationDialog(application, action, finish),
+      returnFocus: opener,
+    });
   };
   return (
     <section className="panel">

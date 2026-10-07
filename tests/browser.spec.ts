@@ -1961,9 +1961,15 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
       await route.abort("failed");
     } else await route.continue();
   });
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Accept order", exact: true })
+    .click();
   await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Accept order", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const dashboard = await page.request.get("/api/dashboard");
   const newOrders = (await dashboard.json()).orders.filter(
@@ -2247,7 +2253,10 @@ test("browser: split packing retries once, void releases holds, and each handove
     .fill("3");
   await next(page);
   await expect(page.getByRole("dialog")).toContainText("$84.75");
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Accept order", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const order = (await snapshot()).orders.find(
     (o: any) => !priorOrderIds.has(o.id),
@@ -3503,7 +3512,16 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   await page
     .getByLabel("Tax rate in basis points", { exact: true })
     .fill("1300");
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Create product & add images", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Manage BROWSER-SCAN", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Close product management", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Purchasing", "Purchase orders");
   await page
@@ -3689,6 +3707,8 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(confirmKeys).toHaveLength(2);
   expect(confirmKeys[0]).toBe(confirmKeys[1]);
+  await expect(page.locator("#workspace-title")).toHaveText("Inventory");
+  await nav(page, "Purchasing", "Receipt drafts");
   const savedRow = draftRow.filter({ hasText: "received · v3" });
   await expect(savedRow).toHaveCount(1);
   const purchases = await (await page.request.get("/api/purchases")).json();
@@ -13741,9 +13761,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
-  await page
-    .getByRole("button", { name: "Submit claim / return", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Request RMA", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByRole("button", { name: "Next sold serials", exact: true })
@@ -13791,7 +13809,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
   ).toHaveLength(1);
   for (const exit of ["cancel", "refresh", "navigation", "signout"] as const) {
     await page
-      .getByRole("button", { name: "Submit claim / return", exact: true })
+      .getByRole("button", { name: "Request RMA", exact: true })
       .click();
     let release!: () => void, handled!: () => void;
     const held = new Promise<void>((r) => {

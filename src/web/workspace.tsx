@@ -143,25 +143,25 @@ export function WorkspaceNavigation({
           className={expanded ? "is-expanded" : ""}
           aria-label="Workspace"
         >
-          {pages
-            .filter((destination) => destination !== "Returns")
-            .map((destination) => (
-              <button
-                key={destination}
-                aria-current={page === destination ? "page" : undefined}
-                onClick={() => {
-                  if (destination !== page) navigate(destination);
-                  setExpanded(false);
-                  document.getElementById("workspace-title")?.focus();
-                }}
-              >
-                {destination === "Billing"
-                  ? "Invoices & payments"
-                  : destination === "Overview"
-                    ? "Reports"
+          {pages.map((destination) => (
+            <button
+              key={destination}
+              aria-current={page === destination ? "page" : undefined}
+              onClick={() => {
+                if (destination !== page) navigate(destination);
+                setExpanded(false);
+                document.getElementById("workspace-title")?.focus();
+              }}
+            >
+              {destination === "Billing"
+                ? "Invoices & payments"
+                : destination === "Overview"
+                  ? "Reports"
+                  : destination === "Returns"
+                    ? "Returns & warranty"
                     : destination}
-              </button>
-            ))}
+            </button>
+          ))}
           <a className="customer-library-link" href="#products">
             GREE product library <span aria-hidden="true">↗</span>
           </a>

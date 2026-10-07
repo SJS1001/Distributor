@@ -83,6 +83,8 @@ test("browser: retired customer product receives saved and new delivery scans at
   expect(attempts).toHaveLength(2);
   expect(attempts[1]).toEqual(attempts[0]);
   await page.unroute("**/api/commands/purchase.draft.confirm");
+  await expect(page.locator("#workspace-title")).toHaveText("Inventory");
+  await nav("Receipt drafts");
   await expect(first).toContainText("received · v3");
   const purchases = await (
     await page.request.get(origin + "/api/purchases")
@@ -138,6 +140,8 @@ test("browser: retired customer product receives saved and new delivery scans at
   await page
     .getByRole("button", { name: "Receive stock", exact: true })
     .click();
+  await expect(page.locator("#workspace-title")).toHaveText("Inventory");
+  await nav("Receipt drafts");
   await expect(second).toContainText("received · v2");
   const detail = await (
     await page.request.get(origin + "/api/purchases/orders/" + po.id)

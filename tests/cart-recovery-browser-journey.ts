@@ -61,12 +61,21 @@ async function order(page: Page, total: number, quantity: number) {
   await expect(
     page.getByRole("heading", { name: "Review and accept order", exact: true }),
   ).toBeVisible();
-  await proceed(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Accept order", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const dashboard = await (
     await page.request.get(`${origin}/api/dashboard`)
   ).json();
   expect(dashboard.orders).toHaveLength(1);
+  await expect(
+    page.getByText(
+      `Order ${dashboard.orders[0].id} accepted. View fulfillment progress in Orders.`,
+      { exact: true },
+    ),
+  ).toBeVisible();
   expect(dashboard.orders[0].total).toBe(total);
   expect(dashboard.orders[0].lines[0].quantity).toBe(quantity);
   expect(dashboard.orders[0].lines[0].allocated).toBe(quantity);
@@ -109,7 +118,30 @@ test("browser: cart recovery retries a failed quote without saving the same cart
   );
   expect((await carts(page))[0].revision).toBe(1);
   await proceed(page);
-  await order(page, 22600, 2);
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Accept order", exact: true }),
+  ).toBeEnabled();
+  let refreshFailed = false;
+  await page.route("**/api/dashboard", async (route) => {
+    if (!refreshFailed) {
+      refreshFailed = true;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "SYNTHETIC_REFRESH_FAILURE",
+          message: "Synthetic accepted-order refresh unavailable.",
+        }),
+      });
+    } else await route.continue();
+  });
+  const accepted = await order(page, 22600, 2);
+  await expect(page.getByRole("alert")).toContainText(
+    `Order submission ${accepted.id} saved; refresh failed:`,
+  );
+  expect(refreshFailed).toBe(true);
   expect(saves).toHaveLength(1);
   expect(quotes).toBe(2);
   expect((await carts(page))[0].revision).toBe(1);

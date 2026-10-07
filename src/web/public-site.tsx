@@ -71,17 +71,25 @@ export function PublicSite({
     : "#apply";
   const [config, setConfig] = useState<{ enabled: boolean } | null>(null);
   const [configError, setConfigError] = useState(false);
+  const [configAttempt, setConfigAttempt] = useState(0);
   useEffect(() => {
+    setConfigError(false);
     const controller = new AbortController();
     void request<{ enabled: boolean }>("/api/enrollment/config", {
       signal: controller.signal,
     })
-      .then(setConfig)
+      .then((result) => {
+        if (!controller.signal.aborted) setConfig(result);
+      })
       .catch(() => {
         if (!controller.signal.aborted) setConfigError(true);
       });
     return () => controller.abort();
-  }, []);
+  }, [configAttempt]);
+  useEffect(() => {
+    if (configAttempt && config?.enabled)
+      document.getElementById("public-entry-form")?.focus();
+  }, [configAttempt, config]);
   useEffect(() => {
     document.title =
       route === "home"
@@ -505,13 +513,23 @@ export function PublicSite({
               {config?.enabled ? (
                 <ApplicationForm requestedReference={requestedReference} />
               ) : (
-                <p role="status">
-                  {configError
-                    ? "Applications are temporarily unavailable. Please try again later."
-                    : config
-                      ? "Trade account applications are currently closed."
-                      : "Checking application availability…"}
-                </p>
+                <>
+                  <p role="status">
+                    {configError
+                      ? "Applications are temporarily unavailable. Retry to check availability."
+                      : config
+                        ? "Trade account applications are currently closed."
+                        : "Checking application availability…"}
+                  </p>
+                  {configError && (
+                    <button
+                      className="public-primary"
+                      onClick={() => setConfigAttempt((attempt) => attempt + 1)}
+                    >
+                      Retry application availability
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -580,9 +598,20 @@ function ApplicationForm({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [received, setReceived] = useState(false);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (received) resultRef.current?.focus();
+    else if (error) errorRef.current?.focus();
+  }, [received, error]);
   if (received)
     return (
-      <div role="status" className="public-received">
+      <div
+        ref={resultRef}
+        tabIndex={-1}
+        role="status"
+        className="public-received"
+      >
         <span aria-hidden="true">✓</span>
         <h3>Application received.</h3>
         <p>
@@ -724,7 +753,7 @@ function ApplicationForm({
         </span>
       </label>
       {error && (
-        <p role="alert" className="error">
+        <p ref={errorRef} tabIndex={-1} role="alert" className="error">
           {error}
         </p>
       )}
@@ -744,12 +773,18 @@ function ActivationForm({ token }: { token: string }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [activated, setActivated] = useState(false);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (activated) resultRef.current?.focus();
+    else if (error) errorRef.current?.focus();
+  }, [activated, error]);
   if (activated)
     return (
-      <div role="status">
+      <div ref={resultRef} tabIndex={-1} role="status">
         <h2>Your account is activated.</h2>
         <p>Sign in with your approved business email and your new password.</p>
-        <a href="#sign-in" className="public-primary">
+        <a href="#customer-sign-in" className="public-primary">
           Continue to sign in →
         </a>
       </div>
@@ -762,7 +797,7 @@ function ActivationForm({ token }: { token: string }) {
           Open the private activation invitation provided by your administrator.
           If it has expired, ask them for a replacement.
         </p>
-        <a href="#sign-in">Return to sign in</a>
+        <a href="#customer-sign-in">Return to customer sign in</a>
       </>
     );
   return (
@@ -819,7 +854,7 @@ function ActivationForm({ token }: { token: string }) {
         />
       </label>
       {error && (
-        <p role="alert" className="error">
+        <p ref={errorRef} tabIndex={-1} role="alert" className="error">
           {error}
         </p>
       )}

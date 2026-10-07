@@ -113,7 +113,7 @@ test("browser: phone claim retains handover policy across later revisions, trans
       },
     );
     await page
-      .getByRole("button", { name: "Submit claim / return", exact: true })
+      .getByRole("button", { name: "Request RMA", exact: true })
       .click();
     const dialog = page.getByRole("dialog", {
       name: "Request return or warranty review",

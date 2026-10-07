@@ -305,6 +305,8 @@ test("browser: purchasing resumes and confirms an off-page saved receipt draft w
     .getByRole("button", { name: "Receive stock", exact: true })
     .click();
   expect((await response).status()).toBe(200);
+  await expect(page.locator("#workspace-title")).toHaveText("Inventory");
+  await navigateWorkspace(page, "Purchasing", "Receipt drafts");
   await expect(draft).toContainText("received · v3");
   const detail = await page.request.get(
     origin + "/api/purchases/orders/purchase-queue-001",

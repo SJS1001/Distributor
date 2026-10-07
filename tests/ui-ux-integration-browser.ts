@@ -107,7 +107,8 @@ test("own sessions show a current marker and readable expiry on desktop and phon
       .filter({ hasText: "This session" });
     await expect(current).toHaveCount(1);
     await expect(current).toContainText("Expires");
-    const time = current.locator("time");
+    // Session cards include sign-in, activity and expiry; expiry is the final timestamp.
+    const time = current.locator("time").last();
     await expect(time).toBeVisible();
     expect(Date.parse((await time.getAttribute("datetime"))!)).toBeGreaterThan(
       Date.now(),
@@ -268,6 +269,31 @@ test("staff order detail returns focus to that order action summary after restor
       (element) => (element.parentElement as HTMLDetailsElement).open,
     ),
   ).toBe(true);
+  await page.setViewportSize({ width: 320, height: 700 });
+  const picking = page.getByRole("region", {
+    name: "Fulfill an order",
+    exact: true,
+  });
+  await expect(picking).toContainText("pick its allocated stock");
+  await picking
+    .getByRole("button", { name: "Review packed shipments", exact: true })
+    .click();
+  const handover = page.getByRole("region", {
+    name: "Complete shipment handover",
+    exact: true,
+  });
+  await expect(handover).toContainText(
+    "Packing alone does not complete delivery or create an invoice.",
+  );
+  await noHorizontalOverflow(page);
+  await handover
+    .getByRole("button", {
+      name: "Return to orders to pick and pack",
+      exact: true,
+    })
+    .click();
+  await expect(picking).toBeVisible();
+  await noHorizontalOverflow(page);
 });
 
 test("phone invoice detail keeps current balance and all line amounts inside the page", async ({
