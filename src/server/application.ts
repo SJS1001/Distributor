@@ -303,6 +303,7 @@ export class Application {
             this.inventory,
             this.fulfillment,
             this.billing,
+            this.catalog,
           );
           this.carriers = new CarrierBookings(
             this.database,

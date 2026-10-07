@@ -39,6 +39,20 @@ test("compact staff and customer layouts preserve navigation, account history an
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+  const savedCartAligned = async () => {
+    const warehouse = await page
+      .getByLabel("Saved cart warehouse", { exact: true })
+      .boundingBox();
+    const actions = page.locator(
+      ".saved-cart-filters .queue-field-actions button",
+    );
+    for (const button of await actions.all()) {
+      const bounds = await button.boundingBox();
+      expect(
+        Math.abs(bounds!.y + bounds!.height - warehouse!.y - warehouse!.height),
+      ).toBeLessThan(2);
+    }
+  };
   const login = async (email: string, password: string) => {
     await page.goto(origin + "/#sign-in");
     await page.getByLabel("Email", { exact: true }).fill(email);
@@ -72,6 +86,8 @@ test("compact staff and customer layouts preserve navigation, account history an
         .getByRole("region", { name: "Order queue", exact: true })
         .boundingBox())!.y,
     ).toBeLessThan(420);
+    await savedCartAligned();
+    await expect(page.locator(".saved-filters")).toHaveCount(1);
     await page.screenshot({
       path: testInfo.outputPath("admin-orders-desktop.png"),
     });
@@ -91,7 +107,47 @@ test("compact staff and customer layouts preserve navigation, account history an
     }
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await login("layout-buyer@example.test", "synthetic-buyer-password");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(
+      page.getByRole("link", { name: /GREE product library/ }),
+    ).toHaveCount(0);
+    const destinations = page
+      .getByRole("navigation", { name: "Workspace", exact: true })
+      .getByRole("button");
+    await expect(destinations).toHaveText([
+      "Shop",
+      "Orders",
+      "Invoices & payments",
+      "Reports",
+      "Returns & warranty",
+      "Account",
+    ]);
     await buyerNavigate(page, "Account");
+    const minimum = page.getByRole("region", {
+      name: "Minimum order",
+      exact: true,
+    });
+    await expect(minimum.locator("dd")).toHaveText([
+      "No minimumBefore tax and freight",
+      "No minimumAccessories excluded",
+    ]);
+    await expect(minimum.getByRole("button")).toHaveCount(0);
+    const policy = f.app.identity.minimumOrders.get(f.actor, f.buyer);
+    f.app.identity.minimumOrders.save(f.actor, "layout-refresh-minimum", {
+      accountId: f.buyer,
+      expectedRevision: policy.revision,
+      minimumSubtotal: 25000,
+      minimumEquipmentQuantity: 2,
+      reason: "Verify page refresh updates customer minimums",
+    });
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    const refreshed = page.getByText("Workspace refreshed.", { exact: true });
+    await expect(refreshed).toBeVisible();
+    await expect(refreshed).toBeHidden({ timeout: 6000 });
+    await expect(minimum).toContainText("250.00");
+    await expect(minimum.locator("dd").nth(1)).toHaveText(
+      "2Accessories excluded",
+    );
     await expect(
       page.getByRole("tab", { name: "Overview & terms", exact: true }),
     ).toHaveAttribute("aria-selected", "true");
@@ -152,6 +208,9 @@ test("compact staff and customer layouts preserve navigation, account history an
       ]) {
         await buyerNavigate(page, name);
         await fits();
+        if (name === "Orders" || name === "Invoices & payments")
+          await expect(page.locator(".saved-filters")).toHaveCount(0);
+        if (name === "Orders" && width === 1440) await savedCartAligned();
         if (name === "Shop") {
           const first = page.locator(".sf-card").first();
           await expect(first).toBeVisible();
@@ -160,10 +219,12 @@ test("compact staff and customer layouts preserve navigation, account history an
             path: testInfo.outputPath(`customer-shop-${width}.png`),
           });
         }
-        if (name === "Account" && width === 1440)
+        if (name === "Account" && width === 1440) {
+          await expect(minimum).toContainText("250.00");
           await page.screenshot({
             path: testInfo.outputPath("customer-account-desktop.png"),
           });
+        }
       }
     }
     expect(errors).toEqual([]);

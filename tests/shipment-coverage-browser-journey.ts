@@ -29,19 +29,12 @@ async function buyerNav(page: Page, name: "Reports" | "Returns") {
   const target = page
     .getByRole("navigation", { name: "Workspace", exact: true })
     .getByRole("button", {
-      name: name === "Returns" ? "Account" : name,
+      name: name === "Returns" ? "Returns & warranty" : name,
       exact: true,
     });
   if (!(await target.isVisible()))
     await page.getByRole("button", { name: "Menu", exact: true }).click();
   await target.click();
-  if (name === "Returns")
-    await page
-      .getByRole("button", {
-        name: "Returns and warranty requests",
-        exact: true,
-      })
-      .click();
   await expect(page.locator("#workspace-title")).toHaveText(name);
 }
 test("browser: phone claim retains handover policy across later revisions, transient coverage reads and lost claim replies", async ({
@@ -113,7 +106,7 @@ test("browser: phone claim retains handover policy across later revisions, trans
       },
     );
     await page
-      .getByRole("button", { name: "Request RMA", exact: true })
+      .getByRole("button", { name: "Request return", exact: true })
       .click();
     const dialog = page.getByRole("dialog", {
       name: "Request return or warranty review",

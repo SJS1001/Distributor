@@ -15,6 +15,18 @@ const http = await createHttp(f.app, {
   origin: "http://127.0.0.1:3125",
   enrollmentOrganizationId: f.actor.orgId,
   secureCookies: false,
+  ...(process.env.DISTRIBUTOR_PREVIEW_PREFILL === "true"
+    ? {
+        publicPilotSignIn: {
+          email: "admin@example.test",
+          password: "long-test-only-password",
+        },
+        publicPilotCustomerSignIn: {
+          email: "pilot-buyer@example.test",
+          password: "synthetic-buyer-password",
+        },
+      }
+    : {}),
 });
 // This isolated HTTP fixture has no TLS listener. Preserve the remaining CSP;
 // production HTTPS is verified separately without changing its headers.

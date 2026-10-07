@@ -8,6 +8,7 @@ export function SoldSerialSelect({
   name,
   required = false,
   chooseFirst = false,
+  refreshToken,
   onSelectionChange,
 }: {
   initial: SoldSerialPage;
@@ -15,6 +16,7 @@ export function SoldSerialSelect({
   name: string;
   required?: boolean;
   chooseFirst?: boolean;
+  refreshToken?: unknown;
   onSelectionChange: (unit: SoldSerial | null) => void;
 }) {
   const [page, setPage] = useState(initial);
@@ -22,11 +24,15 @@ export function SoldSerialSelect({
     chooseFirst ? (initial.items[0]?.id ?? "") : "",
   );
   const [query, setQuery] = useState("");
+  const [selectedUnit, setSelectedUnit] = useState<SoldSerial | null>(
+    chooseFirst ? (initial.items[0] ?? null) : null,
+  );
+  const refreshSeen = useRef(refreshToken);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(true);
   const pending = useRef<AbortController | null>(null);
-  const retry = useRef<{ after?: string } | null>(null);
+  const retry = useRef<{ after?: string; preserve: boolean } | null>(null);
   const select = useRef<HTMLSelectElement | null>(null);
   const focusAfterLoad = useRef(false);
   useEffect(() => {
@@ -44,17 +50,19 @@ export function SoldSerialSelect({
   }, []);
   const clearSelection = () => {
     setSelected("");
+    setSelectedUnit(null);
     onSelectionChange(null);
   };
-  const load = async (after?: string) => {
-    if (pending.current) return;
-    clearSelection();
+  const load = async (after?: string, preserve = false) => {
+    if (preserve) pending.current?.abort();
+    else if (pending.current) return;
+    if (!preserve) clearSelection();
     const controller = new AbortController();
     pending.current = controller;
-    retry.current = { after };
+    retry.current = { after, preserve };
     setError("");
     setBusy(true);
-    if (!after) {
+    if (!after && !preserve) {
       setPage({ items: [], next: null });
       setLoaded(false);
     }
@@ -70,7 +78,7 @@ export function SoldSerialSelect({
       setPage(result);
       setLoaded(true);
       retry.current = null;
-      focusAfterLoad.current = true;
+      focusAfterLoad.current = !preserve;
     } catch (e) {
       if (pending.current === controller && !controller.signal.aborted)
         setError(e instanceof Error ? e.message : "Serials could not be read.");
@@ -81,61 +89,76 @@ export function SoldSerialSelect({
       }
     }
   };
+  useEffect(() => {
+    if (Object.is(refreshSeen.current, refreshToken)) return;
+    refreshSeen.current = refreshToken;
+    void load(undefined, true);
+  }, [refreshToken]);
   return (
-    <div>
-      <label htmlFor={`${name}-search`}>Search sold serials</label>
-      <input
-        id={`${name}-search`}
-        maxLength={100}
-        value={query}
-        onChange={(event) => {
-          pending.current?.abort();
-          pending.current = null;
-          retry.current = null;
-          setBusy(false);
-          setError("");
-          setLoaded(false);
-          setPage({ items: [], next: null });
-          clearSelection();
-          setQuery(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            void load();
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="secondary"
-        disabled={busy}
-        onClick={() => void load()}
-      >
-        Search serials
-      </button>
-      <label htmlFor={`${name}-select`}>{label}</label>
-      <select
-        ref={select}
-        id={`${name}-select`}
-        name={name}
-        required={required}
-        disabled={busy}
-        value={selected}
-        onChange={(event) => {
-          setSelected(event.target.value);
-          onSelectionChange(
-            page.items.find((unit) => unit.id === event.target.value) ?? null,
-          );
-        }}
-      >
-        <option value="">Select a sold serial</option>
-        {page.items.map((unit) => (
-          <option key={unit.id} value={unit.id}>
-            {unit.serial}
-          </option>
-        ))}
-      </select>
+    <div className="sold-serial-select">
+      <div className="sold-serial-search">
+        <label htmlFor={`${name}-search`}>Search sold serials</label>
+        <input
+          id={`${name}-search`}
+          maxLength={100}
+          value={query}
+          onChange={(event) => {
+            pending.current?.abort();
+            pending.current = null;
+            retry.current = null;
+            setBusy(false);
+            setError("");
+            setLoaded(false);
+            setPage({ items: [], next: null });
+            clearSelection();
+            setQuery(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void load();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={() => void load()}
+        >
+          Search serials
+        </button>
+      </div>
+      <div className="sold-serial-choice">
+        <label htmlFor={`${name}-select`}>{label}</label>
+        <select
+          ref={select}
+          id={`${name}-select`}
+          name={name}
+          required={required}
+          disabled={busy}
+          value={selected}
+          onChange={(event) => {
+            setSelected(event.target.value);
+            const unit =
+              page.items.find((unit) => unit.id === event.target.value) ??
+              (selectedUnit?.id === event.target.value ? selectedUnit : null);
+            setSelectedUnit(unit);
+            onSelectionChange(unit);
+          }}
+        >
+          <option value="">Select a sold serial</option>
+          {selectedUnit &&
+            !page.items.some((unit) => unit.id === selectedUnit.id) && (
+              <option value={selectedUnit.id}>{selectedUnit.serial}</option>
+            )}
+          {page.items.map((unit) => (
+            <option key={unit.id} value={unit.id}>
+              {unit.serial}
+            </option>
+          ))}
+        </select>
+      </div>
       <p role="status" aria-label="Sold serial search status">
         {busy
           ? "Loading sold serials…"
@@ -156,7 +179,12 @@ export function SoldSerialSelect({
           type="button"
           className="secondary"
           disabled={busy}
-          onClick={() => void load(error ? retry.current?.after : page.next!)}
+          onClick={() =>
+            void load(
+              error ? retry.current?.after : page.next!,
+              error ? retry.current?.preserve : false,
+            )
+          }
         >
           {error ? "Retry serial search" : "Next sold serials"}
         </button>

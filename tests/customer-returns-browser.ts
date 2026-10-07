@@ -49,7 +49,7 @@ test("phone buyer finds Request RMA, retries a lost reply once, and follows staf
     expect(sold.items).toHaveLength(1);
     const own = sold.items[0];
     await page
-      .getByRole("button", { name: "Request RMA", exact: true })
+      .getByRole("button", { name: "Request return", exact: true })
       .click();
     const dialog = page.getByRole("dialog", {
       name: "Request return or warranty review",
@@ -59,10 +59,10 @@ test("phone buyer finds Request RMA, retries a lost reply once, and follows staf
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Request RMA", exact: true }),
+      page.getByRole("button", { name: "Request return", exact: true }),
     ).toBeFocused();
     await page
-      .getByRole("button", { name: "Request RMA", exact: true })
+      .getByRole("button", { name: "Request return", exact: true })
       .click();
     expect(
       await dialog
@@ -247,7 +247,7 @@ test("buyer without sold equipment sees the prerequisite and practical support g
   await login(page, "returns-empty@example.test", true);
   await navigateWorkspace(page, "Returns");
   await expect(
-    page.getByRole("button", { name: "Request RMA", exact: true }),
+    page.getByRole("button", { name: "Request return", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("region", { name: "Return guidance" }),

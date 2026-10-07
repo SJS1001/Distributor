@@ -166,9 +166,6 @@ export function WorkspaceNavigation({
                     : destination}
             </button>
           ))}
-          <a className="customer-library-link" href="#products">
-            GREE product library <span aria-hidden="true">↗</span>
-          </a>
         </nav>
       </header>
     );
@@ -248,11 +245,6 @@ export function WorkspaceNavigation({
         })}
       </nav>
       <div className="sidebar-bottom">
-        <a className="sidebar-resource-link" href="#products">
-          <WorkspaceIcon name="Catalog" />
-          <span>GREE product library</span>
-          <span aria-hidden="true">↗</span>
-        </a>
         <a className="sidebar-resource-link" href="#scanner">
           <WorkspaceIcon name="Inventory" />
           <span>Phone scanner</span>

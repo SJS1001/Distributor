@@ -16,8 +16,12 @@ export function CustomerReturnsGuide({
       <details>
         <summary>How returns work</summary>
         <p>
-          Request an RMA (return authorization) or warranty review for equipment
-          sold to your account. Your distributor reviews each request.
+          Register your equipment at installation in Warranty registration.
+          Request a return under the distributor’s return policy, or submit a
+          warranty claim for an equipment fault. Warranty claims remain
+          available after the ordinary return period ends. Either request may
+          require an RMA (return authorization); your distributor reviews each
+          request.
         </p>
         <ol>
           <li>

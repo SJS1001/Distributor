@@ -75,6 +75,7 @@ const sections: Record<string, string[]> = {
   ],
   Returns: [
     "returns-claims",
+    "returns-registration",
     "returns-replacements",
     "returns-manufacturers",
     "returns-policy",
@@ -211,7 +212,7 @@ export function authorizedPages(role: string) {
         ...(["admin", "finance"].includes(role) ? ["Reconciliation"] : []),
         ...(admin ? ["Imports", "Administration"] : []),
       ]
-    : ["Shop", "Orders", "Billing", "Overview", "Account", "Returns"];
+    : ["Shop", "Orders", "Billing", "Overview", "Returns", "Account"];
 }
 export function authorizeNavigation(route: NavigationIntent, pages: string[]) {
   return pages.includes(route.page) ? route : { page: pages[0] ?? "Overview" };

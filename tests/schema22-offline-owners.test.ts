@@ -9,6 +9,13 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture } from "./fixtures.ts";
 const laterTables = [
+  "warranty_claim_eligibility",
+  "warranty_policy_history",
+  "warranty_installation_history",
+  "warranty_installations",
+  "warranty_product_terms",
+  "warranty_return_policy",
+
   "iam_customer_minimum_orders",
   "iam_session_details",
   "catalog_product_addons",

@@ -9,14 +9,16 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { createBackup, restoreBackup } from "../src/server/recovery.ts";
 for (const eventReports of [false, true])
-  test(`schema31 to32 conserves all existing data with minimums disabled, reports=${eventReports}`, async (t) => {
+  test(`schema31 to33 conserves all existing data with minimums disabled, reports=${eventReports}`, async (t) => {
     const f = fixture(t, { eventReports });
     const order = accept(f);
     const source = f.path,
       target = join(dirname(source), "schema32.db");
     f.app.close();
     const db = new DatabaseSync(source);
-    db.exec("DROP TABLE iam_customer_minimum_orders");
+    db.exec(
+      "DROP TABLE warranty_claim_eligibility; DROP TABLE warranty_policy_history; DROP TABLE warranty_installation_history; DROP TABLE warranty_installations; DROP TABLE warranty_product_terms; DROP TABLE warranty_return_policy; DROP TABLE iam_customer_minimum_orders",
+    );
     const hash = schemaFingerprint(db);
     db.prepare(
       "UPDATE platform_schema_version SET version=31,schema_hash=?",
@@ -41,8 +43,8 @@ for (const eventReports of [false, true])
     });
     const receipt = await upgradeSchema(source, target, hash, "CA");
     assert.equal(receipt.sourceVersion, 31);
-    assert.equal(receipt.version, 32);
-    assert.equal(SCHEMA_VERSION, 32);
+    assert.equal(receipt.version, 33);
+    assert.equal(SCHEMA_VERSION, 33);
     assert.deepEqual(readFileSync(source), bytes);
     const upgraded = new DatabaseSync(target);
     for (const table of tables)
@@ -91,6 +93,6 @@ for (const eventReports of [false, true])
         .get()!.minimum_equipment_quantity,
       2,
     );
-    assert.equal(inspectSchema(restored).version, 32);
+    assert.equal(inspectSchema(restored).version, 33);
     restoredDb.close();
   });

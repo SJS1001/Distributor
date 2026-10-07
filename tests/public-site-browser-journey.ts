@@ -740,7 +740,7 @@ test("signed-in buyer and administrator can browse the library and return to the
     await page.getByLabel("Password", { exact: true }).fill(password!);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.locator("#workspace-title")).toHaveText(heading!);
-    await page.getByRole("link", { name: /GREE product library/ }).click();
+    await page.goto("/#products");
     await expect(page).toHaveURL(/#products$/);
     await page.locator(".gree-product-card").first().click();
     await page.reload();
@@ -804,7 +804,7 @@ test("public navigation follows the actual customer or staff session and logout 
     await page.getByLabel("Password", { exact: true }).fill(password!);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.locator("#workspace-title")).toHaveText(heading!);
-    await page.getByRole("link", { name: /GREE product library/ }).click();
+    await page.goto("/#products");
     await page.getByRole("link", { name: "dstrbtr home", exact: true }).click();
     await expect(page).toHaveURL(/#home$/);
     await expect(page.locator(".public-hero")).toBeVisible();
@@ -815,7 +815,7 @@ test("public navigation follows the actual customer or staff session and logout 
     await expect(page).toHaveURL(/#home$/);
     await page.goto("/");
     await expect(page.locator("#workspace-title")).toHaveText(heading!);
-    await page.getByRole("link", { name: /GREE product library/ }).click();
+    await page.goto("/#products");
     await page.getByRole("link", { name: "dstrbtr home", exact: true }).click();
 
     await expect(
@@ -915,7 +915,7 @@ test("public sign out retains a failed session for retry and disables duplicate 
     .fill("synthetic-buyer-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.locator("#workspace-title")).toHaveText("Shop");
-  await page.getByRole("link", { name: /GREE product library/ }).click();
+  await page.goto("/#products");
   let requests = 0;
   let release!: () => void;
   const waiting = new Promise<void>((resolve) => {

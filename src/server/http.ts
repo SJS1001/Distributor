@@ -1359,8 +1359,16 @@ export function commands(
           decision: choice("approve", "reject"),
           reason: str,
           policyRevision: num,
+          registrationRevision: num,
+          termsRevision: num,
+          returnPolicyRevision: num,
         },
-        ["policyRevision"],
+        [
+          "policyRevision",
+          "registrationRevision",
+          "termsRevision",
+          "returnPolicyRevision",
+        ],
       ),
       run: (a, k, p) => app.inventory.decideCount(a, k, p),
     },
@@ -1745,6 +1753,42 @@ export function commands(
       schema: obj({ refundId: str, reference: str, reason: str }),
       run: (a, k, p) => app.billing.manualRefund(a, k, p),
     },
+    "warranty.return-policy.save": {
+      schema: obj({
+        expectedRevision: num,
+        days: { anyOf: [num, { type: "null" }] },
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.registration.saveReturnPolicy(a, k, p),
+    },
+    "warranty.terms.save": {
+      schema: obj({
+        productId: str,
+        expectedRevision: num,
+        manufacturer: str,
+        reference: str,
+        startsAt: choice("shipment", "installation"),
+        days: { anyOf: [num, { type: "null" }] },
+        notes: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.registration.saveTerms(a, k, p),
+    },
+    "warranty.registration.save": {
+      schema: obj({
+        unitId: str,
+        accountId: str,
+        shipmentId: str,
+        ownershipId: str,
+        expectedRevision: num,
+        installedOn: str,
+        installer: str,
+        site: str,
+        evidence: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.warranty.registration.save(a, k, p),
+    },
     "warranty.policy": {
       schema: obj({ days: num, revision: num, reason: str }),
       run: (a, k, p) => app.identity.configureCoverage(a, k, p),
@@ -1758,8 +1802,16 @@ export function commands(
           issue: str,
           evidence: str,
           policyRevision: num,
+          registrationRevision: num,
+          termsRevision: num,
+          returnPolicyRevision: num,
         },
-        ["policyRevision"],
+        [
+          "policyRevision",
+          "registrationRevision",
+          "termsRevision",
+          "returnPolicyRevision",
+        ],
       ),
       run: (a, k, p) => app.warranty.submit(a, k, p),
     },
@@ -3215,6 +3267,41 @@ export async function createHttp(app: Application, options: HttpOptions) {
       },
     },
     async (request) => app.warranty.claimPage(actor(request), request.query),
+  );
+  http.get(
+    "/api/warranty/return-policy",
+    { schema: { querystring: obj({}) } },
+    async (request) => app.warranty.registration.returnPolicy(actor(request)),
+  );
+  http.get<{ Params: { productId: string } }>(
+    "/api/warranty/products/:productId/terms",
+    { schema: { params: obj({ productId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.warranty.registration.terms(actor(request), request.params.productId),
+  );
+  http.get<{ Params: { unitId: string }; Querystring: { accountId: string } }>(
+    "/api/warranty/sold-units/:unitId/registration",
+    {
+      schema: {
+        params: obj({ unitId: str }),
+        querystring: obj({ accountId: str }),
+      },
+    },
+    async (request) =>
+      app.warranty.registration.review(
+        actor(request),
+        request.params.unitId,
+        request.query.accountId,
+      ),
+  );
+  http.get<{ Params: { claimId: string } }>(
+    "/api/warranty/claims/:claimId/assessment",
+    { schema: { params: obj({ claimId: str }), querystring: obj({}) } },
+    async (request) =>
+      app.warranty.registration.claimAssessment(
+        actor(request),
+        request.params.claimId,
+      ),
   );
   http.get(
     "/api/warranty/coverage-policy",

@@ -103,16 +103,16 @@ test.describe(() => {
       page.getByRole("tab", { name: "Claims and returns", exact: true }),
     ).toHaveAttribute("aria-selected", "true");
     await page
-      .getByRole("tab", { name: "Coverage policy", exact: true })
+      .getByRole("tab", { name: "Return & warranty policies", exact: true })
       .click();
     await expect(
       page.getByRole("heading", {
-        name: "Warranty coverage policy",
+        name: "Return and warranty policies",
         exact: true,
       }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Submit claim / return", exact: true }),
+      page.getByRole("button", { name: "Request return", exact: true }),
     ).toBeHidden();
     await navigateWorkspace(page, "Imports");
     await page

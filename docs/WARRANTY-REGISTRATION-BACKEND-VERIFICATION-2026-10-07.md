@@ -1,0 +1,21 @@
+# Warranty registration backend verification — 2026-10-07
+
+Local, synthetic workstation verification only. Base commit `af86479`, branch `codex/local-distributor-checkpoint`, Node `v24.16.0`, macOS. Uncommitted backend/shared/feature-test tree digest: `0d12d166a83debba556c8865be0b30308c4651258d6e70f0ed1578a90876f5b1`. Digest is SHA-256 over sorted relative path, NUL, file bytes, NUL for application.ts, http.ts, schema.ts, schema-upgrade.ts, warranty.ts, warranty-registration.ts, warranty-registration-schema.ts, shared/warranty-registration.ts, tests/warranty-registration.test.ts and tests/schema33-warranty-registration.test.ts. Paths are under src/server unless qualified otherwise.
+
+Implemented native audited/idempotent registration and correction commands, explicit revision and current-sale ownership guards, admin product warranty terms and independent ordinary return settings. Defaults remain unconfigured. Local registration does not submit to or imply acceptance by a manufacturer. Current assessments are for staff review, including elapsed return requests. Warranty claims remain possible outside ordinary return periods. Claims retain immutable separate installation/term/return assessment snapshots while subsequent corrections and configuration changes affect the current review. Existing shipment and legacy claim coverage records and submit response remain compatible.
+
+Replacement warranty dates inherit retained predecessor dates. Ordinary return dates use the recorded replacement handover. Exact sold-custody identity distinguishes a returned serial reused as a replacement from its original installation, even where customer and original shipment are unchanged. The reviewed `ownershipId` is required on a registration mutation and verified before cached replay. Legacy inherited dates without configured manufacturer terms carry `provisional: true`.
+
+Schema 33 adds six warranty-owned tables. Explicit schema 32→33 clone upgrade preserves prior rows and source bytes, leaves settings unconfigured, and updates recognized schema/recovery profiles. Encrypted isolated recovery retains registration, correction history, settings, policy history, and claim assessment snapshots; existing provider recovery hold remains present.
+
+Actual outcomes:
+
+- New native/API registration tests: **7 passed**. Covers defaults, installation-basis dates, registration correction history, immutable claim snapshots, elapsed ordinary return versus continuing warranty, current grants/account and forged-actor restrictions, malformed dates/evidence/revisions with rollback, exact replay/conflict, HTTP session/CSRF/strict payload/no-store behavior, replacement inheritance, repeated replacement ownership cycle, and late audit rollback of registration/history/receipt.
+- Schema 33 clone/recovery tests: **2 passed**, reports enabled and disabled. Source bytes/old rows, upgrade-required startup refusal, empty new tables, foreign-key integrity, restored rows, readable registration, and recovery hold verified.
+- Broad warranty + schema + recovery-profile suite: **233/233 passed** after the additional ownership-cycle test and ownership-key correction (~24.8 seconds). Earlier complete run passed **232/232**. Historical fixture comparison/drop lists were updated to recognize the new empty owner tables; historical frozen profiles remain covered.
+- `npm run typecheck`: **passed** after concurrent frontend integration completed.
+- Targeted Prettier and `git diff --check`: **passed**.
+
+Earlier failures retained: the first broad run failed historical schema fixture comparisons because new empty tables were not removed/excluded from prior profiles, and the initial new schema test referenced a nonexistent fixture shipment timestamp property. Both were corrected and subsequent runs passed. A proposed assertion that provider recovery hold should block native settings was removed after checking the existing recovery contract: it holds provider effects, while native commands remain usable. Mid-integration typechecks reported pending frontend components/props, subsequently resolved by their owners.
+
+No product gate, deployment, live-provider qualification, actual manufacturer duration, or manufacturer acceptance is verified by these synthetic tests. No CI job, PR, commit, deployment, or live data mutation was performed in this backend task.

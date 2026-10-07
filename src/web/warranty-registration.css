@@ -1,0 +1,106 @@
+.warranty-record-panel {
+  min-width: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+.warranty-record-panel .section-heading {
+  margin-bottom: 0;
+}
+.warranty-record-panel p {
+  margin: 0;
+}
+.warranty-record-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.warranty-record-fields label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.warranty-record-fields input,
+.warranty-record-fields select,
+.warranty-record-fields textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.warranty-record-wide {
+  grid-column: 1 / -1;
+}
+.warranty-record-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.warranty-assessments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+.warranty-assessments section {
+  border: 1px solid var(--border, #d5dce5);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.4rem;
+}
+.warranty-assessments h3 {
+  margin: 0;
+}
+.warranty-review {
+  border: 1px solid var(--border, #d5dce5);
+  padding: 0.8rem;
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.warranty-review dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.warranty-review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.warranty-policy-sections {
+  display: grid;
+  gap: 1.2rem;
+}
+@media (max-width: 700px) {
+  .warranty-record-fields,
+  .warranty-assessments {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Grid children must shrink before the history table scrolls inside its region. */
+.warranty-record-panel > *,
+.warranty-record-panel details,
+.warranty-review,
+.warranty-assessments > section {
+  min-width: 0;
+}
+.warranty-record-panel details > summary {
+  overflow-wrap: anywhere;
+}
+.warranty-installation-history {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+.warranty-installation-history table {
+  min-width: 620px;
+}
+.warranty-installation-history th,
+.warranty-installation-history td {
+  overflow-wrap: anywhere;
+}

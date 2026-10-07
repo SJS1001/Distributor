@@ -131,6 +131,9 @@ import { SerialCustody } from "./serial-custody.tsx";
 import { WarrantyEvidence } from "./warranty-evidence.tsx";
 import { WarrantyDecisions } from "./warranty-decisions.tsx";
 import { SoldCoverage } from "./warranty-coverage.tsx";
+import { WarrantyRegistration } from "./warranty-registration.tsx";
+import { WarrantyPolicies } from "./warranty-policies.tsx";
+import type { WarrantyRegistrationReview } from "../shared/warranty-registration.ts";
 import { SoldSerialSelect } from "./sold-serial-select.tsx";
 import { stockLabelOutputs } from "../shared/stock-label.ts";
 import {
@@ -293,6 +296,15 @@ function App() {
     >(null),
     [extra, setExtra] = useState<Item>({}),
     [extraLoadFailed, setExtraLoadFailed] = useState(false);
+  useEffect(() => {
+    if (notice !== "Workspace refreshed.") return;
+    const timeout = window.setTimeout(() => {
+      setNotice((current) =>
+        current === "Workspace refreshed." ? "" : current,
+      );
+    }, 4000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const [receiptSearch, setReceiptSearch] = useState("");
   const [receivingDraft, setReceivingDraft] = useState<Item | null>(null);
   const [receivedDelivery, setReceivedDelivery] = useState<Item | null>(null);
@@ -825,6 +837,8 @@ function App() {
     // Initial recovery panels already use this snapshot. Completing its extra
     // reads must preserve their explicit review; later refreshes invalidate it.
     if (data) setEventViewEpoch((value) => value + 1);
+    e.minimumOrderRefresh = crypto.randomUUID();
+    e.warrantyRefresh = crypto.randomUUID();
     setExtra(e);
     setExtraLoadFailed(false);
   };
@@ -2939,6 +2953,9 @@ function App() {
               title="Refresh"
               disabled={busy}
               onClick={() => {
+                setNotice((current) =>
+                  current === "Workspace refreshed." ? "" : current,
+                );
                 void run(refresh, false, true, "Workspace refreshed.").catch(
                   () => {},
                 );
@@ -3108,7 +3125,11 @@ function App() {
                 )}
                 <OrderQueueControls
                   queue={orderQueue}
-                  scope={savedFilterKey(actor.orgId, actor.id, "orders")}
+                  scope={
+                    staff
+                      ? savedFilterKey(actor.orgId, actor.id, "orders")
+                      : undefined
+                  }
                   onFilter={(orderState, orderReservation) =>
                     updateRoute({
                       orderState,
@@ -5942,7 +5963,11 @@ function App() {
                 </div>
                 <InvoiceQueueControls
                   queue={invoiceQueue}
-                  scope={savedFilterKey(actor.orgId, actor.id, "invoices")}
+                  scope={
+                    staff
+                      ? savedFilterKey(actor.orgId, actor.id, "invoices")
+                      : undefined
+                  }
                   onFilter={(invoiceBalance) => updateRoute({ invoiceBalance })}
                 />
                 {table(
@@ -7160,12 +7185,25 @@ function App() {
             selectSection={(section) => updateRoute({ section })}
             items={[
               { id: "returns-claims", label: "Claims and returns" },
+              ...(can("warranty", "commercial", "buyer")
+                ? [
+                    {
+                      id: "returns-registration",
+                      label: "Warranty registration",
+                    },
+                  ]
+                : []),
               { id: "returns-replacements", label: "Replacements" },
               ...(can("warranty", "warehouse", "finance", "commercial")
                 ? [{ id: "returns-manufacturers", label: "Manufacturer cases" }]
                 : []),
               ...(admin
-                ? [{ id: "returns-policy", label: "Coverage policy" }]
+                ? [
+                    {
+                      id: "returns-policy",
+                      label: "Return & warranty policies",
+                    },
+                  ]
                 : []),
             ]}
           >
@@ -7176,97 +7214,120 @@ function App() {
                 />
               )}
               <div className="actions">
-                {can("warranty", "commercial", "buyer") && (
-                  <button
-                    id="submit-claim"
-                    disabled={!staff && !data.soldUnits.length}
-                    onClick={(event) => {
-                      const returnFocus = event.currentTarget;
-                      let selected: SoldSerial | null =
-                        data.soldUnits[0] ?? null;
-                      let reviewed: WarrantyCoverage | null = null;
-                      open(
-                        "Request return or warranty review",
-                        [
-                          {
-                            name: "unitId",
-                            label: "Sold serial",
-                            content: (
-                              <ClaimSerialReview
-                                initial={{
-                                  items: data.soldUnits,
-                                  next: data.soldUnitNext,
-                                }}
-                                onChange={(unit, coverage) => {
-                                  selected = unit;
-                                  reviewed = coverage;
-                                }}
-                              />
-                            ),
+                {can("warranty", "commercial", "buyer") &&
+                  (["return", "warranty"] as const).map((requestType) => (
+                    <button
+                      key={requestType}
+                      id={
+                        requestType === "return"
+                          ? "submit-claim"
+                          : "submit-warranty-claim"
+                      }
+                      disabled={!staff && !data.soldUnits.length}
+                      onClick={(event) => {
+                        const returnFocus = event.currentTarget;
+                        let selected: SoldSerial | null =
+                          data.soldUnits[0] ?? null;
+                        let reviewed: WarrantyCoverage | null = null;
+                        let assessment: WarrantyRegistrationReview | null =
+                          null;
+                        open(
+                          "Request return or warranty review",
+                          [
+                            {
+                              name: "unitId",
+                              label: "Sold serial",
+                              content: (
+                                <ClaimSerialReview
+                                  initial={{
+                                    items: data.soldUnits,
+                                    next: data.soldUnitNext,
+                                  }}
+                                  onChange={(
+                                    unit,
+                                    coverage,
+                                    currentAssessment,
+                                  ) => {
+                                    selected = unit;
+                                    reviewed = coverage;
+                                    assessment = currentAssessment;
+                                  }}
+                                />
+                              ),
+                            },
+                            {
+                              name: "type",
+                              label: "Request type",
+                              value: requestType,
+                              options: [
+                                { value: "return", label: "Return" },
+                                { value: "warranty", label: "Warranty" },
+                              ],
+                            },
+                            {
+                              name: "issue",
+                              label: "Issue / reason",
+                              type: "textarea",
+                            },
+                            {
+                              name: "evidence",
+                              label: "Evidence reference",
+                              type: "textarea",
+                            },
+                          ],
+                          async (v) => {
+                            if (!selected || selected.id !== v.unitId)
+                              throw new Error(
+                                "Select a currently loaded sold serial.",
+                              );
+                            if (!reviewed || !assessment)
+                              throw new Error(
+                                "Load and review the claim coverage dates before submitting.",
+                              );
+                            return {
+                              ...(await command("warranty.submit", {
+                                ...v,
+                                accountId: selected.accountId,
+                                registrationRevision:
+                                  assessment.registration?.revision ?? 0,
+                                termsRevision: assessment.terms.revision,
+                                returnPolicyRevision:
+                                  assessment.returnEligibility.policy.revision,
+                                ...(reviewed.policy
+                                  ? { policyRevision: reviewed.policy.revision }
+                                  : {}),
+                              })),
+                              skipRefresh: true,
+                            };
                           },
-                          {
-                            name: "type",
-                            label: "Request type",
-                            options: [
-                              { value: "return", label: "Return" },
-                              { value: "warranty", label: "Warranty" },
-                            ],
+                          "Describe the issue and provide an evidence reference, such as an inspection report or photo reference. You can attach evidence files after submitting. Wait for distributor authorization and return instructions before sending equipment.",
+                          undefined,
+                          false,
+                          returnFocus,
+                          (result) => {
+                            const message = `Request ${result.id} submitted for distributor review. Track its status in Returns & warranty. Wait for authorization and return instructions before sending equipment.`;
+                            setNotice(message);
+                            void refreshNotice(
+                              message,
+                              `Request ${result.id} submitted; refresh failed: `,
+                            ).catch(() => {});
                           },
-                          {
-                            name: "issue",
-                            label: "Issue / reason",
-                            type: "textarea",
-                          },
-                          {
-                            name: "evidence",
-                            label: "Evidence reference",
-                            type: "textarea",
-                          },
-                        ],
-                        async (v) => {
-                          if (!selected || selected.id !== v.unitId)
-                            throw new Error(
-                              "Select a currently loaded sold serial.",
-                            );
-                          if (!reviewed)
-                            throw new Error(
-                              "Load and review the claim coverage dates before submitting.",
-                            );
-                          return {
-                            ...(await command("warranty.submit", {
-                              ...v,
-                              accountId: selected.accountId,
-                              ...(reviewed.policy
-                                ? { policyRevision: reviewed.policy.revision }
-                                : {}),
-                            })),
-                            skipRefresh: true,
-                          };
-                        },
-                        "Describe the issue and provide an evidence reference, such as an inspection report or photo reference. You can attach evidence files after submitting. Wait for distributor authorization and return instructions before sending equipment.",
-                        undefined,
-                        false,
-                        returnFocus,
-                        (result) => {
-                          const message = `Request ${result.id} submitted for distributor review. Track its status in Returns & warranty. Wait for authorization and return instructions before sending equipment.`;
-                          setNotice(message);
-                          void refreshNotice(
-                            message,
-                            `Request ${result.id} submitted; refresh failed: `,
-                          ).catch(() => {});
-                        },
-                      );
-                    }}
-                  >
-                    {staff ? "Submit claim / return" : "Request RMA"}
-                  </button>
-                )}
+                        );
+                      }}
+                    >
+                      {requestType === "return"
+                        ? "Request return"
+                        : "Warranty claim"}
+                    </button>
+                  ))}
                 {can("warranty", "commercial", "buyer") && (
                   <button
                     className="secondary"
+                    aria-expanded={coverageOpen}
+                    aria-controls="sold-coverage-panel"
                     onClick={(event) => {
                       coverageOpener.current = event.currentTarget;
-                      setCoverageOpen(true);
+                      setCoverageOpen((open) => !open);
                     }}
                   >
                     Check sold serial coverage
@@ -7276,6 +7337,7 @@ function App() {
               {coverageOpen && (
                 <SoldCoverage
                   initial={{ items: data.soldUnits, next: data.soldUnitNext }}
+                  refreshToken={extra.warrantyRefresh}
                   onClose={() => {
                     setCoverageOpen(false);
                     coverageOpener.current?.focus();
@@ -7355,7 +7417,10 @@ function App() {
                                     value={c.unit_id}
                                     label="Sold stock ID"
                                   />
-                                  <RetainedClaimCoverage claimId={c.id} />
+                                  <RetainedClaimCoverage
+                                    claimId={c.id}
+                                    refreshToken={extra.warrantyRefresh}
+                                  />
                                   <p>
                                     {approved
                                       ? "Authorize this return for receiving. This does not issue a credit or replacement."
@@ -7539,8 +7604,9 @@ function App() {
                       </summary>
                       <div className="actions">
                         <RetainedClaimCoverage
-                          key={`${c.id}:${eventViewEpoch}`}
+                          key={c.id}
                           claimId={c.id}
+                          refreshToken={extra.warrantyRefresh}
                         />
                         <button
                           className="secondary"
@@ -7985,51 +8051,74 @@ function App() {
                 </section>
               )}
             </PageSection>
+            <PageSection id="returns-registration">
+              {can("warranty", "commercial", "buyer") && (
+                <WarrantyRegistration
+                  key={`${actor.orgId}:${actor.id}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  initial={{ items: data.soldUnits, next: data.soldUnitNext }}
+                  refreshToken={extra.warrantyRefresh}
+                />
+              )}
+            </PageSection>
             <PageSection id="returns-policy">
+              {admin && (
+                <WarrantyPolicies
+                  key={`${actor.orgId}:${actor.id}`}
+                  orgId={actor.orgId}
+                  actorId={actor.id}
+                  products={data.products ?? []}
+                  refreshToken={extra.warrantyRefresh}
+                />
+              )}
               {admin && extra.coveragePolicy && (
-                <section className="ledger-section ops-section">
-                  <h2>Warranty coverage policy</h2>
-                  <dl className="record-figures ops-figures">
-                    <div>
-                      <dt>Policy version</dt>
-                      <dd>{extra.coveragePolicy.revision}</dd>
-                    </div>
-                    <div>
-                      <dt>Coverage after shipment</dt>
-                      <dd>
-                        {extra.coveragePolicy.days}{" "}
-                        {extra.coveragePolicy.days === 1 ? "day" : "days"}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p>
-                    Counted in whole UTC days after shipment. Settings are
-                    provisional; eligibility requires review.
-                  </p>
-                  {extra.coveragePolicy.reason && (
-                    <p>{extra.coveragePolicy.reason}</p>
-                  )}
-                  {button("Configure warranty coverage", () =>
-                    open(
-                      "Configure warranty coverage policy",
-                      [
-                        {
-                          name: "days",
-                          label: "Coverage duration in days",
-                          type: "number",
-                          value: extra.coveragePolicy.days,
-                        },
-                        reason,
-                      ],
-                      (v) =>
-                        command("warranty.policy", {
-                          ...v,
-                          revision: extra.coveragePolicy.revision,
-                        }),
-                      "This applies to future shipments and provisional assessments of historical sales without a retained shipment policy. Previously retained shipment dates, claim snapshots and inherited replacement dates remain unchanged. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
-                    ),
-                  )}
-                </section>
+                <details className="supporting-workflow-guide">
+                  <summary>Historical shipment coverage settings</summary>
+                  <section className="ledger-section ops-section">
+                    <h2>Provisional shipment coverage</h2>
+                    <dl className="record-figures ops-figures">
+                      <div>
+                        <dt>Policy version</dt>
+                        <dd>{extra.coveragePolicy.revision}</dd>
+                      </div>
+                      <div>
+                        <dt>Coverage after shipment</dt>
+                        <dd>
+                          {extra.coveragePolicy.days}{" "}
+                          {extra.coveragePolicy.days === 1 ? "day" : "days"}
+                        </dd>
+                      </div>
+                    </dl>
+                    <p>
+                      Counted in whole UTC days after shipment. Settings are
+                      provisional; eligibility requires review.
+                    </p>
+                    {extra.coveragePolicy.reason && (
+                      <p>{extra.coveragePolicy.reason}</p>
+                    )}
+                    {button("Configure warranty coverage", () =>
+                      open(
+                        "Configure warranty coverage policy",
+                        [
+                          {
+                            name: "days",
+                            label: "Coverage duration in days",
+                            type: "number",
+                            value: extra.coveragePolicy.days,
+                          },
+                          reason,
+                        ],
+                        (v) =>
+                          command("warranty.policy", {
+                            ...v,
+                            revision: extra.coveragePolicy.revision,
+                          }),
+                        "This applies to future shipments and provisional assessments of historical sales without a retained shipment policy. Previously retained shipment dates, claim snapshots and inherited replacement dates remain unchanged. Saving a duration does not approve eligibility, expiry, transferability or vendor terms.",
+                      ),
+                    )}
+                  </section>
+                </details>
               )}
             </PageSection>
           </PageSections>
@@ -8164,7 +8253,11 @@ function App() {
                     ],
                   )}
                   {data.accounts.map((a: Item) => (
-                    <CustomerMinimumOrderControls key={a.id} accountId={a.id} />
+                    <CustomerMinimumOrderControls
+                      key={a.id}
+                      accountId={a.id}
+                      refreshKey={extra.minimumOrderRefresh}
+                    />
                   ))}
                 </>
               )}

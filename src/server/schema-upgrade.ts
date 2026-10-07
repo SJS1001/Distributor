@@ -1,3 +1,4 @@
+import { WARRANTY_REGISTRATION_DDL } from "./warranty-registration-schema.ts";
 import { CUSTOMER_MINIMUM_ORDER_DDL } from "./customer-minimum-order-schema.ts";
 import {
   SESSION_DETAILS_DDL,
@@ -271,6 +272,7 @@ export async function upgradeSchema(
         copied.exec(SESSION_DETAILS_DDL);
         copied.exec(SESSION_DETAILS_BACKFILL);
         copied.exec(CUSTOMER_MINIMUM_ORDER_DDL);
+        copied.exec(WARRANTY_REGISTRATION_DDL);
         copied
           .prepare("INSERT INTO platform_schema_version VALUES(1,?,?,?,?,?)")
           .run(
@@ -338,6 +340,7 @@ export async function upgradeSchema(
           copied.exec(SESSION_DETAILS_BACKFILL);
         }
         if (before.version! <= 31) copied.exec(CUSTOMER_MINIMUM_ORDER_DDL);
+        if (before.version! <= 32) copied.exec(WARRANTY_REGISTRATION_DDL);
         copied
           .prepare(
             "UPDATE platform_schema_version SET version=?,schema_hash=? WHERE singleton=1",

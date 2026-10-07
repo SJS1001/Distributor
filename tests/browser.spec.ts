@@ -2128,7 +2128,7 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Returns");
   await page
-    .getByRole("button", { name: "Submit claim / return", exact: true })
+    .getByRole("button", { name: "Request return", exact: true })
     .click();
   await page
     .getByLabel("Issue / reason", { exact: true })
@@ -5234,7 +5234,7 @@ test("browser: replacement collection retries, cancellation, scan validation and
     native.getByRole("button", { name: "Issue return credit", exact: true }),
   ).toHaveCount(0);
   await page
-    .getByRole("button", { name: "Submit claim / return", exact: true })
+    .getByRole("button", { name: "Request return", exact: true })
     .click();
   await page.getByLabel("Search sold serials", { exact: true }).fill("REP-NEW");
   await page
@@ -13761,7 +13761,9 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await nav(page, "Returns");
-  await page.getByRole("button", { name: "Request RMA", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Request return", exact: true })
+    .click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByRole("button", { name: "Next sold serials", exact: true })
@@ -13809,7 +13811,7 @@ test("browser: sold serial pages search, retry, cancel and select current claim 
   ).toHaveLength(1);
   for (const exit of ["cancel", "refresh", "navigation", "signout"] as const) {
     await page
-      .getByRole("button", { name: "Request RMA", exact: true })
+      .getByRole("button", { name: "Request return", exact: true })
       .click();
     let release!: () => void, handled!: () => void;
     const held = new Promise<void>((r) => {

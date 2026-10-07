@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { request, RequestError } from "./api.ts";
+import { ControlIcon } from "./control-icon.tsx";
 import {
   minimumOrderAssessment,
   type CustomerMinimumOrder,
@@ -32,10 +33,12 @@ export function CustomerMinimumOrderControls({
   accountId,
   recoveryScope,
   editable = false,
+  refreshKey,
 }: {
   accountId: string;
   recoveryScope?: string;
   editable?: boolean;
+  refreshKey?: string;
 }) {
   const storageKey = `distributor-minimum-order:${recoveryScope}:${accountId}`;
   const [recovery] = useState(() => {
@@ -99,7 +102,7 @@ export function CustomerMinimumOrderControls({
         if (!c.signal.aborted) setError(e.message);
       });
     return () => c.abort();
-  }, [accountId, epoch]);
+  }, [accountId, epoch, refreshKey]);
   async function send(a: Attempt) {
     setBusy(true);
     setError("");
@@ -138,13 +141,29 @@ export function CustomerMinimumOrderControls({
         ? Number(units)
         : null;
   return (
-    <section className="panel" aria-label="Minimum order">
-      <h3>Minimum order</h3>
-      <p>
-        Merchandise subtotal before tax and freight, plus whole equipment units.
-        Accessories do not count as equipment. Zero means no minimum for that
-        requirement.
-      </p>
+    <section className="panel minimum-order-panel" aria-label="Minimum order">
+      <div className="minimum-order-heading">
+        <h3>Minimum order</h3>
+        {editable && (
+          <button
+            type="button"
+            className="secondary icon-button"
+            aria-label="Refresh minimum order requirements"
+            title="Refresh minimum order requirements"
+            disabled={busy || !!attempt || !!blocked}
+            onClick={() => setEpoch((e) => e + 1)}
+          >
+            <ControlIcon name="refresh" />
+          </button>
+        )}
+      </div>
+      {editable && (
+        <p>
+          Merchandise subtotal before tax and freight, plus whole equipment
+          units. Accessories do not count as equipment. Zero means no minimum
+          for that requirement.
+        </p>
+      )}
       {error && (
         <p role="alert" className="error">
           {error}
@@ -289,25 +308,32 @@ export function CustomerMinimumOrderControls({
           </fieldset>
         </form>
       ) : (
-        <dl>
-          <div>
-            <dt>Minimum merchandise subtotal</dt>
-            <dd>{money(policy.minimumSubtotal, policy.currency)}</dd>
-          </div>
-          <div>
-            <dt>Minimum equipment units</dt>
-            <dd>{policy.minimumEquipmentQuantity}</dd>
-          </div>
-        </dl>
+        <>
+          <dl className="minimum-order-summary">
+            <div>
+              <dt>Minimum merchandise subtotal</dt>
+              <dd>
+                {policy.minimumSubtotal === 0
+                  ? "No minimum"
+                  : money(policy.minimumSubtotal, policy.currency)}
+                <small>Before tax and freight</small>
+              </dd>
+            </div>
+            <div>
+              <dt>Minimum equipment units</dt>
+              <dd>
+                {policy.minimumEquipmentQuantity === 0
+                  ? "No minimum"
+                  : policy.minimumEquipmentQuantity}
+                <small>Accessories excluded</small>
+              </dd>
+            </div>
+          </dl>
+          <p className="minimum-order-guidance">
+            Both requirements apply when you submit an order.
+          </p>
+        </>
       )}
-      <button
-        type="button"
-        className="secondary"
-        disabled={busy || !!attempt || !!blocked}
-        onClick={() => setEpoch((e) => e + 1)}
-      >
-        Reload minimum order
-      </button>
     </section>
   );
 }

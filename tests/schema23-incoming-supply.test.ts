@@ -9,6 +9,13 @@ import { schemaFingerprint, SCHEMA_VERSION } from "../src/server/schema.ts";
 import { inspectSchema, upgradeSchema } from "../src/server/schema-upgrade.ts";
 import { fixture, accept } from "./fixtures.ts";
 const additions = [
+  "warranty_claim_eligibility",
+  "warranty_policy_history",
+  "warranty_installation_history",
+  "warranty_installations",
+  "warranty_product_terms",
+  "warranty_return_policy",
+
   "iam_customer_minimum_orders",
   "iam_session_details",
   "catalog_product_addons",
@@ -126,7 +133,9 @@ for (const reports of [false, true])
                     ? "enrollment"
                     : table.startsWith("catalog_")
                       ? "catalog"
-                      : "inventory";
+                      : table.startsWith("warranty_")
+                        ? "warranty"
+                        : "inventory";
         assert.equal(
           app.database.owned(owner).get(`SELECT COUNT(*) AS n FROM ${table}`)!
             .n,

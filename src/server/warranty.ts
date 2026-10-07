@@ -1,3 +1,8 @@
+import {
+  WarrantyRegistration,
+  type RegistrationContext,
+} from "./warranty-registration.ts";
+import { Catalog } from "./catalog.ts";
 import { CLAIM_COVERAGE_INITIALIZE_DDL } from "./claim-coverage-schema.ts";
 import type { SerialClaim } from "../shared/serial-dossier.ts";
 import { serialCursor } from "./serial-dossier-cursor.ts";
@@ -117,6 +122,7 @@ export class Warranty {
     binding?: ReplacementCarrierBinding,
   ) => void;
   readonly evidence: WarrantyEvidence;
+  readonly registration: WarrantyRegistration;
   constructor(
     private database: Database,
     private platform: Platform,
@@ -124,6 +130,7 @@ export class Warranty {
     private inventory: Inventory,
     private fulfillment: Fulfillment,
     private billing: Billing,
+    private catalog: Catalog,
   ) {
     this.store = database.owned("warranty");
     this.store.migrate(`
@@ -151,6 +158,77 @@ export class Warranty {
     CREATE TABLE IF NOT EXISTS warranty_manufacturer_history(id TEXT PRIMARY KEY,org_id TEXT NOT NULL,case_id TEXT NOT NULL,revision INTEGER NOT NULL,state TEXT NOT NULL,evidence TEXT NOT NULL,reason TEXT NOT NULL,actor_id TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(case_id,revision)) STRICT;
   `);
     this.store.migrate(CLAIM_COVERAGE_INITIALIZE_DDL);
+    this.registration = new WarrantyRegistration(
+      database,
+      platform,
+      identity,
+      (actor, unitId, accountId) => {
+        actor = this.authority(actor, ["warranty", "commercial", "buyer"]);
+        const entitlement = this.entitlement(actor, unitId, accountId),
+          unit = this.inventory.unit(actor, unitId);
+        check(
+          unit.state === "sold" && unit.serial,
+          "NOT_FOUND",
+          "No currently sold serial for this account.",
+          404,
+        );
+        return {
+          unitId,
+          accountId,
+          serial: unit.serial,
+          productId: unit.product_id,
+          shipmentId: entitlement.shipmentId,
+          ownershipId: entitlement.ownershipId,
+          shippedAt: entitlement.shippedAt,
+          returnStartedAt: entitlement.returnStartedAt,
+          inheritedFromClaimId: entitlement.inheritedFromClaimId,
+          inheritedCoverageEnd: entitlement.coverageEnd,
+        };
+      },
+      (actor, claimId) => {
+        actor = this.authority(actor, [
+          "warranty",
+          "warehouse",
+          "finance",
+          "commercial",
+          "buyer",
+        ]);
+        const claim = this.claimRecord(actor, claimId),
+          unit = this.inventory.unit(actor, claim.unit_id);
+        const coverage = this.claimCoverageRecord(claim);
+        const replacement = this.store.get<{
+          id: string;
+          completed_at: string;
+        }>(
+          "SELECT id,completed_at FROM warranty_replacements WHERE org_id=? AND claim_id=? AND new_unit_id=? AND state='handed_over'",
+          actor.orgId,
+          coverage.snapshot?.inheritedFromClaimId ?? "",
+          claim.unit_id,
+        );
+        return {
+          unitId: unit.id,
+          accountId: claim.account_id,
+          serial: unit.serial!,
+          productId: unit.product_id,
+          shipmentId: claim.shipment_id,
+          ownershipId: replacement?.id ?? claim.shipment_id,
+          shippedAt:
+            coverage.snapshot?.shippedAt ??
+            this.coverageDate(
+              this.fulfillment.shipment(actor, claim.shipment_id).shipped_at,
+            ),
+          returnStartedAt: this.coverageDate(
+            replacement?.completed_at ??
+              this.fulfillment.shipment(actor, claim.shipment_id).shipped_at,
+          ),
+          inheritedFromClaimId: coverage.snapshot?.inheritedFromClaimId ?? null,
+          inheritedCoverageEnd: claim.coverage_end,
+        };
+      },
+      (actor, productId) => {
+        this.catalog.product(actor, productId);
+      },
+    );
     this.evidence = new WarrantyEvidence(
       database,
       platform,
@@ -1130,11 +1208,13 @@ export class Warranty {
       );
       return {
         shipmentId: c.shipment_id,
+        ownershipId: r.id,
         invoiceId: c.invoice_id,
         coverageEnd: this.coverageDate(r.coverage_end),
         shippedAt: this.coverageDate(
           this.fulfillment.shipment(actor, c.shipment_id).shipped_at,
         ),
+        returnStartedAt: this.coverageDate(r.completed_at),
         source: "replacement_inherited" as const,
         provisionalDays: null,
         policy: this.claimCoverageRecord(c).snapshot?.policy ?? null,
@@ -1151,8 +1231,10 @@ export class Warranty {
     if (locked)
       return {
         shipmentId: sale.shipment.id,
+        ownershipId: sale.shipment.id,
         invoiceId: sale.shipment.invoice_id!,
         ...locked,
+        returnStartedAt: locked.shippedAt,
         source: "shipment_policy" as const,
         provisionalDays: locked.policy.days,
         inheritedFromClaimId: null,
@@ -1173,9 +1255,11 @@ export class Warranty {
     );
     return {
       shipmentId: sale.shipment.id,
+      ownershipId: sale.shipment.id,
       invoiceId: sale.shipment.invoice_id!,
       coverageEnd: end.toISOString(),
       shippedAt,
+      returnStartedAt: shippedAt,
       source: "current_provisional_policy" as const,
       provisionalDays: days,
       policy,
@@ -1630,6 +1714,9 @@ export class Warranty {
       unitId: string;
       type: "warranty" | "return";
       policyRevision?: number;
+      registrationRevision?: number;
+      termsRevision?: number;
+      returnPolicyRevision?: number;
       issue: string;
       evidence: string;
     },
@@ -1716,6 +1803,19 @@ export class Warranty {
           actor.orgId,
           JSON.stringify(snapshot),
         );
+        const registrationContext: RegistrationContext = {
+          unitId: unit.id,
+          accountId: input.accountId,
+          serial: unit.serial!,
+          productId: unit.product_id,
+          shipmentId: entitlement.shipmentId,
+          ownershipId: entitlement.ownershipId,
+          shippedAt: entitlement.shippedAt,
+          returnStartedAt: entitlement.returnStartedAt,
+          inheritedFromClaimId: entitlement.inheritedFromClaimId,
+          inheritedCoverageEnd: coverageEnd,
+        };
+        this.registration.capture(actor, claimId, registrationContext, input);
         this.recordActivity(actor, claimId, "submitted", issue);
         return { id: claimId, coverageEnd, coveragePolicyApproved: false };
       },

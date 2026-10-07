@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { request } from "./api.ts";
+import { WarrantyAssessments } from "./warranty-registration.tsx";
+import type {
+  WarrantyRegistrationReview,
+  ClaimEligibilityReview,
+} from "../shared/warranty-registration.ts";
 import { SoldSerialSelect } from "./sold-serial-select.tsx";
 import type {
   ClaimCoverage,
@@ -15,11 +20,14 @@ export function ClaimSerialReview({
   onChange: (
     unit: SoldSerial | null,
     coverage: WarrantyCoverage | null,
+    registration: WarrantyRegistrationReview | null,
   ) => void;
 }) {
   const pending = useRef<AbortController | null>(null);
   const [unit, setUnit] = useState<SoldSerial | null>(null);
   const [coverage, setCoverage] = useState<WarrantyCoverage | null>(null);
+  const [assessment, setAssessment] =
+    useState<WarrantyRegistrationReview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(
@@ -34,21 +42,29 @@ export function ClaimSerialReview({
     pending.current = null;
     setUnit(selected);
     setCoverage(null);
+    setAssessment(null);
     setError("");
     setBusy(false);
-    onChange(selected, null);
+    onChange(selected, null, null);
     if (!selected) return;
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
     try {
-      const result = await request<WarrantyCoverage>(
-        `/api/warranty/sold-units/${encodeURIComponent(selected.id)}/coverage?accountId=${encodeURIComponent(selected.accountId)}`,
-        { signal: controller.signal },
-      );
+      const [result, registration] = await Promise.all([
+        request<WarrantyCoverage>(
+          `/api/warranty/sold-units/${encodeURIComponent(selected.id)}/coverage?accountId=${encodeURIComponent(selected.accountId)}`,
+          { signal: controller.signal },
+        ),
+        request<WarrantyRegistrationReview>(
+          `/api/warranty/sold-units/${encodeURIComponent(selected.id)}/registration?accountId=${encodeURIComponent(selected.accountId)}`,
+          { signal: controller.signal },
+        ),
+      ]);
       if (pending.current === controller) {
         setCoverage(result);
-        onChange(selected, result);
+        setAssessment(registration);
+        onChange(selected, result, registration);
       }
     } catch (e) {
       if (pending.current === controller && !controller.signal.aborted)
@@ -85,18 +101,27 @@ export function ClaimSerialReview({
         </p>
       )}
       {coverage && (
-        <p>
-          Calculated coverage end: {coverage.coverageEnd}.{" "}
-          {coverage.policy
-            ? `Policy version ${coverage.policy.revision}: ${coverage.policy.days} days after the original shipment.`
-            : "Original replacement end retained; historical policy version is unavailable."}{" "}
-          {coverage.source === "shipment_policy"
-            ? "Duration retained at shipment; later policy changes do not change these dates."
-            : coverage.source === "current_provisional_policy"
-              ? "Historical shipment policy is unavailable; these dates use the current provisional policy."
-              : "Replacement inherits the original coverage end."}{" "}
-          Eligibility requires review.
-        </p>
+        <details>
+          <summary>Historical shipment coverage calculation</summary>
+          <p>
+            Calculated coverage end: {coverage.coverageEnd}.{" "}
+            {coverage.policy
+              ? `Policy version ${coverage.policy.revision}: ${coverage.policy.days} days after the original shipment.`
+              : "Original replacement end retained; historical policy version is unavailable."}{" "}
+            {coverage.source === "shipment_policy"
+              ? "Duration retained at shipment; later policy changes do not change these dates."
+              : coverage.source === "current_provisional_policy"
+                ? "Historical shipment policy is unavailable; these dates use the current provisional policy."
+                : "Replacement inherits the original coverage end."}{" "}
+            Eligibility requires review.
+          </p>
+        </details>
+      )}
+      {assessment && (
+        <WarrantyAssessments
+          returnEligibility={assessment.returnEligibility}
+          warrantyEligibility={assessment.warrantyEligibility}
+        />
       )}
       {unit && (
         <button
@@ -112,10 +137,20 @@ export function ClaimSerialReview({
   );
 }
 
-export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
+export function RetainedClaimCoverage({
+  claimId,
+  refreshToken,
+}: {
+  claimId: string;
+  refreshToken?: unknown;
+}) {
   const pending = useRef<AbortController | null>(null);
+  const refreshSeen = useRef(refreshToken);
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<ClaimCoverage | null>(null);
+  const [eligibility, setEligibility] = useState<ClaimEligibilityReview | null>(
+    null,
+  );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const opener = useRef<HTMLButtonElement | null>(null);
@@ -130,20 +165,29 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
   useEffect(() => {
     if (open) heading.current?.focus();
   }, [open]);
-  const load = async () => {
-    if (pending.current) return;
+  const load = async (refresh = false) => {
+    if (refresh) pending.current?.abort();
+    else if (pending.current) return;
     setOpen(true);
-    setResult(null);
     setError("");
     setBusy(true);
     const controller = new AbortController();
     pending.current = controller;
     try {
-      const response = await request<ClaimCoverage>(
-        `/api/warranty/claims/${encodeURIComponent(claimId)}/coverage`,
-        { signal: controller.signal },
-      );
-      if (pending.current === controller) setResult(response);
+      const [response, assessment] = await Promise.all([
+        request<ClaimCoverage>(
+          `/api/warranty/claims/${encodeURIComponent(claimId)}/coverage`,
+          { signal: controller.signal },
+        ),
+        request<ClaimEligibilityReview>(
+          `/api/warranty/claims/${encodeURIComponent(claimId)}/assessment`,
+          { signal: controller.signal },
+        ),
+      ]);
+      if (pending.current === controller) {
+        setResult(response);
+        setEligibility(assessment);
+      }
     } catch (e) {
       if (pending.current === controller && !controller.signal.aborted)
         setError(
@@ -158,6 +202,11 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
       }
     }
   };
+  useEffect(() => {
+    if (Object.is(refreshSeen.current, refreshToken)) return;
+    refreshSeen.current = refreshToken;
+    if (open) void load(true);
+  }, [refreshToken]);
   return (
     <div>
       <button
@@ -202,8 +251,49 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
               </button>
             </>
           )}
+          {eligibility &&
+            (eligibility.snapshot ? (
+              <section aria-label="Submitted claim assessment">
+                <h4>Submitted assessment</h4>
+                <p>
+                  Return and equipment warranty assessment retained at claim
+                  submission ({eligibility.snapshot.capturedAt}).
+                </p>
+                <WarrantyAssessments
+                  returnEligibility={eligibility.snapshot.returnEligibility}
+                  warrantyEligibility={eligibility.snapshot.warrantyEligibility}
+                />
+              </section>
+            ) : (
+              <p>
+                Historical return and equipment warranty snapshot unavailable;
+                current policy does not establish the historical decision.
+              </p>
+            ))}
+          {eligibility && (
+            <section aria-label="Current claim assessment">
+              <h4>Current assessment</h4>
+              <p>
+                Recalculated at {eligibility.current.capturedAt}; current terms
+                and installation records may differ from the submitted snapshot.
+              </p>
+              <WarrantyAssessments
+                returnEligibility={eligibility.current.returnEligibility}
+                warrantyEligibility={eligibility.current.warrantyEligibility}
+              />
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => void load()}
+              >
+                Refresh current assessment
+              </button>
+            </section>
+          )}
           {result && (
-            <>
+            <details>
+              <summary>Historical retained shipment calculation</summary>
               <p>
                 Retained coverage end: {result.coverageEnd}. Eligibility
                 requires review.
@@ -244,7 +334,7 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
                   date remains retained.
                 </p>
               )}
-            </>
+            </details>
           )}
         </section>
       )}

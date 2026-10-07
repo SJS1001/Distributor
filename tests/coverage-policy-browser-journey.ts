@@ -37,19 +37,12 @@ async function buyerNav(page: Page, name: "Reports" | "Returns") {
   const target = page
     .getByRole("navigation", { name: "Workspace", exact: true })
     .getByRole("button", {
-      name: name === "Returns" ? "Account" : name,
+      name: name === "Returns" ? "Returns & warranty" : name,
       exact: true,
     });
   if (!(await target.isVisible()))
     await page.getByRole("button", { name: "Menu", exact: true }).click();
   await target.click();
-  if (name === "Returns")
-    await page
-      .getByRole("button", {
-        name: "Returns and warranty requests",
-        exact: true,
-      })
-      .click();
   await expect(page.locator("#workspace-title")).toHaveText(name);
 }
 test("browser: warranty policy review on a phone fences stale claim dates and retains snapshots across lost replies and later changes", async ({
@@ -78,7 +71,10 @@ test("browser: warranty policy review on a phone fences stale claim dates and re
     }
   });
   // Coverage policy now has its own administrator section in Returns.
-  await navigateWorkspace(page, "Returns", "Coverage policy");
+  await navigateWorkspace(page, "Returns", "Return & warranty policies");
+  await page
+    .getByText("Historical shipment coverage settings", { exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Configure warranty coverage", exact: true })
     .click();
@@ -105,7 +101,7 @@ test("browser: warranty policy review on a phone fences stale claim dates and re
   await page.unroute("**/api/commands/warranty.policy");
   await navigateWorkspace(page, "Returns", "Claims and returns");
   await page
-    .getByRole("button", { name: "Submit claim / return", exact: true })
+    .getByRole("button", { name: "Request return", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
     name: "Request return or warranty review",
