@@ -489,6 +489,59 @@ export class Procurement {
       },
     );
   }
+  renameSupplier(
+    actor: Actor,
+    key: string,
+    input: {
+      supplierId: string;
+      name: string;
+      expectedName: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "supplier.rename",
+      key,
+      input,
+      () => {
+        actor = this.authorize(actor, ["commercial"]);
+        this.supplierChoice(actor, input.supplierId);
+      },
+      () => {
+        const name = text(input.name, "supplier"),
+          reason = text(input.reason, "Reason", 1000),
+          before = this.supplierChoice(actor, input.supplierId);
+        check(
+          before.name === input.expectedName,
+          "REVISION",
+          "Supplier changed; reload before renaming.",
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM procurement_suppliers WHERE org_id=? AND name=? AND id<>?",
+            actor.orgId,
+            name,
+            input.supplierId,
+          ),
+          "NAME_TAKEN",
+          "Another supplier already uses this name.",
+        );
+        this.store.run(
+          "UPDATE procurement_suppliers SET name=? WHERE org_id=? AND id=?",
+          name,
+          actor.orgId,
+          input.supplierId,
+        );
+        this.platform.audit(actor, "supplier.renamed", input.supplierId, {
+          before: before.name,
+          after: name,
+          reason,
+        });
+        return { id: input.supplierId, name };
+      },
+    );
+  }
   create(
     actor: Actor,
     key: string,

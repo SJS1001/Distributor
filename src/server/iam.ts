@@ -1159,6 +1159,50 @@ export class Identity {
       },
     );
   }
+  // Corrects a customer account's display name; issued documents keep their copies.
+  renameCustomer(
+    actor: Actor,
+    key: string,
+    input: {
+      accountId: string;
+      name: string;
+      expectedName: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "account.rename",
+      key,
+      input,
+      () => {
+        actor = this.customerActor(actor, ["commercial"]);
+        this.customer(actor, text(input.accountId, "Account ID", 128));
+      },
+      () => {
+        const name = text(input.name, "account name"),
+          reason = text(input.reason, "Reason", 1000),
+          before = this.customer(actor, input.accountId);
+        check(
+          before.name === input.expectedName,
+          "REVISION",
+          "Account changed; reload before renaming.",
+        );
+        this.store.run(
+          "UPDATE iam_accounts SET name=? WHERE org_id=? AND id=?",
+          name,
+          actor.orgId,
+          input.accountId,
+        );
+        this.platform.audit(actor, "account.renamed", input.accountId, {
+          before: before.name,
+          after: name,
+          reason,
+        });
+        return { id: input.accountId, name };
+      },
+    );
+  }
   private insertCustomer(
     actor: Actor,
     input: { name: string; tier: string; creditLimit: number },

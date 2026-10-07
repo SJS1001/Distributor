@@ -1632,6 +1632,66 @@ export class Catalog {
       value: reviewed.value,
     };
   }
+  // Corrects a product's display name or SKU; earlier documents keep their copies.
+  rename(
+    actor: Actor,
+    key: string,
+    input: {
+      productId: string;
+      sku: string;
+      name: string;
+      expectedSku: string;
+      expectedName: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "product.rename",
+      key,
+      input,
+      () => {
+        actor = this.catalogActor(actor, ["commercial"]);
+        this.product(actor, text(input.productId, "Product ID", 128));
+      },
+      () => {
+        const sku = text(input.sku, "SKU"),
+          name = text(input.name, "product name"),
+          reason = text(input.reason, "Reason", 1000),
+          before = this.product(actor, input.productId);
+        check(
+          before.sku === input.expectedSku &&
+            before.name === input.expectedName,
+          "REVISION",
+          "Product changed; reload before renaming.",
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM catalog_products WHERE org_id=? AND sku=? AND id<>?",
+            actor.orgId,
+            sku,
+            input.productId,
+          ),
+          "SKU_TAKEN",
+          "Another product already uses this SKU.",
+        );
+        this.store.run(
+          "UPDATE catalog_products SET sku=?,name=? WHERE org_id=? AND id=?",
+          sku,
+          name,
+          actor.orgId,
+          input.productId,
+        );
+        const after = { sku, name };
+        this.platform.audit(actor, "product.renamed", input.productId, {
+          before: { sku: before.sku, name: before.name },
+          after,
+          reason,
+        });
+        return { id: input.productId, ...after };
+      },
+    );
+  }
   create(
     actor: Actor,
     key: string,

@@ -716,6 +716,15 @@ export function commands(
       schema: obj({ name: str, tier: str, creditLimit: num }),
       run: (a, k, p) => app.identity.createCustomer(a, k, p),
     },
+    "account.rename": {
+      schema: obj({
+        accountId: str,
+        name: str,
+        expectedName: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.identity.renameCustomer(a, k, p),
+    },
     "account.contact.save": {
       schema: obj(
         {
@@ -963,6 +972,15 @@ export function commands(
       schema: obj({ name: str }),
       run: (a, k, p) => app.inventory.createWarehouse(a, k, p),
     },
+    "warehouse.rename": {
+      schema: obj({
+        warehouseId: str,
+        name: str,
+        expectedName: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.inventory.renameWarehouse(a, k, p),
+    },
     "product.create": {
       schema: obj({
         sku: str,
@@ -972,6 +990,17 @@ export function commands(
         taxBasisPoints: num,
       }),
       run: (a, k, p) => app.catalog.create(a, k, p),
+    },
+    "product.rename": {
+      schema: obj({
+        productId: str,
+        sku: str,
+        name: str,
+        expectedSku: str,
+        expectedName: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.catalog.rename(a, k, p),
     },
     "product.retire": {
       schema: obj({
@@ -996,6 +1025,15 @@ export function commands(
     "supplier.create": {
       schema: obj({ name: str }),
       run: (a, k, p) => app.procurement.supplier(a, k, p),
+    },
+    "supplier.rename": {
+      schema: obj({
+        supplierId: str,
+        name: str,
+        expectedName: str,
+        reason: str,
+      }),
+      run: (a, k, p) => app.procurement.renameSupplier(a, k, p),
     },
     "supplier.availability": {
       schema: obj({

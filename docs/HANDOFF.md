@@ -1,3 +1,27 @@
+## Full pilot data, home carousel and demonstration notice — 2026-10-06
+
+Changed:
+
+- **Full pilot seed:** `seedFullPilot` adds about eight weeks of fictional, dated activity on an offline copy. It includes 10 trade applications in every review state, seven staff and 16 more products. See docs/GREE-PILOT-SAMPLE.md.
+- **Rename commands:** new audited admin/commercial commands `product.rename`, `account.rename`, `warehouse.rename` and `supplier.rename`. They have server and HTTP support only; no staff UI yet.
+- **Public site:**
+  - "Customer sign in" now sits to the right of "Administration".
+  - The hero's second "Customer sign in" link is removed.
+  - The featured system is a carousel: it rotates every 5 s, pauses on hover or focus, has dot controls, and stays still under reduced motion.
+- **Demonstration notice:** one line in the public footer and at the bottom of the workspace.
+
+Verification:
+
+- The seed test (`tests/pilot-full-seed.test.ts`) passes.
+- An offline rehearsal on a restored copy of live data passed. Integrity and foreign-key checks pass, 900 prior rows are unchanged, and only the expected label, policy, stock and cart rows changed.
+- A private local screenshot pass had 0 page errors and found no "sample/fictional" wording on the staff pages checked.
+
+Still open:
+
+- The info-bubble guidance pass.
+- The "Pilot workspace" and other pilot wording in the interface.
+- A rename UI.
+
 ## Shop cart, staff add-ons and dialog close controls — 2026-10-06
 
 Owner requests, 2026-10-06:

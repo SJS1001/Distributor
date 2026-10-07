@@ -2360,3 +2360,15 @@ nav[aria-label="Catalog pages"] button:disabled {
 .modal-close:focus-visible {
   background: #e7efed;
 }
+
+.demo-notice {
+  margin: 40px 0 0;
+  font-size: 12px;
+  color: #6a7e93;
+  text-align: center;
+}
+.public-footer .demo-notice {
+  display: inline-block;
+  margin: 6px 0 0;
+  text-align: inherit;
+}

@@ -8318,6 +8318,9 @@ function App() {
             </PageSection>
           </PageSections>
         )}
+        <p className="demo-notice">
+          Demonstration site — prices and stock are illustrative.
+        </p>
       </main>
       {purchaseEntryOpen && page === "Purchasing" && can("commercial") && (
         <PurchaseEntry

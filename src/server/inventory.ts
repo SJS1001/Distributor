@@ -331,6 +331,65 @@ export class Inventory {
       },
     );
   }
+  renameWarehouse(
+    actor: Actor,
+    key: string,
+    input: {
+      warehouseId: string;
+      name: string;
+      expectedName: string;
+      reason: string;
+    },
+  ) {
+    return this.platform.command(
+      actor,
+      "warehouse.rename",
+      key,
+      input,
+      () => {
+        actor = this.custodyActor(actor, []);
+        this.configurationWarehouse(
+          actor.orgId,
+          text(input.warehouseId, "Warehouse ID", 128),
+        );
+      },
+      () => {
+        const name = text(input.name, "warehouse"),
+          reason = text(input.reason, "Reason", 1000),
+          before = this.configurationWarehouse(
+            actor.orgId,
+            input.warehouseId,
+          ) as { name: string };
+        check(
+          before.name === input.expectedName,
+          "REVISION",
+          "Warehouse changed; reload before renaming.",
+        );
+        check(
+          !this.store.get(
+            "SELECT id FROM inventory_warehouses WHERE org_id=? AND name=? AND id<>?",
+            actor.orgId,
+            name,
+            input.warehouseId,
+          ),
+          "NAME_TAKEN",
+          "Another warehouse already uses this name.",
+        );
+        this.store.run(
+          "UPDATE inventory_warehouses SET name=? WHERE org_id=? AND id=?",
+          name,
+          actor.orgId,
+          input.warehouseId,
+        );
+        this.platform.audit(actor, "warehouse.renamed", input.warehouseId, {
+          before: before.name,
+          after: name,
+          reason,
+        });
+        return { id: input.warehouseId, name };
+      },
+    );
+  }
   unit(actor: Actor, unitId: string) {
     actor = this.custodyReader(actor);
     const row = this.store.get<Unit>(

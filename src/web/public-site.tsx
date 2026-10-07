@@ -133,10 +133,10 @@ export function PublicSite({
             </>
           ) : (
             <>
+              <a href="#admin-sign-in">Administration</a>
               <a href="#customer-sign-in">
                 Customer sign in <span aria-hidden="true">↗</span>
               </a>
-              <a href="#admin-sign-in">Administration</a>
             </>
           )}
         </nav>
@@ -185,39 +185,13 @@ export function PublicSite({
                   <a href="#products" className="public-primary">
                     Explore products <span aria-hidden="true">→</span>
                   </a>
-                  <a
-                    href={signedIn ? accountHref : "#customer-sign-in"}
-                    className="public-apply-link"
-                  >
-                    {signedIn ? accountLabel : "Customer sign in"}{" "}
-                    <span aria-hidden="true">↗</span>
-                  </a>
                 </div>
                 <div className="public-hero-assurance">
                   <span>Residential & commercial</span>
                   <span>Manufacturer documentation</span>
                 </div>
               </div>
-              <a
-                className="public-equipment-feature"
-                href={`#product=${encodeURIComponent(preview.products[0]?.id || "")}`}
-              >
-                <div className="public-feature-brand">
-                  GREE <span>HEATING & COOLING</span>
-                </div>
-                <img
-                  src={preview.products[0]?.imageUrl}
-                  alt={preview.products[0]?.title || "GREE heat pump system"}
-                  fetchPriority="high"
-                />
-                <div className="public-feature-caption">
-                  <div>
-                    <small>FEATURED SYSTEM</small>
-                    <strong>{preview.products[0]?.title}</strong>
-                  </div>
-                  <span aria-hidden="true">↗</span>
-                </div>
-              </a>
+              <FeaturedCarousel />
             </section>
             <div className="public-equipment-strip">
               <span>DUCTLESS MINI-SPLITS</span>
@@ -515,6 +489,10 @@ export function PublicSite({
           Canadian HVAC trade
           <br />
           Equipment information · Business purchasing by approved account
+          <br />
+          <small className="demo-notice">
+            Demonstration site — prices and stock are illustrative.
+          </small>
         </p>
         <a href={signedIn ? accountHref : "#admin-sign-in"}>
           {signedIn ? accountLabel : "Administration entrance"}{" "}
@@ -795,5 +773,78 @@ function ActivationForm({ token }: { token: string }) {
         {busy ? "Activating…" : "Activate account"}
       </button>
     </form>
+  );
+}
+
+const featured = preview.products.filter((p) => p.imageUrl);
+
+// Rotates the featured systems; pauses while hovered or focused and stays
+// still when the visitor prefers reduced motion.
+function FeaturedCarousel() {
+  const [index, setIndex] = useState(0),
+    [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (
+      paused ||
+      featured.length < 2 ||
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const timer = window.setInterval(
+      () => setIndex((i) => (i + 1) % featured.length),
+      5000,
+    );
+    return () => window.clearInterval(timer);
+  }, [paused]);
+  const product = featured[index];
+  if (!product) return null;
+  return (
+    <div
+      className="public-feature-carousel"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Featured systems"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
+      <a
+        key={product.id}
+        className="public-equipment-feature"
+        href={`#product=${encodeURIComponent(product.id)}`}
+        aria-roledescription="slide"
+        aria-label={`${index + 1} of ${featured.length}: ${product.title}`}
+      >
+        <div className="public-feature-brand">
+          GREE <span>HEATING & COOLING</span>
+        </div>
+        <img
+          src={product.imageUrl}
+          alt={product.title}
+          fetchPriority={index === 0 ? "high" : "auto"}
+        />
+        <div className="public-feature-caption">
+          <div>
+            <small>FEATURED SYSTEM</small>
+            <strong>{product.title}</strong>
+          </div>
+          <span aria-hidden="true">↗</span>
+        </div>
+      </a>
+      {featured.length > 1 && (
+        <div className="public-feature-dots">
+          {featured.map((p, i) => (
+            <button
+              key={p.id}
+              type="button"
+              aria-label={`Show ${p.title}`}
+              aria-current={i === index ? "true" : undefined}
+              onClick={() => setIndex(i)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

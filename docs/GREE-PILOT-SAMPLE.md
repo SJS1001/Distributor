@@ -33,3 +33,30 @@ Before activation, the application writer was stopped, an encrypted backup was c
 The focused local integration test passed (1/1): stock, incoming quarantine, buyer account isolation, tier pricing, buyer cart/quote/order acceptance after password change, and reseed refusal. TypeScript checking passed. Live HTTPS checks confirmed the homepage, CA health, distributor access to all 11 products, the buyer's required password change, unauthenticated refusal and logout invalidation. The live check did not place extra orders or change the buyer password.
 
 Historical verification failures are retained in ignored local evidence: an initial test used the wrong stock-state field; strict candidate comparison initially rejected the two legitimate sequence counter changes. A full comparison then established that only those counters changed among preexisting rows, with ledger validation added. A scanner browser replay was blocked before running tests by an occupied auxiliary port 3200; no fresh scanner browser pass or physical-device qualification is claimed. No product gate, full-suite acceptance or live provider qualification follows from this seed.
+
+## Full pilot activity seed — 2026-10-06
+
+The owner asked for the full demonstration data and for the pilot to look like a working distributor. `seedFullPilot` in `src/demo/pilot-full-seed.ts` runs after `seedGreePilot` on an offline copy. It uses native commands only and refuses to run twice.
+
+What it adds:
+
+- **Catalog:** 16 more generic HVAC products (accessories, controls and three unbranded serialized units). It also adds tier prices, MSRPs and reviewed unit costs for all 27 products, 80 suggested add-on pairings, and one product marked out of stock with an expected date.
+- **Trade applications:** 10 contractor applications. Seven were approved, and six of those activated a buyer login. One approved invitation awaits activation, two applications are pending and one was rejected. Approved applicants have contacts, purchasing access, pricing or billing terms where relevant. Two require order review and one is on credit hold.
+- **Staff:** seven fictional staff users (warehouse, sales, finance, warranty, support and an onboarding administrator).
+- **Activity:** about eight weeks of dated history, run under a seed-only virtual clock (`src/demo/virtual-clock.ts`):
+  - 14 purchase orders with 49 receipts, one partly in quarantine, plus one supplier return;
+  - 24 sales orders, 20 shipments and deliveries, and 13 manual payments;
+  - 2 transfers and 2 stock counts;
+  - 4 warranty claims at different stages;
+  - 2 orders awaiting review, saved carts and record notes.
+- **Labels:** the "SAMPLE" and "FICTIONAL SAMPLE" labels are retired through the new audited `product.rename`, `account.rename`, `warehouse.rename` and `supplier.rename` commands. Earlier invoices keep their original copies.
+
+Boundaries:
+
+- All businesses, people, prices, costs, stock, serials and payments are fictional. The site footer and workspace carry "Demonstration site — prices and stock are illustrative".
+- Emails use the reserved `.example` domain, and telephone numbers use the fictional 555-01xx range.
+- Registration numbers deliberately fail the CRA check digit, so they match no real business.
+- Gree entries are family-level names, not model numbers.
+- No provider transaction, message or carrier booking is made. Deliveries name the company truck.
+- Staff, buyer and onboarding-administrator passwords are random and never recorded. An administrator must reset a password before anyone can use one of those logins.
+- The onboarding administrator (Elena Vasquez) exists because application decisions require an administrator to re-enter a password. It remains an active administrator account until the owner deactivates it from Administration.
