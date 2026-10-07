@@ -1062,3 +1062,16 @@
     white-space: nowrap;
   }
 }
+
+/* The header search dropdown is narrower than the page, so it always stacks. */
+.storefront.workspace-search-panel {
+  padding: 0;
+}
+.storefront.workspace-search-panel .sf-search {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px 12px;
+  padding: 18px;
+}
+.storefront.workspace-search-panel .sf-search > label:first-child {
+  grid-column: 1 / -1;
+}

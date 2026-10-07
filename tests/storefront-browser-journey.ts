@@ -23,6 +23,159 @@ async function buyerNavigate(page: Page, name: string) {
     .click();
 }
 
+for (const width of [1440, 390, 320]) {
+  test(`Shop compact icon toolbar and search dismissal at ${width}px`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 844 });
+    await login(page, true);
+    const actions = page.locator(".workspace-actions");
+    const refresh = actions.getByRole("button", {
+      name: "Refresh",
+      exact: true,
+    });
+    const cart = actions.getByRole("button", {
+      name: "View cart (0 items)",
+      exact: true,
+    });
+    const search = actions.getByRole("button", {
+      name: "Search products",
+      exact: true,
+    });
+    const panel = page.getByRole("region", {
+      name: "Product search",
+      includeHidden: true,
+    });
+    const input = page.getByRole("searchbox", { name: "Search products" });
+    await expect(
+      page.getByRole("button", { name: "Refresh", exact: true }),
+    ).toHaveCount(1);
+    await expect(page.locator(".page-description")).toContainText(
+      "All prices in CAD.",
+    );
+    for (const button of [search, refresh, cart]) {
+      await expect(button).toBeVisible();
+      await expect(button.locator("svg")).toBeVisible();
+      // Accessible labels identify the icons without visible action text.
+      await expect(button).not.toContainText(
+        /Refresh|Resume a saved cart|View cart|Search products/,
+      );
+    }
+    const boxes = await Promise.all(
+      [search, refresh, cart].map((button) => button.boundingBox()),
+    );
+    for (let index = 1; index < boxes.length; index++) {
+      const previous = boxes[index - 1]!;
+      const current = boxes[index]!;
+      expect(Math.abs(current.y - previous.y)).toBeLessThanOrEqual(2);
+      expect(current.x - (previous.x + previous.width)).toBeGreaterThanOrEqual(
+        0,
+      );
+      expect(current.x - (previous.x + previous.width)).toBeLessThanOrEqual(16);
+    }
+    await expect(search).toHaveAttribute(
+      "aria-controls",
+      (await panel.getAttribute("id"))!,
+    );
+    await expect(search).toHaveAttribute("aria-expanded", "false");
+    await expect(panel).not.toBeVisible();
+    await search.click();
+    await expect(search).toHaveAttribute("aria-expanded", "true");
+    await expect(panel).toBeVisible();
+    await expect(input).toBeFocused();
+    await input.fill("PART-2");
+    await input.press("Enter");
+    const catalog = page.getByRole("region", { name: "Product catalog" });
+    await expect(catalog).toContainText("1 matching product loaded");
+    await expect(
+      catalog.getByRole("button", {
+        name: "View Synthetic replacement part",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      catalog.getByRole("button", {
+        name: "View Synthetic equipment",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(input).toBeFocused();
+    await page
+      .getByRole("combobox", { name: "Category", exact: true })
+      .selectOption("serialized");
+    await expect(catalog).toContainText("No matching products.");
+    await expect(input).toBeFocused();
+    await input.fill("");
+    await input.press("Enter");
+    await expect(
+      catalog.getByRole("button", {
+        name: "View Synthetic equipment",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      catalog.getByRole("button", {
+        name: "View Synthetic replacement part",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await search.click();
+    await expect(search).toHaveAttribute("aria-expanded", "false");
+    await expect(panel).not.toBeVisible();
+    await search.click();
+    await expect(input).toBeFocused();
+    await expect(
+      page.getByRole("combobox", { name: "Category", exact: true }),
+    ).toHaveValue("serialized");
+    await input.press("Escape");
+    await expect(panel).not.toBeVisible();
+    await expect(search).toBeFocused();
+    await search.click();
+    await expect(input).toBeFocused();
+    await catalog.getByRole("heading", { name: "Browse your catalog" }).click();
+    await expect(panel).not.toBeVisible();
+    await search.click();
+    await expect(input).toBeFocused();
+    await refresh.focus();
+    await expect(panel).not.toBeVisible();
+    await expect(refresh).toBeFocused();
+    await refresh.click();
+    await expect(refresh).toBeEnabled();
+    await expect(
+      catalog.getByRole("button", {
+        name: "View Synthetic equipment",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Quantity of Synthetic equipment", { exact: true })
+      .fill("2");
+    await page
+      .getByRole("button", {
+        name: "Add Synthetic equipment to cart",
+        exact: true,
+      })
+      .click();
+    await actions
+      .getByRole("button", { name: "View cart (2 items)", exact: true })
+      .click();
+    await expect(
+      page.getByLabel("Quantity of Synthetic equipment in cart"),
+    ).toHaveValue("2");
+    await expect(
+      actions.getByRole("button", { name: "Close cart", exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    expect(errors).toEqual([]);
+  });
+}
+
 test("buyer mobile storefront, native approval, withdrawal and fresh quote resubmission", async ({
   page,
   browser,
@@ -45,9 +198,14 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   await expect(
     page.getByRole("button", { name: "Next featured product" }),
   ).toBeDisabled();
-  await page.getByLabel("Search products").fill("EQ-1");
-  await page.getByLabel("Search products").press("Enter");
-  await expect(page.getByLabel("Search products")).toBeFocused();
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
+  await page.getByRole("searchbox", { name: "Search products" }).fill("EQ-1");
+  await page.getByRole("searchbox", { name: "Search products" }).press("Enter");
+  await expect(
+    page.getByRole("searchbox", { name: "Search products" }),
+  ).toBeFocused();
   // Product cards add a chosen quantity without leaving the catalog.
   await page
     .getByLabel("Quantity of Synthetic equipment", { exact: true })

@@ -1,10 +1,12 @@
 import { ReferenceMatches } from "./gree-reference-loader.tsx";
 import { InfoBubble } from "./info-bubble.tsx";
+import { createPortal } from "react-dom";
+import { ControlIcon } from "./control-icon.tsx";
 import type { ReferenceRequest } from "./reference-context.ts";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import { AvailabilityBadge } from "./product-availability.tsx";
 import { ManufacturerCollection } from "./manufacturer-collection.tsx";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { PageSection, PageSections } from "./workspace.tsx";
@@ -475,7 +477,6 @@ function ProductResults({
   search,
   category,
   add,
-  filters,
   clearFilters,
   productId,
   selectProduct,
@@ -484,7 +485,6 @@ function ProductResults({
   search: string;
   category: string;
   add: (product: CustomerProduct, quantity: number) => void;
-  filters: React.ReactNode;
   clearFilters: () => void;
   productId?: string;
   selectProduct: (productId?: string) => void;
@@ -542,7 +542,6 @@ function ProductResults({
           {rows.error}
         </p>
       )}
-      {filters}
       {!search && !category && featured && (
         <section
           className="sf-showcase"
@@ -688,21 +687,17 @@ function FeaturedImage({ product }: { product: CustomerProduct }) {
 export function Storefront({
   reference,
   accountId,
-  accountName,
   cartScope,
   warehouses,
   checkout,
   productId,
   selectProduct,
-  resumeCart,
   refreshKey,
 }: {
   refreshKey?: string;
   productId?: string;
   selectProduct: (productId?: string) => void;
-  resumeCart: () => void;
   accountId: string;
-  accountName: string;
   reference?: ReferenceRequest;
   cartScope: string;
   warehouses: ShopWarehouse[];
@@ -732,17 +727,47 @@ export function Storefront({
   }, [productId]);
   const [search, setSearch] = useState(""),
     [category, setCategory] = useState(""),
-    [query, setQuery] = useState("");
+    [query, setQuery] = useState(""),
+    [searchOpen, setSearchOpen] = useState(false);
+  const [cartSlot, setCartSlot] = useState<HTMLElement | null>(null),
+    [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setCartSlot(document.getElementById("workspace-cart-slot"));
+    setSearchSlot(document.getElementById("workspace-search-slot"));
+  }, []);
+  const searchId = useId(),
+    searchWrapper = useRef<HTMLDivElement>(null),
+    searchTrigger = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null),
     restoreSearchFocus = useRef(false);
   useEffect(() => {
-    // A new query remounts usePages to discard the old cursor and cancel its request.
-    // Return focus to the replacement search field after that remount.
     if (restoreSearchFocus.current) {
       searchInput.current?.focus();
       restoreSearchFocus.current = false;
     }
   }, [query, category]);
+  useEffect(() => {
+    if (!searchOpen) return;
+    searchInput.current?.focus();
+    const outside = (event: Event) => {
+      if (!searchWrapper.current?.contains(event.target as Node))
+        setSearchOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setSearchOpen(false);
+      searchTrigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("focusin", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [searchOpen]);
   const filters = (
     <form
       className="sf-search"
@@ -811,40 +836,73 @@ export function Storefront({
     }),
     [addedProductId, added],
   );
+  const searchDropdown = (
+    <div ref={searchWrapper}>
+      <button
+        ref={searchTrigger}
+        type="button"
+        className="secondary icon-button search-icon-button"
+        aria-label="Search products"
+        title="Search products"
+        aria-expanded={searchOpen}
+        aria-controls={searchId}
+        onMouseDown={(event) => {
+          // Safari can move focus to the page before click, dismissing and then
+          // reopening this disclosure. Keep the pointer transition inside it.
+          event.preventDefault();
+          event.currentTarget.focus();
+        }}
+        onClick={() => setSearchOpen(!searchOpen)}
+      >
+        <ControlIcon name="search" />
+        {(query || category) && (
+          <span className="search-active-dot" aria-hidden="true" />
+        )}
+      </button>
+      <div
+        id={searchId}
+        className="storefront workspace-search-panel"
+        role="region"
+        aria-label="Product search"
+        hidden={!searchOpen}
+      >
+        {filters}
+      </div>
+    </div>
+  );
+  const cartLabel = cartOpen
+    ? "Close cart"
+    : `View cart (${units} ${units === 1 ? "item" : "items"})`;
+  const cartButton = (
+    <button
+      type="button"
+      className="secondary icon-button cart-icon-button"
+      aria-label={cartLabel}
+      title={cartLabel}
+      aria-expanded={cartOpen}
+      onClick={() => {
+        setCartOpen(!cartOpen);
+        setSearchOpen(false);
+        setAdded("");
+      }}
+    >
+      <ControlIcon name="cart" />
+      <span className="cart-count" aria-hidden="true">
+        {units > 99 ? "99+" : units}
+      </span>
+    </button>
+  );
   return (
     <CartFeedbackContext.Provider value={cartFeedback}>
+      {cartSlot && createPortal(cartButton, cartSlot)}
+      {searchSlot && createPortal(searchDropdown, searchSlot)}
       <div className="storefront">
         <div className="sf-cart-entry">
-          <div className="sf-shop-context">
-            {!productId && !cartOpen && (
-              <p className="sf-account-context">
-                Curated for <strong>{accountName}</strong>
-                <span>Approved products & account pricing</span>
-              </p>
-            )}
-            <p className="sf-cart-status" role="status">
-              {added}
-            </p>
-          </div>
-          <div className="sf-cart-actions">
-            {!productId && !cartOpen && (
-              <button className="sf-back" onClick={resumeCart}>
-                Resume a saved cart
-              </button>
-            )}
-            <button
-              className="sf-primary"
-              aria-expanded={cartOpen}
-              onClick={() => {
-                setCartOpen(!cartOpen);
-                setAdded("");
-              }}
-            >
-              {cartOpen
-                ? "Close cart"
-                : `View cart (${units} ${units === 1 ? "item" : "items"})`}
-            </button>
-          </div>
+          <p className="sf-cart-status" role="status">
+            {added}
+          </p>
+          {!cartSlot && <div className="sf-cart-actions">{cartButton}</div>}
+          {!searchSlot && searchDropdown}
         </div>
         {cartOpen && (
           <ShopCart
@@ -889,8 +947,8 @@ export function Storefront({
             search={query}
             category={category}
             add={add}
-            filters={filters}
             clearFilters={() => {
+              setSearchOpen(true);
               restoreSearchFocus.current = true;
               setSearch("");
               setQuery("");

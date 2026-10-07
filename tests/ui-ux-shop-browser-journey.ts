@@ -16,7 +16,12 @@ test("phone shop preserves local feedback, catalog recovery and cart review prio
     .fill("long-test-only-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.locator("#workspace-title")).toHaveText("Shop");
-  await expect(page.getByLabel("Search products")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
+  await expect(
+    page.getByRole("searchbox", { name: "Search products" }),
+  ).toBeVisible();
   expect(
     await page
       .locator(".sf-search")
@@ -27,12 +32,16 @@ test("phone shop preserves local feedback, catalog recovery and cart review prio
       .evaluate((el) => el.getBoundingClientRect().top),
   );
   await page
-    .getByLabel("Search products")
+    .getByRole("searchbox", { name: "Search products" })
     .fill("definitely-no-such-synthetic-product");
-  await page.getByLabel("Search products").press("Enter");
+  await page.getByRole("searchbox", { name: "Search products" }).press("Enter");
   await page.getByRole("button", { name: "Clear search and filters" }).click();
-  await expect(page.getByLabel("Search products")).toHaveValue("");
-  await expect(page.getByLabel("Search products")).toBeFocused();
+  await expect(
+    page.getByRole("searchbox", { name: "Search products" }),
+  ).toHaveValue("");
+  await expect(
+    page.getByRole("searchbox", { name: "Search products" }),
+  ).toBeFocused();
   await page
     .getByRole("button", { name: "View Synthetic equipment", exact: true })
     .click();

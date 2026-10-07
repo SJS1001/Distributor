@@ -234,9 +234,14 @@ test("explicit library image draft stays private until published and buyer loads
     );
     await login(buyer, "catalog-buyer@example.test");
     await buyer
-      .getByLabel("Search products")
+      .getByRole("button", { name: "Search products", exact: true })
+      .click();
+    await buyer
+      .getByRole("searchbox", { name: "Search products" })
       .fill(`FLOW-LIBRARY-${browserName}`);
-    await buyer.getByLabel("Search products").press("Enter");
+    await buyer
+      .getByRole("searchbox", { name: "Search products" })
+      .press("Enter");
     await expect(
       buyer.getByRole("button", {
         name: `View Product FLOW-LIBRARY-${browserName}`,
@@ -268,9 +273,14 @@ test("explicit library image draft stays private until published and buyer loads
     await expect(editor).toContainText("published");
     await buyer.reload();
     await buyer
-      .getByLabel("Search products")
+      .getByRole("button", { name: "Search products", exact: true })
+      .click();
+    await buyer
+      .getByRole("searchbox", { name: "Search products" })
       .fill(`FLOW-LIBRARY-${browserName}`);
-    await buyer.getByLabel("Search products").press("Enter");
+    await buyer
+      .getByRole("searchbox", { name: "Search products" })
+      .press("Enter");
     const image = buyerCard.locator(`img[src="${imageUrl}"]`);
     await expect(image).toBeVisible();
     await expect

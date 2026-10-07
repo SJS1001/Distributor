@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 async function login(page: Page) {
   await page.goto("/#customer-sign-in");
   await page
@@ -29,6 +30,9 @@ test("whole-catalog categories, scoped product routes and saved cart entry", asy
   await expect(
     page.getByRole("button", { name: "View Synthetic equipment", exact: true }),
   ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
   await page.getByLabel("Category", { exact: true }).selectOption("serialized");
   const productButton = page.getByRole("button", {
     name: "View Synthetic equipment",
@@ -40,6 +44,9 @@ test("whole-catalog categories, scoped product routes and saved cart entry", asy
   );
   releaseSecurity();
   await securityResponse;
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
   await expect(page.getByLabel("Category", { exact: true })).toHaveValue(
     "serialized",
   );
@@ -62,6 +69,9 @@ test("whole-catalog categories, scoped product routes and saved cart entry", asy
   await expect(page.getByText("CA$81.99", { exact: true })).toBeVisible();
   await breadcrumb.getByRole("button", { name: "Shop", exact: true }).click();
   await expect(page).toHaveURL(/#page=Shop$/);
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
   await page.getByLabel("Category", { exact: true }).selectOption("bulk");
   await expect(
     page.getByRole("button", { name: "Load more products", exact: true }),
@@ -75,9 +85,7 @@ test("whole-catalog categories, scoped product routes and saved cart entry", asy
   await expect(
     page.getByRole("button", { name: "View Synthetic equipment", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Resume a saved cart", exact: true })
-    .click();
+  await navigateWorkspace(page, "Orders", "Orders");
   await expect(page).toHaveURL(/#page=Orders&section=orders-queue$/);
   await expect(
     page.getByRole("heading", { name: "Saved carts", exact: true }),
@@ -95,7 +103,12 @@ test("whole-catalog categories, scoped product routes and saved cart entry", asy
   await page
     .getByRole("button", { name: "Return to Shop", exact: true })
     .click();
-  await expect(page.getByLabel("Search products")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Search products", exact: true })
+    .click();
+  await expect(
+    page.getByRole("searchbox", { name: "Search products" }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

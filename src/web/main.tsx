@@ -4,6 +4,7 @@ import { AgingInvestigation } from "./aging-investigation.tsx";
 import type { AgingFilter } from "./aging-investigation-contract.ts";
 import { ReadableTime, RecordIdentifier } from "./record-display.tsx";
 import { InfoBubble } from "./info-bubble.tsx";
+import { ControlIcon } from "./control-icon.tsx";
 import { WorkspaceBreadcrumbs } from "./workspace-breadcrumbs.tsx";
 import { RecordNotes } from "./record-notes.tsx";
 import { PriceOverridesEditor } from "./price-overrides.tsx";
@@ -2832,17 +2833,37 @@ function App() {
         signOut={signOut}
       />
       <main id="workspace-content" className="workspace-main" tabIndex={-1}>
-        <WorkspaceBreadcrumbs
-          route={route}
-          pages={pages}
-          customer={!staff}
-          customerName={
-            route.customerId
-              ? data.accounts.find((a: Item) => a.id === route.customerId)?.name
-              : undefined
-          }
-          onNavigate={navigate}
-        />
+        <div className="workspace-topbar">
+          <WorkspaceBreadcrumbs
+            route={route}
+            pages={pages}
+            customer={!staff}
+            customerName={
+              route.customerId
+                ? data.accounts.find((a: Item) => a.id === route.customerId)
+                    ?.name
+                : undefined
+            }
+            onNavigate={navigate}
+          />
+          <div className="workspace-actions">
+            <div id="workspace-search-slot" className="workspace-search-slot" />
+            <button
+              className="secondary icon-button"
+              aria-label="Refresh"
+              title="Refresh"
+              disabled={busy}
+              onClick={() => {
+                void run(refresh, false, true, "Workspace refreshed.").catch(
+                  () => {},
+                );
+              }}
+            >
+              <ControlIcon name="refresh" />
+            </button>
+            <div id="workspace-cart-slot" className="workspace-cart-slot" />
+          </div>
+        </div>
         <header className="workspace-header">
           <div>
             <p className="eyebrow">
@@ -2866,41 +2887,20 @@ function App() {
                   : !staff && page === "Overview"
                     ? "Your sales, purchases, spending and pricing history."
                     : pageDescriptions[page]}
+              {!staff && ` All prices in ${currency}.`}
             </p>
           </div>
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={() => {
-              void run(refresh, false, true, "Workspace refreshed.").catch(
-                () => {},
-              );
-            }}
-          >
-            Refresh
-          </button>
         </header>
         <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
-        <div className="qualification">
-          {staff ? (
-            <>
-              Storage region {data.organization.region} · {currency}
-              <InfoBubble label="operational status">
-                Operational qualification is pending. Records for this
-                organization are stored in region {data.organization.region}.
-              </InfoBubble>
-            </>
-          ) : (
-            <>
-              All prices in {currency}
-              {page === "Shop" && (
-                <p className="demo-notice">
-                  Demonstration site — prices and stock are illustrative.
-                </p>
-              )}
-            </>
-          )}
-        </div>
+        {staff && (
+          <div className="qualification">
+            Storage region {data.organization.region} · {currency}
+            <InfoBubble label="operational status">
+              Operational qualification is pending. Records for this
+              organization are stored in region {data.organization.region}.
+            </InfoBubble>
+          </div>
+        )}
         {error && (
           <p role="alert" className="error">
             {error}
@@ -2958,11 +2958,7 @@ function App() {
               refreshKey={extra.cartRefresh}
               productId={route.productId}
               selectProduct={(productId) => updateRoute({ productId })}
-              resumeCart={() =>
-                navigate({ page: "Orders", section: "orders-queue" })
-              }
               accountId={data.accounts[0].id}
-              accountName={data.accounts[0].name}
               reference={
                 route.referenceFamily
                   ? {
@@ -9352,11 +9348,6 @@ function App() {
               <EnrollmentReview />
             </PageSection>
           </PageSections>
-        )}
-        {page !== "Shop" && (
-          <p className="demo-notice">
-            Demonstration site — prices and stock are illustrative.
-          </p>
         )}
       </main>
       {purchaseEntryOpen && page === "Purchasing" && can("commercial") && (
