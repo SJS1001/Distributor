@@ -133,7 +133,7 @@ export function SavedCarts({
               void load("", "");
             }}
           >
-            First saved cart page
+            Clear filters and show first page
           </button>
         </div>
       </div>

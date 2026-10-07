@@ -61,7 +61,7 @@ import "./shipment-coverage-browser-journey.ts";
 import "./reconciliation-browser-journey.ts";
 import "./claim-queue-browser-journey.ts";
 import "./session-ended-browser-journey.ts";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 import { totp } from "../src/server/totp.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -1022,14 +1022,26 @@ test("browser: audit history traverses older pages, retains retries and cancels 
   expect(JSON.stringify(first)).not.toMatch(
     /requestHash|detail|payload|password_hash/,
   );
-  for (const row of first.items)
+  const usersResponse = await page.request.get("/api/users");
+  expect(usersResponse.status()).toBe(200);
+  const users = await usersResponse.json();
+  for (const row of first.items) {
     expect(Object.keys(row).sort()).toEqual([
       "action",
       "actor_id",
       "created_at",
+      "currentActorName",
       "id",
       "reference",
     ]);
+    expect(row.currentActorName).toBe(
+      users.find((user: any) => user.id === row.actor_id)?.name ?? null,
+    );
+  }
+  expect(first.items.some((row: any) => row.currentActorName !== null)).toBe(
+    true,
+  );
+  await expect(panel).toContainText("Current actor name:");
   let continuationFailure = false;
   await page.route(`**${endpoint}?after=*`, async (route) => {
     if (!continuationFailure) {
@@ -1665,6 +1677,35 @@ test("browser: opening dry runs reconcile independent totals and apply serial/bu
   expect((await page.request.get("/api/imports/opening")).status()).toBe(403);
   expect(errors).toEqual([]);
 });
+async function expectShippingRevision(
+  dialog: Locator,
+  state: string,
+  revision: number,
+  present = true,
+) {
+  // Dates live in child paragraphs. Read only each matching state's direct
+  // revision text so adjacent dates cannot change exact revision matching.
+  const revisions = () =>
+    dialog.getByRole("listitem").evaluateAll(
+      (rows, expectedState) =>
+        rows
+          .filter(
+            (row) =>
+              row.querySelector("strong")?.textContent?.trim() ===
+              expectedState,
+          )
+          .map((row) =>
+            Array.from(row.childNodes)
+              .filter((node) => node.nodeType === Node.TEXT_NODE)
+              .map((node) => node.textContent)
+              .join("")
+              .trim(),
+          ),
+      state,
+    );
+  if (present) await expect.poll(revisions).toContain(`· Revision ${revision}`);
+  else await expect.poll(revisions).not.toContain(`· Revision ${revision}`);
+}
 async function next(page: Page) {
   await page
     .getByRole("dialog")
@@ -1987,7 +2028,9 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
   const invoiceRow = page
     .getByRole("row")
     .filter({
-      has: page.locator('summary[aria-label^="Actions for invoice"]'),
+      has: page.locator(
+        'summary[aria-label^="Actions for invoice"], summary[aria-label^="Invoice actions for"]',
+      ),
     })
     .filter({ hasText: invoice.number });
   // Total and balance both show CA$169.50; the total cell also carries the
@@ -2089,14 +2132,16 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
     .fill("Browser fixture");
   await next(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Review", exact: true }).click();
   await page
-    .getByLabel("Approve return authorization", { exact: true })
-    .check();
+    .getByRole("button", { name: "Approve return", exact: true })
+    .click();
   await page
     .getByLabel("Reason / evidence", { exact: true })
     .fill("Synthetic approval");
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Approve return", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Receive return", exact: true })
@@ -2130,7 +2175,9 @@ test("browser: multi-line cart, lost acceptance response, serial/bulk fulfillmen
     page
       .getByRole("row")
       .filter({
-        has: page.locator('summary[aria-label^="Actions for invoice"]'),
+        has: page.locator(
+          'summary[aria-label^="Actions for invoice"], summary[aria-label^="Invoice actions for"]',
+        ),
       })
       .filter({
         hasText: invoice.number,
@@ -2655,7 +2702,10 @@ test("browser: warehouse count observation survives reload, administrator retry 
   await page
     .getByLabel("Reason / evidence", { exact: true })
     .fill("Inspection changed stock after count cutoff");
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save inspection", exact: true })
+    .click();
   await nav(page, "Inventory", "Cycle counts");
   await (
     await withRowActions(stale)
@@ -2979,7 +3029,9 @@ test("browser: unpaid documents reconcile historical amounts, retain blocked rev
     .getByRole("row")
     .filter({ hasText: "BROWSER-LEGACY-001" })
     .filter({
-      has: page.locator('summary[aria-label^="Actions for invoice"]'),
+      has: page.locator(
+        'summary[aria-label^="Actions for invoice"], summary[aria-label^="Invoice actions for"]',
+      ),
     });
   await expect(invoice).toContainText("Historical opening document");
   await expect(invoice).toContainText("BROWSER-DOC-1");
@@ -3105,7 +3157,10 @@ test("browser: billing profiles, immutable PDF retries, credit downloads and agi
   await page
     .getByLabel("Reason / evidence", { exact: true })
     .fill("Synthetic browser billing identity review");
-  await next(page);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save billing details", exact: true })
+    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByRole("row").filter({ hasText: "Distributeur Québec navigateur" }),
@@ -3115,7 +3170,9 @@ test("browser: billing profiles, immutable PDF retries, credit downloads and agi
     .getByRole("row")
     .filter({ hasText: "BROWSER-LEGACY-001" })
     .filter({
-      has: page.locator('summary[aria-label^="Actions for invoice"]'),
+      has: page.locator(
+        'summary[aria-label^="Actions for invoice"], summary[aria-label^="Invoice actions for"]',
+      ),
     });
   let lost = false;
   let preparedHash = "";
@@ -3166,7 +3223,7 @@ test("browser: billing profiles, immutable PDF retries, credit downloads and agi
   expect(parts.join(" ")).toContain("original identities unavailable");
   await expect(
     page.getByRole("heading", {
-      name: "Prepared document downloads",
+      name: "Download request history",
       exact: true,
     }),
   ).toBeVisible();
@@ -3450,7 +3507,7 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await nav(page, "Purchasing", "Purchase orders");
   await page
-    .getByRole("button", { name: "Purchase order", exact: true })
+    .getByRole("button", { name: "Create purchase order", exact: true })
     .click();
   await page
     .getByLabel("Warehouse", { exact: true })
@@ -3655,8 +3712,8 @@ test("browser: receipt scans save without stock, resume after reload, review cam
   await savedRow
     .getByRole("button", { name: "View draft history", exact: true })
     .click();
-  await expect(page.getByRole("dialog")).toContainText("v1 · draft");
-  await expect(page.getByRole("dialog")).toContainText("v3 · received");
+  await expect(page.getByRole("dialog")).toContainText("Revision 1 · draft");
+  await expect(page.getByRole("dialog")).toContainText("Revision 3 · received");
   expect(errors).toEqual([]);
 });
 
@@ -3905,7 +3962,9 @@ test("browser: customer inbox review, cancellation and lost responses preserve e
   const invoiceRow = page
     .getByRole("row")
     .filter({
-      has: page.locator('summary[aria-label^="Actions for invoice"]'),
+      has: page.locator(
+        'summary[aria-label^="Actions for invoice"], summary[aria-label^="Invoice actions for"]',
+      ),
     })
     .filter({ hasText: invoice.number });
   const review = async () => {
@@ -7137,6 +7196,13 @@ test("browser: serial loss review and recovery retain history, retry once and re
   await page.getByRole("button", { name: "Search stock", exact: true }).click();
   await openStockActions(stockRow);
   await stockRow.getByRole("button", { name: "Inspect", exact: true }).click();
+  const inspection = page.getByRole("dialog", {
+    name: "Inspect stock",
+    exact: true,
+  });
+  await expect(
+    inspection.getByRole("combobox", { name: "Condition", exact: true }),
+  ).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(
@@ -7322,7 +7388,7 @@ test("browser: short picks retry once, retain paged history after failure, and i
     .getByRole("button", { name: "View short picks", exact: true })
     .click();
   const history = page.getByRole("dialog");
-  await expect(history).toContainText("20 reports loaded.");
+  await expect(history.getByRole("listitem")).toHaveCount(20);
   let lostPage = false;
   await page.route(
     `**/api/orders/${orderId}/short-picks?after=*`,
@@ -7337,15 +7403,28 @@ test("browser: short picks retry once, retain paged history after failure, and i
     .getByRole("button", { name: "Load more reports", exact: true })
     .click();
   await expect(history.getByRole("alert")).toBeVisible();
-  await expect(history).toContainText("20 reports loaded.");
+  await expect(history.getByRole("listitem")).toHaveCount(20);
   await history
     .getByRole("button", { name: "Load more reports", exact: true })
     .click();
-  await expect(history).toContainText("23 reports loaded.");
-  const description = await history.locator(".description").innerText();
-  expect(
-    description.split("\n").filter((l) => l.includes("held stock")),
-  ).toHaveLength(23);
+  await expect(history.getByRole("listitem")).toHaveCount(23);
+  const firstShortPicks = await (
+    await page.request.get(`/api/orders/${orderId}/short-picks`)
+  ).json();
+  const olderShortPicks = await (
+    await page.request.get(
+      `/api/orders/${orderId}/short-picks?after=${encodeURIComponent(firstShortPicks.nextCursor)}`,
+    )
+  ).json();
+  const reports = [...firstShortPicks.items, ...olderShortPicks.items];
+  expect(reports).toHaveLength(23);
+  await expect(history.locator("li .record-identifier > code")).toHaveText(
+    reports.map((report: any) => report.held_unit_id),
+  );
+  const firstHeldStock = history.getByRole("listitem").first();
+  await firstHeldStock.getByText("Held stock ID", { exact: true }).click();
+  await expect(firstHeldStock.locator("code")).toBeVisible();
+  await firstHeldStock.getByText("Held stock ID", { exact: true }).click();
   await history.getByRole("button", { name: "Close", exact: true }).click();
   await nav(page, "Orders", "Shipments");
   await (
@@ -7392,7 +7471,7 @@ test("browser: short picks retry once, retain paged history after failure, and i
   )
     .getByRole("button", { name: "View short picks", exact: true })
     .click();
-  await expect(history).toContainText("20 reports loaded.");
+  await expect(history.getByRole("listitem")).toHaveCount(20);
   await page.keyboard.press("Escape");
   await expect(history).toHaveCount(0);
   expect(
@@ -8049,9 +8128,9 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     name: "Replacement shipping history",
     exact: true,
   });
-  await expect(dialog).toContainText("v1 · in_transit");
-  await expect(dialog).toContainText("v20 · in_transit");
-  await expect(dialog).not.toContainText("v21 · in_transit");
+  await expectShippingRevision(dialog, "in transit", 1);
+  await expectShippingRevision(dialog, "in transit", 20);
+  await expectShippingRevision(dialog, "in transit", 21, false);
   let lostPage = false;
   await page.route(
     `**/api/warranty/replacements/${r.id}/shipping/history?after=*`,
@@ -8069,14 +8148,14 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     })
     .click();
   await expect(dialog.getByRole("alert")).toBeVisible();
-  await expect(dialog).toContainText("v1 · in_transit");
+  await expectShippingRevision(dialog, "in transit", 1);
   await dialog
     .getByRole("button", {
       name: "Load more shipping observations",
       exact: true,
     })
     .click();
-  await expect(dialog).toContainText("v23 · in_transit");
+  await expectShippingRevision(dialog, "in transit", 23);
   await expect(dialog).toContainText("Private lost evidence");
   await page.setViewportSize({ width: 390, height: 844 });
   await dialog.getByRole("button", { name: "Close", exact: true }).focus();
@@ -8143,7 +8222,7 @@ test("browser: replacement shipping retries, exceptions, paged history and buyer
     row.getByRole("button", { name: "Dispatch replacement", exact: true }),
   ).toHaveCount(0);
   await historyOpener.click();
-  await expect(dialog).toContainText("v3 · lost");
+  await expectShippingRevision(dialog, "lost", 3);
   await expect(dialog).not.toContainText("Private");
   await expect(dialog).not.toContainText("RSH-LOSS");
   const buyerData = await dashboard();
@@ -8286,7 +8365,16 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
   const row = page
     .locator("tbody tr")
     .filter({ hasText: packed.id.slice(0, 8) });
-  await expect(row).toContainText("Delivery: handed_over · v0");
+  await expect(row).toContainText("Delivery: Handed to carrier");
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
+  await expect(
+    row.getByText("Record version 0", { exact: true }),
+  ).toBeVisible();
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
   const openOutcome = async (
     state: string,
     reference: string,
@@ -8336,7 +8424,16 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
   await page.unroute("**/api/commands/fulfillment.delivery.update");
-  await expect(row).toContainText("Delivery: delayed · v1");
+  await expect(row).toContainText("Delivery: delayed");
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
+  await expect(
+    row.getByText("Record version 1", { exact: true }),
+  ).toBeVisible();
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
   await openOutcome("delivered", "DSH-STALE", "Private stale observation");
   await cmd("fulfillment.delivery.update", {
     shipmentId: packed.id,
@@ -8364,7 +8461,16 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     });
   await page.reload();
   await nav(page, "Orders", "Shipments");
-  await expect(row).toContainText("Delivery: in_transit · v23");
+  await expect(row).toContainText("Delivery: in transit");
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
+  await expect(
+    row.getByText("Record version 23", { exact: true }),
+  ).toBeVisible();
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
   const opener = row.getByRole("button", {
     name: "View delivery history",
     exact: true,
@@ -8375,9 +8481,9 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     name: "Shipment delivery history",
     exact: true,
   });
-  await expect(dialog).toContainText("v1 · delayed");
-  await expect(dialog).toContainText("v20 · in_transit");
-  await expect(dialog).not.toContainText("v21 · in_transit");
+  await expectShippingRevision(dialog, "delayed", 1);
+  await expectShippingRevision(dialog, "in transit", 20);
+  await expectShippingRevision(dialog, "in transit", 21, false);
   let failedPage = false;
   await page.route(
     `**/api/shipments/${packed.id}/delivery/history?after=*`,
@@ -8395,14 +8501,14 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     })
     .click();
   await expect(dialog.getByRole("alert")).toBeVisible();
-  await expect(dialog).toContainText("v1 · delayed");
+  await expectShippingRevision(dialog, "delayed", 1);
   await dialog
     .getByRole("button", {
       name: "Load more delivery observations",
       exact: true,
     })
     .click();
-  await expect(dialog).toContainText("v23 · in_transit");
+  await expectShippingRevision(dialog, "in transit", 23);
   await expect(dialog).toContainText("Private lost carrier observation");
   await page.setViewportSize({ width: 390, height: 844 });
   await dialog.getByRole("button", { name: "Close", exact: true }).focus();
@@ -8420,7 +8526,16 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     .getByRole("button", { name: "Record outcome", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(row).toContainText("Delivery: delivered · v24");
+  await expect(row).toContainText("Delivery: delivered");
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
+  await expect(
+    row.getByText("Record version 24", { exact: true }),
+  ).toBeVisible();
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
   await expect(
     row.getByRole("button", {
       name: "Record delivery outcome",
@@ -8449,7 +8564,16 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
     .fill("long-delivery-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await nav(page, "Orders", "Shipments");
-  await expect(row).toContainText("Delivery: delivered · v24");
+  await expect(row).toContainText("Delivery: delivered");
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
+  await expect(
+    row.getByText("Record version 24", { exact: true }),
+  ).toBeVisible();
+  await row
+    .getByRole("button", { name: "About Delivery record version", exact: true })
+    .click();
   await expect(
     row.getByRole("button", {
       name: "Record delivery outcome",
@@ -8459,7 +8583,7 @@ test("browser: shipment delivery retries, stale conflicts, paged history and buy
   ).toHaveCount(0);
   await openStockActions(row);
   await opener.click();
-  await expect(dialog).toContainText("v2 · lost");
+  await expectShippingRevision(dialog, "lost", 2);
   await expect(dialog).not.toContainText("Private");
   await expect(dialog).not.toContainText("DSH-LOST");
   const publicHistory = await (
@@ -9775,6 +9899,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
       has: page.locator('summary[aria-label^="Actions for order"]'),
     });
   await expect(row).toContainText("Synthetic amendment phone customer");
+  await row.locator("details.order-items > summary").click();
   const history = page.getByRole("region", {
     name: "Order amendment history",
     exact: true,
@@ -9881,6 +10006,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
   await expect(
     page.locator('summary[aria-label^="Actions for order"]'),
   ).toHaveCount(1);
+  await row.locator("details.order-items > summary").click();
   await openStockActions(row);
   await expect(
     page.getByRole("button", { name: "View amendment history", exact: true }),
@@ -9987,6 +10113,7 @@ test("browser: phone order amendments retain accepted money, retry lost response
   await history
     .getByRole("button", { name: "Close amendment history", exact: true })
     .click();
+  await row.locator("details.order-items > summary").click();
   await row
     .getByRole("button", { name: "Amend quantity: AMEND-PHONE", exact: true })
     .click();
@@ -12520,7 +12647,9 @@ test("browser: invoice refund payment selection pages, retries and cancels befor
       has: page.getByRole("cell", { name: invoice.number, exact: false }),
     })
     .filter({
-      has: page.locator('summary[aria-label^="Actions for invoice"]'),
+      has: page.locator(
+        'summary[aria-label^="Actions for invoice"], summary[aria-label^="Invoice actions for"]',
+      ),
     });
   const open = async () => {
     await (

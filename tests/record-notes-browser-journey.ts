@@ -6,10 +6,6 @@ test("staff notes recover a failed read and mobile staff navigation stays readab
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   await navigateWorkspace(page, "Customers");
-  await page
-    .getByRole("link", { name: "Synthetic buyer", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "Notes", exact: true }).click();
   let failRead = true;
   await page.route("**/api/notes/customer/*", async (route) => {
     if (failRead) {
@@ -20,10 +16,13 @@ test("staff notes recover a failed read and mobile staff navigation stays readab
       });
     } else await route.continue();
   });
-  const panel = page.locator(".record-notes").first();
-  const summary = panel.locator("summary");
-  await summary.focus();
+  await page
+    .getByRole("link", { name: "Synthetic buyer", exact: true })
+    .click();
+  const notesTab = page.getByRole("tab", { name: "Notes", exact: true });
+  await notesTab.focus();
   await page.keyboard.press("Enter");
+  const panel = page.locator(".record-notes").first();
   await expect(panel.getByRole("alert")).toContainText(
     "Temporary notes outage",
   );
@@ -32,7 +31,7 @@ test("staff notes recover a failed read and mobile staff navigation stays readab
     .click();
   await expect(panel.getByLabel("New staff note")).toBeEnabled();
   await expect(panel.getByRole("alert")).toHaveCount(0);
-  expect((await summary.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await notesTab.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect((await panel.boundingBox())!.width).toBeGreaterThanOrEqual(240);
   for (const width of [360, 390, 768]) {
     await page.setViewportSize({ width, height: 844 });
@@ -75,11 +74,6 @@ async function notes(page: Page) {
     .getByRole("link", { name: "Synthetic buyer", exact: true })
     .click();
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await page
-    .locator("summary")
-    .filter({ hasText: /^Staff notes$/ })
-    .first()
-    .click();
   await expect(page.getByLabel("New staff note").first()).toBeEnabled();
 }
 test("private append-only notes recover exact attempts and show independent authenticated verification", async ({
@@ -113,11 +107,6 @@ test("private append-only notes recover exact attempts and show independent auth
   await committed;
   await page.unroute("**/api/commands/notes.add");
   await page.reload();
-  await page
-    .locator("summary")
-    .filter({ hasText: /^Staff notes$/ })
-    .first()
-    .click();
   await expect(page.getByLabel("New staff note")).toBeDisabled();
   await page.route("**/api/commands/notes.add", async (route) => {
     expect(route.request().postData()).toBe(body);
@@ -147,11 +136,6 @@ test("private append-only notes recover exact attempts and show independent auth
   ).toBeVisible();
   await expect(verifier.locator(".record-note-list time")).toHaveCount(2);
   await page.reload();
-  await page
-    .locator("summary")
-    .filter({ hasText: /^Staff notes$/ })
-    .first()
-    .click();
   await expect(
     page.getByText(/Verified by Independent approver/),
   ).toBeVisible();
@@ -170,11 +154,6 @@ test("private append-only notes recover exact attempts and show independent auth
   await navigateWorkspace(page, "Catalog");
   await page.getByRole("button", { name: "Manage EQ-1", exact: true }).click();
   await page.getByRole("tab", { name: "Staff notes", exact: true }).click();
-  await page
-    .locator("summary")
-    .filter({ hasText: /^Staff notes$/ })
-    .last()
-    .click();
   await expect(page.getByLabel("New staff note").last()).toBeEnabled();
   await page
     .getByLabel("New staff note")
@@ -229,9 +208,7 @@ test("private append-only notes recover exact attempts and show independent auth
     .getByRole("navigation", { name: "Workspace" })
     .getByRole("button", { name: "Account", exact: true })
     .click();
-  await expect(
-    buyer.locator("summary").filter({ hasText: /^Staff notes$/ }),
-  ).toHaveCount(0);
+  await expect(buyer.locator(".record-notes")).toHaveCount(0);
   await expect(
     buyer.getByText("Synthetic private customer observation", { exact: false }),
   ).toHaveCount(0);

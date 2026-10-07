@@ -79,6 +79,7 @@ test("browser: secondary pages load on demand and recover a failed download with
       .getByRole("link", { name: "Workspace", exact: true })
       .click();
     await expect(page.locator("#workspace-title")).toHaveText("Overview");
+    await expect(page.locator("#workspace-title")).toBeFocused();
     await breadcrumb.getByRole("link", { name: "Home", exact: true }).click();
     await expect(
       page.getByRole("link", { name: "Staff workspace", exact: true }).first(),

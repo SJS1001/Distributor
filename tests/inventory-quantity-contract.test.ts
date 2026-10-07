@@ -8,6 +8,8 @@ import {
 } from "./inventory-quantity-fixture.ts";
 import {
   hash,
+  canonical,
+  movementShape,
   quantityReviewShape,
   quantityRecordShape,
   quantityInputShape,
@@ -208,6 +210,74 @@ test("quantity: movement pages select eligible exact original-cost sources only"
     validateMovements({ ...p, unit: { ...u, serial: "S1" } }, scope),
   );
   assert.throws(() => validateMovements(p, { ...scope, sites: [] }));
+});
+
+test("quantity: current actor name annotation is validated and excluded from canonical native movement facts", async () => {
+  const r = await quantityFixture(),
+    { org_id: _org, unit_id: _unit, ...movement } = r.review.source,
+    { org_id: _unitOrg, ...unit } = r.review.unit,
+    native = { unit, items: [movement], next: null };
+  for (const name of [null, "Current synthetic actor", "n".repeat(160)]) {
+    const annotated = {
+      ...native,
+      items: [{ ...movement, currentActorName: name }],
+    };
+    const before = structuredClone(annotated),
+      accepted = validateMovements(annotated, scope);
+    assert.deepEqual(accepted, native);
+    assert.equal(canonical(accepted), canonical(native));
+    assert.equal(await hash(accepted), await hash(native));
+    assert.ok(!Object.hasOwn(accepted.items[0]!, "currentActorName"));
+    assert.deepEqual(annotated, before);
+  }
+  assert.deepEqual(validateMovements(native, scope), native);
+  for (const name of [
+    undefined,
+    "",
+    " ",
+    " padded ",
+    "n".repeat(161),
+    1,
+    true,
+    [],
+    {},
+  ])
+    assert.throws(() =>
+      validateMovements(
+        {
+          ...native,
+          items: [{ ...movement, currentActorName: name }],
+        },
+        scope,
+      ),
+    );
+  for (const patch of [
+    { extra: true },
+    { actor_id: "" },
+    { quantity: 1.5 },
+    { unit_cost: -1 },
+    { warehouse_id: "foreign-site" },
+    { created_at: "not-a-timestamp" },
+  ])
+    assert.throws(() =>
+      validateMovements(
+        {
+          ...native,
+          items: [{ ...movement, currentActorName: "Current actor", ...patch }],
+        },
+        scope,
+      ),
+    );
+  // Annotation belongs to the HTTP history view, never a native hashed source.
+  assert.ok(
+    !movementShape({ ...r.review.source, currentActorName: "Current actor" }),
+  );
+  assert.ok(
+    !quantityReviewShape({
+      ...r.review,
+      source: { ...r.review.source, currentActorName: "Current actor" },
+    }),
+  );
 });
 
 test("quantity: published native flattened wire shape is normalized exactly", async () => {

@@ -12,6 +12,7 @@ export type StockMovement = {
   reference: string;
   reason: string;
   actor_id: string;
+  currentActorName?: string | null;
   created_at: string;
 };
 export type StockHistoryPage = {

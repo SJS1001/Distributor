@@ -42,6 +42,7 @@ function RequestDetail({
   changed: () => void;
   accountName?: (id: string) => string;
 }) {
+  const [now, setNow] = useState(Date.now());
   const [value, setValue] = useState<OrderRequest | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -65,6 +66,19 @@ function RequestDetail({
       });
     return () => c.abort();
   }, [id, epoch]);
+  useEffect(() => {
+    if (!value || value.status === "accepted") return;
+    const remaining = value.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setNow(Date.now());
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(remaining + 1, 2147483647),
+    );
+    return () => window.clearTimeout(timer);
+  }, [value]);
   const run = async (name: string, payload: unknown) => {
     setBusy(true);
     setError("");
@@ -134,7 +148,22 @@ function RequestDetail({
             </div>
             <div>
               <dt>Quote expires</dt>
-              <dd>{new Date(value.expiresAt).toLocaleString()}</dd>
+              <dd>
+                <time
+                  dateTime={new Date(value.expiresAt).toISOString()}
+                  title={new Date(value.expiresAt).toISOString()}
+                >
+                  {new Date(value.expiresAt).toLocaleString(undefined, {
+                    timeZoneName: "short",
+                  })}
+                </time>
+                {value.status !== "accepted" && value.expiresAt <= now && (
+                  <p role="status">
+                    <strong>Expired</strong> · The buyer must review current
+                    quantities, prices and terms and resubmit before approval.
+                  </p>
+                )}
+              </dd>
             </div>
           </dl>
           <div className="record-detail-panel">
@@ -240,7 +269,7 @@ function RequestDetail({
                   </select>
                 </label>
                 <label>
-                  Message to customer
+                  Message to customer (Required)
                   <textarea
                     required
                     maxLength={1000}
@@ -249,7 +278,7 @@ function RequestDetail({
                   />
                 </label>
                 <label>
-                  Private staff note
+                  Private staff note (Optional)
                   <textarea
                     maxLength={2000}
                     value={note}

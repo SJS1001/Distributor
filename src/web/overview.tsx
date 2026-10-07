@@ -305,6 +305,20 @@ export function Overview({
           </button>
         ))}
       </div>
+      {data.analytics ? (
+        <OperationalAnalytics
+          preferenceScope={preferenceScope}
+          customer={!staff}
+          data={data.analytics}
+          navigate={navigate}
+          warehouseName={(id) =>
+            String(
+              data.warehouses?.find((warehouse) => warehouse.id === id)?.name ??
+                id,
+            )
+          }
+        />
+      ) : null}
       {data.analytics && (
         <Attention data={data.analytics} navigate={navigate} />
       )}
@@ -438,20 +452,7 @@ export function Overview({
           </div>
         </section>
       </div>
-      {data.analytics ? (
-        <OperationalAnalytics
-          preferenceScope={preferenceScope}
-          customer={!staff}
-          data={data.analytics}
-          navigate={navigate}
-          warehouseName={(id) =>
-            String(
-              data.warehouses?.find((warehouse) => warehouse.id === id)?.name ??
-                id,
-            )
-          }
-        />
-      ) : (
+      {!data.analytics && (
         <div className="overview-charts">
           <section className="dashboard-card">
             <div className="section-title">

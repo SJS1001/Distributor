@@ -263,6 +263,12 @@ export function WorkspaceTabs({
   page: string;
   navigate: (page: string) => void;
 }) {
+  const nav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    nav.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [page]);
   if (pages.includes("Shop")) return null;
   const group = workspaceGroups.find((item) => item.pages.includes(page));
   if (!group) return null;
@@ -270,7 +276,12 @@ export function WorkspaceTabs({
   // A single tab only repeats the page heading; it offers no navigation.
   if (visible.length < 2) return null;
   return (
-    <nav className="workspace-tabs" aria-label={`${group.name} pages`}>
+    <nav
+      ref={nav}
+      className="workspace-tabs"
+      aria-label={`${group.name} pages`}
+      title="More pages may be available by scrolling across"
+    >
       {visible.map((item) => (
         <button
           key={item}
@@ -341,6 +352,11 @@ export function PageSections({
     ? selection
     : (items[0]?.id ?? "");
   const tabs = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabs.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [active]);
   const choose = (id: string) => {
     setSelected(id);
     selectSection?.(id);
@@ -351,10 +367,14 @@ export function PageSections({
   }, [selectedSection, active]);
   return (
     <PageSectionContext.Provider value={{ active, items }}>
+      <p className="page-sections-scroll-hint">
+        Scroll sideways for more sections.
+      </p>
       <div
         className="page-sections"
         role="tablist"
         aria-label={label}
+        title="More sections may be available by scrolling across"
         ref={tabs}
       >
         {items.map((item, index) => (

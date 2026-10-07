@@ -1,4 +1,6 @@
 import { CustomerDirectory, CustomerRecord } from "./customer-record.tsx";
+import { SessionList } from "./session-list.tsx";
+import { ReadableTime, RecordIdentifier } from "./record-display.tsx";
 import { InfoBubble } from "./info-bubble.tsx";
 import { WorkspaceBreadcrumbs } from "./workspace-breadcrumbs.tsx";
 import { RecordNotes } from "./record-notes.tsx";
@@ -248,6 +250,8 @@ function App() {
     [dialog, setDialog] = useState<Dialog | null>(null),
     [extra, setExtra] = useState<Item>({}),
     [extraLoadFailed, setExtraLoadFailed] = useState(false);
+  const [receiptSearch, setReceiptSearch] = useState("");
+  const [accessSearch, setAccessSearch] = useState("");
   const page = route.page;
   const customerPricingSignIn =
     publicRoute === "customer-sign-in" && actor?.role !== "buyer";
@@ -1099,10 +1103,19 @@ function App() {
     perform: Dialog["perform"],
     description?: React.ReactNode,
     submitLabel?: string,
+    readOnly = false,
   ) => {
     setNotice("");
     setError("");
-    setDialog({ title, fields, perform, description, submitLabel });
+    setDialog({
+      title,
+      fields,
+      perform,
+      description,
+      submitLabel,
+      readOnly:
+        readOnly || (fields.length === 0 && /^Close\b/.test(submitLabel ?? "")),
+    });
   };
   const showReceiptHistory = async (draftId: string) => {
     stopReceiptHistoryRead();
@@ -1125,12 +1138,29 @@ function App() {
         "Receipt draft history",
         [],
         async () => ({}),
-        history
-          .map(
-            (entry) =>
-              `v${entry.revision} · ${entry.state} · ${entry.created_at} · ${entry.actor_id} · ${entry.reason} · SKU ${entry.input.observedSku} · ${entry.input.quantity} units · ${entry.input.bin} · ${entry.input.serials.join(", ") || "bulk"}`,
-          )
-          .join("\n"),
+        <>
+          <RecordIdentifier value={draftId} label="Receipt draft ID" />
+          <ol>
+            {history.map((entry) => (
+              <li key={entry.revision}>
+                <strong>
+                  Revision {entry.revision} · {entry.state}
+                </strong>
+                <p>
+                  <ReadableTime value={entry.created_at} /> · {entry.reason}
+                </p>
+                <p>
+                  SKU {entry.input.observedSku} · {entry.input.quantity} units ·
+                  Bin {entry.input.bin} ·{" "}
+                  {entry.input.serials.join(", ") || "bulk"}
+                </p>
+                <RecordIdentifier value={entry.actor_id} label="Actor ID" />
+              </li>
+            ))}
+          </ol>
+        </>,
+        "Close",
+        true,
       );
     } catch (e) {
       if (
@@ -1244,7 +1274,11 @@ function App() {
         await showCatalogHistory(productId, items, result.next);
         return { keepDialog: true, skipRefresh: true };
       },
-      <CatalogHistoryRows items={items} />,
+      <>
+        <strong>{productName(productId)}</strong>
+        <RecordIdentifier value={productId} label="Product ID" />
+        <CatalogHistoryRows items={items} />
+      </>,
       result.next ? "Load older lifecycle changes" : "Close history",
     );
   };
@@ -1288,14 +1322,36 @@ function App() {
         await showShipmentDelivery(shipmentId, rows, result.next);
         return { keepDialog: true, skipRefresh: true };
       },
-      rows.length
-        ? rows
-            .map(
-              (h: Item) =>
-                `v${h.revision} · ${h.state} · ${h.observedAt}${h.reference ? ` · ${h.reference}: ${h.evidence}` : ""}`,
-            )
-            .join("\n\n")
-        : "No delivery observations recorded. Handover remains recorded on the shipment.",
+      <>
+        <RecordIdentifier value={shipmentId} label="Shipment ID" />
+        {rows.length ? (
+          <ol>
+            {rows.map((h) => (
+              <li key={h.revision}>
+                <strong>
+                  {h.state === "handed_over"
+                    ? "Handed to carrier"
+                    : h.state.replaceAll("_", " ")}
+                </strong>{" "}
+                · Revision {h.revision}
+                <p>
+                  <ReadableTime value={h.observedAt} />
+                </p>
+                {h.reference && (
+                  <p>
+                    {h.reference}: {h.evidence}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p>
+            No delivery observations recorded. Handover remains recorded on the
+            shipment.
+          </p>
+        )}
+      </>,
       result.next ? "Load more delivery observations" : "Close",
     );
   };
@@ -1317,12 +1373,33 @@ function App() {
         await showReplacementShipping(replacementId, rows, result.next);
         return { keepDialog: true, skipRefresh: true };
       },
-      rows
-        .map(
-          (h: Item) =>
-            `v${h.revision} · ${h.state} · ${h.observedAt}${h.reference ? ` · ${h.reference}: ${h.evidence}` : ""}`,
-        )
-        .join("\n\n"),
+      <>
+        <RecordIdentifier value={replacementId} label="Replacement ID" />
+        {rows.length ? (
+          <ol>
+            {rows.map((h) => (
+              <li key={h.revision}>
+                <strong>
+                  {h.state === "handed_over"
+                    ? "Handed to carrier"
+                    : h.state.replaceAll("_", " ")}
+                </strong>{" "}
+                · Revision {h.revision}
+                <p>
+                  <ReadableTime value={h.observedAt} />
+                </p>
+                {h.reference && (
+                  <p>
+                    {h.reference}: {h.evidence}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p>No shipping observations recorded.</p>
+        )}
+      </>,
       result.next ? "Load more shipping observations" : "Close",
     );
   };
@@ -1344,9 +1421,25 @@ function App() {
         await showShortPicks(orderId, reports, result.nextCursor);
         return { keepDialog: true, skipRefresh: true };
       },
-      reports.length
-        ? `${reports.length} reports loaded.\n${reports.map((r: Item) => `${r.created_at} · ${r.quantity} units · held stock ${r.held_unit_id} · ${r.reason}`).join("\n")}`
-        : "No short picks have been reported for this order.",
+      <>
+        <RecordIdentifier value={orderId} label="Order ID" />
+        {reports.length ? (
+          <ol>
+            {reports.map((r) => (
+              <li key={r.id}>
+                <ReadableTime value={r.created_at} /> · {r.quantity} units ·{" "}
+                {r.reason}
+                <RecordIdentifier
+                  value={r.held_unit_id}
+                  label="Held stock ID"
+                />
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p>No short picks have been reported for this order.</p>
+        )}
+      </>,
       result.nextCursor ? "Load more reports" : "Close",
     );
   };
@@ -1446,7 +1539,7 @@ function App() {
     can = (...roles: string[]) => admin || roles.includes(actor?.role ?? "");
   // Purchasing records are read only for roles that load /api/purchases; other
   // roles and failed loads must not be told the records are still loading.
-  const purchasingEmpty = (subject: string, empty: string) =>
+  const purchasingEmpty = (subject: string, empty: React.ReactNode) =>
     extra.purchases
       ? empty
       : !can("commercial", "warehouse", "finance")
@@ -1700,10 +1793,24 @@ function App() {
         // again. A new native quote still refuses another session's newer cart.
         return reviewCart(savedCart!, current, resubmission);
       },
-      (resubmission
-        ? "These request quantities will replace the saved draft for this customer and warehouse when you continue. "
-        : "") +
-        "Set the quantity for each product. Zero removes a product. Review the current price and total in the quote before accepting. Saved quantities are loaded before editing. If saving or quoting loses its response, retry to recover the saved attempt. If another session changes this cart, cancel and reopen it to review the latest quantities.",
+      <>
+        <p>
+          Set the quantity for each product. Zero removes a product. Review the
+          price and total in the quote before accepting.
+        </p>
+        {resubmission && (
+          <p>
+            These quantities replace the saved draft for this customer and
+            warehouse when you continue.
+          </p>
+        )}
+        <InfoBubble label="Saved cart and recovery">
+          Saved quantities are loaded before editing. If saving or quoting loses
+          its response, retry to recover the saved attempt. If another session
+          changes this cart, cancel and reopen it to review the latest
+          quantities.
+        </InfoBubble>
+      </>,
     );
   };
   // Load the saved cart for one customer and warehouse, add any requested
@@ -1883,15 +1990,18 @@ function App() {
     columns: string[],
     rows: Item[],
     cells: (row: Item) => React.ReactNode[],
-    empty = "No records yet.",
+    empty: React.ReactNode = "No records yet.",
   ) =>
     rows?.length ? (
       <div
-        className="table-wrap"
+        className={`table-wrap ${(columns[0] ?? "").toLowerCase().includes("order") ? "order-queue-table" : ""}`}
         tabIndex={0}
         role="region"
         aria-label={`${columns[0]} records`}
       >
+        <p className="table-scroll-hint">
+          Scroll sideways to see all columns and actions.
+        </p>
         <table>
           <thead>
             <tr>
@@ -2147,7 +2257,24 @@ function App() {
     )
       resetStockIntent.current = true;
     claimQueue.stop();
+    const previousFocus = document.activeElement;
     setRoute(intent);
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      const contextualFocus =
+        active instanceof HTMLElement &&
+        active !== previousFocus &&
+        active !== document.body &&
+        active.id !== "workspace-title" &&
+        active.checkVisibility({ checkVisibilityCSS: true });
+      const visibleDialog = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[role="dialog"][aria-modal="true"]',
+        ),
+      ).some((element) => element.checkVisibility());
+      if (!contextualFocus && !visibleDialog)
+        document.getElementById("workspace-title")?.focus();
+    });
     setStockHistory(null);
     setBinSelection(null);
     setValuationSelection(null);
@@ -2501,6 +2628,21 @@ function App() {
           version: p.version,
           reason: v.reason,
         }),
+      <>
+        <strong>
+          {p.accountId === null
+            ? data.organization.name
+            : accountName(p.accountId)}
+        </strong>
+        <p>
+          This is the selected billing party. Editing the billing name does not
+          change the party.
+        </p>
+        {p.accountId && (
+          <RecordIdentifier value={p.accountId} label="Customer ID" />
+        )}
+      </>,
+      "Save billing details",
     );
 
   return (
@@ -2585,7 +2727,14 @@ function App() {
               </InfoBubble>
             </>
           ) : (
-            <>All prices in {currency}</>
+            <>
+              All prices in {currency}
+              {page === "Shop" && (
+                <p className="demo-notice">
+                  Demonstration site — prices and stock are illustrative.
+                </p>
+              )}
+            </>
           )}
         </div>
         {error && (
@@ -2605,7 +2754,10 @@ function App() {
           </p>
         )}
         {page === "Operations health" && can("support") && (
-          <OperationsHealthPanel key={eventViewEpoch} />
+          <OperationsHealthPanel
+            key={eventViewEpoch}
+            onEvents={() => navigate({ page: "Event reporting" })}
+          />
         )}
         {page === "Reconciliation" && can("finance") && (
           <ReconciliationPanel key={eventViewEpoch} />
@@ -2750,6 +2902,21 @@ function App() {
                   warehouseName={warehouseName}
                   scope={`${actor.orgId}:${actor.id}`}
                   canAssignIncoming={can("commercial")}
+                  onQueueActions={
+                    staff
+                      ? (orderId) => {
+                          orderOpener.current = document.getElementById(
+                            `order-actions-${orderId}`,
+                          );
+                          updateRoute({ orderId: undefined });
+                          requestAnimationFrame(() =>
+                            document
+                              .getElementById(`order-actions-${orderId}`)
+                              ?.focus(),
+                          );
+                        }
+                      : undefined
+                  }
                   back={() => updateRoute({ orderId: undefined })}
                 />
               )}
@@ -2759,9 +2926,9 @@ function App() {
                     // A buyer only sees their own account, so the customer
                     // name is redundant in their order queue.
                     staff ? "Customer / order" : "Order",
-                    "Warehouse",
-                    "Lines",
                     "Status",
+                    "Warehouse",
+                    "Items",
                     "Actions",
                   ],
                   orderQueue.items,
@@ -2781,86 +2948,105 @@ function App() {
                           updateRoute({ orderId: o.id });
                         }}
                       >
-                        Open order <code>{o.id.slice(0, 8)}</code>
+                        Order <code>{o.id.slice(0, 8)}</code>
                       </button>
-                      {!staff && (
-                        <small>{shippingSummary(o.shipping, currency)}</small>
-                      )}
+                      <small>
+                        <ReadableTime value={o.created_at} /> ·{" "}
+                        {money(o.total, o.currency)}
+                      </small>
+                      <RecordIdentifier value={o.id} label="Full order ID" />
+                      <small>
+                        {o.lines.length}{" "}
+                        {o.lines.length === 1 ? "item" : "items"} ·{" "}
+                        {o.lines.reduce(
+                          (sum: number, l: Item) =>
+                            sum +
+                            Math.max(0, l.quantity - l.shipped - l.canceled),
+                          0,
+                        )}{" "}
+                        units outstanding
+                      </small>
                     </>,
-                    warehouseName(o.warehouse_id),
-                    o.lines.map((l: Item) => (
-                      <div key={l.id} className="order-line">
-                        <strong>
-                          {productName(l.product_id, l.description)}
-                        </strong>
-                        <span>
-                          {l.quantity} ordered · {l.allocated} reserved ·{" "}
-                          {l.shipped} shipped · {l.canceled} canceled
-                        </span>
-                        {o.state === "open" &&
-                          can("commercial", "buyer") &&
-                          button(
-                            `Amend quantity: ${productName(l.product_id, l.description)}`,
-                            () =>
-                              open(
-                                "Amend ordered quantity",
-                                [
-                                  {
-                                    name: "quantity",
-                                    label: "New total ordered units",
-                                    type: "number",
-                                    value: l.quantity,
-                                    min: Math.max(1, l.shipped + l.canceled),
-                                    help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
-                                  },
-                                  {
-                                    name: "allowBackorder",
-                                    label:
-                                      "Allow backorder for additional units",
-                                    type: "checkbox",
-                                  },
-                                  {
-                                    name: "reason",
-                                    label: "Buyer-visible reason for amendment",
-                                    type: "textarea",
-                                  },
-                                ],
-                                (v) =>
-                                  command("order.amend", {
-                                    orderId: o.id,
-                                    lineId: l.id,
-                                    revision: o.revision,
-                                    quantity: v.quantity,
-                                    allowBackorder: v.allowBackorder,
-                                    reason: v.reason,
-                                  }),
-                                <>
-                                  <p>
-                                    {productName(l.product_id, l.description)}:
-                                    the quantity is the new total ordered,
-                                    including shipped and canceled units.
-                                  </p>
-                                  <p>
-                                    Accepted unit price{" "}
-                                    {money(l.unit_price, currency)} and unit tax{" "}
-                                    {money(l.unit_tax, currency)} are retained.
-                                    Product and warehouse stay the same.
-                                  </p>
-                                  <p>
-                                    Decreases remove backorder first. Picked
-                                    stock must be unpicked before it can be
-                                    removed. The reason is visible to the buyer.
-                                  </p>
-                                </>,
-                                "Save amendment",
-                              ),
-                          )}
-                      </div>
-                    )),
                     <div>
                       <span className="badge">{o.state}</span>
                       <ReservationStatus reservation={o.reservation} />
                     </div>,
+                    warehouseName(o.warehouse_id),
+                    <details className="order-items">
+                      <summary>View items and quantities</summary>
+                      {o.lines.map((l: Item) => (
+                        <div key={l.id} className="order-line">
+                          <strong>
+                            {productName(l.product_id, l.description)}
+                          </strong>
+                          <span>
+                            {l.quantity} ordered · {l.allocated} reserved ·{" "}
+                            {l.shipped} shipped · {l.canceled} canceled
+                          </span>
+                          {o.state === "open" &&
+                            can("commercial", "buyer") &&
+                            button(
+                              `Amend quantity: ${productName(l.product_id, l.description)}`,
+                              () =>
+                                open(
+                                  "Amend ordered quantity",
+                                  [
+                                    {
+                                      name: "quantity",
+                                      label: "New total ordered units",
+                                      type: "number",
+                                      value: l.quantity,
+                                      min: Math.max(1, l.shipped + l.canceled),
+                                      help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
+                                    },
+                                    {
+                                      name: "allowBackorder",
+                                      label:
+                                        "Allow backorder for additional units",
+                                      type: "checkbox",
+                                    },
+                                    {
+                                      name: "reason",
+                                      label:
+                                        "Buyer-visible reason for amendment",
+                                      type: "textarea",
+                                    },
+                                  ],
+                                  (v) =>
+                                    command("order.amend", {
+                                      orderId: o.id,
+                                      lineId: l.id,
+                                      revision: o.revision,
+                                      quantity: v.quantity,
+                                      allowBackorder: v.allowBackorder,
+                                      reason: v.reason,
+                                    }),
+                                  <>
+                                    <p>
+                                      {productName(l.product_id, l.description)}
+                                      : the quantity is the new total ordered,
+                                      including shipped and canceled units.
+                                    </p>
+                                    <p>
+                                      Accepted unit price{" "}
+                                      {money(l.unit_price, currency)} and unit
+                                      tax {money(l.unit_tax, currency)} are
+                                      retained. Product and warehouse stay the
+                                      same.
+                                    </p>
+                                    <p>
+                                      Decreases remove backorder first. Picked
+                                      stock must be unpicked before it can be
+                                      removed. The reason is visible to the
+                                      buyer.
+                                    </p>
+                                  </>,
+                                  "Save amendment",
+                                ),
+                            )}
+                        </div>
+                      ))}
+                    </details>,
                     <div className="row-actions">
                       {staff && (
                         <RecordNotes
@@ -2871,7 +3057,10 @@ function App() {
                         />
                       )}
                       <details className="stock-actions">
-                        <summary aria-label={`Actions for order ${o.id}`}>
+                        <summary
+                          id={`order-actions-${o.id}`}
+                          aria-label={`Actions for order ${o.id}`}
+                        >
                           Actions
                         </summary>
                         <div className="actions">
@@ -3535,7 +3724,13 @@ function App() {
                       </small>
                       {s.delivery && (
                         <small>
-                          Delivery: {s.delivery.state} · v{s.delivery.revision}
+                          Delivery:{" "}
+                          {s.delivery.state === "handed_over"
+                            ? "Handed to carrier"
+                            : s.delivery.state.replaceAll("_", " ")}
+                          <InfoBubble label="Delivery record version">
+                            Record version {s.delivery.revision}
+                          </InfoBubble>
                         </small>
                       )}
                     </div>,
@@ -4028,7 +4223,7 @@ function App() {
                         u.state === "stock" &&
                         u.quantity > 0 &&
                         button("Inspect", () =>
-                          simple(
+                          open(
                             "Inspect stock",
                             [
                               {
@@ -4042,12 +4237,24 @@ function App() {
                               },
                               reason,
                             ],
-                            "stock.inspect",
-                            (v) => ({
-                              ...v,
-                              unitId: u.id,
-                              revision: u.revision,
-                            }),
+                            (v) =>
+                              command("stock.inspect", {
+                                ...v,
+                                unitId: u.id,
+                                revision: u.revision,
+                              }),
+                            <>
+                              <strong>{productName(u.product_id)}</strong>
+                              <p>
+                                {u.serial
+                                  ? `Serial ${u.serial}`
+                                  : "Bulk stock lot"}{" "}
+                                · {warehouseName(u.warehouse_id)} · bin {u.bin}{" "}
+                                · current condition {u.condition}
+                              </p>
+                              <RecordIdentifier value={u.id} label="Stock ID" />
+                            </>,
+                            "Save inspection",
                           ),
                         )}
                       {can("warehouse") &&
@@ -4075,6 +4282,31 @@ function App() {
                     </div>
                   </details>,
                 ],
+                stockQueue.busy || !stockQueue.loaded ? (
+                  "Loading stock…"
+                ) : stockQueue.error ? (
+                  "Stock could not be loaded. Use the retry above."
+                ) : Object.values(stockQueue.filters).some(Boolean) ? (
+                  <>
+                    <p>No stock matches these filters.</p>
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        stockQueue.filter({
+                          query: "",
+                          productId: "",
+                          warehouseId: "",
+                          view: "",
+                        });
+                        updateRoute({ stockView: "", warehouseId: "" });
+                      }}
+                    >
+                      Clear stock filters
+                    </button>
+                  </>
+                ) : (
+                  "No stock records yet. Receiving a purchase delivery records stock here."
+                ),
               )}
               {extra.labels?.length > 0 && (
                 <>
@@ -4094,8 +4326,8 @@ function App() {
                         (o) => o.value === (r.facts.output ?? "pdf"),
                       )?.label ?? "Unrecognized output",
                       r.copies,
-                      r.requested_at,
-                      r.id,
+                      <ReadableTime value={r.requested_at} />,
+                      <RecordIdentifier value={r.id} label="Receipt ID" />,
                     ],
                   )}
                 </>
@@ -4365,15 +4597,15 @@ function App() {
                               options: [
                                 {
                                   value: "administrator",
-                                  label:
-                                    "Administrator review (self-review allowed)",
+                                  label: "Administrator review",
                                 },
                                 {
                                   value: "independent",
-                                  label: "Independent administrator review",
+                                  label: "Independent review",
                                 },
                               ],
                               value: extra.countReviewPolicy.mode,
+                              help: "Administrator review permits self-review and direct corrections. Independent review requires an administrator other than the count starter and observer.",
                             },
                             reason,
                           ],
@@ -4633,7 +4865,7 @@ function App() {
                         disabled={busy}
                         onClick={() => setPurchaseEntryOpen(true)}
                       >
-                        Purchase order
+                        Create purchase order
                       </button>
                       {button("Add supplier", () =>
                         simple(
@@ -4837,9 +5069,21 @@ function App() {
                 },
                 purchasingEmpty(
                   "Receipt drafts",
-                  can("warehouse")
-                    ? "No saved receipt drafts. Start one from an open purchase order."
-                    : "No saved receipt drafts.",
+                  can("warehouse") ? (
+                    <>
+                      <p>No saved receipt drafts.</p>
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          updateRoute({ section: "purchasing-queue" })
+                        }
+                      >
+                        Open purchase orders
+                      </button>
+                    </>
+                  ) : (
+                    "No saved receipt drafts."
+                  ),
                 ),
               )}
             </PageSection>
@@ -4856,9 +5100,32 @@ function App() {
                   stays received.
                 </InfoBubble>
               </div>
+              <label className="receipt-search">
+                Find a receipt in the loaded records
+                <input
+                  type="search"
+                  value={receiptSearch}
+                  onChange={(event) => setReceiptSearch(event.target.value)}
+                  placeholder="Delivery, purchase order, product or serial"
+                />
+              </label>
               {table(
                 ["Delivery", "Purchased / returned", "Held stock", "Actions"],
-                extra.purchases?.receipts ?? [],
+                (extra.purchases?.receipts ?? []).filter((r: Item) =>
+                  [
+                    r.delivery_ref,
+                    r.po_id,
+                    ...r.candidates.flatMap((u: Item) => [
+                      u.serial,
+                      productName(u.product_id),
+                      data.products?.find((p: Item) => p.id === u.product_id)
+                        ?.sku,
+                    ]),
+                  ]
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(receiptSearch.trim().toLowerCase()),
+                ),
                 (receipt: Item) => [
                   <div className="purchasing-ref">
                     <strong>{receipt.delivery_ref}</strong>
@@ -4871,22 +5138,28 @@ function App() {
                   </div>,
                   `${receipt.quantity} purchased · ${receipt.returnedQuantity} returned`,
                   receipt.candidates.length ? (
-                    receipt.candidates.map((u: Item) => (
-                      <div key={u.id} className="order-line">
-                        <strong>{productName(u.product_id)}</strong>
-                        <span>
-                          {warehouseName(u.warehouse_id)} · bin {u.bin} ·{" "}
-                          {u.serial ?? "bulk"} · {u.quantity - u.reserved}{" "}
-                          unreserved ·{" "}
-                          <span
-                            className="stock-condition"
-                            data-condition={u.condition}
-                          >
-                            {u.condition}
+                    <details>
+                      <summary>
+                        {receipt.candidates.length} returnable stock{" "}
+                        {receipt.candidates.length === 1 ? "record" : "records"}
+                      </summary>
+                      {receipt.candidates.map((u: Item) => (
+                        <div key={u.id} className="order-line">
+                          <strong>{productName(u.product_id)}</strong>
+                          <span>
+                            {warehouseName(u.warehouse_id)} · bin {u.bin} ·{" "}
+                            {u.serial ?? "bulk"} · {u.quantity - u.reserved}{" "}
+                            unreserved ·{" "}
+                            <span
+                              className="stock-condition"
+                              data-condition={u.condition}
+                            >
+                              {u.condition}
+                            </span>
                           </span>
-                        </span>
-                      </div>
-                    ))
+                        </div>
+                      ))}
+                    </details>
                   ) : (
                     <span className="purchasing-muted">
                       No returnable stock from this delivery
@@ -4944,7 +5217,19 @@ function App() {
                 ],
                 purchasingEmpty(
                   "Purchase receipts",
-                  "No purchase receipts yet. Receiving a delivery records one here.",
+                  receiptSearch.trim() ? (
+                    <>
+                      <p>No matching receipts in the loaded records.</p>
+                      <button
+                        className="secondary"
+                        onClick={() => setReceiptSearch("")}
+                      >
+                        Clear receipt search
+                      </button>
+                    </>
+                  ) : (
+                    "No purchase receipts yet. Receiving a delivery records one here."
+                  ),
                 ),
               )}
               <SupplierReturnQueueControls
@@ -5145,7 +5430,6 @@ function App() {
         )}
         {page === "Catalog" && (
           <>
-            <ManufacturerCollection staff />
             <div className="actions">
               {can("commercial") &&
                 button("Add product", () =>
@@ -5202,6 +5486,10 @@ function App() {
                 )
               }
             />
+            <details className="catalog-reference">
+              <summary>Manufacturer reference library</summary>
+              <ManufacturerCollection staff />
+            </details>
           </>
         )}
         {page === "Billing" && (
@@ -5314,7 +5602,16 @@ function App() {
                     ...(staff ? [accountName(i.account_id)] : []),
                     <>
                       {money(i.total, i.currency)}
-                      <small>{shippingSummary(i.shipping, i.currency)}</small>
+                      <small>
+                        {i.shipping?.treatment === "included"
+                          ? "Shipping included"
+                          : i.shipping?.treatment === "extra"
+                            ? "Shipping charged separately"
+                            : "Shipping terms not specified"}
+                      </small>
+                      <InfoBubble label={`Shipping terms for ${i.number}`}>
+                        {shippingSummary(i.shipping, i.currency)}
+                      </InfoBubble>
                       {i.shipping?.treatment === "extra" && (
                         <small>
                           {i.shipping.charged
@@ -5334,8 +5631,8 @@ function App() {
                         />
                       )}
                       <details className="stock-actions">
-                        <summary aria-label={`Actions for invoice ${i.number}`}>
-                          Actions
+                        <summary aria-label={`Invoice actions for ${i.number}`}>
+                          Invoice actions / PDF
                         </summary>
                         <div className="actions">
                           {invoiceActionButtons(i)}
@@ -5355,6 +5652,26 @@ function App() {
                       </details>
                     </div>,
                   ],
+                  invoiceQueue.busy || !invoiceQueue.loaded ? (
+                    "Loading invoices…"
+                  ) : invoiceQueue.error ? (
+                    "Invoices could not be loaded. Use the retry above."
+                  ) : invoiceQueue.state ? (
+                    <>
+                      <p>No invoices match this balance filter.</p>
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          invoiceQueue.filter("");
+                          updateRoute({ invoiceBalance: "" });
+                        }}
+                      >
+                        Show all invoices
+                      </button>
+                    </>
+                  ) : (
+                    "No invoices yet. Invoices appear after shipment handover."
+                  ),
                 )}
                 {extra.credits?.length > 0 && (
                   <>
@@ -5563,22 +5880,55 @@ function App() {
                 {extra.downloads?.length > 0 && (
                   <>
                     <div className="info-heading">
-                      <h2>Prepared document downloads</h2>
-                      <InfoBubble label="Prepared document downloads">
+                      <h2>Download request history</h2>
+                      <InfoBubble label="Download request history">
                         These receipts record an authorized request and prepared
                         bytes. They do not establish receipt, reading or
                         delivery to the customer.
                       </InfoBubble>
                     </div>
                     {table(
-                      ["Document", "Requested", "Bytes", "SHA-256", "State"],
+                      ["Document", "Requested", "Status", "Integrity details"],
                       extra.downloads,
                       (d: Item) => [
-                        d.number,
-                        d.requested_at,
-                        d.size,
-                        <code>{d.content_hash}</code>,
+                        d.kind === "invoice" ? (
+                          <button
+                            className="record-link"
+                            onClick={() =>
+                              updateRoute({ invoiceId: d.document_id })
+                            }
+                          >
+                            {d.number} · View invoice
+                          </button>
+                        ) : (
+                          <span>
+                            {d.number}
+                            <button
+                              className="secondary"
+                              onClick={() =>
+                                void run((signal) =>
+                                  downloadDocument(
+                                    "credit",
+                                    d.document_id,
+                                    signal,
+                                  ),
+                                ).catch(() => {})
+                              }
+                            >
+                              Download credit PDF again
+                            </button>
+                          </span>
+                        ),
+                        <ReadableTime value={d.requested_at} />,
                         d.state,
+                        <details>
+                          <summary>File details</summary>
+                          <p>{d.size} bytes</p>
+                          <RecordIdentifier
+                            value={d.content_hash}
+                            label="SHA-256"
+                          />
+                        </details>,
                       ],
                     )}
                   </>
@@ -5912,7 +6262,18 @@ function App() {
                     ],
                     extra.aging.accounts,
                     (a: Item) => [
-                      a.name,
+                      <button
+                        className="record-link"
+                        onClick={() =>
+                          navigate({
+                            page: "Customers",
+                            customerId: a.accountId,
+                            customerTab: "history",
+                          })
+                        }
+                      >
+                        {a.name} · Investigate account balance
+                      </button>,
                       money(a.notDue, a.currency),
                       money(a.days1to30, a.currency),
                       money(a.days31to60, a.currency),
@@ -5924,7 +6285,9 @@ function App() {
                       `${money(a.holds, a.currency)} / ${money(a.pendingRefunds, a.currency)}`,
                     ],
                   )}
-                  <small>Observed {extra.aging.observedAt}</small>
+                  <small>
+                    Observed <ReadableTime value={extra.aging.observedAt} />
+                  </small>
                 </>
               )}
               {extra.billingProfiles && (
@@ -6026,6 +6389,25 @@ function App() {
                               version: p.version,
                               reason: v.reason,
                             }),
+                          <>
+                            <strong>
+                              {p.accountId === null
+                                ? `Organization issuer: ${data.organization.name}`
+                                : `Customer: ${accountName(p.accountId)}`}
+                            </strong>
+                            <p>
+                              Editing billing identity for this party. Changing
+                              the billing name does not change the selected
+                              party.
+                            </p>
+                            {p.accountId !== null && (
+                              <RecordIdentifier
+                                value={p.accountId}
+                                label="Customer ID"
+                              />
+                            )}
+                          </>,
+                          "Save billing details",
                         ),
                       ),
                     ],
@@ -6288,6 +6670,22 @@ function App() {
                         ""
                       ),
                     ],
+                    <>
+                      <p>
+                        No provider operations have been queued. Native invoices
+                        and payments remain available. Sending an invoice or
+                        payment operation to a configured provider records its
+                        status here.
+                      </p>
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          updateRoute({ section: "billing-invoices" })
+                        }
+                      >
+                        Open invoices
+                      </button>
+                    </>,
                   )}
                 </>
               )}
@@ -6338,67 +6736,74 @@ function App() {
             <PageSection id="returns-claims">
               {" "}
               <div className="actions">
-                {can("warranty", "commercial", "buyer") &&
-                  button("Submit claim / return", () => {
-                    let selected: SoldSerial | null = data.soldUnits[0] ?? null;
-                    let reviewed: WarrantyCoverage | null = null;
-                    open(
-                      "Request return or warranty review",
-                      [
-                        {
-                          name: "unitId",
-                          label: "Sold serial",
-                          content: (
-                            <ClaimSerialReview
-                              initial={{
-                                items: data.soldUnits,
-                                next: data.soldUnitNext,
-                              }}
-                              onChange={(unit, coverage) => {
-                                selected = unit;
-                                reviewed = coverage;
-                              }}
-                            />
-                          ),
+                {can("warranty", "commercial", "buyer") && (
+                  <button
+                    id="submit-claim"
+                    onClick={() => {
+                      let selected: SoldSerial | null =
+                        data.soldUnits[0] ?? null;
+                      let reviewed: WarrantyCoverage | null = null;
+                      open(
+                        "Request return or warranty review",
+                        [
+                          {
+                            name: "unitId",
+                            label: "Sold serial",
+                            content: (
+                              <ClaimSerialReview
+                                initial={{
+                                  items: data.soldUnits,
+                                  next: data.soldUnitNext,
+                                }}
+                                onChange={(unit, coverage) => {
+                                  selected = unit;
+                                  reviewed = coverage;
+                                }}
+                              />
+                            ),
+                          },
+                          {
+                            name: "type",
+                            label: "Request type",
+                            options: [
+                              { value: "return", label: "Return" },
+                              { value: "warranty", label: "Warranty" },
+                            ],
+                          },
+                          {
+                            name: "issue",
+                            label: "Issue / reason",
+                            type: "textarea",
+                          },
+                          {
+                            name: "evidence",
+                            label: "Evidence reference",
+                            type: "textarea",
+                          },
+                        ],
+                        (v) => {
+                          if (!selected || selected.id !== v.unitId)
+                            throw new Error(
+                              "Select a currently loaded sold serial.",
+                            );
+                          if (!reviewed)
+                            throw new Error(
+                              "Load and review the claim coverage dates before submitting.",
+                            );
+                          return command("warranty.submit", {
+                            ...v,
+                            accountId: selected.accountId,
+                            ...(reviewed.policy
+                              ? { policyRevision: reviewed.policy.revision }
+                              : {}),
+                          });
                         },
-                        {
-                          name: "type",
-                          label: "Request type",
-                          options: [
-                            { value: "return", label: "Return" },
-                            { value: "warranty", label: "Warranty" },
-                          ],
-                        },
-                        {
-                          name: "issue",
-                          label: "Issue / reason",
-                          type: "textarea",
-                        },
-                        {
-                          name: "evidence",
-                          label: "Evidence reference",
-                          type: "textarea",
-                        },
-                      ],
-                      (v) => {
-                        if (!selected || selected.id !== v.unitId)
-                          throw new Error(
-                            "Select a currently loaded sold serial.",
-                          );
-                        if (!reviewed)
-                          throw new Error(
-                            "Load and review the claim coverage dates before submitting.",
-                          );
-                        return command("warranty.submit", {
-                          ...v,
-                          accountId: selected.accountId,
-                          ...(reviewed.policy
-                            ? { policyRevision: reviewed.policy.revision }
-                            : {}),
-                        });
-                      },
-                    );
-                  })}
+                      );
+                    }}
+                  >
+                    Submit claim / return
+                  </button>
+                )}
                 {can("warranty", "commercial", "buyer") && (
                   <button
                     className="secondary"
@@ -6437,23 +6842,66 @@ function App() {
                     {c.state}
                   </span>,
                   <div className="row-actions claim-row-actions">
-                    {c.state === "submitted" &&
-                      can("warranty") &&
-                      button("Review", () =>
-                        simple(
-                          "Review request",
-                          [
-                            {
-                              name: "approved",
-                              label: "Approve return authorization",
-                              type: "checkbox",
-                            },
-                            reason,
-                          ],
-                          "warranty.review",
-                          (v) => ({ ...v, claimId: c.id }),
-                        ),
-                      )}
+                    {c.state === "submitted" && can("warranty") && (
+                      <>
+                        {[true, false].map((approved) => (
+                          <button
+                            key={String(approved)}
+                            className={approved ? "" : "secondary"}
+                            onClick={() =>
+                              open(
+                                approved
+                                  ? "Approve return authorization"
+                                  : "Reject request",
+                                [reason],
+                                (v) =>
+                                  command("warranty.review", {
+                                    claimId: c.id,
+                                    approved,
+                                    reason: v.reason,
+                                  }),
+                                <>
+                                  <strong>
+                                    {accountName(c.account_id)} · {c.type}
+                                  </strong>
+                                  <p>{c.issue}</p>
+                                  <p>
+                                    {data.soldUnits.find(
+                                      (unit: SoldSerial) =>
+                                        unit.id === c.unit_id,
+                                    )?.serial
+                                      ? `Sold serial: ${data.soldUnits.find((unit: SoldSerial) => unit.id === c.unit_id)?.serial}`
+                                      : "Sold serial is not in the loaded list; use the retained claim coverage to investigate."}
+                                  </p>
+                                  <p>
+                                    Retained coverage end:{" "}
+                                    <ReadableTime value={c.coverage_end} />.
+                                    Eligibility requires review.
+                                  </p>
+                                  <RecordIdentifier
+                                    value={c.id}
+                                    label="Claim ID"
+                                  />
+                                  <RecordIdentifier
+                                    value={c.unit_id}
+                                    label="Sold stock ID"
+                                  />
+                                  <RetainedClaimCoverage claimId={c.id} />
+                                  <p>
+                                    {approved
+                                      ? "Authorize this return for receiving. This does not issue a credit or replacement."
+                                      : "Reject this request. Record the reason for the customer and claim history."}
+                                  </p>
+                                </>,
+                                approved ? "Approve return" : "Reject request",
+                              )
+                            }
+                          >
+                            {approved ? "Approve return" : "Reject request"}
+                          </button>
+                        ))}
+                      </>
+                    )}
                     {c.state === "approved" &&
                       can("warehouse") &&
                       button("Receive return", () =>
@@ -6647,13 +7095,41 @@ function App() {
                     </details>
                   </div>,
                 ],
-                claimQueue.state
-                  ? "No claims are in this state. Choose All states to see every claim."
-                  : actor.role === "buyer"
-                    ? "No claims or returns yet. Use Submit claim / return to report a fault or request a return."
-                    : can("warranty", "commercial")
-                      ? "No claims or returns yet. Use Submit claim / return when a customer reports a fault or return."
-                      : "No claims or returns yet.",
+                claimQueue.state ? (
+                  <>
+                    <p>No claims are in this state.</p>
+                    <button
+                      className="secondary"
+                      onClick={() => claimQueue.filter("")}
+                    >
+                      Show all claim states
+                    </button>
+                  </>
+                ) : actor.role === "buyer" ? (
+                  <>
+                    <p>No claims or returns yet.</p>
+                    <button
+                      onClick={() =>
+                        document.getElementById("submit-claim")?.click()
+                      }
+                    >
+                      Start a claim or return
+                    </button>
+                  </>
+                ) : can("warranty", "commercial") ? (
+                  <>
+                    <p>No claims or returns yet.</p>
+                    <button
+                      onClick={() =>
+                        document.getElementById("submit-claim")?.click()
+                      }
+                    >
+                      Start a claim or return
+                    </button>
+                  </>
+                ) : (
+                  "No claims or returns yet."
+                ),
               )}
               {evidenceClaim && (
                 <WarrantyEvidence
@@ -6728,7 +7204,10 @@ function App() {
                             Shipping: {r.shipping.state} · v
                             {r.shipping.revision}
                           </p>
-                          <p>Observed: {r.shipping.observedAt}</p>
+                          <p>
+                            Observed:{" "}
+                            <ReadableTime value={r.shipping.observedAt} />
+                          </p>
                           {r.shipping.address && (
                             <p>Delivery address: {r.shipping.address}</p>
                           )}
@@ -6885,9 +7364,24 @@ function App() {
                         )}
                     </div>,
                   ],
-                  can("warranty")
-                    ? "No replacements have been recorded. Approve a replacement from an inspected warranty claim in Claims and returns."
-                    : "No replacements have been recorded.",
+                  can("warranty") ? (
+                    <>
+                      <p>
+                        No replacements have been recorded. Approve a
+                        replacement from an inspected warranty claim.
+                      </p>
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          updateRoute({ section: "returns-claims" })
+                        }
+                      >
+                        Open claims and returns
+                      </button>
+                    </>
+                  ) : (
+                    "No replacements have been recorded."
+                  ),
                 )}
                 {carrierReplacementId &&
                   claimQueue.items
@@ -7188,11 +7682,48 @@ function App() {
                       Returns and warranty requests
                     </button>
                   )}
+                  <nav aria-label="Account topics" className="actions">
+                    {[
+                      ["account-commercial", "Commercial account"],
+                      ["account-data-location", "Data location"],
+                      ["account-sign-in", "Sign-in security"],
+                    ].map(([id, label]) => (
+                      <button
+                        key={id}
+                        className="secondary"
+                        onClick={() => {
+                          const target = document.getElementById(id!);
+                          target?.scrollIntoView({ block: "start" });
+                          target?.focus();
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
+                  <h2 id="account-commercial" tabIndex={-1}>
+                    Commercial account
+                  </h2>
+                  {table(
+                    ["Customer", "Tier", "Credit limit", "Hold"],
+                    data.accounts,
+                    (a) => [
+                      a.name,
+                      a.tier,
+                      money(a.credit_limit, a.currency),
+                      a.held ? "On hold" : "Clear",
+                    ],
+                  )}
+                  <h2 id="account-data-location" tabIndex={-1}>
+                    Data location
+                  </h2>
                   <p>
-                    Each processor exception allows processing outside the
-                    application storage region. Review the applicable terms
-                    before accepting. Carrier services require separate setup
-                    and qualification.
+                    Data location describes where the application stores your
+                    account records. A processor exception is your permission
+                    for a named service, such as payment processing or
+                    accounting, to process information outside that region.
+                    Review that service's terms before accepting. Carrier
+                    services require separate setup and qualification.
                   </p>
                   <div className="actions">
                     {can("commercial") &&
@@ -7217,21 +7748,11 @@ function App() {
                       )}
                   </div>
                   {table(
-                    [
-                      "Customer",
-                      "Tier",
-                      "Credit limit",
-                      "Hold",
-                      "Residency",
-                      "Actions",
-                    ],
+                    ["Customer", "Residency", "Actions"],
                     data.accounts,
                     (a: Item) => [
                       a.name,
-                      a.tier,
-                      money(a.credit_limit, a.currency),
-                      a.held ? "On hold" : "Clear",
-                      `${data.organization.region} · ${a.residency_mode}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
+                      `${data.organization.region === "CA" ? "Canada" : data.organization.region === "US" ? "United States" : data.organization.region} · ${a.residency_mode.replaceAll("_", " ")}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
                         .filter(
                           (p) =>
                             JSON.parse(a.provider_exceptions).includes(p) &&
@@ -8055,7 +8576,11 @@ function App() {
           </PageSections>
         )}
         {(page === "Security" || (page === "Account" && !staff)) && (
-          <section className="panel ops-security">
+          <section
+            className="panel ops-security"
+            id="account-sign-in"
+            tabIndex={-1}
+          >
             <h2>Your sign-in security</h2>
             <p>
               {extra.security?.email} · {extra.security?.sessions ?? 0} active{" "}
@@ -8085,6 +8610,7 @@ function App() {
               </section>
               <section className="ops-card">
                 <h3>Signed-in sessions</h3>
+                <SessionList sessions={extra.security?.sessionDetails} />
                 <p className="ops-note">
                   You will need to sign in again on every device.
                 </p>
@@ -8160,7 +8686,7 @@ function App() {
                             data.accounts,
                             (a) => a.name,
                           ),
-                          optional: true,
+                          enabledWhen: { field: "role", value: "buyer" },
                         },
                         {
                           name: "sites",
@@ -8186,9 +8712,22 @@ function App() {
                     Barcode scanner — open or send to a phone
                   </a>
                 </p>
+                <label>
+                  Find staff or buyer access
+                  <input
+                    type="search"
+                    value={accessSearch}
+                    onChange={(event) => setAccessSearch(event.target.value)}
+                    placeholder="Name, role or active status"
+                  />
+                </label>
                 {table(
                   ["User", "Role / scope", "Status", "Sessions", "Actions"],
-                  extra.users ?? [],
+                  (extra.users ?? []).filter((u: Item) =>
+                    `${u.name} ${u.role} ${u.active ? "active" : "inactive"}`
+                      .toLowerCase()
+                      .includes(accessSearch.trim().toLowerCase()),
+                  ),
                   (u: Item) => [
                     <span className="ops-person">
                       <strong>{u.name}</strong>
@@ -8255,7 +8794,7 @@ function App() {
                                   (a) => a.name,
                                   u.accountId ?? "",
                                 ),
-                                optional: true,
+                                enabledWhen: { field: "role", value: "buyer" },
                               },
                               {
                                 name: "sites",
@@ -8347,7 +8886,19 @@ function App() {
                       </details>
                     </div>,
                   ],
-                  "No users yet. Use Create user to invite staff or a buyer.",
+                  accessSearch.trim() ? (
+                    <>
+                      <p>No users match this search.</p>
+                      <button
+                        className="secondary"
+                        onClick={() => setAccessSearch("")}
+                      >
+                        Clear search
+                      </button>
+                    </>
+                  ) : (
+                    "No users yet. Use Create user to invite staff or a buyer."
+                  ),
                 )}
               </section>
             </PageSection>
@@ -8356,9 +8907,11 @@ function App() {
             </PageSection>
           </PageSections>
         )}
-        <p className="demo-notice">
-          Demonstration site — prices and stock are illustrative.
-        </p>
+        {page !== "Shop" && (
+          <p className="demo-notice">
+            Demonstration site — prices and stock are illustrative.
+          </p>
+        )}
       </main>
       {purchaseEntryOpen && page === "Purchasing" && can("commercial") && (
         <PurchaseEntry

@@ -101,6 +101,7 @@ export function OrderDetail({
   back,
   scope,
   canAssignIncoming,
+  onQueueActions,
 }: {
   orderId: string;
   accountName: (id: string) => string;
@@ -108,6 +109,7 @@ export function OrderDetail({
   back: () => void;
   scope: string;
   canAssignIncoming: boolean;
+  onQueueActions?: (orderId: string) => void;
 }) {
   const [order, setOrder] = useState<Item | null>(null),
     [error, setError] = useState(""),
@@ -237,6 +239,10 @@ export function OrderDetail({
                 role="region"
                 aria-label="Order line records"
               >
+                <p className="table-scroll-cue">
+                  Scroll across to review quantities and status for each
+                  product.
+                </p>
                 <table>
                   <thead>
                     <tr>
@@ -277,8 +283,19 @@ export function OrderDetail({
             <p className="record-detail-note">
               {order.state === "closed"
                 ? "This order is closed. Review its recorded history."
-                : "Review outstanding quantities above, then return to the queue for the actions permitted for your role. Each action checks current access and stock."}
+                : "Review outstanding quantities above. Return to All orders to view available order actions."}
             </p>
+            {order.state !== "closed" && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() =>
+                  onQueueActions ? onQueueActions(order.id) : back()
+                }
+              >
+                View this order in All orders
+              </button>
+            )}
           </section>
           <IncomingSupply
             key={`${scope}:${order.id}`}

@@ -63,7 +63,7 @@ async function suspend(page: Page, csrf: string, name: string) {
 async function openPurchase(page: Page, name: string) {
   await purchasing(page, "Purchase orders");
   await page
-    .getByRole("button", { name: "Purchase order", exact: true })
+    .getByRole("button", { name: "Create purchase order", exact: true })
     .click();
   await page
     .getByRole("textbox", { name: "Purchase supplier search", exact: true })
@@ -174,7 +174,7 @@ test("browser: supplier availability on phone pages suppliers, retains an exact 
   await directory(page, "Recovery supplier");
   await page
     .getByRole("button", {
-      name: "Purchasing history Recovery supplier",
+      name: "Purchasing availability history Recovery supplier",
       exact: true,
     })
     .click();
@@ -182,9 +182,7 @@ test("browser: supplier availability on phone pages suppliers, retains an exact 
   await expect(dialog).toContainText(
     "Phone reviewed suspension with retained evidence",
   );
-  await page
-    .getByRole("button", { name: "Close supplier history", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await page
     .getByRole("button", {
       name: "Resume purchasing from Recovery supplier",
@@ -287,7 +285,7 @@ test("browser: supplier availability stale revisions require refreshed review an
     ).toHaveCount(0);
     await warehouse
       .getByRole("button", {
-        name: "Purchasing history History supplier",
+        name: "Purchasing availability history History supplier",
         exact: true,
       })
       .click();
@@ -327,9 +325,7 @@ test("browser: supplier availability stale revisions require refreshed review an
       .getByRole("button", { name: "Refresh supplier review", exact: true })
       .click();
     await expect(history.locator("tbody tr")).toHaveCount(20);
-    await warehouse
-      .getByRole("button", { name: "Close supplier history", exact: true })
-      .click();
+    await warehouse.getByRole("button", { name: "Close", exact: true }).click();
   } finally {
     await context.close();
   }
@@ -370,7 +366,7 @@ test("browser: supplier availability purchase refusal after reviewed suspension 
   ).toBeVisible();
   await purchasing(page, "Purchase orders");
   await page
-    .getByRole("button", { name: "Purchase order", exact: true })
+    .getByRole("button", { name: "Create purchase order", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await page
@@ -461,7 +457,7 @@ test("browser: supplier availability keeps an already committed purchase exact r
   ).toBeVisible();
   await purchasing(page, "Purchase orders");
   await page
-    .getByRole("button", { name: "Purchase order", exact: true })
+    .getByRole("button", { name: "Create purchase order", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Retry exact purchase", exact: true })

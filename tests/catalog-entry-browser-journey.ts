@@ -124,6 +124,7 @@ test("browser: paged catalog preserves saved off-page quantities, literal search
     ["Paged product 44", 3],
   ]);
   await navigateBuyerWorkspace(page, "Orders", "Orders");
+  await page.locator("details.order-items > summary").click();
   await expect(
     page.getByRole("button", {
       name: "Amend quantity: Paged product 44",

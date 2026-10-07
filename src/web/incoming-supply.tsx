@@ -215,7 +215,15 @@ export function IncomingSupply({
       {!data && !error && <p role="status">Loading incoming stock…</p>}
       {data && (
         <>
-          <div className="table-wrap">
+          <div
+            className="table-wrap"
+            role="region"
+            tabIndex={0}
+            aria-label="Order coverage in units"
+          >
+            <p className="table-scroll-cue">
+              Scroll across the table to review all fields and actions.
+            </p>
             <table>
               <caption>Order coverage in units</caption>
               <thead>
@@ -248,7 +256,15 @@ export function IncomingSupply({
             for the next receipt.
           </p>
           {data.commitments.length ? (
-            <div className="table-wrap">
+            <div
+              className="table-wrap"
+              role="region"
+              tabIndex={0}
+              aria-label="Incoming stock assignments"
+            >
+              <p className="table-scroll-cue">
+                Scroll across the table to review all fields and actions.
+              </p>
               <table>
                 <caption>Incoming assignments and history</caption>
                 <thead>
@@ -324,130 +340,145 @@ export function IncomingSupply({
             )}
           {editable && data.state === "open" && (
             <div className="incoming-forms">
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!line || !candidate || locked) return;
-                  setReview({
-                    name: "order.incoming.commit",
-                    payload: {
-                      orderId,
-                      revision: data.revision,
-                      lineId: line.lineId,
-                      poId: candidate.poId,
-                      purchaseLineId: candidate.purchaseLineId,
-                      quantity: Number(quantity),
-                      priority: Number(priority),
-                      reason: reason.trim(),
-                    },
-                    summary: `Assign ${quantity} units of ${line.description} from purchase order ${candidate.poId}, priority ${priority}. Reason: ${reason.trim()}`,
-                  });
-                }}
-              >
-                <h4>Assign incoming stock</h4>
-                <fieldset disabled={locked}>
-                  <legend>Choose demand and supply</legend>
-                  <div className="incoming-field incoming-field-wide">
-                    <label htmlFor={`${id}-line`}>Order product</label>
-                    <select
-                      id={`${id}-line`}
-                      required
-                      value={lineId}
-                      onChange={(event) => {
-                        setLineId(event.target.value);
-                        setPurchaseLineId("");
-                      }}
+              {data.lines.some((item) => item.uncovered > 0) ? (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!line || !candidate || locked) return;
+                    setReview({
+                      name: "order.incoming.commit",
+                      payload: {
+                        orderId,
+                        revision: data.revision,
+                        lineId: line.lineId,
+                        poId: candidate.poId,
+                        purchaseLineId: candidate.purchaseLineId,
+                        quantity: Number(quantity),
+                        priority: Number(priority),
+                        reason: reason.trim(),
+                      },
+                      summary: `Assign ${quantity} units of ${line.description} from purchase order ${candidate.poId}, priority ${priority}. Reason: ${reason.trim()}`,
+                    });
+                  }}
+                >
+                  <h4>Assign incoming stock</h4>
+                  <fieldset disabled={locked}>
+                    <legend>Choose demand and supply</legend>
+                    <div className="incoming-field incoming-field-wide">
+                      <label htmlFor={`${id}-line`}>Order product</label>
+                      <select
+                        id={`${id}-line`}
+                        required
+                        value={lineId}
+                        onChange={(event) => {
+                          setLineId(event.target.value);
+                          setPurchaseLineId("");
+                        }}
+                      >
+                        <option value="">Choose an uncovered product</option>
+                        {data.lines
+                          .filter((item) => item.uncovered > 0)
+                          .map((item) => (
+                            <option key={item.lineId} value={item.lineId}>
+                              {item.description} · {item.uncovered} uncovered
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="incoming-field incoming-field-wide">
+                      <label htmlFor={`${id}-purchase`}>
+                        Incoming purchase line
+                      </label>
+                      <select
+                        id={`${id}-purchase`}
+                        required
+                        value={purchaseLineId}
+                        onChange={(event) =>
+                          setPurchaseLineId(event.target.value)
+                        }
+                      >
+                        <option value="">
+                          Choose available incoming stock
+                        </option>
+                        {candidates
+                          .filter((item) => item.availableQuantity > 0)
+                          .map((item) => (
+                            <option
+                              key={item.purchaseLineId}
+                              value={item.purchaseLineId}
+                            >
+                              {item.supplierName} · PO {item.poId.slice(0, 8)} ·{" "}
+                              {item.availableQuantity} available
+                            </option>
+                          ))}
+                      </select>
+                      {line &&
+                        !candidates.some(
+                          (item) => item.availableQuantity > 0,
+                        ) && (
+                          <p>
+                            No unassigned incoming supply matches this product
+                            and warehouse. Create a purchase order or release
+                            another assignment first.
+                          </p>
+                        )}
+                    </div>
+                    <div className="incoming-field">
+                      <label htmlFor={`${id}-quantity`}>Units to assign</label>
+                      <input
+                        id={`${id}-quantity`}
+                        type="number"
+                        min="1"
+                        max={Math.min(
+                          line?.uncovered ?? 0,
+                          candidate?.availableQuantity ?? 0,
+                        )}
+                        step="1"
+                        required
+                        value={quantity}
+                        onChange={(event) => setQuantity(event.target.value)}
+                      />
+                    </div>
+                    <div className="incoming-field">
+                      <label htmlFor={`${id}-priority`}>
+                        Priority (1 first)
+                      </label>
+                      <input
+                        id={`${id}-priority`}
+                        type="number"
+                        min="1"
+                        max="999"
+                        step="1"
+                        required
+                        value={priority}
+                        onChange={(event) => setPriority(event.target.value)}
+                      />
+                    </div>
+                    <div className="incoming-field incoming-field-wide">
+                      <label htmlFor={`${id}-reason`}>Assignment reason</label>
+                      <input
+                        id={`${id}-reason`}
+                        required
+                        maxLength={500}
+                        value={reason}
+                        onChange={(event) => setReason(event.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!candidate || !reason.trim()}
                     >
-                      <option value="">Choose an uncovered product</option>
-                      {data.lines
-                        .filter((item) => item.uncovered > 0)
-                        .map((item) => (
-                          <option key={item.lineId} value={item.lineId}>
-                            {item.description} · {item.uncovered} uncovered
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div className="incoming-field incoming-field-wide">
-                    <label htmlFor={`${id}-purchase`}>
-                      Incoming purchase line
-                    </label>
-                    <select
-                      id={`${id}-purchase`}
-                      required
-                      value={purchaseLineId}
-                      onChange={(event) =>
-                        setPurchaseLineId(event.target.value)
-                      }
-                    >
-                      <option value="">Choose available incoming stock</option>
-                      {candidates
-                        .filter((item) => item.availableQuantity > 0)
-                        .map((item) => (
-                          <option
-                            key={item.purchaseLineId}
-                            value={item.purchaseLineId}
-                          >
-                            {item.supplierName} · PO {item.poId.slice(0, 8)} ·{" "}
-                            {item.availableQuantity} available
-                          </option>
-                        ))}
-                    </select>
-                    {line &&
-                      !candidates.some(
-                        (item) => item.availableQuantity > 0,
-                      ) && (
-                        <p>
-                          No unassigned incoming supply matches this product and
-                          warehouse. Create a purchase order or release another
-                          assignment first.
-                        </p>
-                      )}
-                  </div>
-                  <div className="incoming-field">
-                    <label htmlFor={`${id}-quantity`}>Units to assign</label>
-                    <input
-                      id={`${id}-quantity`}
-                      type="number"
-                      min="1"
-                      max={Math.min(
-                        line?.uncovered ?? 0,
-                        candidate?.availableQuantity ?? 0,
-                      )}
-                      step="1"
-                      required
-                      value={quantity}
-                      onChange={(event) => setQuantity(event.target.value)}
-                    />
-                  </div>
-                  <div className="incoming-field">
-                    <label htmlFor={`${id}-priority`}>Priority (1 first)</label>
-                    <input
-                      id={`${id}-priority`}
-                      type="number"
-                      min="1"
-                      max="999"
-                      step="1"
-                      required
-                      value={priority}
-                      onChange={(event) => setPriority(event.target.value)}
-                    />
-                  </div>
-                  <div className="incoming-field incoming-field-wide">
-                    <label htmlFor={`${id}-reason`}>Assignment reason</label>
-                    <input
-                      id={`${id}-reason`}
-                      required
-                      maxLength={500}
-                      value={reason}
-                      onChange={(event) => setReason(event.target.value)}
-                    />
-                  </div>
-                  <button type="submit" disabled={!candidate || !reason.trim()}>
-                    Review assignment
-                  </button>
-                </fieldset>
-              </form>
+                      Review assignment
+                    </button>
+                  </fieldset>
+                </form>
+              ) : (
+                <p className="empty">
+                  {data.lines.length
+                    ? "All order demand is covered. No incoming assignment is needed."
+                    : "No order demand is recorded. There is nothing to assign."}
+                </p>
+              )}
               {active.length > 0 && (
                 <form
                   onSubmit={(event) => {

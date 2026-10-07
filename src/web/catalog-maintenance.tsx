@@ -45,7 +45,15 @@ function Products({
           {rows.error}
         </p>
       )}
-      <div className="table-wrap">
+      <div
+        className="table-wrap"
+        role="region"
+        tabIndex={0}
+        aria-label="Staff catalog table"
+      >
+        <p className="table-scroll-cue">
+          Scroll across the table to review all fields and actions.
+        </p>
         <table className="catalog-maintenance-table">
           <thead>
             <tr>
@@ -53,7 +61,7 @@ function Products({
                 "SKU",
                 "Product",
                 "Serial tracking",
-                "Base price",
+                "Base price (staff reference)",
                 "Tax",
                 "Status",
                 "Customer availability",
@@ -149,9 +157,7 @@ function Products({
           </button>
         )}
         <InfoBubble label="catalog pages">
-          Pages show current status, ordered by SKU. Refresh after changes. Base
-          prices are staff reference prices; customer quotes apply their
-          account's pricing rules.
+          Pages show current status, ordered by SKU. Refresh after changes.
         </InfoBubble>
       </nav>
     </section>
@@ -262,7 +268,15 @@ export function CatalogHistoryRows({
   items: CatalogLifecycleRecord[];
 }) {
   return (
-    <div className="table-wrap">
+    <div
+      className="table-wrap"
+      role="region"
+      tabIndex={0}
+      aria-label="Catalog lifecycle history records"
+    >
+      <p className="table-scroll-cue">
+        Scroll across the table to review all fields and actions.
+      </p>
       <table>
         <thead>
           <tr>

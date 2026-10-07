@@ -1023,3 +1023,32 @@
 .storefront nav.sf-product-breadcrumb .sf-back {
   margin: 0;
 }
+
+/* Purchase confirmation stays beside the control used to add this product. */
+.storefront .sf-local-feedback {
+  color: #24533b;
+  border-left: 3px solid #327052;
+  padding: 8px 12px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.storefront .sf-local-feedback p {
+  margin: 0 0 6px;
+}
+.storefront .sf-addons li:has(> .sf-local-feedback) {
+  flex-wrap: wrap;
+}
+.storefront .sf-addons li > .sf-local-feedback {
+  flex-basis: 100%;
+}
+@media (max-width: 480px) {
+  .storefront .sf-add:not(.sf-add-compact) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .storefront .sf-add:not(.sf-add-compact) > button {
+    grid-column: 1 / -1;
+    width: 100%;
+    white-space: nowrap;
+  }
+}

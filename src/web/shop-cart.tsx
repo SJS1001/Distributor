@@ -1,7 +1,32 @@
-import { useEffect, useId, useState } from "react";
+import { createContext, useContext, useEffect, useId, useState } from "react";
 import type { CustomerProduct } from "../shared/customer-products.ts";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import { AddonSuggestions, useAddonSuggestions } from "./product-addons.tsx";
+
+export const CartFeedbackContext = createContext<{
+  productId: string;
+  message: string;
+  viewCart: () => void;
+} | null>(null);
+export function LocalCartFeedback({ productId }: { productId: string }) {
+  const feedback = useContext(CartFeedbackContext);
+  if (!feedback?.message || feedback.productId !== productId) return null;
+  return (
+    <div className="sf-local-feedback">
+      <p>
+        {feedback.message.startsWith("Added ")
+          ? feedback.message.replace(
+              /^Added (.+) to your cart\.$/,
+              "$1 added to your cart.",
+            )
+          : feedback.message}
+      </p>
+      <button type="button" className="sf-back" onClick={feedback.viewCart}>
+        View cart
+      </button>
+    </div>
+  );
+}
 
 // The server accepts at most this many units per line and lines per cart.
 export const maxQuantity = 100000;
@@ -99,37 +124,40 @@ export function AddToCart({
     id = useId();
   const quantity = wholeQuantity(text);
   return (
-    <form
-      className={compact ? "sf-add sf-add-compact" : "sf-add"}
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (quantity === null) return;
-        add(quantity);
-        setText("1");
-      }}
-    >
-      <label htmlFor={id}>Quantity</label>
-      <input
-        id={id}
-        type="number"
-        inputMode="numeric"
-        min={1}
-        max={maxQuantity}
-        step={1}
-        value={text}
-        aria-label={compact ? `Quantity of ${product.name}` : undefined}
-        aria-invalid={quantity === null}
-        onChange={(e) => setText(e.target.value)}
-      />
-      <button
-        className="sf-primary"
-        type="submit"
-        disabled={quantity === null}
-        aria-label={compact ? `Add ${product.name} to cart` : undefined}
+    <div>
+      <form
+        className={compact ? "sf-add sf-add-compact" : "sf-add"}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (quantity === null) return;
+          add(quantity);
+          setText("1");
+        }}
       >
-        Add to cart
-      </button>
-    </form>
+        <label htmlFor={id}>Quantity</label>
+        <input
+          id={id}
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={maxQuantity}
+          step={1}
+          value={text}
+          aria-label={compact ? `Quantity of ${product.name}` : undefined}
+          aria-invalid={quantity === null}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <button
+          className="sf-primary"
+          type="submit"
+          disabled={quantity === null}
+          aria-label={compact ? `Add ${product.name} to cart` : undefined}
+        >
+          Add to cart
+        </button>
+      </form>
+      <LocalCartFeedback productId={product.id} />
+    </div>
   );
 }
 
@@ -225,11 +253,7 @@ export function ShopCart({
               </li>
             ))}
           </ul>
-          <AddonSuggestions
-            title="Add-ons for products in your cart"
-            addons={addons}
-            add={(product) => add(product, 1)}
-          />
+
           <form
             className="sf-cart-checkout"
             onSubmit={(e) => {
@@ -253,11 +277,14 @@ export function ShopCart({
               </div>
             </dl>
             <div className="sf-cart-warehouse">
-              <label htmlFor={`${id}-warehouse`}>Ship from warehouse</label>
+              <label htmlFor={`${id}-warehouse`}>
+                Ship from warehouse <span aria-hidden="true">(required)</span>
+              </label>
               <select
                 id={`${id}-warehouse`}
                 value={warehouseId}
                 required
+                aria-describedby={`${id}-warehouse-help`}
                 onChange={(e) => setWarehouseId(e.target.value)}
               >
                 <option value="">Choose a warehouse</option>
@@ -268,6 +295,11 @@ export function ShopCart({
                 ))}
               </select>
             </div>
+            <p id={`${id}-warehouse-help`} className="sf-purchase-note">
+              {warehouseId
+                ? "Warehouse selected. Review your order quantities next."
+                : "Choose a warehouse to review your order."}
+            </p>
             {error && (
               <p role="alert" className="error">
                 {error}
@@ -286,6 +318,11 @@ export function ShopCart({
               before you accept.
             </p>
           </form>
+          <AddonSuggestions
+            title="Add-ons for products in your cart"
+            addons={addons}
+            add={(product) => add(product, 1)}
+          />
         </>
       )}
     </section>

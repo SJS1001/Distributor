@@ -70,7 +70,7 @@ test("dedicated record routes, six tabs, selected pricing, terms, notes and comp
     .fill("Synthetic agreed billing terms");
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Save billing details", exact: true })
     .click();
   await expect(
     page.getByText("14 calendar days", { exact: true }),

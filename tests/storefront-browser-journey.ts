@@ -95,7 +95,7 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
     page.getByLabel("Quantity of Synthetic equipment in cart"),
   ).toHaveValue("3");
   await page
-    .getByLabel("Ship from warehouse", { exact: true })
+    .getByRole("combobox", { name: "Ship from warehouse", exact: true })
     .selectOption({ label: "Toronto" });
   await page.screenshot({
     path: "/tmp/distributor-shop-cart-mobile.png",
@@ -352,7 +352,7 @@ test("staff suggest add-ons that buyers add from the product page and cart; dial
       .click();
     await expect(cartAddons).toContainText("Synthetic replacement part");
     await buyer
-      .getByLabel("Ship from warehouse", { exact: true })
+      .getByRole("combobox", { name: "Ship from warehouse", exact: true })
       .selectOption({ label: "Toronto" });
     const review = buyer.getByRole("button", {
       name: "Review order quantities",
@@ -586,7 +586,7 @@ test("revoked saved products require explicit removal before replacing a cart", 
       .click();
     await buyer.getByRole("button", { name: "View cart (1 item)" }).click();
     await buyer
-      .getByLabel("Ship from warehouse", { exact: true })
+      .getByRole("combobox", { name: "Ship from warehouse", exact: true })
       .selectOption({ label: "Toronto" });
     await buyer
       .getByRole("button", { name: "Review order quantities", exact: true })

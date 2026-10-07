@@ -8,7 +8,12 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // inside the cell instead of widening the table.
 function RecordId({ value }: { value: string }) {
   if (!uuid.test(value)) return <>{value}</>;
-  return <code className="ops-id">{value}</code>;
+  return (
+    <details>
+      <summary>Identifier ending {value.slice(-8)}</summary>
+      <code className="ops-id">{value}</code>
+    </details>
+  );
 }
 function RecordedTime({ value }: { value: string }) {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(value);
@@ -23,6 +28,7 @@ function RecordedTime({ value }: { value: string }) {
 type Audit = {
   id: string;
   actor_id: string;
+  currentActorName?: string | null;
   action: string;
   reference: string;
   created_at: string;
@@ -66,12 +72,20 @@ export function AuditHistory() {
         {rows.busy ? " · Loading…" : ""}
       </p>
       {!!rows.items.length && (
-        <div className="table-wrap">
+        <div
+          className="table-wrap"
+          role="region"
+          tabIndex={0}
+          aria-label="Audit records"
+        >
+          <p className="table-scroll-cue">
+            Scroll across the table to review all fields and actions.
+          </p>
           <table>
             <thead>
               <tr>
                 <th>Recorded time</th>
-                <th>Actor ID</th>
+                <th>Actor</th>
                 <th>Action</th>
                 <th>Reference</th>
               </tr>
@@ -83,10 +97,26 @@ export function AuditHistory() {
                     <RecordedTime value={row.created_at} />
                   </td>
                   <td>
+                    <p>
+                      {row.currentActorName ? (
+                        <>
+                          Current actor name:{" "}
+                          <strong>{row.currentActorName}</strong>
+                        </>
+                      ) : (
+                        "Actor name unavailable"
+                      )}
+                    </p>
                     <RecordId value={row.actor_id} />
                   </td>
                   <td>
-                    <code className="ops-action">{row.action}</code>
+                    <span>
+                      {row.action.replaceAll(".", " · ").replaceAll("_", " ")}
+                    </span>
+                    <details>
+                      <summary>Exact action code</summary>
+                      <code className="ops-action">{row.action}</code>
+                    </details>
                   </td>
                   <td>
                     <RecordId value={row.reference} />

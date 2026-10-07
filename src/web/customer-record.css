@@ -390,3 +390,13 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.customer-credit-label {
+  display: none;
+}
+@media (max-width: 640px) {
+  .customer-credit-label {
+    display: inline;
+    color: var(--muted);
+  }
+}

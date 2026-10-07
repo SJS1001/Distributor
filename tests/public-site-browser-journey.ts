@@ -491,8 +491,14 @@ test("public site: actual isolated submission, administrator approval, activatio
       ).status(),
     ).toBeGreaterThanOrEqual(400);
     await admin.getByRole("button", { name: "Refresh applications" }).click();
+    await admin
+      .getByRole("combobox", { name: "Application view", exact: true })
+      .selectOption("all");
     await expect(
-      admin.getByRole("cell", { name: "Buyer activated", exact: true }),
+      admin
+        .getByRole("row")
+        .filter({ hasText: "Synthetic Native Ontario Trades" })
+        .getByRole("cell", { name: "Buyer activated", exact: true }),
     ).toBeVisible();
   } finally {
     await adminContext.close();
@@ -675,11 +681,17 @@ test("manufacturer library filters, model specifications and document tabs survi
       await expect(
         page.locator(`.gree-document-groups a[href="${doc.url}"]`).first(),
       ).toHaveAttribute("rel", "noreferrer");
-    await expect(page.getByLabel("Model configuration")).toBeHidden();
+    await expect(page.getByLabel("Model configuration")).toBeVisible();
+    await expect(page.getByLabel("Model configuration")).toHaveValue(
+      product.models[1].id,
+    );
     await page.getByRole("tab", { name: /Documents/ }).press("ArrowLeft");
     await expect(
       page.getByRole("tab", { name: "Overview", exact: true }),
     ).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByLabel("Model configuration")).toHaveValue(
+      product.models[1].id,
+    );
     await page.reload();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       product.title,

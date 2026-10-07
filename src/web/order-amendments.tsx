@@ -35,6 +35,9 @@ export function OrderAmendments({
           visible to the buyer. Newest first.
         </InfoBubble>
       </div>
+      <p>
+        Order <code>{orderId}</code>
+      </p>
       <button type="button" onClick={onClose}>
         Close amendment history
       </button>

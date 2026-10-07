@@ -43,7 +43,15 @@ export function CashPayments({
         {rows.items.length} payments loaded{rows.busy ? " · Loading…" : ""}
       </p>
       {rows.items.length ? (
-        <div className="table-wrap">
+        <div
+          className="table-wrap"
+          role="region"
+          tabIndex={0}
+          aria-label="Cash payments"
+        >
+          <p className="table-scroll-cue">
+            Scroll across the table to review all fields and actions.
+          </p>
           <table>
             <thead>
               <tr>
@@ -59,7 +67,17 @@ export function CashPayments({
                 <tr key={p.id}>
                   <td>
                     {p.invoiceNumber}
-                    <small>{p.created_at}</small>
+                    <small>
+                      <time dateTime={p.created_at} title={p.created_at}>
+                        {new Date(p.created_at).toLocaleString(undefined, {
+                          timeZoneName: "short",
+                        })}
+                      </time>
+                      <details>
+                        <summary>Exact timestamp</summary>
+                        <code>{p.created_at}</code>
+                      </details>
+                    </small>
                   </td>
                   <td>
                     {new Intl.NumberFormat("en", {

@@ -283,7 +283,10 @@ test("stock history HTTP supports exact serial/unit selection, strict inputs and
   const expected = f.app.inventory.movementPage(finance, { unitId });
   assert.deepEqual(response.json(), {
     ...expected,
-    items: expected.items.map((m) => ({ ...m })),
+    items: expected.items.map((m) => ({
+      ...m,
+      currentActorName: "Administrator",
+    })),
   });
   for (const suffix of [
     "?serial=S1&unitId=" + unitId,

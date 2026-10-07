@@ -160,7 +160,12 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
   };
   return (
     <div>
-      <button className="secondary" ref={opener} onClick={() => void load()}>
+      <button
+        type="button"
+        className="secondary"
+        ref={opener}
+        onClick={() => void load()}
+      >
         Claim coverage snapshot
       </button>
       {open && (
@@ -169,6 +174,7 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
             Retained claim coverage
           </h3>
           <button
+            type="button"
             className="secondary"
             onClick={() => {
               pending.current?.abort();
@@ -187,6 +193,7 @@ export function RetainedClaimCoverage({ claimId }: { claimId: string }) {
                 {error}
               </p>
               <button
+                type="button"
                 className="secondary"
                 disabled={busy}
                 onClick={() => void load()}

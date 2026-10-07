@@ -127,7 +127,9 @@
   .workspace-main
   button:not(.secondary):not(.record-link):not([role="tab"]):not(
     .text-action
-  ):not(.metric-card):not(.workflow-path > button):not(.storefront button) {
+  ):not(.metric-card):not(.workflow-path > button):not(.storefront button):not(
+    .attention-item
+  ):not(.report-meter-label) {
   background-color: var(--ink);
   border-color: var(--ink);
   color: white;

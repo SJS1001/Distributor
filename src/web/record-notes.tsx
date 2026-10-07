@@ -23,11 +23,13 @@ export function RecordNotes({
   recordId,
   recoveryScope,
   actorId,
+  expanded = false,
 }: {
   kind: RecordNoteKind;
   recordId: string;
   recoveryScope: string;
   actorId: string;
+  expanded?: boolean;
 }) {
   const storageKey = `distributor-notes:${recoveryScope}:${kind}:${recordId}`;
   const [saved] = useState(() => {
@@ -89,7 +91,7 @@ export function RecordNotes({
       };
     }
   });
-  const [opened, setOpened] = useState(false),
+  const [opened, setOpened] = useState(expanded),
     [page, setPage] = useState<NotePage | null>(null),
     [body, setBody] = useState(saved.attempt?.payload.body ?? ""),
     [attempt, setAttempt] = useState(saved.attempt),
@@ -194,12 +196,13 @@ export function RecordNotes({
     }
   }
   const locked = busy || !!attempt || !!saved.error || !!storageError || !page;
+  const Container = expanded ? "section" : "details";
   return (
-    <details
+    <Container
       className="record-notes"
       onToggle={(e) => setOpened(e.currentTarget.open)}
     >
-      <summary>Staff notes</summary>
+      {expanded ? <h3>Staff notes</h3> : <summary>Staff notes</summary>}
       {opened && (
         <div className="record-notes-content">
           <p className="record-notes-intro">
@@ -333,6 +336,6 @@ export function RecordNotes({
           )}
         </div>
       )}
-    </details>
+    </Container>
   );
 }

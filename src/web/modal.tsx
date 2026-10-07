@@ -15,6 +15,7 @@ export type Field = {
   options?: { value: string; label: string }[];
   value?: string | number | boolean | string[];
   optional?: boolean;
+  enabledWhen?: { field: string; value: string };
   help?: string;
   content?: React.ReactNode;
   max?: number;
@@ -28,7 +29,26 @@ export type Dialog = {
   perform: (values: Item) => Promise<unknown>;
   description?: React.ReactNode;
   submitLabel?: string;
+  readOnly?: boolean;
 };
+const visibleFocusTarget = (item: HTMLElement) =>
+  !item.closest("[hidden], [inert]") &&
+  item.checkVisibility({ checkVisibilityCSS: true });
+const modalFocusables = (element: HTMLElement) =>
+  Array.from(
+    element.querySelectorAll<HTMLElement>(
+      "input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled),a[href],summary",
+    ),
+  ).filter(visibleFocusTarget);
+function focusModal(element: HTMLElement) {
+  const items = modalFocusables(element);
+  (
+    items.find((item) => item.matches("input,select,textarea")) ??
+    items.find((item) => !item.classList.contains("modal-close")) ??
+    element
+  ).focus();
+  if (!element.contains(document.activeElement)) element.focus();
+}
 export function Modal({
   dialog,
   busy,
@@ -42,6 +62,16 @@ export function Modal({
   close: () => void;
   submit: (values: Item) => Promise<void>;
 }) {
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const enabled = (field: Field) =>
+    !field.enabledWhen ||
+    (fieldValues[field.enabledWhen.field] ??
+      String(
+        dialog.fields.find((f) => f.name === field.enabledWhen!.field)?.value ??
+          dialog.fields.find((f) => f.name === field.enabledWhen!.field)
+            ?.options?.[0]?.value ??
+          "",
+      )) === field.enabledWhen.value;
   const ref = useRef<HTMLElement>(null);
   const validationRef = useRef<HTMLDivElement>(null);
   const focusValidation = useRef(false);
@@ -49,12 +79,17 @@ export function Modal({
     { id: string; label: string; message: string }[]
   >([]);
   useEffect(() => {
-    if (focusValidation.current && invalidFields.length)
-      validationRef.current?.focus();
+    if (focusValidation.current && invalidFields.length) {
+      const first = invalidFields
+        .map((field) => document.getElementById(field.id))
+        .find((field) => field && visibleFocusTarget(field));
+      (first ?? validationRef.current)?.focus();
+    }
     focusValidation.current = false;
   }, [invalidFields]);
   useEffect(() => {
     setInvalidFields([]);
+    setFieldValues({});
   }, [dialog.title]);
   const closeRef = useRef(close);
   const busyRef = useRef(busy);
@@ -66,22 +101,10 @@ export function Modal({
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const element = ref.current!;
-    const focusables = () =>
-      Array.from(
-        element.querySelectorAll<HTMLElement>(
-          "input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled),a[href]",
-        ),
-      ).filter(
-        (item) =>
-          !item.closest("[hidden], [inert]") &&
-          item.getClientRects().length > 0,
-      );
+    const focusables = () => modalFocusables(element);
     // Open on the first field or action; the corner close button stays
     // reachable by Tab and Escape.
-    (
-      focusables().find((item) => !item.classList.contains("modal-close")) ??
-      element
-    ).focus();
+    focusModal(element);
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) {
         event.preventDefault();
@@ -121,11 +144,7 @@ export function Modal({
     // it after a rejected command so keyboard recovery remains available.
     const element = ref.current;
     if (!busy && error && element && !element.contains(document.activeElement))
-      element
-        .querySelector<HTMLElement>(
-          "input,select,textarea,button:not(:disabled):not(.modal-close)",
-        )
-        ?.focus();
+      focusModal(element);
   }, [busy, error]);
   // Close only when both press and release land on the backdrop, so selecting
   // text inside the dialog and releasing outside it never discards entries.
@@ -226,6 +245,10 @@ export function Modal({
               field instanceof HTMLSelectElement ||
               field instanceof HTMLTextAreaElement
             ) {
+              setFieldValues((values) => ({
+                ...values,
+                [field.name]: field.value,
+              }));
               if (field.validity.valid) {
                 field.removeAttribute("aria-invalid");
                 setInvalidFields((current) =>
@@ -236,6 +259,10 @@ export function Modal({
           }}
           onSubmit={(e) => {
             e.preventDefault();
+            if (dialog.readOnly) {
+              close();
+              return;
+            }
             const invalid = Array.from(
               e.currentTarget.querySelectorAll<
                 HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -265,8 +292,9 @@ export function Modal({
             const form = new FormData(e.currentTarget),
               values: Item = {};
             for (const f of dialog.fields)
-              values[f.name] =
-                f.type === "multiselect"
+              values[f.name] = !enabled(f)
+                ? ""
+                : f.type === "multiselect"
                   ? form.getAll(f.name).map(String)
                   : f.type === "checkbox"
                     ? form.get(f.name) === "on"
@@ -296,7 +324,13 @@ export function Modal({
               <span id={`field-label-${f.name}`}>{f.label}</span>
               {!f.content && f.type !== "checkbox" && (
                 <small className="field-requirement">
-                  {f.optional ? "Optional" : "Required"}
+                  {!enabled(f)
+                    ? "Not applicable"
+                    : f.enabledWhen
+                      ? "Required"
+                      : f.optional
+                        ? "Optional"
+                        : "Required"}
                 </small>
               )}
               {f.content ??
@@ -309,13 +343,20 @@ export function Modal({
                     }
                     aria-labelledby={`field-label-${f.name}`}
                     multiple={f.type === "multiselect"}
-                    required={!f.optional}
+                    disabled={!enabled(f)}
+                    required={
+                      enabled(f) && (f.enabledWhen ? true : !f.optional)
+                    }
                     defaultValue={
                       f.type === "multiselect"
                         ? Array.isArray(f.value)
                           ? f.value
                           : []
-                        : String(f.value ?? f.options[0]?.value ?? "")
+                        : String(
+                            f.value ??
+                              (f.enabledWhen ? "" : f.options[0]?.value) ??
+                              "",
+                          )
                     }
                   >
                     <option value="" disabled>
@@ -335,7 +376,7 @@ export function Modal({
                     value={String(f.value ?? "")}
                     multiline={f.scan === "lines"}
                     optional={Boolean(f.optional)}
-                    disabled={busy}
+                    disabled={busy || !enabled(f)}
                   />
                 ) : f.type === "textarea" ? (
                   <textarea
@@ -345,7 +386,10 @@ export function Modal({
                       f.help ? `field-help-${f.name}` : undefined
                     }
                     aria-labelledby={`field-label-${f.name}`}
-                    required={!f.optional}
+                    disabled={!enabled(f)}
+                    required={
+                      enabled(f) && (f.enabledWhen ? true : !f.optional)
+                    }
                     maxLength={f.maxLength}
                     defaultValue={String(f.value ?? "")}
                   />
@@ -358,7 +402,10 @@ export function Modal({
                     }
                     aria-labelledby={`field-label-${f.name}`}
                     type={f.type ?? "text"}
-                    required={!f.optional}
+                    disabled={!enabled(f)}
+                    required={
+                      enabled(f) && (f.enabledWhen ? true : !f.optional)
+                    }
                     maxLength={f.maxLength}
                     min={f.type === "number" ? (f.min ?? 0) : undefined}
                     max={f.max}
@@ -370,20 +417,28 @@ export function Modal({
             </div>
           ))}
           <div className="actions">
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={close}
-            >
-              Cancel
-            </button>
-            <button disabled={busy}>
-              {busy
-                ? "Saving…"
-                : (dialog.submitLabel ??
-                  (dialog.fields.length ? "Continue" : "Close"))}
-            </button>
+            {dialog.readOnly ? (
+              <button type="button" className="secondary" onClick={close}>
+                Close
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={close}
+                >
+                  Cancel
+                </button>
+                <button disabled={busy}>
+                  {busy
+                    ? "Saving…"
+                    : (dialog.submitLabel ??
+                      (dialog.fields.length ? "Continue" : "Close"))}
+                </button>
+              </>
+            )}
           </div>
         </form>
       </section>

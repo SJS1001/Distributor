@@ -108,7 +108,7 @@ test("browser: phone stock queue preserves full totals, failed continuation and 
   );
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Continue", exact: true })
+    .getByRole("button", { name: "Save inspection", exact: true })
     .click();
   expect((await response).status()).toBe(200);
   await expect(page.getByRole("dialog")).toHaveCount(0);

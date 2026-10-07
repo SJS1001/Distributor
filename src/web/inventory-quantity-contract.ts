@@ -510,8 +510,12 @@ export function validateMovements(v: unknown, s: Scope): StockHistoryPage {
       object(m) &&
         keys(
           m,
-          "id warehouse_id type quantity unit_cost reference reason actor_id created_at",
+          "id warehouse_id type quantity unit_cost reference reason actor_id created_at" +
+            (Object.hasOwn(m, "currentActorName") ? " currentActorName" : ""),
         ) &&
+        (!Object.hasOwn(m, "currentActorName") ||
+          m.currentActorName === null ||
+          text(m.currentActorName)) &&
         text(m.id) &&
         text(m.warehouse_id) &&
         (s.allSites || s.sites.includes(m.warehouse_id)) &&
@@ -525,5 +529,10 @@ export function validateMovements(v: unknown, s: Scope): StockHistoryPage {
     );
   }
   ensure(new Set(v.items.map((m) => m.id)).size === v.items.length);
-  return v as StockHistoryPage;
+  // The HTTP annotation is a mutable display name, not native movement evidence.
+  // Validate it above, then exclude it from quantity snapshots and comparisons.
+  return {
+    ...v,
+    items: v.items.map(({ currentActorName: _name, ...movement }) => movement),
+  } as StockHistoryPage;
 }

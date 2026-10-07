@@ -208,7 +208,7 @@ test("browser: receipt history reports an active failure, retries and closes wit
     name: "Receipt draft history",
     exact: true,
   });
-  await expect(dialog).toContainText("v1 · draft");
+  await expect(dialog).toContainText("Revision 1 · draft");
   await expect(dialog).toContainText("HISTORY-");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
@@ -224,7 +224,7 @@ test("browser: receipt history reports an active failure, retries and closes wit
   expect(errors).toEqual([]);
 });
 
-test("browser: receipt history closes at cancel without changing native facts", async ({
+test("browser: receipt history closes without changing native facts", async ({
   page,
 }) => {
   const fixture = await draftFixture(page);
@@ -236,8 +236,8 @@ test("browser: receipt history closes at cancel without changing native facts", 
     name: "Receipt draft history",
     exact: true,
   });
-  await expect(dialog).toContainText("v1 · draft");
-  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toContainText("Revision 1 · draft");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(

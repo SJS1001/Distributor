@@ -68,7 +68,15 @@ export function CustomerDirectory({
           : `${rows.length} ${rows.length === 1 ? "customer" : "customers"}`}
       </p>
       {rows.length > 0 && (
-        <div className="table-wrap">
+        <div
+          className="table-wrap"
+          role="region"
+          tabIndex={0}
+          aria-label="Customer records"
+        >
+          <p className="table-scroll-cue">
+            Scroll across the table to review all fields and actions.
+          </p>
           <table className="customer-directory-table">
             <thead>
               <tr>
@@ -120,6 +128,7 @@ export function CustomerDirectory({
                   </td>
                   <td className="customer-tier">{a.tier}</td>
                   <td className="numeric">
+                    <span className="customer-credit-label">Credit limit </span>
                     {money(a.credit_limit, a.currency)}
                   </td>
                 </tr>
@@ -321,6 +330,7 @@ export function CustomerRecord({
         </PageSection>
         <PageSection id="record-notes">
           <RecordNotes
+            expanded
             kind="customer"
             recordId={account.id}
             actorId={actorId}
@@ -681,7 +691,15 @@ function HistoryList({
       </div>
       {error && <p role="alert">{error}</p>}
       {items.length > 0 && (
-        <div className="table-wrap">
+        <div
+          className="table-wrap"
+          role="region"
+          tabIndex={0}
+          aria-label="Customer records"
+        >
+          <p className="table-scroll-cue">
+            Scroll across the table to review all fields and actions.
+          </p>
           <table className="customer-history-table">
             <thead>
               <tr>

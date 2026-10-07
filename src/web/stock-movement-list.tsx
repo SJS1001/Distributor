@@ -20,13 +20,31 @@ export function StockMovementList({
           </p>
           <p>
             {warehouseName(m.warehouse_id)} ·{" "}
-            {new Date(m.created_at).toLocaleString()}
+            <time dateTime={m.created_at} title={m.created_at}>
+              {new Date(m.created_at).toLocaleString(undefined, {
+                timeZoneName: "short",
+              })}
+            </time>
           </p>
           <p>{m.reason}</p>
           <p>
-            Reference <code>{m.reference}</code> · movement <code>{m.id}</code>{" "}
-            · recorded by <code>{m.actor_id}</code>
+            {m.currentActorName ? (
+              <>
+                Current actor name: <strong>{m.currentActorName}</strong>
+              </>
+            ) : (
+              "Actor name unavailable; the recorded identifier is retained below."
+            )}
           </p>
+          <details>
+            <summary>
+              Movement references and recorded actor identifiers
+            </summary>
+            <p>
+              Reference <code>{m.reference}</code> · movement{" "}
+              <code>{m.id}</code> · actor identifier <code>{m.actor_id}</code>
+            </p>
+          </details>
         </li>
       ))}
     </ol>

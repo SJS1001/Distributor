@@ -37,7 +37,7 @@ test("browser: staff catalog preserves search during paging and reviews retireme
   await login(page);
   await search(page, "LIFE");
   await expect(
-    page.getByRole("region", { name: "Staff catalog" }),
+    page.getByRole("region", { name: "Staff catalog", exact: true }),
   ).toContainText("20 products loaded");
   await page
     .getByRole("button", { name: "Next staff catalog page", exact: true })
@@ -46,7 +46,7 @@ test("browser: staff catalog preserves search during paging and reviews retireme
     page.getByRole("button", { name: "Retire LIFE-39", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Staff catalog" }),
+    page.getByRole("region", { name: "Staff catalog", exact: true }),
   ).toContainText("20 products loaded");
   await expect(
     page.getByRole("button", { name: "Retire LIFE-00", exact: true }),
@@ -105,9 +105,7 @@ test("browser: staff catalog preserves search during paging and reviews retireme
     "Phone reviewed synthetic retirement",
   );
   await expect(page.getByRole("dialog").locator("tbody tr")).toHaveCount(1);
-  await page
-    .getByRole("button", { name: "Close history", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await page
     .getByRole("button", { name: "Reactivate LIFE-42", exact: true })
     .click();
@@ -148,9 +146,7 @@ test("browser: product lifecycle history appends older records without closing t
   await expect(page.getByRole("dialog")).toContainText(
     "Historical lifecycle 0",
   );
-  await page
-    .getByRole("button", { name: "Close history", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 test("browser: retirement refuses an obsolete review and navigation cancels abandoned review reads", async ({

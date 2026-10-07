@@ -21,7 +21,7 @@ async function login(page: Page, existing = false) {
 }
 async function open(page: Page) {
   await page
-    .getByRole("button", { name: "Purchase order", exact: true })
+    .getByRole("button", { name: "Create purchase order", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
 }
@@ -299,7 +299,7 @@ test("browser: unsubmitted purchase edits preserve quantities and cancel without
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("button", { name: "Purchase order", exact: true }),
+    page.getByRole("button", { name: "Create purchase order", exact: true }),
   ).toBeFocused();
 });
 
@@ -647,13 +647,15 @@ test("browser: purchase validation links to fields and retains corrected draft t
     .getByRole("button", { name: "Review purchase order", exact: true })
     .click();
   const summary = page.getByRole("alert", { name: "Check these fields" });
-  await expect(summary).toBeFocused();
+  const units = page.getByLabel("Units for BUY-00", { exact: true });
+  await expect(units).toBeFocused();
+  await expect(units).toHaveAttribute("aria-invalid", "true");
+  await expect(summary).toBeVisible();
   await expect(summary.getByRole("link")).toHaveCount(2);
   await summary
     .getByRole("link")
     .filter({ hasText: "Units for BUY-00" })
     .click();
-  const units = page.getByLabel("Units for BUY-00", { exact: true });
   await expect(units).toBeFocused();
   await units.fill("3");
   await expect(units).toBeFocused();

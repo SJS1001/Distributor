@@ -134,15 +134,19 @@ export function GreeProductLibrary({
           <p className="public-eyebrow">GREE CANADA • PRODUCT LIBRARY</p>
           <h1>Find your next system.</h1>
           <p>
-            Explore heating and cooling equipment, product information and
-            technical documents.
+            Manufacturer reference information and technical documents. Your
+            approved account determines the equipment offered to you, pricing
+            and availability.
           </p>
         </div>
-        {customerAuthenticated && (
-          <a className="public-primary" href="#page=Shop">
-            View account pricing ↗
-          </a>
-        )}
+        <a
+          className="public-primary"
+          href={customerAuthenticated ? "#page=Shop" : "#customer-sign-in"}
+        >
+          {customerAuthenticated
+            ? "View account pricing →"
+            : "Sign in for account pricing and availability →"}
+        </a>
       </div>
       <div className="gree-library-tools">
         <label>
@@ -329,14 +333,74 @@ function GreeProductDetail({
         <div className="gree-detail-copy">
           <p className="public-eyebrow">GREE • {product.category}</p>
           <h1>{product.title}</h1>
-          <p className="gree-detail-summary">
-            {product.description
-              ? product.description
-                  .split(/\n/)
-                  .find((line) => line.length > 90) ||
-                product.description.split(/\n/)[0]
-              : `Explore ${product.title} equipment and manufacturer technical information.`}
-          </p>
+          {!!product.models?.length && (
+            <div className="gree-model-selector">
+              <label htmlFor="gree-model">Model configuration</label>
+              <select
+                id="gree-model"
+                value={modelId}
+                onChange={(event) => {
+                  setModelId(event.target.value);
+                  window.history.replaceState(
+                    null,
+                    "",
+                    referenceHref(productHref(product), {
+                      familyId: product.id,
+                      modelId: event.target.value,
+                    }),
+                  );
+                }}
+              >
+                {product.models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.title}
+                  </option>
+                ))}
+              </select>
+              {selectedModel?.manufacturerModel && (
+                <p>
+                  <strong>Manufacturer model:</strong>{" "}
+                  {selectedModel.manufacturerModel}
+                </p>
+              )}
+            </div>
+          )}
+          {!!specifications.length && (
+            <details className="gree-specification-details">
+              <summary>
+                View specifications ·{" "}
+                {selectedModel?.title || "Published configuration"}
+              </summary>
+              <dl className="gree-specifications">
+                {specifications.map((specification, index) => (
+                  <div key={index}>
+                    <dt>{specification.label}</dt>
+                    <dd>{specification.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p>
+                Specifications apply to the selected manufacturer configuration.
+                Verify the matching indoor and outdoor equipment in the
+                technical documents.
+              </p>
+            </details>
+          )}
+          <button
+            className="gree-document-shortcut"
+            type="button"
+            onClick={() => {
+              setTab("documents");
+              requestAnimationFrame(() => {
+                document
+                  .getElementById("gree-tab-documents")
+                  ?.scrollIntoView({ block: "start" });
+                document.getElementById("gree-tab-documents")?.focus();
+              });
+            }}
+          >
+            Technical documents ({product.documents.length}) ↓
+          </button>
           <div className="gree-detail-actions">
             <a
               className="public-primary"
@@ -346,7 +410,7 @@ function GreeProductDetail({
               )}
             >
               {customerAuthenticated
-                ? "View account pricing ↗"
+                ? "View account pricing →"
                 : "Log in to see pricing"}
             </a>
             {!authenticated && (
@@ -425,59 +489,6 @@ function GreeProductDetail({
         <div className="gree-overview-aside">
           <p className="public-eyebrow">PRODUCT INFORMATION</p>
           <h2>Built for your application.</h2>
-          {!!product.models?.length && (
-            <div className="gree-model-selector">
-              <label htmlFor="gree-model">Model configuration</label>
-              <select
-                id="gree-model"
-                value={modelId}
-                onChange={(event) => {
-                  setModelId(event.target.value);
-                  window.history.replaceState(
-                    null,
-                    "",
-                    referenceHref(productHref(product), {
-                      familyId: product.id,
-                      modelId: event.target.value,
-                    }),
-                  );
-                }}
-              >
-                {product.models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.title}
-                  </option>
-                ))}
-              </select>
-              {selectedModel?.manufacturerModel && (
-                <p>
-                  <strong>Manufacturer model:</strong>{" "}
-                  {selectedModel.manufacturerModel}
-                </p>
-              )}
-            </div>
-          )}
-          {!!specifications.length && (
-            <details className="gree-specification-details">
-              <summary>
-                View specifications ·{" "}
-                {selectedModel?.title || "Published configuration"}
-              </summary>
-              <dl className="gree-specifications">
-                {specifications.map((specification, index) => (
-                  <div key={index}>
-                    <dt>{specification.label}</dt>
-                    <dd>{specification.value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p>
-                Specifications apply to the selected manufacturer configuration.
-                Verify the matching indoor and outdoor equipment in the
-                technical documents.
-              </p>
-            </details>
-          )}
         </div>
         <div className="gree-description">
           <DescriptionContent
@@ -549,7 +560,7 @@ function GreeProductDetail({
           )}
         >
           {customerAuthenticated
-            ? "View account pricing ↗"
+            ? "View account pricing →"
             : "Log in to see pricing"}
         </a>
       </div>

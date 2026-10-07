@@ -417,8 +417,8 @@
   margin: 0;
 }
 .gree-detail-bottom .public-primary {
-  background: #197bc8;
-  border-color: #197bc8;
+  background: #0965a7;
+  border-color: #0965a7;
   flex: none;
 }
 .gree-image-unavailable {
@@ -619,8 +619,8 @@
   min-height: 48px;
 }
 .gree-detail-tabs button[aria-selected="true"] {
-  color: #1276c1;
-  border-bottom-color: #1276c1;
+  color: #0965a7;
+  border-bottom-color: #0965a7;
 }
 .gree-detail-tabs button:focus-visible {
   outline: 3px solid #167dca;
@@ -731,5 +731,54 @@
   }
   .gree-overview-aside {
     margin-bottom: 12px;
+  }
+}
+
+.gree-detail-copy .gree-model-selector {
+  margin: 12px 0;
+}
+.gree-detail-copy .gree-specification-details {
+  margin: 12px 0;
+}
+.gree-document-shortcut {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  background: #fff;
+  color: #0965a7;
+  border: 1px solid #9db2c6;
+  border-radius: 3px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.gree-document-shortcut:focus-visible {
+  outline: 3px solid #0965a7;
+  outline-offset: 2px;
+}
+@media (max-width: 650px) {
+  .gree-detail {
+    padding-top: 18px;
+  }
+  .gree-detail-copy {
+    order: -1;
+  }
+  .gree-detail-top {
+    gap: 16px;
+  }
+  .public-site .gree-detail-copy h1 {
+    font-size: 30px;
+    margin-bottom: 12px;
+  }
+  .gree-gallery-stage {
+    height: 200px;
+    padding: 18px;
+  }
+  .gree-detail-actions {
+    margin: 16px 0;
+    gap: 12px;
+  }
+  .gree-breadcrumb {
+    margin-bottom: 16px;
   }
 }

@@ -322,6 +322,15 @@ function ResourceCollection({
       <button disabled={busy} onClick={() => setEpoch(epoch + 1)}>
         Refresh resources
       </button>
+      {rows.loaded &&
+        !rows.busy &&
+        !rows.error &&
+        !rows.items.some((r) => (r.kind === "image") === images) && (
+          <p className="empty">
+            No {images ? "images" : "documents"} recorded. Use Add{" "}
+            {images ? "image" : "document"} below to attach a resource.
+          </p>
+        )}
       <div className="resource-grid">
         {rows.items
           .filter((r) => (r.kind === "image") === images)
@@ -567,6 +576,7 @@ export function CatalogResourceWorkspace({
         )}
         <PageSection id="catalog-notes">
           <RecordNotes
+            expanded
             kind="product"
             recordId={product.id}
             recoveryScope={recoveryScope}

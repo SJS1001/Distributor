@@ -18,8 +18,9 @@ function age(createdAt: string | null, checkedAt: string) {
     (Date.parse(checkedAt) - Date.parse(createdAt)) / 60000,
   );
   if (!Number.isFinite(minutes)) return "Creation time is invalid";
-  if (minutes < 0) return `Created ${createdAt} · clock is ahead of this check`;
-  return `Created ${createdAt} · ${minutes} minutes old at this check`;
+  if (minutes < 0)
+    return `Created ${checkedLabel(createdAt)} · clock is ahead of this check`;
+  return `Created ${checkedLabel(createdAt)} · ${minutes} minutes old at this check`;
 }
 
 // Readable check time; the exact ISO value stays in the title and dateTime.
@@ -28,7 +29,7 @@ function checkedLabel(value: string) {
   return match ? `${match[1]} ${match[2]} UTC` : value;
 }
 
-export function OperationsHealthPanel() {
+export function OperationsHealthPanel({ onEvents }: { onEvents?: () => void }) {
   const [data, setData] = useState<OperationsHealth | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -163,6 +164,17 @@ export function OperationsHealthPanel() {
                     }
                   >
                     <h3>{queue.label}</h3>
+                    {onEvents &&
+                      queue.id.includes("event") &&
+                      recorded.length > 0 && (
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={onEvents}
+                        >
+                          View Event reporting
+                        </button>
+                      )}
                     {queue.registered !== undefined && (
                       <p className="ops-note">
                         {queue.registered
@@ -189,7 +201,18 @@ export function OperationsHealthPanel() {
                         {queue.lastCompletedAt !== undefined && (
                           <div>
                             <dt>Last recorded completion</dt>
-                            <dd>{queue.lastCompletedAt ?? "None"}</dd>
+                            <dd>
+                              {queue.lastCompletedAt ? (
+                                <time
+                                  dateTime={queue.lastCompletedAt}
+                                  title={queue.lastCompletedAt}
+                                >
+                                  {checkedLabel(queue.lastCompletedAt)}
+                                </time>
+                              ) : (
+                                "None"
+                              )}
+                            </dd>
                           </div>
                         )}
                       </dl>

@@ -20,6 +20,11 @@ export function EnrollmentReview() {
     expiresAt: string;
     businessName: string;
   } | null>(null);
+  const [view, setView] = useState("pending");
+  const shown =
+    queue?.items.filter(
+      (application) => view !== "pending" || application.status === "pending",
+    ) ?? [];
   const after = useRef<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   async function load(cursor: string | null = null) {
@@ -272,13 +277,26 @@ export function EnrollmentReview() {
           </p>
         </section>
       )}
+      <label>
+        Application view{" "}
+        <select value={view} onChange={(e) => setView(e.target.value)}>
+          <option value="pending">Needs review</option>
+          <option value="all">All applications / history</option>
+        </select>
+      </label>
+      {queue && (
+        <p role="status">
+          {queue.items.filter((a) => a.status === "pending").length} need review
+          on this page · {queue.items.length} applications on this page
+        </p>
+      )}
       {!queue ? (
         <p role="status">
           {busy
             ? "Loading applications…"
             : "Applications could not be loaded. Use Refresh applications to retry."}
         </p>
-      ) : queue.items.length ? (
+      ) : shown.length ? (
         <div
           className="table-wrap"
           tabIndex={0}
@@ -295,7 +313,7 @@ export function EnrollmentReview() {
               </tr>
             </thead>
             <tbody>
-              {queue.items.map((application) => (
+              {shown.map((application) => (
                 <tr key={application.id}>
                   <td>
                     <strong>{application.businessName}</strong>
@@ -409,8 +427,9 @@ export function EnrollmentReview() {
         </div>
       ) : (
         <p className="empty">
-          No trade account applications yet. Applications submitted from the
-          public trade account form appear here for review.
+          {view === "pending"
+            ? "No applications need review on this page. View All applications / history or check the next page."
+            : "No trade account applications on this page. Applications submitted from the public trade account form appear here for review."}
         </p>
       )}
       {(after.current || queue?.next) && (

@@ -83,7 +83,15 @@ function SupplierRows({
         </p>
       )}
       {rows.items.length > 0 && (
-        <div className="table-wrap">
+        <div
+          className="table-wrap"
+          role="region"
+          tabIndex={0}
+          aria-label="Supplier availability"
+        >
+          <p className="table-scroll-cue">
+            Scroll across the table to review all fields and actions.
+          </p>
           <table>
             <thead>
               <tr>
@@ -123,9 +131,9 @@ function SupplierRows({
                       <button
                         className="secondary"
                         onClick={() => select(supplier.id, false)}
-                        aria-label={`Purchasing history ${supplier.name}`}
+                        aria-label={`Purchasing availability history ${supplier.name}`}
                       >
-                        Purchasing history
+                        Purchasing availability history
                       </button>
                     </div>
                   </td>
@@ -294,7 +302,8 @@ function SupplierReview({
       dialog={{
         title: manage
           ? "Review supplier purchasing"
-          : "Supplier purchasing history",
+          : "Purchasing availability history",
+        readOnly: !manage,
         fields: [
           {
             name: "review",
@@ -348,7 +357,16 @@ function SupplierReview({
                 {review && (
                   <section aria-label="Supplier purchasing changes">
                     <p role="status">{review.changes.length} changes loaded</p>
-                    <div className="table-wrap">
+                    <div
+                      className="table-wrap"
+                      role="region"
+                      tabIndex={0}
+                      aria-label="Supplier availability"
+                    >
+                      <p className="table-scroll-cue">
+                        Scroll across the table to review all fields and
+                        actions.
+                      </p>
                       <table>
                         <thead>
                           <tr>
@@ -378,7 +396,7 @@ function SupplierReview({
                       </table>
                     </div>
                     {!review.changes.length && (
-                      <p>No purchasing changes recorded.</p>
+                      <p>No availability changes recorded.</p>
                     )}
                   </section>
                 )}

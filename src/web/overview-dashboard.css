@@ -238,7 +238,7 @@
 }
 .overview .report-meter.is-zero .report-meter-label,
 .overview .report-meter.is-zero .report-meter-label strong {
-  color: #8391a3;
+  color: #58677a;
   font-weight: 500;
 }
 .overview .report-meter .bar-track {
@@ -426,12 +426,12 @@
 }
 .customer-shell .overview .workflow-path small,
 .customer-shell .overview .workflow-path .workspace-icon {
-  color: #c9d4e3;
+  color: #46576b;
 }
 .customer-shell .overview .metric-top,
 .customer-shell .overview .metric-hint,
 .customer-shell .overview .metric-top > .workspace-icon {
-  color: #c9d4e3;
+  color: #46576b;
 }
 
 @media (max-width: 1100px) {

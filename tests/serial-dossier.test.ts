@@ -384,10 +384,17 @@ test("serial dossier HTTP requires authenticated staff, strict serial/cursor inp
     headers: { cookie },
   });
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(
-    response.json(),
-    JSON.parse(JSON.stringify(f.app.serialDossier(actor, { serial: "S1" }))),
-  );
+  const expected = f.app.serialDossier(actor, { serial: "S1" });
+  assert.deepEqual(response.json(), {
+    ...expected,
+    movements: {
+      ...expected.movements,
+      items: expected.movements.items.map((m) => ({
+        ...m,
+        currentActorName: "Administrator",
+      })),
+    },
+  });
   for (const suffix of [
     "",
     "?serial=",

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { request } from "./api.ts";
+import { LocalCartFeedback } from "./shop-cart.tsx";
 import { CustomerPrice, usePricingChange } from "./customer-pricing.tsx";
 import {
   MAX_ADDONS,
@@ -173,7 +174,7 @@ export function ProductAddonsEditor({
             </ul>
           )}
           <label>
-            Reason for add-on change
+            Reason for add-on change (Required)
             <textarea
               required
               maxLength={1000}
@@ -241,6 +242,7 @@ export function AddonSuggestions({
             >
               Add
             </button>
+            <LocalCartFeedback productId={p.id} />
           </li>
         ))}
       </ul>

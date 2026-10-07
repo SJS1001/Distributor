@@ -2251,7 +2251,7 @@ export async function createHttp(app: Application, options: HttpOptions) {
   });
   http.get("/api/session", async (request) => sessions.get(request));
   http.get("/api/security", async (request) =>
-    app.identity.security(actor(request)),
+    app.identity.security(actor(request), request.cookies.distributor_session),
   );
   const factorPassword = { type: "string", maxLength: 256 };
   const factorCode = { type: "string", minLength: 1, maxLength: 64 };
@@ -3069,8 +3069,14 @@ export async function createHttp(app: Application, options: HttpOptions) {
         ),
       },
     },
-    async (request) =>
-      app.inventory.movementPage(actor(request), request.query),
+    async (request) => {
+      const current = actor(request),
+        page = app.inventory.movementPage(current, request.query);
+      return {
+        ...page,
+        items: app.identity.currentNamesForRecordActors(current, page.items),
+      };
+    },
   );
   http.get<{ Params: { serial: string } }>(
     "/api/serials/:serial",
@@ -3099,7 +3105,20 @@ export async function createHttp(app: Application, options: HttpOptions) {
         ),
       },
     },
-    async (request) => app.serialDossier(actor(request), request.query),
+    async (request) => {
+      const current = actor(request),
+        dossier = app.serialDossier(current, request.query);
+      return {
+        ...dossier,
+        movements: {
+          ...dossier.movements,
+          items: app.identity.currentNamesForRecordActors(
+            current,
+            dossier.movements.items,
+          ),
+        },
+      };
+    },
   );
   http.get("/api/credits", async (request) =>
     app.billing.credits(actor(request)),
@@ -4241,8 +4260,14 @@ export async function createHttp(app: Application, options: HttpOptions) {
         ),
       },
     },
-    async (request) =>
-      app.platform.auditPage(actor(request), request.query.after),
+    async (request) => {
+      const current = actor(request),
+        page = app.platform.auditPage(current, request.query.after);
+      return {
+        ...page,
+        items: app.identity.currentNamesForRecordActors(current, page.items),
+      };
+    },
   );
   http.get<{ Params: { consumerId: string }; Querystring: { after?: string } }>(
     "/api/events/:consumerId/deliveries",

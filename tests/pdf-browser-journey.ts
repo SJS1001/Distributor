@@ -648,7 +648,12 @@ test.describe("active fulfillment read retry", () => {
         }),
       ).toBeVisible();
       await expect(page.getByRole("alert")).toHaveCount(0);
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page
+        .getByRole("button", {
+          name: action === "Pick / pack" ? "Cancel" : "Close",
+          exact: true,
+        })
+        .click();
     });
   }
 });
@@ -710,7 +715,7 @@ test.describe("purchase creation refresh abandonment", () => {
       const purchases = await (await page.request.get("/api/purchases")).json();
       await nav(page, "Purchasing");
       await page
-        .getByRole("button", { name: "Purchase order", exact: true })
+        .getByRole("button", { name: "Create purchase order", exact: true })
         .click();
       await page
         .getByLabel("Supplier", { exact: true })

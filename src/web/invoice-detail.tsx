@@ -198,6 +198,10 @@ export function InvoiceDetail({
             </span>
           </header>
           <dl className="record-figures">
+            <div className="record-figure-emphasis">
+              <dt>Current balance</dt>
+              <dd>{formatMoney(invoice.balance, currency)}</dd>
+            </div>
             <div>
               <dt>Invoice total</dt>
               <dd>{formatMoney(invoice.total, currency)}</dd>
@@ -213,10 +217,6 @@ export function InvoiceDetail({
             <div>
               <dt>Refunded</dt>
               <dd>{formatMoney(invoice.refunded, currency)}</dd>
-            </div>
-            <div className="record-figure-emphasis">
-              <dt>Current balance</dt>
-              <dd>{formatMoney(invoice.balance, currency)}</dd>
             </div>
           </dl>
           <div className="record-detail-actions">

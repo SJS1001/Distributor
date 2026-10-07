@@ -30,11 +30,6 @@ async function openNotes(page: Page) {
     .getByRole("link", { name: "Synthetic buyer", exact: true })
     .click();
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
-  await page
-    .locator("summary")
-    .filter({ hasText: /^Staff notes$/ })
-    .first()
-    .click();
   await expect(page.getByLabel("New staff note").first()).toBeVisible();
 }
 
@@ -96,11 +91,6 @@ for (const action of ["add", "verify"] as const) {
       return { storageKey, raw };
     });
     await page.reload();
-    await page
-      .locator("summary")
-      .filter({ hasText: /^Staff notes$/ })
-      .first()
-      .click();
     await expect(retry).toBeEnabled();
     expect(
       await page.evaluate(
@@ -131,11 +121,6 @@ for (const action of ["add", "verify"] as const) {
       await expect(retry).toBeEnabled();
       await page.unroute(commandPath);
       await page.reload();
-      await page
-        .locator("summary")
-        .filter({ hasText: /^Staff notes$/ })
-        .first()
-        .click();
       await expect(retry).toBeEnabled();
     }
     await signOut(page);
@@ -232,11 +217,6 @@ for (const fault of [
         };
       });
     await page.reload();
-    await page
-      .locator("summary")
-      .filter({ hasText: /^Staff notes$/ })
-      .first()
-      .click();
     await expect(page.getByRole("alert")).toHaveText(
       "Saved note attempt cannot be read. Restore browser storage and reload before adding or verifying notes.",
     );
@@ -314,11 +294,6 @@ test("a stale second tab cannot overwrite another tab's unresolved note", async 
   ).toBe(saved.raw);
   await stale.unroute("**/api/commands/notes.add");
   await stale.reload();
-  await stale
-    .locator("summary")
-    .filter({ hasText: /^Staff notes$/ })
-    .first()
-    .click();
   const retry = stale.getByRole("button", { name: "Retry saved note attempt" });
   await expect(retry).toBeEnabled();
   await stale.route("**/api/commands/notes.add", async (route) => {

@@ -590,9 +590,28 @@ export class Identity {
       !this.mfa.summary(actor).enabled
     );
   }
-  security(actor: Actor) {
+  security(actor: Actor, currentSessionToken?: string) {
     const current = this.currentActor(actor),
-      row = this.user(current, current.id);
+      row = this.user(current, current.id),
+      currentHash = currentSessionToken ? digest(currentSessionToken) : null,
+      // Native authority preflight needs scalar security status before any row
+      // materialization. Only the HTTP self read supplies its exact session token.
+      sessionDetails =
+        currentSessionToken === undefined
+          ? undefined
+          : this.store
+              .all(
+                "SELECT s.hash,s.expires_at FROM iam_sessions s JOIN iam_users u ON u.id=s.user_id WHERE u.id=? AND u.org_id=? AND u.active=1 AND s.expires_at>? ORDER BY s.expires_at,s.hash",
+                current.id,
+                current.orgId,
+                Date.now(),
+              )
+              .map((session, index) => ({
+                // Ordinal labels are presentation only, never session credentials or handles.
+                label: `Session ${index + 1}`,
+                expiresAt: Number(session.expires_at),
+                current: currentHash !== null && session.hash === currentHash,
+              }));
     return {
       id: current.id,
       email: String(row.email),
@@ -602,14 +621,63 @@ export class Identity {
         ...this.mfa.summary(current),
         required: this.mfaRequiredRoles.includes(current.role),
       },
-      sessions: Number(
-        this.store.get(
-          "SELECT COUNT(*) AS total FROM iam_sessions WHERE user_id=? AND expires_at>?",
-          current.id,
-          Date.now(),
-        )!.total,
-      ),
+      sessions:
+        sessionDetails?.length ??
+        Number(
+          this.store.get(
+            "SELECT COUNT(*) AS total FROM iam_sessions WHERE user_id=? AND expires_at>?",
+            current.id,
+            Date.now(),
+          )!.total,
+        ),
+      sessionDetails,
     };
+  }
+  // HTTP composition only, after the owning module has authorized and paged
+  // these records. This is a current-name annotation, not historical identity
+  // evidence or a user-directory operation.
+  currentNamesForRecordActors<T extends Record<string, unknown>>(
+    actor: Actor,
+    records: readonly T[],
+  ): (T & { currentActorName: string | null })[] {
+    const current = this.currentActor(actor);
+    permit(current, [
+      "warehouse",
+      "commercial",
+      "finance",
+      "warranty",
+      "support",
+    ]);
+    check(
+      !this.passwordChangeRequired(current.id),
+      "PASSWORD_CHANGE_REQUIRED",
+      "Change your password before reading staff records.",
+      403,
+    );
+    check(records.length <= 20, "LIMIT", "Record page is too large.", 400);
+    const ids = [...new Set(records.map((record) => record.actor_id))].filter(
+      (value): value is string =>
+        typeof value === "string" && value.length > 0 && value.length <= 128,
+    );
+    const names = new Map(
+      ids.length
+        ? this.store
+            .all<{ id: string; name: string }>(
+              `SELECT id,name FROM iam_users WHERE org_id=? AND id IN (${ids.map(() => "?").join(",")}) LIMIT ?`,
+              current.orgId,
+              ...ids,
+              ids.length,
+            )
+            .map((row) => [row.id, row.name] as const)
+        : [],
+    );
+    return records.map((record) => ({
+      ...record,
+      currentActorName:
+        typeof record.actor_id === "string"
+          ? (names.get(record.actor_id) ?? null)
+          : null,
+    }));
   }
   users(actor: Actor) {
     const current = this.currentActor(actor);

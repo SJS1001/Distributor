@@ -29,7 +29,7 @@ test("browser: phone operations health exposes full redacted queues and hold, cl
   });
   await expect(stripe).toContainText("pending: 34");
   await expect(stripe).toContainText("unknown: 1 · Operator review required");
-  await expect(stripe).toContainText("2020-01-02T03:04:05.000Z");
+  await expect(stripe).toContainText("Created 2020-01-02 03:04 UTC");
   await expect(
     panel.getByRole("region", { name: "Local event reporting", exact: true }),
   ).toContainText("Consumer disabled");

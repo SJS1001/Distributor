@@ -118,8 +118,22 @@ export function PublicSite({
           FOR THE CANADIAN TRADE
         </span>
         <nav aria-label="Public navigation">
-          <a href="#products">Products</a>
-          {!signedIn && <a href="#apply">Trade application</a>}
+          <a
+            href="#products"
+            aria-current={
+              route === "products" || route === "product" ? "page" : undefined
+            }
+          >
+            Products
+          </a>
+          {!signedIn && (
+            <a
+              href="#apply"
+              aria-current={route === "apply" ? "page" : undefined}
+            >
+              Trade application
+            </a>
+          )}
           {signedIn ? (
             <>
               <a href={accountHref}>{accountLabel}</a>
@@ -133,9 +147,21 @@ export function PublicSite({
             </>
           ) : (
             <>
-              <a href="#admin-sign-in">Administration</a>
-              <a href="#customer-sign-in">
-                Customer sign in <span aria-hidden="true">↗</span>
+              <a
+                href="#admin-sign-in"
+                aria-current={route === "admin-sign-in" ? "page" : undefined}
+              >
+                Administration
+              </a>
+              <a
+                href="#customer-sign-in"
+                aria-current={
+                  route === "customer-sign-in" || route === "sign-in"
+                    ? "page"
+                    : undefined
+                }
+              >
+                Customer sign in <span aria-hidden="true">→</span>
               </a>
             </>
           )}
@@ -259,7 +285,7 @@ export function PublicSite({
                   >
                     <span className="public-index">WAREHOUSE TOOL</span>
                     <span className="public-access-title">
-                      Barcode scanner <span aria-hidden="true">↗</span>
+                      Barcode scanner <span aria-hidden="true">→</span>
                     </span>
                     <span className="public-access-description">
                       Open it here or send the link to your phone.
@@ -281,7 +307,7 @@ export function PublicSite({
                   </span>
                   <span className="public-access-title">
                     {signedIn ? accountLabel : "Customer sign in"}{" "}
-                    <span aria-hidden="true">↗</span>
+                    <span aria-hidden="true">→</span>
                   </span>
                   <span className="public-access-description">
                     {sessionAudience === "staff"
@@ -296,7 +322,7 @@ export function PublicSite({
                     </span>
                     <span className="public-access-title">
                       Apply for a trade account{" "}
-                      <span aria-hidden="true">↗</span>
+                      <span aria-hidden="true">→</span>
                     </span>
                     <span className="public-access-description">
                       Send your business details for review.
@@ -314,14 +340,14 @@ export function PublicSite({
                       </span>
                       <span className="public-access-title">
                         Administration entrance{" "}
-                        <span aria-hidden="true">↗</span>
+                        <span aria-hidden="true">→</span>
                       </span>
                       <span className="public-access-description">
                         Sign in to your staff workspace.
                       </span>
                     </a>
                     <a className="public-scanner-link" href="#scanner">
-                      Barcode scanner <span aria-hidden="true">↗</span>
+                      Barcode scanner <span aria-hidden="true">→</span>
                       <small>
                         Open it here or send the link to your phone.
                       </small>
@@ -412,7 +438,11 @@ export function PublicSite({
                 ← Back to the entrance
               </a>
             </div>
-            <div className="public-form-card">
+            <div
+              className="public-form-card"
+              id="public-entry-form"
+              tabIndex={-1}
+            >
               {requestedReference && (
                 <ReferenceRequestSummary reference={requestedReference} />
               )}{" "}
@@ -428,6 +458,19 @@ export function PublicSite({
                 Tell us about your business. We will review your application
                 before any purchasing access is granted.
               </p>
+              <a
+                className="public-text-link public-form-jump"
+                href="#public-entry-form"
+                onClick={(event) => {
+                  event.preventDefault();
+                  document
+                    .getElementById("public-entry-form")
+                    ?.scrollIntoView({ block: "start" });
+                  document.getElementById("public-entry-form")?.focus();
+                }}
+              >
+                Enter business details ↓
+              </a>
               <div className="public-form-note">
                 <strong>What happens next</strong>
                 <ol className="public-steps">
@@ -450,7 +493,11 @@ export function PublicSite({
                 </p>
               </div>
             </div>
-            <div className="public-form-card">
+            <div
+              className="public-form-card"
+              id="public-entry-form"
+              tabIndex={-1}
+            >
               <h2>Business details</h2>
               {config?.enabled ? (
                 <ApplicationForm requestedReference={requestedReference} />
@@ -475,7 +522,11 @@ export function PublicSite({
                 invitation is single-use and expires.
               </p>
             </div>
-            <div className="public-form-card">
+            <div
+              className="public-form-card"
+              id="public-entry-form"
+              tabIndex={-1}
+            >
               <ActivationForm key={activationToken} token={activationToken} />
             </div>
           </div>
@@ -496,7 +547,7 @@ export function PublicSite({
         </p>
         <a href={signedIn ? accountHref : "#admin-sign-in"}>
           {signedIn ? accountLabel : "Administration entrance"}{" "}
-          <span aria-hidden="true">↗</span>
+          <span aria-hidden="true">→</span>
         </a>
       </footer>
     </div>
@@ -676,7 +727,7 @@ function ApplicationForm({
       )}
       <button className="public-primary" disabled={busy}>
         {busy ? "Submitting…" : "Submit application"}
-        <span aria-hidden="true">↗</span>
+        <span aria-hidden="true">→</span>
       </button>
       <p className="public-form-helper">
         Your details are used to review this application and contact your
@@ -696,7 +747,7 @@ function ActivationForm({ token }: { token: string }) {
         <h2>Your account is activated.</h2>
         <p>Sign in with your approved business email and your new password.</p>
         <a href="#sign-in" className="public-primary">
-          Continue to sign in ↗
+          Continue to sign in →
         </a>
       </div>
     );
@@ -778,24 +829,34 @@ function ActivationForm({ token }: { token: string }) {
 
 const featured = preview.products.filter((p) => p.imageUrl);
 
-// Rotates the featured systems; pauses while hovered or focused and stays
-// still when the visitor prefers reduced motion.
+// User pause is independent of temporary hover/focus stops. Motion changes
+// take effect immediately without overriding the visitor’s pause choice.
 function FeaturedCarousel() {
   const [index, setIndex] = useState(0),
-    [paused, setPaused] = useState(false);
+    [paused, setPaused] = useState(false),
+    [hovered, setHovered] = useState(false),
+    [focused, setFocused] = useState(false),
+    [reducedMotion, setReducedMotion] = useState(
+      () =>
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
+        false,
+    );
   useEffect(() => {
-    if (
-      paused ||
-      featured.length < 2 ||
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    )
+    const preference = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!preference) return;
+    const update = () => setReducedMotion(preference.matches);
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (paused || hovered || focused || reducedMotion || featured.length < 2)
       return;
     const timer = window.setInterval(
       () => setIndex((i) => (i + 1) % featured.length),
       5000,
     );
     return () => window.clearInterval(timer);
-  }, [paused]);
+  }, [paused, hovered, focused, reducedMotion]);
   const product = featured[index];
   if (!product) return null;
   return (
@@ -804,10 +865,13 @@ function FeaturedCarousel() {
       role="region"
       aria-roledescription="carousel"
       aria-label="Featured systems"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setFocused(false);
+      }}
     >
       <a
         key={product.id}
@@ -829,21 +893,58 @@ function FeaturedCarousel() {
             <small>FEATURED SYSTEM</small>
             <strong>{product.title}</strong>
           </div>
-          <span aria-hidden="true">↗</span>
+          <span aria-hidden="true">→</span>
         </div>
       </a>
       {featured.length > 1 && (
-        <div className="public-feature-dots">
-          {featured.map((p, i) => (
+        <>
+          <div className="public-feature-controls">
             <button
-              key={p.id}
               type="button"
-              aria-label={`Show ${p.title}`}
-              aria-current={i === index ? "true" : undefined}
-              onClick={() => setIndex(i)}
-            />
-          ))}
-        </div>
+              onClick={() =>
+                setIndex((i) => (i + featured.length - 1) % featured.length)
+              }
+            >
+              ← Previous
+            </button>
+            <span aria-live={paused || reducedMotion ? "polite" : "off"}>
+              {index + 1} of {featured.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIndex((i) => (i + 1) % featured.length)}
+            >
+              Next →
+            </button>
+            <button
+              type="button"
+              disabled={reducedMotion}
+              onClick={() => setPaused((value) => !value)}
+            >
+              {reducedMotion
+                ? "Rotation off"
+                : paused
+                  ? "Play rotation"
+                  : "Pause rotation"}
+            </button>
+          </div>
+          {reducedMotion && (
+            <small className="public-motion-note">
+              Rotation is off for your reduced motion preference.
+            </small>
+          )}
+          <div className="public-feature-dots">
+            {featured.map((p, i) => (
+              <button
+                key={p.id}
+                type="button"
+                aria-label={`Show ${p.title}`}
+                aria-current={i === index ? "true" : undefined}
+                onClick={() => setIndex(i)}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

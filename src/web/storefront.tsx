@@ -15,6 +15,7 @@ import type {
 import type { CatalogResource } from "../shared/catalog-media.ts";
 import {
   AddToCart,
+  CartFeedbackContext,
   ShopCart,
   useShopCart,
   type ShopWarehouse,
@@ -31,17 +32,22 @@ export const resourcePath = (productId: string, resourceId?: string) =>
 export function useResources(productId: string, epoch = 0) {
   const [items, setItems] = useState<CatalogResource[]>([]),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(true);
+    [busy, setBusy] = useState(true),
+    [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     setItems([]);
     setError("");
     setBusy(true);
+    setLoaded(false);
     void request<{ items: CatalogResource[] }>(resourcePath(productId), {
       signal: controller.signal,
     })
       .then((r) => {
-        if (!controller.signal.aborted) setItems(r.items);
+        if (!controller.signal.aborted) {
+          setItems(r.items);
+          setLoaded(true);
+        }
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e.message);
@@ -51,7 +57,7 @@ export function useResources(productId: string, epoch = 0) {
       });
     return () => controller.abort();
   }, [productId, epoch]);
-  return { items, error, busy };
+  return { items, error, busy, loaded };
 }
 export function ProductImage({
   product,
@@ -85,20 +91,9 @@ export function ProductImage({
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <path d="M35 183h270" opacity=".2" />
-        <path d="m48 58 16-12h214l16 12v54l-16 13H64l-16-13Z" />
-        <path d="M48 58h246M64 125v-15h214v15M71 100h200M74 105h194M62 65v20M280 65v20" />
-        <path d="M74 74h164M74 81h164" opacity=".25" />
-        <path d="M261 77h8M261 82h4" />
-        <rect x="98" y="144" width="146" height="32" rx="3" />
-        <path
-          d="M109 151h82M109 157h82M109 163h82M212 151v16M219 151v16M226 151v16M106 176v7M234 176v7"
-          opacity=".55"
-        />
-        <path
-          d="M66 145v27m-5-5 5 5 5-5M268 154v-22m-5 5 5-5 5 5"
-          opacity=".3"
-        />
+        <rect x="95" y="45" width="150" height="120" rx="8" />
+        <circle cx="135" cy="82" r="12" />
+        <path d="m105 150 45-42 28 25 24-22 33 39M95 165 150 45" />
       </svg>
       <span>{product.sku}</span>
       <small>Image not available</small>
@@ -252,7 +247,6 @@ export function ProductDetail({
               availability is confirmed at acceptance.
             </p>
           </div>
-          {addons}
         </div>
       </div>
       <div className="sf-information">
@@ -323,11 +317,14 @@ export function ProductDetail({
               <div>
                 {resources.busy && <p role="status">Loading documents…</p>}
                 {resources.error && <p role="alert">{resources.error}</p>}
-                {!resources.busy && !documents.length && (
-                  <p className="sf-empty">
-                    No documents have been published for this product.
-                  </p>
-                )}
+                {resources.loaded &&
+                  !resources.busy &&
+                  !resources.error &&
+                  !documents.length && (
+                    <p className="sf-empty">
+                      No documents have been published for this product.
+                    </p>
+                  )}
                 <ul className="sf-documents">
                   {documents.map((r) => (
                     <li key={r.id}>
@@ -370,6 +367,7 @@ export function ProductDetail({
           </PageSection>
         </PageSections>
       </div>
+      {addons}
     </section>
   );
 }
@@ -467,6 +465,7 @@ function ProductResults({
   category,
   add,
   filters,
+  clearFilters,
   productId,
   selectProduct,
 }: {
@@ -475,6 +474,7 @@ function ProductResults({
   category: string;
   add: (product: CustomerProduct, quantity: number) => void;
   filters: React.ReactNode;
+  clearFilters: () => void;
   productId?: string;
   selectProduct: (productId?: string) => void;
 }) {
@@ -522,6 +522,7 @@ function ProductResults({
           {rows.error}
         </p>
       )}
+      {filters}
       {!search && !category && featured && (
         <section
           className="sf-showcase"
@@ -607,7 +608,6 @@ function ProductResults({
             Your account pricing.
           </p>
         </div>
-        {filters}
         <div className="sf-results-summary">
           <p role="status">
             {products.length} matching{" "}
@@ -629,9 +629,16 @@ function ProductResults({
         </div>
         {rows.loaded && !rows.busy && !products.length && (
           <div className="sf-empty">
-            {search || category
-              ? "No matching products. Try another search or category."
-              : "Your approved catalog is not available yet. Contact your distributor to arrange product access."}
+            <p>
+              {search || category
+                ? "No matching products. Try another search or category."
+                : "Your approved catalog is not available yet. Contact your distributor to arrange product access."}
+            </p>
+            {(search || category) && (
+              <button type="button" className="sf-back" onClick={clearFilters}>
+                Clear search and filters
+              </button>
+            )}
           </div>
         )}
         {(rows.next || rows.error) && (
@@ -689,10 +696,12 @@ export function Storefront({
 }) {
   const cart = useShopCart(cartScope),
     [cartOpen, setCartOpen] = useState(false),
-    [added, setAdded] = useState("");
+    [added, setAdded] = useState(""),
+    [addedProductId, setAddedProductId] = useState("");
   const units = cart.lines.reduce((sum, l) => sum + l.quantity, 0);
   function add(product: CustomerProduct, quantity: number) {
     const refused = cart.add(product, quantity);
+    setAddedProductId(product.id);
     setAdded(refused || `Added ${quantity} × ${product.name} to your cart.`);
   }
   useEffect(() => {
@@ -769,80 +778,100 @@ export function Storefront({
     </form>
   );
   return (
-    <div className="storefront">
-      <div className="sf-cart-entry">
-        <p role="status">{added}</p>
-        <div className="sf-cart-actions">
-          {!productId && !cartOpen && (
-            <button className="sf-back" onClick={resumeCart}>
-              Resume a saved cart
+    <CartFeedbackContext.Provider
+      value={{
+        productId: addedProductId,
+        message: added,
+        viewCart: () => {
+          setCartOpen(true);
+          document
+            .querySelector(".sf-cart-entry")
+            ?.scrollIntoView({ block: "start" });
+        },
+      }}
+    >
+      <div className="storefront">
+        <div className="sf-cart-entry">
+          <p role="status">{added}</p>
+          <div className="sf-cart-actions">
+            {!productId && !cartOpen && (
+              <button className="sf-back" onClick={resumeCart}>
+                Resume a saved cart
+              </button>
+            )}
+            <button
+              className="sf-primary"
+              aria-expanded={cartOpen}
+              onClick={() => {
+                setCartOpen(!cartOpen);
+                setAdded("");
+              }}
+            >
+              {cartOpen
+                ? "Close cart"
+                : `View cart (${units} ${units === 1 ? "item" : "items"})`}
             </button>
-          )}
-          <button
-            className="sf-primary"
-            aria-expanded={cartOpen}
-            onClick={() => {
-              setCartOpen(!cartOpen);
-              setAdded("");
-            }}
-          >
-            {cartOpen
-              ? "Close cart"
-              : `View cart (${units} ${units === 1 ? "item" : "items"})`}
-          </button>
+          </div>
         </div>
-      </div>
-      {cartOpen && (
-        <ShopCart
-          accountId={accountId}
-          add={add}
-          lines={cart.lines}
-          warehouses={warehouses}
-          setQuantity={cart.setQuantity}
-          remove={cart.remove}
-          close={() => setCartOpen(false)}
-          checkout={async (warehouseId) => {
-            await checkout(
-              warehouseId,
-              cart.lines.map((l) => ({
-                productId: l.product.id,
-                quantity: l.quantity,
-              })),
-              () => {
-                cart.clear();
-                setCartOpen(false);
-              },
-            );
-          }}
-        />
-      )}
-      {/* Product results stay mounted behind the cart to keep loaded pages. */}
-      <div hidden={cartOpen}>
-        {reference && !productId && (
-          <ReferenceMatches
-            reference={reference}
+        {cartOpen && (
+          <ShopCart
             accountId={accountId}
             add={add}
+            lines={cart.lines}
+            warehouses={warehouses}
+            setQuantity={cart.setQuantity}
+            remove={cart.remove}
+            close={() => setCartOpen(false)}
+            checkout={async (warehouseId) => {
+              await checkout(
+                warehouseId,
+                cart.lines.map((l) => ({
+                  productId: l.product.id,
+                  quantity: l.quantity,
+                })),
+                () => {
+                  cart.clear();
+                  setCartOpen(false);
+                },
+              );
+            }}
           />
         )}
-        {!productId && <ManufacturerCollection />}
-        {!productId && (
-          <p className="sf-account-context">
-            Curated for <strong>{accountName}</strong>
-            <span>Approved products & account pricing</span>
-          </p>
-        )}
-        <ProductResults
-          key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
-          accountId={accountId}
-          productId={productId}
-          selectProduct={selectProduct}
-          search={query}
-          category={category}
-          add={add}
-          filters={filters}
-        />
+        {/* Product results stay mounted behind the cart to keep loaded pages. */}
+        <div hidden={cartOpen}>
+          {reference && !productId && (
+            <ReferenceMatches
+              reference={reference}
+              accountId={accountId}
+              add={add}
+            />
+          )}
+
+          {!productId && (
+            <p className="sf-account-context">
+              Curated for <strong>{accountName}</strong>
+              <span>Approved products & account pricing</span>
+            </p>
+          )}
+          <ProductResults
+            key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
+            accountId={accountId}
+            productId={productId}
+            selectProduct={selectProduct}
+            search={query}
+            category={category}
+            add={add}
+            filters={filters}
+            clearFilters={() => {
+              restoreSearchFocus.current = true;
+              setSearch("");
+              setQuery("");
+              setCategory("");
+            }}
+          />
+          {!productId && <ManufacturerCollection />}
+        </div>
       </div>
-    </div>
+    </CartFeedbackContext.Provider>
   );
 }

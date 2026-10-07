@@ -355,9 +355,25 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
                       : "Recorded entries for the selected period."}{" "}
                     Values retain the original sale or adjustment amounts.
                   </p>
-                  <div className="table-wrap">
+                  <p className="table-scroll-cue">
+                    Scroll across the table to review all fields and actions.
+                  </p>
+                  <div
+                    className="table-wrap"
+                    role="region"
+                    tabIndex={0}
+                    aria-label="Report figures"
+                    style={{ maxHeight: "32rem", overflow: "auto" }}
+                  >
                     <table>
-                      <thead>
+                      <thead
+                        style={{
+                          position: "sticky",
+                          top: 0,
+                          background: "var(--surface, white)",
+                          zIndex: 1,
+                        }}
+                      >
                         <tr>
                           {[
                             "Date (UTC)",
@@ -418,9 +434,25 @@ export function FinancialReport({ customer = false }: { customer?: boolean }) {
                   {downloadNotice && <p role="status">{downloadNotice}</p>}
                 </PageSection>
                 <PageSection id="financial-days">
-                  <div className="table-wrap">
+                  <p className="table-scroll-cue">
+                    Scroll across the table to review all fields and actions.
+                  </p>
+                  <div
+                    className="table-wrap"
+                    role="region"
+                    tabIndex={0}
+                    aria-label="Report figures"
+                    style={{ maxHeight: "32rem", overflow: "auto" }}
+                  >
                     <table>
-                      <thead>
+                      <thead
+                        style={{
+                          position: "sticky",
+                          top: 0,
+                          background: "var(--surface, white)",
+                          zIndex: 1,
+                        }}
+                      >
                         <tr>
                           <th>Date (UTC)</th>
                           <th>Invoices before tax</th>

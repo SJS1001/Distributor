@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 async function login(page: Page, buyer = false) {
   await page.goto(buyer ? "/#customer-sign-in" : "/#admin-sign-in");
   await page
@@ -62,7 +63,7 @@ test("workspace report visibility and order survive reload, remain user scoped, 
     page.getByRole("button", { name: "Sign out", exact: true }).click(),
   ]);
   await login(page, true);
-  await page.goto("/#page=Overview");
+  await navigateWorkspace(page, "Overview");
   await expect(
     reports.getByRole("heading", {
       name: "Your purchases & balances",
