@@ -353,3 +353,32 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Keep related order entry and fulfillment controls on one compact row. */
+.shell.workspace-shell .order-taskbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 20px;
+}
+.shell.workspace-shell .order-taskbar > .actions {
+  margin: 0;
+}
+.shell.workspace-shell .order-taskbar .fulfillment-guide {
+  flex: 1 1 380px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.shell.workspace-shell .receiving-guidance summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+  font-weight: 700;
+}
+.shell.workspace-shell button.aging-amount {
+  min-width: 78px;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}

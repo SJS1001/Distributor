@@ -24,13 +24,18 @@ export function OrderReservations({
   orderId,
   lines,
   onClose,
+  refreshToken,
 }: {
   orderId: string;
   lines: { id: string; description: string }[];
   onClose: () => void;
+  refreshToken?: unknown;
 }) {
   const history = usePages(
     `/api/orders/${encodeURIComponent(orderId)}/reservations`,
+    undefined,
+    "after",
+    refreshToken,
   );
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {

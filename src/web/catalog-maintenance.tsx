@@ -43,7 +43,7 @@ function Products({
     `/api/catalog/products/page?state=${state}&q=${encodeURIComponent(search)}`,
   );
   return (
-    <section aria-label="Staff catalog">
+    <section className="staff-catalog" aria-label="Staff catalog">
       <p role="status">
         Page {rows.pageNumber} · {rows.items.length}{" "}
         {rows.items.length === 1 ? "product" : "products"} loaded
@@ -76,7 +76,9 @@ function Products({
                 "Customer availability",
                 "Actions",
               ].map((label) => (
-                <th key={label}>{label}</th>
+                <th scope="col" key={label}>
+                  {label}
+                </th>
               ))}
             </tr>
           </thead>
@@ -87,7 +89,7 @@ function Products({
                 <td>
                   {actions.canManage ? (
                     <button
-                      className="secondary"
+                      className="record-title-link catalog-product-link"
                       disabled={actions.busy}
                       aria-label={`Images & documents for ${p.name} (${p.sku})`}
                       onClick={(event) =>
@@ -95,7 +97,6 @@ function Products({
                       }
                     >
                       {p.name}
-                      <br />
                       <small>Images & documents</small>
                     </button>
                   ) : (
@@ -121,7 +122,11 @@ function Products({
                 </td>
                 <td>
                   {actions.canManage && (
-                    <div className="actions">
+                    <div
+                      className="actions catalog-product-actions"
+                      role="group"
+                      aria-label={`Actions for ${p.sku}`}
+                    >
                       <button
                         disabled={actions.busy}
                         onClick={(event) =>

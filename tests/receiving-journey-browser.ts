@@ -251,7 +251,7 @@ test("created purchase order keeps its exact receiving continuation after refres
   await page.goto("/#page=Purchasing&section=purchasing-queue");
   await page
     .getByRole("button", {
-      name: "Create purchase order for delivery",
+      name: "Create purchase order",
       exact: true,
     })
     .click();

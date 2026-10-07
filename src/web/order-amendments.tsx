@@ -7,14 +7,19 @@ export function OrderAmendments({
   currency,
   lines,
   onClose,
+  refreshToken,
 }: {
   orderId: string;
   currency: string;
   lines: { id: string; description: string }[];
   onClose: () => void;
+  refreshToken?: unknown;
 }) {
   const history = usePages(
     `/api/orders/${encodeURIComponent(orderId)}/amendments`,
+    undefined,
+    "after",
+    refreshToken,
   );
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {

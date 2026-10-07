@@ -364,7 +364,7 @@ function ApplicationTable({
     </div>
   );
 }
-function useEnrollmentQueue() {
+function useEnrollmentQueue(refreshToken?: unknown) {
   const [queue, setQueue] = useState<EnrollmentQueue | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -392,14 +392,16 @@ function useEnrollmentQueue() {
     }
   }
   useEffect(() => {
-    void load();
+    void load(after.current);
     return () => controller.current?.abort();
-  }, []);
+  }, [refreshToken]);
   return { queue, busy, error, setBusy, setError, after, load };
 }
-export function EnrollmentReview() {
+export function EnrollmentReview({
+  refreshToken,
+}: { refreshToken?: unknown } = {}) {
   const { queue, busy, error, setBusy, setError, after, load } =
-    useEnrollmentQueue();
+    useEnrollmentQueue(refreshToken);
 
   const [notice, setNotice] = useState(""),
     [dialog, setDialog] = useState<Dialog | null>(null);
@@ -469,16 +471,18 @@ export function EnrollmentReview() {
             </InfoBubble>
           </div>
         </div>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => {
-            setNotice("");
-            void load(after.current);
-          }}
-        >
-          Refresh applications
-        </button>
+        {(error || refreshToken === undefined) && (
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => {
+              setNotice("");
+              void load(after.current);
+            }}
+          >
+            {error ? "Retry applications" : "Refresh applications"}
+          </button>
+        )}
       </div>
       {notice && (
         <p className="notice" role="status">
@@ -519,7 +523,7 @@ export function EnrollmentReview() {
         <p role="status">
           {busy
             ? "Loading applications…"
-            : "Applications could not be loaded. Use Refresh applications to retry."}
+            : "Applications could not be loaded. Use Retry applications to retry."}
         </p>
       ) : shown.length ? (
         <ApplicationTable

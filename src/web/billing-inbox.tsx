@@ -11,6 +11,7 @@ export function usePages<T extends Item = Item>(
   endpoint: string,
   initial?: Page<T>,
   cursorName: "after" | "before" = "after",
+  refreshToken?: unknown,
 ) {
   const [page, setPage] = useState<Page<T>>(
     initial ?? { items: [], next: null },
@@ -20,13 +21,20 @@ export function usePages<T extends Item = Item>(
   const current = useRef(initial);
   const pending = useRef<AbortController | null>(null);
   const active = useRef(true);
-  const load = async () => {
-    if (pending.current || (current.current && !current.current.next)) return;
+  const started = useRef(false);
+  const retryReplace = useRef(false);
+  const load = async (replace = retryReplace.current) => {
+    if (replace) {
+      retryReplace.current = true;
+      pending.current?.abort();
+      pending.current = null;
+    } else if (pending.current || (current.current && !current.current.next))
+      return;
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
     setError("");
-    const previous = current.current;
+    const previous = replace ? undefined : current.current;
     try {
       const result = await request<Page<T>>(
         endpoint +
@@ -40,6 +48,7 @@ export function usePages<T extends Item = Item>(
         items: [...(previous?.items ?? []), ...result.items],
         next: result.next,
       };
+      retryReplace.current = false;
       current.current = merged;
       setPage(merged);
     } catch (e) {
@@ -60,15 +69,23 @@ export function usePages<T extends Item = Item>(
   };
   useEffect(() => {
     active.current = true;
-    if (!initial) void load();
+    if (!initial || started.current) void load(true);
+    started.current = true;
     return () => {
       active.current = false;
       const controller = pending.current;
       pending.current = null;
       controller?.abort();
     };
-  }, []);
-  return { ...page, busy, error, load, loaded: !!current.current };
+  }, [refreshToken]);
+  return {
+    ...page,
+    busy,
+    error,
+    load: () => load(),
+    refresh: () => load(true),
+    loaded: !!current.current,
+  };
 }
 
 function HistoryList({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { request, RequestError } from "./api.ts";
 import { ControlIcon } from "./control-icon.tsx";
 import {
@@ -38,7 +38,7 @@ export function CustomerMinimumOrderControls({
   accountId: string;
   recoveryScope?: string;
   editable?: boolean;
-  refreshKey?: string;
+  refreshKey?: unknown;
 }) {
   const storageKey = `distributor-minimum-order:${recoveryScope}:${accountId}`;
   const [recovery] = useState(() => {
@@ -84,9 +84,17 @@ export function CustomerMinimumOrderControls({
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [rejected, setRejected] = useState(false);
+  const draftDirty = useRef(false);
+  const pendingAttempt = useRef<Attempt | null>(recovery.attempt);
+  const [latestPolicy, setLatestPolicy] = useState<CustomerMinimumOrder | null>(
+    null,
+  );
+  const [reading, setReading] = useState(false);
+  const stale =
+    !!policy && !!latestPolicy && policy.revision !== latestPolicy.revision;
   useEffect(() => {
     const c = new AbortController();
-    setPolicy(null);
+    setReading(true);
     setError("");
     void request<CustomerMinimumOrder>(
       `/api/accounts/${encodeURIComponent(accountId)}/minimum-order`,
@@ -94,12 +102,26 @@ export function CustomerMinimumOrderControls({
     )
       .then((p) => {
         if (c.signal.aborted) return;
-        setPolicy(p);
-        setAmount((p.minimumSubtotal / 100).toFixed(2));
-        setUnits(String(p.minimumEquipmentQuantity));
+        setLatestPolicy(p);
+        if (!draftDirty.current && !pendingAttempt.current) {
+          setPolicy(p);
+          setAmount((p.minimumSubtotal / 100).toFixed(2));
+          setUnits(String(p.minimumEquipmentQuantity));
+        } else {
+          setPolicy((reviewed) => reviewed ?? p);
+        }
       })
       .catch((e) => {
-        if (!c.signal.aborted) setError(e.message);
+        if (!c.signal.aborted) {
+          setError(e.message);
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status)) {
+            setPolicy(null);
+            setLatestPolicy(null);
+          }
+        }
+      })
+      .finally(() => {
+        if (!c.signal.aborted) setReading(false);
       });
     return () => c.abort();
   }, [accountId, epoch, refreshKey]);
@@ -109,6 +131,7 @@ export function CustomerMinimumOrderControls({
     setNotice("");
     try {
       localStorage.setItem(storageKey, JSON.stringify(a));
+      pendingAttempt.current = a;
       setAttempt(a);
       await request("/api/commands/account.minimum-order.save", {
         method: "POST",
@@ -116,6 +139,8 @@ export function CustomerMinimumOrderControls({
         body: JSON.stringify(a.payload),
       });
       localStorage.removeItem(storageKey);
+      pendingAttempt.current = null;
+      draftDirty.current = false;
       setAttempt(null);
       setRejected(false);
       setReason("");
@@ -144,13 +169,21 @@ export function CustomerMinimumOrderControls({
     <section className="panel minimum-order-panel" aria-label="Minimum order">
       <div className="minimum-order-heading">
         <h3>Minimum order</h3>
-        {editable && (
+        {(error || (editable && refreshKey === undefined)) && (
           <button
             type="button"
             className="secondary icon-button"
-            aria-label="Refresh minimum order requirements"
-            title="Refresh minimum order requirements"
-            disabled={busy || !!attempt || !!blocked}
+            aria-label={
+              error
+                ? "Retry minimum order requirements"
+                : "Refresh minimum order requirements"
+            }
+            title={
+              error
+                ? "Retry minimum order requirements"
+                : "Refresh minimum order requirements"
+            }
+            disabled={busy || reading || !!blocked}
             onClick={() => setEpoch((e) => e + 1)}
           >
             <ControlIcon name="refresh" />
@@ -171,6 +204,33 @@ export function CustomerMinimumOrderControls({
       )}
       {blocked && <p role="alert">{blocked}</p>}
       {notice && <p role="status">{notice}</p>}
+      {reading && policy && (
+        <p role="status">Refreshing minimum order requirements…</p>
+      )}
+      {stale && (
+        <div className="pricing-recovery">
+          <p role="status">
+            Minimum order requirements changed. Your draft and reviewed revision
+            are retained. Review the latest requirements before saving.
+          </p>
+          {latestPolicy && (
+            <p>
+              Latest merchandise subtotal:{" "}
+              {money(latestPolicy.minimumSubtotal, latestPolicy.currency)}.
+              Equipment units: {latestPolicy.minimumEquipmentQuantity}.
+            </p>
+          )}
+          {!attempt && (
+            <button
+              type="button"
+              disabled={busy || reading || !!blocked}
+              onClick={() => setPolicy(latestPolicy)}
+            >
+              Use latest requirements for this draft
+            </button>
+          )}
+        </div>
+      )}
       {attempt && (
         <div className="pricing-recovery">
           <p role="status">
@@ -199,6 +259,7 @@ export function CustomerMinimumOrderControls({
               onClick={() => {
                 try {
                   localStorage.removeItem(storageKey);
+                  pendingAttempt.current = null;
                   setAttempt(null);
                   setRejected(false);
                   setEpoch((e) => e + 1);
@@ -228,7 +289,9 @@ export function CustomerMinimumOrderControls({
               !reason.trim() ||
               busy ||
               attempt ||
-              blocked
+              blocked ||
+              reading ||
+              stale
             )
               return;
             void send({
@@ -244,7 +307,7 @@ export function CustomerMinimumOrderControls({
           }}
         >
           <fieldset
-            className="record-form-card"
+            className="record-form-card minimum-order-fields"
             disabled={busy || !!attempt || !!blocked}
           >
             <legend>Customer minimum order</legend>
@@ -256,7 +319,10 @@ export function CustomerMinimumOrderControls({
                 required
                 value={amount}
                 aria-invalid={subtotal === null}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  draftDirty.current = true;
+                  setAmount(e.target.value);
+                }}
               />
             </label>
             {subtotal === null && (
@@ -273,7 +339,10 @@ export function CustomerMinimumOrderControls({
                 required
                 value={units}
                 aria-invalid={quantity === null}
-                onChange={(e) => setUnits(e.target.value)}
+                onChange={(e) => {
+                  draftDirty.current = true;
+                  setUnits(e.target.value);
+                }}
               />
             </label>
             {quantity === null && (
@@ -282,13 +351,16 @@ export function CustomerMinimumOrderControls({
                 100,000.
               </p>
             )}
-            <label>
+            <label className="minimum-order-reason">
               Reason for minimum order change
               <textarea
                 required
                 maxLength={1000}
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => {
+                  draftDirty.current = true;
+                  setReason(e.target.value);
+                }}
               />
             </label>
             <p className="record-form-note">
@@ -299,7 +371,11 @@ export function CustomerMinimumOrderControls({
               <button
                 type="submit"
                 disabled={
-                  subtotal === null || quantity === null || !reason.trim()
+                  subtotal === null ||
+                  quantity === null ||
+                  !reason.trim() ||
+                  reading ||
+                  stale
                 }
               >
                 Save minimum order

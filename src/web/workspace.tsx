@@ -1,3 +1,4 @@
+import { Wordmark } from "./wordmark.tsx";
 import React, {
   createContext,
   useContext,
@@ -118,10 +119,10 @@ export function WorkspaceNavigation({
         <div className="customer-masthead">
           <button
             className="customer-wordmark"
-            onClick={() => navigate("Shop")}
+            onClick={() => visit("Shop")}
             aria-label="dstrbtr. — Shop"
           >
-            dstrbtr<span>.</span>
+            <Wordmark />
           </button>
           <span className="customer-trade-label">
             GREE equipment · Trade portal
@@ -172,12 +173,15 @@ export function WorkspaceNavigation({
   return (
     <aside className="workspace-sidebar">
       <div className="sidebar-heading">
-        <div className="brand">
-          <span className="brand-mark">
-            <WorkspaceIcon name="Inventory" />
-          </span>
-          <span>Distributor</span>
-        </div>
+        <button
+          className="workspace-wordmark"
+          onClick={() =>
+            visit(pages.includes("Overview") ? "Overview" : pages[0]!)
+          }
+          aria-label="dstrbtr. — Workspace home"
+        >
+          <Wordmark />
+        </button>
         <button
           className="navigation-toggle"
           aria-expanded={expanded}

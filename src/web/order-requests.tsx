@@ -1,6 +1,6 @@
 import { shippingSummary } from "../shared/shipping-terms.ts";
 import React, { useEffect, useId, useState } from "react";
-import { command, request } from "./api.ts";
+import { command, request, RequestError } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { displayMoney } from "./storefront.tsx";
 import type { OrderRequest, OrderRequestStatus } from "../shared/purchasing.ts";
@@ -268,8 +268,8 @@ function RequestDetail({
   back,
   resubmit,
   order,
-  changed,
   accountName,
+  refreshToken,
 }: {
   id: string;
   buyer: boolean;
@@ -277,9 +277,11 @@ function RequestDetail({
   back: () => void;
   resubmit: (value: OrderRequest) => void;
   order: (id: string) => void;
-  changed: () => void;
   accountName?: (id: string) => string;
+  refreshToken?: unknown;
 }) {
+  const [reviewed, setReviewed] = useState<OrderRequest | null>(null);
+  const [reading, setReading] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [value, setValue] = useState<OrderRequest | null>(null),
     [error, setError] = useState(""),
@@ -290,20 +292,30 @@ function RequestDetail({
     [epoch, setEpoch] = useState(0);
   useEffect(() => {
     const c = new AbortController();
-    setValue(null);
+    setReading(true);
     setError("");
     void request<OrderRequest>(
       `/api/order-requests/${encodeURIComponent(id)}`,
       { signal: c.signal },
     )
       .then((result) => {
-        if (!c.signal.aborted) setValue(result);
+        if (!c.signal.aborted) {
+          setValue(result);
+          setReviewed((previous) => previous ?? result);
+        }
       })
       .catch((e) => {
-        if (!c.signal.aborted) setError(e.message);
+        if (!c.signal.aborted) {
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setValue(null);
+          setError(e.message);
+        }
+      })
+      .finally(() => {
+        if (!c.signal.aborted) setReading(false);
       });
     return () => c.abort();
-  }, [id, epoch]);
+  }, [id, epoch, refreshToken]);
   useEffect(() => {
     if (!value || value.status === "accepted") return;
     const remaining = value.expiresAt - Date.now();
@@ -317,13 +329,20 @@ function RequestDetail({
     );
     return () => window.clearTimeout(timer);
   }, [value]);
+  const staleReview = !!(
+    value &&
+    reviewed &&
+    (value.revision !== reviewed.revision ||
+      value.expectedHash !== reviewed.expectedHash ||
+      value.status !== reviewed.status)
+  );
   const run = async (name: string, payload: unknown) => {
     setBusy(true);
     setError("");
     try {
       await command(name, payload);
-      setEpoch(epoch + 1);
-      changed();
+      setReviewed(null);
+      setEpoch((previous) => previous + 1);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -336,18 +355,39 @@ function RequestDetail({
         <button className="secondary" disabled={busy} onClick={back}>
           <span aria-hidden="true">← </span>Back to requests
         </button>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => setEpoch(epoch + 1)}
-        >
-          Refresh request
-        </button>
+        {(error || refreshToken === undefined) && (
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => setEpoch(epoch + 1)}
+          >
+            {error ? "Retry request" : "Refresh request"}
+          </button>
+        )}
       </div>
       {error && (
         <p role="alert" className="error">
           {error}
         </p>
+      )}
+      {value && reading && <p role="status">Refreshing request…</p>}
+      {!buyer && canReview && staleReview && (
+        <div className="record-detail-panel">
+          <p role="status">
+            This request changed after your decision review. Your draft is
+            preserved. Review the latest request before recording a decision.
+          </p>
+          {value?.status === "awaiting_approval" && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || reading}
+              onClick={() => setReviewed(value)}
+            >
+              Use latest request for decision
+            </button>
+          )}
+        </div>
       )}
       {value ? (
         <>
@@ -366,10 +406,10 @@ function RequestDetail({
               resubmit={resubmit}
             />
           )}
-          {!buyer && canReview && value.status === "awaiting_approval" && (
+          {!buyer && canReview && reviewed?.status === "awaiting_approval" && (
             <DistributorRequestDecision
-              value={value}
-              busy={busy}
+              value={reviewed}
+              busy={busy || reading || staleReview}
               run={run}
               decision={{ action, message, note }}
               change={(field, text) =>
@@ -400,17 +440,22 @@ function RequestDetail({
 function RequestList({
   title,
   buyer,
-  refresh,
+  refreshToken,
   select,
   accountName,
 }: {
   title: string;
   buyer: boolean;
-  refresh: () => void;
+  refreshToken?: unknown;
   select: (id: string) => void;
   accountName?: (id: string) => string;
 }) {
-  const rows = usePages<OrderRequest>("/api/order-requests"),
+  const rows = usePages<OrderRequest>(
+      "/api/order-requests",
+      undefined,
+      "after",
+      refreshToken,
+    ),
     [status, setStatus] = useState(""),
     statusId = useId();
   const shown = rows.items.filter((r) => !status || r.status === status);
@@ -433,11 +478,17 @@ function RequestList({
             ))}
           </select>
         </div>
-        <div className="queue-field queue-field-actions">
-          <button className="secondary" onClick={refresh}>
-            Refresh requests
-          </button>
-        </div>
+        {refreshToken === undefined && !rows.error && (
+          <div className="queue-field queue-field-actions">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void rows.refresh()}
+            >
+              Refresh requests
+            </button>
+          </div>
+        )}
         <p role="status">
           {plural(rows.items.length, "request")} loaded
           {status ? ` · ${shown.length} shown` : ""}
@@ -541,15 +592,16 @@ export function OrderRequests({
   resubmit,
   order,
   accountName,
+  refreshToken,
 }: {
   buyer: boolean;
   canReview: boolean;
   resubmit: (value: OrderRequest) => void;
   order: (id: string) => void;
   accountName?: (id: string) => string;
+  refreshToken?: unknown;
 }) {
-  const [selected, setSelected] = useState<string | null>(null),
-    [epoch, setEpoch] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
   const title = buyer ? "Your order requests" : "Order review queue";
   return (
     <section className="fulfillment-queue" aria-label={title}>
@@ -564,16 +616,15 @@ export function OrderRequests({
             back={() => setSelected(null)}
             resubmit={resubmit}
             order={order}
-            changed={() => setEpoch(epoch + 1)}
             accountName={accountName}
+            refreshToken={refreshToken}
           />
         </>
       ) : (
         <RequestList
-          key={epoch}
           title={title}
           buyer={buyer}
-          refresh={() => setEpoch(epoch + 1)}
+          refreshToken={refreshToken}
           select={setSelected}
           accountName={accountName}
         />

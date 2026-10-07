@@ -78,9 +78,7 @@ export async function navigateCustomerWorkspace(
     if (await menu.isVisible()) await menu.click();
   }
   await link.click();
-  await expect(page.locator("#workspace-title")).toHaveText(
-    destination === "Returns" ? "Returns" : label,
-  );
+  await expect(page.locator("#workspace-title")).toHaveText(label);
   if (section)
     await page
       .getByRole("tablist", { name: `${destination} sections`, exact: true })

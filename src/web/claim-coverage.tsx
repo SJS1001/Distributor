@@ -218,23 +218,28 @@ export function RetainedClaimCoverage({
         Claim coverage snapshot
       </button>
       {open && (
-        <section aria-label="Retained claim coverage">
-          <h3 ref={heading} tabIndex={-1}>
-            Retained claim coverage
-          </h3>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              pending.current?.abort();
-              pending.current = null;
-              setBusy(false);
-              setOpen(false);
-              opener.current?.focus();
-            }}
-          >
-            Close claim coverage
-          </button>
+        <section
+          className="retained-claim-coverage"
+          aria-label="Retained claim coverage"
+        >
+          <div className="retained-claim-heading">
+            <h3 ref={heading} tabIndex={-1}>
+              Retained claim coverage
+            </h3>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                pending.current?.abort();
+                pending.current = null;
+                setBusy(false);
+                setOpen(false);
+                opener.current?.focus();
+              }}
+            >
+              Close claim coverage
+            </button>
+          </div>
           {busy && <p role="status">Loading retained coverage…</p>}
           {error && (
             <>
@@ -253,7 +258,10 @@ export function RetainedClaimCoverage({
           )}
           {eligibility &&
             (eligibility.snapshot ? (
-              <section aria-label="Submitted claim assessment">
+              <section
+                className="retained-assessment"
+                aria-label="Submitted claim assessment"
+              >
                 <h4>Submitted assessment</h4>
                 <p>
                   Return and equipment warranty assessment retained at claim
@@ -271,8 +279,21 @@ export function RetainedClaimCoverage({
               </p>
             ))}
           {eligibility && (
-            <section aria-label="Current claim assessment">
-              <h4>Current assessment</h4>
+            <section
+              className="retained-assessment"
+              aria-label="Current claim assessment"
+            >
+              <div className="retained-claim-heading">
+                <h4>Current assessment</h4>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void load()}
+                >
+                  Refresh current assessment
+                </button>
+              </div>
               <p>
                 Recalculated at {eligibility.current.capturedAt}; current terms
                 and installation records may differ from the submitted snapshot.
@@ -281,14 +302,6 @@ export function RetainedClaimCoverage({
                 returnEligibility={eligibility.current.returnEligibility}
                 warrantyEligibility={eligibility.current.warrantyEligibility}
               />
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => void load()}
-              >
-                Refresh current assessment
-              </button>
             </section>
           )}
           {result && (

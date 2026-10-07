@@ -261,18 +261,20 @@ test("staff order detail returns focus to that order action summary after restor
   });
   await expect(detail).toBeVisible();
   await detail
-    .getByRole("button", { name: "View this order in All orders", exact: true })
+    .getByRole("button", { name: "Open actions for this order", exact: true })
     .click();
   const target = page.locator(`[id="${id}"]`);
   await expect(target).toBeFocused();
   await page.waitForTimeout(250);
   await expect(target).toBeFocused();
-  await target.press("Enter");
   expect(
     await target.evaluate(
       (element) => (element.parentElement as HTMLDetailsElement).open,
     ),
   ).toBe(true);
+  await page
+    .getByRole("button", { name: "Return to all orders", exact: true })
+    .click();
   await page.setViewportSize({ width: 320, height: 700 });
   const picking = page.getByRole("region", {
     name: "Fulfill an order",

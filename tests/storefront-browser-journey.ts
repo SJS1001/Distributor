@@ -340,9 +340,7 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
     .getByRole("dialog")
     .getByRole("button", { name: "Resubmit for review", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Refresh request", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
     page.getByRole("heading", {
       name: "Awaiting distributor approval",
@@ -369,12 +367,21 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
       }),
     ).toBeVisible();
     await expect(admin.getByLabel("Decision", { exact: true })).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Refresh request", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(
       page.getByText("Please confirm the installation.").first(),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: "Use latest request for decision",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("This request changed after your decision review.", {
+        exact: false,
+      }),
+    ).toHaveCount(0);
     await page
       .getByRole("button", { name: "Review quantities and resubmit" })
       .click();
@@ -397,8 +404,18 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
       .getByRole("button", { name: "Resubmit for review", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    await admin.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(
+      admin.getByRole("heading", {
+        name: "Awaiting distributor approval",
+        exact: true,
+      }),
+    ).toBeVisible();
     await admin
-      .getByRole("button", { name: "Refresh request", exact: true })
+      .getByRole("button", {
+        name: "Use latest request for decision",
+        exact: true,
+      })
       .click();
     await admin.getByLabel("Decision", { exact: true }).selectOption("approve");
     await admin
@@ -414,9 +431,7 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   } finally {
     await adminContext.close();
   }
-  await page
-    .getByRole("button", { name: "Refresh request", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Accepted", exact: true }),
   ).toBeVisible();

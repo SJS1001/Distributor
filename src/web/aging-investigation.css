@@ -1,0 +1,43 @@
+.aging-investigation {
+  min-width: 0;
+}
+.aging-investigation > h3 {
+  margin: 16px 0 8px;
+  overflow-wrap: anywhere;
+}
+.aging-investigation > p {
+  max-width: 82ch;
+  line-height: 1.5;
+}
+.aging-investigation-actions {
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+.aging-investigation-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.aging-observation {
+  color: var(--muted);
+  font-size: var(--text-secondary);
+}
+.aging-investigation-filter {
+  display: grid;
+  gap: 6px;
+  max-width: 26rem;
+  margin: 16px 0 8px;
+}
+.aging-investigation-filter label {
+  margin: 0;
+  font-weight: 600;
+}
+.aging-investigation-filter select {
+  width: 100%;
+  min-width: 0;
+}
+.aging-investigation td.numeric,
+.aging-investigation th.numeric {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

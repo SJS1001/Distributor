@@ -490,7 +490,7 @@ test("public site: actual isolated submission, administrator approval, activatio
         })
       ).status(),
     ).toBeGreaterThanOrEqual(400);
-    await admin.getByRole("button", { name: "Refresh applications" }).click();
+    await admin.getByRole("button", { name: "Refresh", exact: true }).click();
     await admin
       .getByRole("combobox", { name: "Application view", exact: true })
       .selectOption("all");

@@ -31,7 +31,7 @@
   letter-spacing: -1.8px;
   font-weight: 800;
 }
-.customer-wordmark span {
+.customer-wordmark .dstrbtr-dot {
   color: #77c8ff;
 }
 .customer-trade-label {
@@ -334,5 +334,17 @@
     padding: 0;
     border: 0;
     min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .customer-shell .table-wrap:has(td[data-label]) > .table-scroll-hint {
+    display: none;
+  }
+  .customer-shell .table-wrap:has(td[data-label]) button.record-link {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
   }
 }

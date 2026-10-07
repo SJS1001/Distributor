@@ -322,13 +322,16 @@ test("HTTP current revoke clears cookie; exact replay from a fresh login preserv
 });
 
 for (const eventReports of [false, true])
-  test(`schema30 to31 preserves all session credentials and historical unknown metadata; reports=${eventReports}`, async (t) => {
+  test(`schema30 upgrade preserves all session credentials and historical unknown metadata; reports=${eventReports}`, async (t) => {
     const f = fixture(t, { eventReports });
     const session = f.app.identity.login("admin@example.test", password);
     const source = f.path,
-      target = join(dirname(source), "schema31.db");
+      target = join(dirname(source), "upgraded.db");
     f.app.close();
     const db = new DatabaseSync(source);
+    db.exec(
+      "DROP TABLE warranty_claim_eligibility; DROP TABLE warranty_policy_history; DROP TABLE warranty_installation_history; DROP TABLE warranty_installations; DROP TABLE warranty_product_terms; DROP TABLE warranty_return_policy",
+    );
     db.exec(
       "DROP TABLE iam_session_details; DROP TABLE iam_customer_minimum_orders",
     );
@@ -357,7 +360,7 @@ for (const eventReports of [false, true])
     );
     const receipt = await upgradeSchema(source, target, hash, "CA");
     assert.equal(receipt.version, SCHEMA_VERSION);
-    assert.equal(SCHEMA_VERSION, 32);
+    assert.equal(SCHEMA_VERSION, 33);
     assert.deepEqual(readFileSync(source), bytes);
     const migrated = new DatabaseSync(target);
     for (const table of tables)

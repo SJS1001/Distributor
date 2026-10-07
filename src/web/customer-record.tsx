@@ -159,6 +159,7 @@ export function CustomerRecord({
   terms,
   editBilling,
   billingEpoch,
+  refreshToken,
   onNavigate,
 }: {
   account: Account;
@@ -171,6 +172,7 @@ export function CustomerRecord({
   terms: React.ReactNode;
   editBilling?: (p: any) => void;
   billingEpoch?: number;
+  refreshToken?: unknown;
   onNavigate: (route: NavigationIntent) => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
@@ -261,6 +263,7 @@ export function CustomerRecord({
         <PageSection id="record-history">
           <CustomerHistory
             account={account}
+            refreshToken={refreshToken}
             role={role}
             onNavigate={onNavigate}
           />
@@ -311,6 +314,7 @@ export function CustomerRecord({
             accountId={account.id}
             recoveryScope={recoveryScope}
             editable={commercial}
+            refreshKey={refreshToken}
           />
           {commercial && (
             <CustomerPurchasingRules
@@ -553,10 +557,12 @@ function CustomerHistory({
   account,
   role,
   onNavigate,
+  refreshToken,
 }: {
   onNavigate: (route: NavigationIntent) => void;
   account: Account;
   role: string;
+  refreshToken?: unknown;
 }) {
   const sources = [
     {
@@ -609,6 +615,7 @@ function CustomerHistory({
                 path={s.path}
                 kind={s.key}
                 account={account}
+                refreshToken={refreshToken}
                 onNavigate={onNavigate}
               />
             </PageSection>
@@ -622,11 +629,13 @@ function HistoryList({
   kind,
   account,
   onNavigate,
+  refreshToken,
 }: {
   onNavigate: (route: NavigationIntent) => void;
   path: string;
   kind: string;
   account: Account;
+  refreshToken?: unknown;
 }) {
   const [items, setItems] = useState<any[]>([]),
     [next, setNext] = useState<string | null>(null),
@@ -657,7 +666,7 @@ function HistoryList({
   useEffect(() => {
     void load();
     return () => controller.current?.abort();
-  }, [account.id, path]);
+  }, [account.id, path, refreshToken]);
   const link = (route: NavigationIntent, label: string) => (
     <a
       className="record-title-link"
@@ -688,13 +697,15 @@ function HistoryList({
             ? `Loading ${kind}…`
             : `${items.length}${next ? "+" : ""} ${items.length === 1 ? kind.slice(0, -1) : kind} shown`}
         </p>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => void load()}
-        >
-          Refresh {kind}
-        </button>
+        {(error || refreshToken === undefined) && (
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => void load()}
+          >
+            {error ? "Retry" : "Refresh"} {kind}
+          </button>
+        )}
       </div>
       {error && <p role="alert">{error}</p>}
       {items.length > 0 && (

@@ -101,3 +101,23 @@ test("a refreshed missing account yields an explicit scoped absence, with no inv
     /Investigate invoice|Open customer record|All matching records shown/,
   );
 });
+
+test("each aging summary bucket opens only outstanding invoices in that bucket", () => {
+  const buckets = [
+    "notDue",
+    "days1to30",
+    "days31to60",
+    "days61to90",
+    "daysOver90",
+  ] as const;
+  for (const selected of buckets) {
+    for (const actual of [...buckets, "unknownDue"]) {
+      assert.equal(
+        agingMatches(invoice(100, actual), selected),
+        actual === selected,
+      );
+      assert.equal(agingMatches(invoice(0, actual), selected), false);
+      assert.equal(agingMatches(invoice(-100, actual), selected), false);
+    }
+  }
+});

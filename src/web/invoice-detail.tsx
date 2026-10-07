@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { downloadDocument, request } from "./api.ts";
+import { downloadDocument, request, RequestError } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { shippingSummary } from "../shared/shipping-terms.ts";
 type Item = Record<string, any>;
@@ -84,6 +84,7 @@ export function InvoiceDetail({
   canSeePayments,
   openOrder,
   actions,
+  refreshToken,
 }: {
   invoiceId: string;
   accountName: (id: string) => string;
@@ -92,17 +93,25 @@ export function InvoiceDetail({
   canSeePayments: boolean;
   openOrder?: (orderId: string) => void;
   actions?: (invoice: Item) => React.ReactNode;
+  refreshToken?: unknown;
 }) {
   const [invoice, setInvoice] = useState<Item | null>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [downloading, setDownloading] = useState(false),
-    [attempt, setAttempt] = useState(0);
+    [attempt, setAttempt] = useState(0),
+    [reading, setReading] = useState(false),
+    [readRevision, setReadRevision] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
+  const readId = useRef(invoiceId);
   useEffect(() => {
     const controller = new AbortController();
     let current = true;
-    setInvoice(null);
+    if (readId.current !== invoiceId) {
+      readId.current = invoiceId;
+      setInvoice(null);
+    }
+    setReading(true);
     setError("");
     void request<Item>(
       `/api/billing/invoices/${encodeURIComponent(invoiceId)}`,
@@ -111,19 +120,28 @@ export function InvoiceDetail({
       },
     )
       .then((result) => {
-        if (current) setInvoice(result);
+        if (current) {
+          setInvoice(result);
+          setReadRevision((value) => value + 1);
+        }
       })
       .catch((e) => {
-        if (current && !controller.signal.aborted)
+        if (current && !controller.signal.aborted) {
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setInvoice(null);
           setError(
             e instanceof Error ? e.message : "Invoice could not be loaded.",
           );
+        }
+      })
+      .finally(() => {
+        if (current) setReading(false);
       });
     return () => {
       current = false;
       controller.abort();
     };
-  }, [invoiceId, attempt]);
+  }, [invoiceId, attempt, refreshToken]);
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
   }, [invoiceId, !!invoice]);
@@ -153,7 +171,16 @@ export function InvoiceDetail({
       <button type="button" className="secondary back-link" onClick={back}>
         ← {backLabel}
       </button>
-      {error ? (
+      {invoice && reading && <p role="status">Refreshing invoice detail…</p>}
+      {invoice && error && (
+        <div className="record-detail-panel">
+          <p role="alert">{error} Showing the last successful invoice read.</p>
+          <button type="button" onClick={() => setAttempt((v) => v + 1)}>
+            Retry invoice
+          </button>
+        </div>
+      )}
+      {error && !invoice ? (
         <div className="record-detail-panel">
           <h2 ref={heading} tabIndex={-1}>
             Invoice unavailable
@@ -312,7 +339,11 @@ export function InvoiceDetail({
             </p>
           </section>
           {canSeePayments && (
-            <InvoicePayments invoiceId={invoice.id} currency={currency} />
+            <InvoicePayments
+              key={`${invoice.id}:${readRevision}`}
+              invoiceId={invoice.id}
+              currency={currency}
+            />
           )}
         </>
       )}

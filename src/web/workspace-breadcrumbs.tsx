@@ -59,7 +59,9 @@ export function WorkspaceBreadcrumbs({
       ? "Invoices & payments"
       : customer && route.page === "Overview"
         ? "Reports"
-        : route.page;
+        : customer && route.page === "Returns"
+          ? "Returns & warranty"
+          : route.page;
   const crumbs = [
     { label: "Home", href: "#home" },
     {
@@ -84,6 +86,7 @@ export function WorkspaceBreadcrumbs({
         ...route,
         section: undefined,
         orderId: undefined,
+        invoiceId: undefined,
         customerId: undefined,
         customerTab: undefined,
       }),
@@ -105,13 +108,22 @@ export function WorkspaceBreadcrumbs({
   if (section && section !== label)
     crumbs.push({
       label: section,
-      href: navigationHash({ ...route, orderId: undefined }),
+      href: navigationHash({
+        ...route,
+        orderId: undefined,
+        invoiceId: undefined,
+      }),
     });
   if (route.orderId) {
     // The parent retains queue filters; no customer data or opaque record ID in the trail.
     const last = crumbs[crumbs.length - 1]!;
     last.href = navigationHash({ ...route, orderId: undefined });
     crumbs.push({ label: "Order details", href: navigationHash(route) });
+  }
+  if (route.invoiceId) {
+    const last = crumbs[crumbs.length - 1]!;
+    last.href = navigationHash({ ...route, invoiceId: undefined });
+    crumbs.push({ label: "Invoice details", href: navigationHash(route) });
   }
   return (
     <nav aria-label="Workspace breadcrumb" className="workspace-breadcrumbs">

@@ -1,3 +1,4 @@
+import { Wordmark } from "./wordmark.tsx";
 import { ReferenceRequestSummary } from "./gree-reference-loader.tsx";
 import {
   lazy,
@@ -130,7 +131,7 @@ export function PublicSite({
       </a>
       <header className="public-header">
         <a href="#home" className="public-wordmark" aria-label="dstrbtr home">
-          dstrbtr<span className="public-brand-dot">.</span>
+          <Wordmark />
         </a>
         <nav aria-label="Public navigation">
           {signedIn ? (
@@ -411,7 +412,7 @@ export function PublicSite({
       </main>
       <footer className="public-footer">
         <a className="public-wordmark" href="#home">
-          dstrbtr<span className="public-brand-dot">.</span>
+          <Wordmark />
         </a>
         <p>
           Canadian HVAC trade

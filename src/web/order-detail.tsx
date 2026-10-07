@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { InfoBubble } from "./info-bubble.tsx";
-import { request } from "./api.ts";
+import { request, RequestError } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
 import { IncomingSupply } from "./incoming-supply.tsx";
 import { shippingSummary } from "../shared/shipping-terms.ts";
@@ -102,6 +102,7 @@ export function OrderDetail({
   scope,
   canAssignIncoming,
   onQueueActions,
+  refreshToken,
 }: {
   orderId: string;
   accountName: (id: string) => string;
@@ -110,33 +111,50 @@ export function OrderDetail({
   scope: string;
   canAssignIncoming: boolean;
   onQueueActions?: (orderId: string) => void;
+  refreshToken?: unknown;
 }) {
   const [order, setOrder] = useState<Item | null>(null),
     [error, setError] = useState(""),
-    [attempt, setAttempt] = useState(0);
+    [attempt, setAttempt] = useState(0),
+    [reading, setReading] = useState(false),
+    [readRevision, setReadRevision] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
+  const readId = useRef(orderId);
   useEffect(() => {
     const controller = new AbortController();
     let current = true;
-    setOrder(null);
+    if (readId.current !== orderId) {
+      readId.current = orderId;
+      setOrder(null);
+    }
+    setReading(true);
     setError("");
     void request<Item>(`/api/orders/${encodeURIComponent(orderId)}`, {
       signal: controller.signal,
     })
       .then((result) => {
-        if (current) setOrder(result);
+        if (current) {
+          setOrder(result);
+          setReadRevision((value) => value + 1);
+        }
       })
       .catch((e) => {
-        if (current && !controller.signal.aborted)
+        if (current && !controller.signal.aborted) {
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setOrder(null);
           setError(
             e instanceof Error ? e.message : "Order could not be loaded.",
           );
+        }
+      })
+      .finally(() => {
+        if (current) setReading(false);
       });
     return () => {
       current = false;
       controller.abort();
     };
-  }, [orderId, attempt]);
+  }, [orderId, attempt, refreshToken]);
   useEffect(() => {
     heading.current?.focus();
   }, [orderId]);
@@ -156,11 +174,13 @@ export function OrderDetail({
             ref={heading}
             tabIndex={-1}
             aria-label={
-              error ? `Order ${orderId} unavailable` : `Order ${orderId}`
+              error && !order
+                ? `Order ${orderId} unavailable`
+                : `Order ${orderId}`
             }
             title={orderId}
           >
-            {error ? (
+            {error && !order ? (
               <>
                 Order <code>{orderId.slice(0, 8)}</code> unavailable
               </>
@@ -190,7 +210,16 @@ export function OrderDetail({
           </span>
         )}
       </header>
-      {error ? (
+      {order && reading && <p role="status">Refreshing order detail…</p>}
+      {order && error && (
+        <div className="record-detail-panel">
+          <p role="alert">{error} Showing the last successful order read.</p>
+          <button type="button" onClick={() => setAttempt((v) => v + 1)}>
+            Retry order detail
+          </button>
+        </div>
+      )}
+      {error && !order ? (
         <div className="record-detail-panel">
           <p role="alert">{error}</p>
           <button type="button" onClick={() => setAttempt((v) => v + 1)}>
@@ -282,29 +311,28 @@ export function OrderDetail({
             </p>
             <p className="record-detail-note">
               {order.state === "closed"
-                ? "This order is closed. Review its recorded history."
-                : "Review outstanding quantities above. Return to All orders to view available order actions."}
+                ? "This order is closed. Open its actions to review recorded history."
+                : "Review outstanding quantities above, then open the available actions for this order."}
             </p>
-            {order.state !== "closed" && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() =>
-                  onQueueActions ? onQueueActions(order.id) : back()
-                }
-              >
-                View this order in All orders
-              </button>
-            )}
+            <button
+              type="button"
+              className="secondary"
+              onClick={() =>
+                onQueueActions ? onQueueActions(order.id) : back()
+              }
+            >
+              Open actions for this order
+            </button>
           </section>
           <IncomingSupply
             key={`${scope}:${order.id}`}
             orderId={order.id}
             scope={scope}
             editable={canAssignIncoming}
+            refreshToken={refreshToken}
             onChanged={() => setAttempt((value) => value + 1)}
           />
-          <OrderTimeline key={order.id} order={order} />
+          <OrderTimeline key={`${order.id}:${readRevision}`} order={order} />
         </>
       )}
     </section>

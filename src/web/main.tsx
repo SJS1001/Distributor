@@ -1,3 +1,4 @@
+import { Wordmark } from "./wordmark.tsx";
 import { CustomerDirectory, CustomerRecord } from "./customer-record.tsx";
 import { SessionRevokeRecovery } from "./session-revoke-recovery.tsx";
 import { AgingInvestigation } from "./aging-investigation.tsx";
@@ -160,6 +161,10 @@ import "./customer-workspace.css";
 import "./equipment-workspace.css";
 import "./overview-dashboard.css";
 import "./workspace-layout.css";
+import "./wordmark.css";
+import "./customer-minimum-order.css";
+import "./aging-investigation.css";
+import "./catalog-maintenance.css";
 const OperationsHealthPanel = deferredPage("Operations health", async () => {
   const module = await import("./operations-health.tsx");
   return { default: module.OperationsHealthPanel };
@@ -619,6 +624,96 @@ function App() {
     orderEntryRead.current = null;
   };
   const [eventViewEpoch, setEventViewEpoch] = useState(0);
+  const [orderActionSelection, setOrderActionSelection] = useState<{
+    scope: string;
+    orderId: string;
+  } | null>(null);
+  const [orderActionRead, setOrderActionRead] = useState<{
+    selection: NonNullable<typeof orderActionSelection>;
+    epoch: number;
+    attempt: number;
+    order: Item | null;
+    error: string;
+  } | null>(null);
+  const [orderActionAttempt, setOrderActionAttempt] = useState(0);
+  const focusOrderActions = useRef(false);
+  const selectedOrderActions =
+    actor &&
+    page === "Orders" &&
+    (!route.section || route.section === "orders-queue") &&
+    !route.orderId &&
+    orderActionSelection?.scope === `${actor.orgId}:${actor.id}`
+      ? orderActionSelection
+      : null;
+  // Keep the same actor's last verified row mounted during refresh so note
+  // drafts, open disclosures and history panels survive the cancellable read.
+  const retainedOrderActionRead =
+    selectedOrderActions && orderActionRead?.selection === selectedOrderActions
+      ? orderActionRead
+      : null;
+  const currentOrderActionRead =
+    retainedOrderActionRead &&
+    retainedOrderActionRead.epoch === eventViewEpoch &&
+    retainedOrderActionRead.attempt === orderActionAttempt
+      ? retainedOrderActionRead
+      : null;
+  useEffect(() => {
+    if (!selectedOrderActions) {
+      // Leaving the selected view or changing actor never carries its record
+      // into another queue. Existing queue filters remain independently saved.
+      setOrderActionSelection(null);
+      setOrderActionRead(null);
+      return;
+    }
+    const controller = new AbortController();
+    void request<Item>(
+      `/api/orders/${encodeURIComponent(selectedOrderActions.orderId)}`,
+      { signal: controller.signal },
+    )
+      .then((order) => {
+        if (controller.signal.aborted) return;
+        setOrderActionRead({
+          selection: selectedOrderActions,
+          epoch: eventViewEpoch,
+          attempt: orderActionAttempt,
+          order,
+          error: "",
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setOrderActionRead((previous) => ({
+          selection: selectedOrderActions,
+          epoch: eventViewEpoch,
+          attempt: orderActionAttempt,
+          order:
+            error instanceof RequestError &&
+            [401, 403, 404].includes(error.status)
+              ? null
+              : previous?.selection === selectedOrderActions
+                ? previous.order
+                : null,
+          error: (error as Error).message,
+        }));
+      });
+    return () => controller.abort();
+  }, [selectedOrderActions, eventViewEpoch, orderActionAttempt, route.orderId]);
+  useEffect(() => {
+    if (!currentOrderActionRead?.order || !focusOrderActions.current) return;
+    focusOrderActions.current = false;
+    const summary = document.getElementById(
+      `order-actions-${currentOrderActionRead.order.id}`,
+    );
+    if (summary?.parentElement instanceof HTMLDetailsElement)
+      summary.parentElement.open = true;
+    summary?.focus();
+    summary?.scrollIntoView({ block: "nearest" });
+  }, [currentOrderActionRead]);
+  const visibleOrderItems = selectedOrderActions
+    ? retainedOrderActionRead?.order
+      ? [retainedOrderActionRead.order]
+      : []
+    : orderQueue.items;
   const [createdCatalogProductId, setCreatedCatalogProductId] = useState<
     string | null
   >(null);
@@ -2209,8 +2304,8 @@ function App() {
   );
   const loginForm = (
     <section className="login">
-      <div className="brand">
-        D<span>Distributor</span>
+      <div className="login-wordmark">
+        <Wordmark />
       </div>
       {nativeDemo ? (
         <h1>Sign in to your workspace</h1>
@@ -2933,7 +3028,9 @@ function App() {
                 ? "Invoices & payments"
                 : !staff && page === "Overview"
                   ? "Reports"
-                  : page}
+                  : !staff && page === "Returns"
+                    ? "Returns & warranty"
+                    : page}
             </h1>
             <p className="page-description">
               {!staff && page === "Orders"
@@ -3110,19 +3207,21 @@ function App() {
                 />
               )}
               {/* Queue controls stay mounted but hidden while a record is focused. */}
-              <div hidden={!!route.orderId}>
-                <div className="actions">
-                  {can("commercial", "buyer") &&
-                    button("Prepare order", () => placeOrder())}
+              <div hidden={!!route.orderId || !!selectedOrderActions}>
+                <div className="order-taskbar">
+                  <div className="actions">
+                    {can("commercial", "buyer") &&
+                      button("Prepare order", () => placeOrder())}
+                  </div>
+                  {can("warehouse") && (
+                    <FulfillmentGuide
+                      shipments={false}
+                      navigate={() =>
+                        updateRoute({ section: "orders-shipments" })
+                      }
+                    />
+                  )}
                 </div>
-                {can("warehouse") && (
-                  <FulfillmentGuide
-                    shipments={false}
-                    navigate={() =>
-                      updateRoute({ section: "orders-shipments" })
-                    }
-                  />
-                )}
                 <OrderQueueControls
                   queue={orderQueue}
                   scope={
@@ -3146,563 +3245,647 @@ function App() {
                 <OrderDetail
                   key={`${actor.orgId}:${actor.id}:${route.orderId}`}
                   orderId={route.orderId}
+                  refreshToken={eventViewEpoch}
                   accountName={accountName}
                   warehouseName={warehouseName}
                   scope={`${actor.orgId}:${actor.id}`}
                   canAssignIncoming={can("commercial")}
-                  onQueueActions={
-                    staff
-                      ? (orderId) => {
-                          orderOpener.current = document.getElementById(
-                            `order-actions-${orderId}`,
-                          );
-                          updateRoute({ orderId: undefined });
-                          requestAnimationFrame(() =>
-                            document
-                              .getElementById(`order-actions-${orderId}`)
-                              ?.focus(),
-                          );
-                        }
-                      : undefined
-                  }
+                  onQueueActions={(orderId) => {
+                    orderOpener.current = null;
+                    focusOrderActions.current = true;
+                    setOrderActionSelection({
+                      scope: `${actor.orgId}:${actor.id}`,
+                      orderId,
+                    });
+                    updateRoute({
+                      section: "orders-queue",
+                      orderId: undefined,
+                    });
+                  }}
                   back={() => updateRoute({ orderId: undefined })}
                 />
               )}
               <div hidden={!!route.orderId}>
-                {table(
-                  [
-                    // A buyer only sees their own account, so the customer
-                    // name is redundant in their order queue.
-                    staff ? "Customer / order" : "Order",
-                    "Status",
-                    "Warehouse",
-                    "Items",
-                    "Actions",
-                  ],
-                  orderQueue.items,
-                  (o: Item) => [
-                    <>
-                      {staff && <strong>{accountName(o.account_id)}</strong>}
-                      {staff && (
-                        <small>{shippingSummary(o.shipping, currency)}</small>
-                      )}
-                      <button
-                        type="button"
-                        className="record-link"
-                        title={o.id}
-                        aria-label={`Open order ${o.id}`}
-                        onClick={(event) => {
-                          orderOpener.current = event.currentTarget;
-                          updateRoute({ orderId: o.id });
-                        }}
-                      >
-                        Order <code>{o.id.slice(0, 8)}</code>
-                      </button>
-                      <small>
-                        <ReadableTime value={o.created_at} /> ·{" "}
-                        {money(o.total, o.currency)}
-                      </small>
-                      <RecordIdentifier value={o.id} label="Full order ID" />
-                      <small>
-                        {o.lines.length}{" "}
-                        {o.lines.length === 1 ? "item" : "items"} ·{" "}
-                        {o.lines.reduce(
-                          (sum: number, l: Item) =>
-                            sum +
-                            Math.max(0, l.quantity - l.shipped - l.canceled),
-                          0,
-                        )}{" "}
-                        units outstanding
-                      </small>
-                    </>,
-                    <div>
-                      <span className="badge">{o.state}</span>
-                      <ReservationStatus reservation={o.reservation} />
-                    </div>,
-                    warehouseName(o.warehouse_id),
-                    <details className="order-items">
-                      <summary>View items and quantities</summary>
-                      {o.lines.map((l: Item) => (
-                        <div key={l.id} className="order-line">
-                          <strong>
-                            {productName(l.product_id, l.description)}
-                          </strong>
-                          <span>
-                            {l.quantity} ordered · {l.allocated} reserved ·{" "}
-                            {l.shipped} shipped · {l.canceled} canceled
-                          </span>
-                          {o.state === "open" &&
-                            can("commercial", "buyer") &&
-                            button(
-                              `Amend quantity: ${productName(l.product_id, l.description)}`,
-                              () =>
-                                open(
-                                  "Amend ordered quantity",
-                                  [
-                                    {
-                                      name: "quantity",
-                                      label: "New total ordered units",
-                                      type: "number",
-                                      value: l.quantity,
-                                      min: Math.max(1, l.shipped + l.canceled),
-                                      help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
-                                    },
-                                    {
-                                      name: "allowBackorder",
-                                      label:
-                                        "Allow backorder for additional units",
-                                      type: "checkbox",
-                                    },
-                                    {
-                                      name: "reason",
-                                      label:
-                                        "Buyer-visible reason for amendment",
-                                      type: "textarea",
-                                    },
-                                  ],
-                                  (v) =>
-                                    command("order.amend", {
-                                      orderId: o.id,
-                                      lineId: l.id,
-                                      revision: o.revision,
-                                      quantity: v.quantity,
-                                      allowBackorder: v.allowBackorder,
-                                      reason: v.reason,
-                                    }),
-                                  <>
-                                    <p>
-                                      {productName(l.product_id, l.description)}
-                                      : the quantity is the new total ordered,
-                                      including shipped and canceled units.
-                                    </p>
-                                    <p>
-                                      Accepted unit price{" "}
-                                      {money(l.unit_price, currency)} and unit
-                                      tax {money(l.unit_tax, currency)} are
-                                      retained. Product and warehouse stay the
-                                      same.
-                                    </p>
-                                    <p>
-                                      Decreases remove backorder first. Picked
-                                      stock must be unpicked before it can be
-                                      removed. The reason is visible to the
-                                      buyer.
-                                    </p>
-                                  </>,
-                                  "Save amendment",
+                {selectedOrderActions && (
+                  <section aria-label="Selected order actions">
+                    <h2 tabIndex={-1}>Actions for this order</h2>
+                    <p>
+                      This order is shown independently of the queue filters.
+                      Return to all orders to continue your previous queue.
+                    </p>
+                    {button("Return to all orders", () => {
+                      focusOrderActions.current = false;
+                      setOrderActionSelection(null);
+                      setReservationOrderId(null);
+                      setAmendmentOrderId(null);
+                      requestAnimationFrame(() =>
+                        document.getElementById("orders-queue")?.focus(),
+                      );
+                    })}
+                    {!currentOrderActionRead && (
+                      <p role="status">
+                        {retainedOrderActionRead?.order
+                          ? "Refreshing order actions… Previous details remain visible; actions are paused."
+                          : "Loading current order actions…"}
+                      </p>
+                    )}
+                    {currentOrderActionRead?.error && (
+                      <>
+                        <p role="alert" className="error">
+                          {currentOrderActionRead.error}
+                        </p>
+                        {button("Retry order actions", () =>
+                          setOrderActionAttempt((value) => value + 1),
+                        )}
+                      </>
+                    )}
+                  </section>
+                )}
+                <fieldset
+                  aria-label="Order actions and details"
+                  disabled={
+                    !!selectedOrderActions &&
+                    (busy ||
+                      !currentOrderActionRead ||
+                      !!currentOrderActionRead.error)
+                  }
+                  style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+                >
+                  {(!selectedOrderActions || retainedOrderActionRead?.order) &&
+                    table(
+                      [
+                        // A buyer only sees their own account, so the customer
+                        // name is redundant in their order queue.
+                        staff ? "Customer / order" : "Order",
+                        "Status",
+                        "Warehouse",
+                        "Items",
+                        "Actions",
+                      ],
+                      visibleOrderItems,
+                      (o: Item) => [
+                        <>
+                          {staff && (
+                            <strong>{accountName(o.account_id)}</strong>
+                          )}
+                          {staff && (
+                            <small>
+                              {shippingSummary(o.shipping, currency)}
+                            </small>
+                          )}
+                          <button
+                            type="button"
+                            className="record-link"
+                            title={o.id}
+                            aria-label={`Open order ${o.id}`}
+                            onClick={(event) => {
+                              orderOpener.current = event.currentTarget;
+                              updateRoute({ orderId: o.id });
+                            }}
+                          >
+                            Order <code>{o.id.slice(0, 8)}</code>
+                          </button>
+                          <small>
+                            <ReadableTime value={o.created_at} /> ·{" "}
+                            {money(o.total, o.currency)}
+                          </small>
+                          <RecordIdentifier
+                            value={o.id}
+                            label="Full order ID"
+                          />
+                          <small>
+                            {o.lines.length}{" "}
+                            {o.lines.length === 1 ? "item" : "items"} ·{" "}
+                            {o.lines.reduce(
+                              (sum: number, l: Item) =>
+                                sum +
+                                Math.max(
+                                  0,
+                                  l.quantity - l.shipped - l.canceled,
                                 ),
-                            )}
-                        </div>
-                      ))}
-                    </details>,
-                    <div className="row-actions">
-                      {staff && (
-                        <RecordNotes
-                          kind="order"
-                          recordId={o.id}
-                          actorId={actor.id}
-                          recoveryScope={`${actor.orgId}:${actor.id}`}
-                        />
-                      )}
-                      <details className="stock-actions">
-                        <summary
-                          id={`order-actions-${o.id}`}
-                          aria-label={`Actions for order ${o.id}`}
-                        >
-                          Actions
-                        </summary>
-                        <div className="actions">
-                          {can(
-                            "commercial",
-                            "buyer",
-                            "warehouse",
-                            "finance",
-                            "support",
-                          ) &&
-                            button("View amendment history", () => {
-                              setReservationOrderId(null);
-                              reservationOpener.current = null;
-                              amendmentOpener.current =
-                                document.activeElement as HTMLElement | null;
-                              setAmendmentOrderId(o.id);
-                            })}
-                          {can(
-                            "commercial",
-                            "buyer",
-                            "warehouse",
-                            "finance",
-                            "support",
-                          ) &&
-                            button("View reservation history", () => {
-                              setAmendmentOrderId(null);
-                              amendmentOpener.current = null;
-                              reservationOpener.current =
-                                document.activeElement as HTMLElement | null;
-                              setReservationOrderId(o.id);
-                            })}
-                          {o.state === "open" && can("commercial") && (
-                            <>
-                              {button(
-                                o.reservation?.expiresAt == null
-                                  ? "Set reservation deadline"
-                                  : "Renew reservation deadline",
-                                () =>
-                                  open(
-                                    "Review reservation deadline",
-                                    [
-                                      {
-                                        name: "expiresAt",
-                                        label:
-                                          "Future reservation deadline (local time)",
-                                        type: "datetime-local",
-                                        help: "Choose a future date and time. Allocation does not renew this deadline.",
-                                      },
-                                      {
-                                        name: "reason",
-                                        label:
-                                          "Buyer-visible reason for reservation change",
-                                        type: "textarea",
-                                      },
-                                    ],
-                                    async (v) => {
-                                      const expiresAt = new Date(
-                                        v.expiresAt,
-                                      ).getTime();
-                                      if (!Number.isFinite(expiresAt))
-                                        throw new Error(
-                                          "Choose a valid future date and time.",
-                                        );
-                                      return command(
-                                        "order.reservation.deadline",
-                                        {
-                                          orderId: o.id,
-                                          revision: o.revision,
-                                          expiresAt,
-                                          reason: v.reason,
-                                        },
-                                      );
-                                    },
-                                    <p>
-                                      Review the future deadline before saving.
-                                      Once due, new reservations, quantity
-                                      increases and new picking require an
-                                      explicit renewal or clearing of the
-                                      deadline. No stock is released until
-                                      expiry is reviewed. The reason is visible
-                                      to the buyer.
-                                    </p>,
-                                    "Save reservation deadline",
-                                  ),
-                              )}
-                              {o.reservation?.expiresAt != null && (
-                                <>
-                                  {button("Clear reservation deadline", () =>
+                              0,
+                            )}{" "}
+                            units outstanding
+                          </small>
+                        </>,
+                        <div>
+                          <span className="badge">{o.state}</span>
+                          <ReservationStatus reservation={o.reservation} />
+                        </div>,
+                        warehouseName(o.warehouse_id),
+                        <details className="order-items">
+                          <summary>View items and quantities</summary>
+                          {o.lines.map((l: Item) => (
+                            <div key={l.id} className="order-line">
+                              <strong>
+                                {productName(l.product_id, l.description)}
+                              </strong>
+                              <span>
+                                {l.quantity} ordered · {l.allocated} reserved ·{" "}
+                                {l.shipped} shipped · {l.canceled} canceled
+                              </span>
+                              {o.state === "open" &&
+                                can("commercial", "buyer") &&
+                                button(
+                                  `Amend quantity: ${productName(l.product_id, l.description)}`,
+                                  () =>
                                     open(
-                                      "Review clearing reservation deadline",
+                                      "Amend ordered quantity",
                                       [
+                                        {
+                                          name: "quantity",
+                                          label: "New total ordered units",
+                                          type: "number",
+                                          value: l.quantity,
+                                          min: Math.max(
+                                            1,
+                                            l.shipped + l.canceled,
+                                          ),
+                                          help: `Currently ${l.quantity} ordered; minimum ${Math.max(1, l.shipped + l.canceled)} including shipped and canceled units.`,
+                                        },
+                                        {
+                                          name: "allowBackorder",
+                                          label:
+                                            "Allow backorder for additional units",
+                                          type: "checkbox",
+                                        },
                                         {
                                           name: "reason",
                                           label:
-                                            "Buyer-visible reason for reservation change",
+                                            "Buyer-visible reason for amendment",
                                           type: "textarea",
                                         },
                                       ],
                                       (v) =>
-                                        command("order.reservation.deadline", {
+                                        command("order.amend", {
                                           orderId: o.id,
+                                          lineId: l.id,
                                           revision: o.revision,
-                                          expiresAt: null,
+                                          quantity: v.quantity,
+                                          allowBackorder: v.allowBackorder,
                                           reason: v.reason,
                                         }),
-                                      <p>
-                                        Clearing removes the deadline and
-                                        permits new allocation and picking. This
-                                        does not restore stock already released
-                                        to backorder. The reason is visible to
-                                        the buyer.
-                                      </p>,
-                                      "Clear reservation deadline",
+                                      <>
+                                        <p>
+                                          {productName(
+                                            l.product_id,
+                                            l.description,
+                                          )}
+                                          : the quantity is the new total
+                                          ordered, including shipped and
+                                          canceled units.
+                                        </p>
+                                        <p>
+                                          Accepted unit price{" "}
+                                          {money(l.unit_price, currency)} and
+                                          unit tax {money(l.unit_tax, currency)}{" "}
+                                          are retained. Product and warehouse
+                                          stay the same.
+                                        </p>
+                                        <p>
+                                          Decreases remove backorder first.
+                                          Picked stock must be unpicked before
+                                          it can be removed. The reason is
+                                          visible to the buyer.
+                                        </p>
+                                      </>,
+                                      "Save amendment",
                                     ),
-                                  )}
+                                )}
+                            </div>
+                          ))}
+                        </details>,
+                        <div className="row-actions">
+                          {staff && (
+                            <RecordNotes
+                              kind="order"
+                              recordId={o.id}
+                              actorId={actor.id}
+                              recoveryScope={`${actor.orgId}:${actor.id}`}
+                            />
+                          )}
+                          <details className="stock-actions">
+                            <summary
+                              id={`order-actions-${o.id}`}
+                              aria-label={`Actions for order ${o.id}`}
+                            >
+                              Actions
+                            </summary>
+                            <div className="actions">
+                              {can(
+                                "commercial",
+                                "buyer",
+                                "warehouse",
+                                "finance",
+                                "support",
+                              ) &&
+                                button("View amendment history", () => {
+                                  setReservationOrderId(null);
+                                  reservationOpener.current = null;
+                                  amendmentOpener.current =
+                                    document.activeElement as HTMLElement | null;
+                                  setAmendmentOrderId(o.id);
+                                })}
+                              {can(
+                                "commercial",
+                                "buyer",
+                                "warehouse",
+                                "finance",
+                                "support",
+                              ) &&
+                                button("View reservation history", () => {
+                                  setAmendmentOrderId(null);
+                                  amendmentOpener.current = null;
+                                  reservationOpener.current =
+                                    document.activeElement as HTMLElement | null;
+                                  setReservationOrderId(o.id);
+                                })}
+                              {o.state === "open" && can("commercial") && (
+                                <>
                                   {button(
-                                    "Expire unpicked reservations",
-                                    () => {
-                                      if (
-                                        !o.reservation.overdue &&
-                                        o.reservation.expiresAt > Date.now()
-                                      ) {
-                                        setError(
-                                          "The reservation deadline is not due yet. Refresh to review its current status.",
-                                        );
-                                        return;
-                                      }
+                                    o.reservation?.expiresAt == null
+                                      ? "Set reservation deadline"
+                                      : "Renew reservation deadline",
+                                    () =>
                                       open(
-                                        "Review reservation expiry",
+                                        "Review reservation deadline",
                                         [
+                                          {
+                                            name: "expiresAt",
+                                            label:
+                                              "Future reservation deadline (local time)",
+                                            type: "datetime-local",
+                                            help: "Choose a future date and time. Allocation does not renew this deadline.",
+                                          },
                                           {
                                             name: "reason",
                                             label:
-                                              "Buyer-visible reason for reservation expiry",
+                                              "Buyer-visible reason for reservation change",
                                             type: "textarea",
                                           },
                                         ],
-                                        (v) =>
-                                          command("order.reservation.expire", {
-                                            orderId: o.id,
-                                            revision: o.revision,
-                                            reason: v.reason,
-                                          }),
+                                        async (v) => {
+                                          const expiresAt = new Date(
+                                            v.expiresAt,
+                                          ).getTime();
+                                          if (!Number.isFinite(expiresAt))
+                                            throw new Error(
+                                              "Choose a valid future date and time.",
+                                            );
+                                          return command(
+                                            "order.reservation.deadline",
+                                            {
+                                              orderId: o.id,
+                                              revision: o.revision,
+                                              expiresAt,
+                                              reason: v.reason,
+                                            },
+                                          );
+                                        },
                                         <p>
-                                          Release only unpicked reserved units
-                                          to backorder. Picked and packed stock
-                                          is preserved. The original ordered
-                                          quantities, accepted prices, tax,
-                                          order total and credit exposure stay
-                                          intact. The deadline remains due until
-                                          explicitly renewed or cleared. The
+                                          Review the future deadline before
+                                          saving. Once due, new reservations,
+                                          quantity increases and new picking
+                                          require an explicit renewal or
+                                          clearing of the deadline. No stock is
+                                          released until expiry is reviewed. The
                                           reason is visible to the buyer.
                                         </p>,
+                                        "Save reservation deadline",
+                                      ),
+                                  )}
+                                  {o.reservation?.expiresAt != null && (
+                                    <>
+                                      {button(
+                                        "Clear reservation deadline",
+                                        () =>
+                                          open(
+                                            "Review clearing reservation deadline",
+                                            [
+                                              {
+                                                name: "reason",
+                                                label:
+                                                  "Buyer-visible reason for reservation change",
+                                                type: "textarea",
+                                              },
+                                            ],
+                                            (v) =>
+                                              command(
+                                                "order.reservation.deadline",
+                                                {
+                                                  orderId: o.id,
+                                                  revision: o.revision,
+                                                  expiresAt: null,
+                                                  reason: v.reason,
+                                                },
+                                              ),
+                                            <p>
+                                              Clearing removes the deadline and
+                                              permits new allocation and
+                                              picking. This does not restore
+                                              stock already released to
+                                              backorder. The reason is visible
+                                              to the buyer.
+                                            </p>,
+                                            "Clear reservation deadline",
+                                          ),
+                                      )}
+                                      {button(
                                         "Expire unpicked reservations",
-                                      );
-                                    },
+                                        () => {
+                                          if (
+                                            !o.reservation.overdue &&
+                                            o.reservation.expiresAt > Date.now()
+                                          ) {
+                                            setError(
+                                              "The reservation deadline is not due yet. Refresh to review its current status.",
+                                            );
+                                            return;
+                                          }
+                                          open(
+                                            "Review reservation expiry",
+                                            [
+                                              {
+                                                name: "reason",
+                                                label:
+                                                  "Buyer-visible reason for reservation expiry",
+                                                type: "textarea",
+                                              },
+                                            ],
+                                            (v) =>
+                                              command(
+                                                "order.reservation.expire",
+                                                {
+                                                  orderId: o.id,
+                                                  revision: o.revision,
+                                                  reason: v.reason,
+                                                },
+                                              ),
+                                            <p>
+                                              Release only unpicked reserved
+                                              units to backorder. Picked and
+                                              packed stock is preserved. The
+                                              original ordered quantities,
+                                              accepted prices, tax, order total
+                                              and credit exposure stay intact.
+                                              The deadline remains due until
+                                              explicitly renewed or cleared. The
+                                              reason is visible to the buyer.
+                                            </p>,
+                                            "Expire unpicked reservations",
+                                          );
+                                        },
+                                      )}
+                                    </>
                                   )}
                                 </>
                               )}
-                            </>
-                          )}
-                          {o.state === "open" &&
-                            can("commercial") &&
-                            button("Allocate", () => {
-                              void run(() =>
-                                command("order.allocate", {
-                                  orderId: o.id,
-                                  revision: o.revision,
-                                }),
-                              ).catch(() => {});
-                            })}
-                          {o.state === "open" &&
-                            can("commercial", "buyer") &&
-                            button("Cancel units", () =>
-                              simple(
-                                "Cancel open units",
-                                [
-                                  select(
-                                    "lineId",
-                                    "Order line",
-                                    o.lines,
-                                    (l) =>
-                                      `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
-                                  ),
-                                  {
-                                    name: "quantity",
-                                    label: "Units",
-                                    type: "number",
-                                    value: 1,
-                                  },
-                                  reason,
-                                ],
-                                "order.cancel",
-                                (v) => ({
-                                  ...v,
-                                  orderId: o.id,
-                                  revision: o.revision,
-                                }),
-                              ),
-                            )}
-                          {o.state === "open" &&
-                            can("warehouse") &&
-                            button("Pick / pack", () => {
-                              void readReview<Item[]>(
-                                `/api/orders/${o.id}/picks`,
-                              )
-                                .then((picks) => {
-                                  if (!picks) return;
-                                  open(
-                                    "Confirm picked stock",
+                              {o.state === "open" &&
+                                can("commercial") &&
+                                button("Allocate", () => {
+                                  void run(() =>
+                                    command("order.allocate", {
+                                      orderId: o.id,
+                                      revision: o.revision,
+                                    }),
+                                  ).catch(() => {});
+                                })}
+                              {o.state === "open" &&
+                                can("commercial", "buyer") &&
+                                button("Cancel units", () =>
+                                  simple(
+                                    "Cancel open units",
                                     [
                                       select(
-                                        "allocationId",
-                                        "Allocation",
-                                        picks.filter(
-                                          (a: Item) =>
-                                            a.quantity >
-                                            a.consumed + a.released,
-                                        ),
-                                        (a) =>
-                                          `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin}`,
-                                      ),
-                                      {
-                                        name: "serial",
-                                        scan: "single",
-                                        label:
-                                          "Scan serial (leave blank for bulk)",
-                                        optional: true,
-                                      },
-                                      {
-                                        name: "unpick",
-                                        label: "Unpick instead",
-                                        type: "checkbox",
-                                      },
-                                    ],
-                                    (v) =>
-                                      command("fulfillment.pick", {
-                                        orderId: o.id,
-                                        allocationId: v.allocationId,
-                                        serial: v.serial || null,
-                                        unpick: !!v.unpick,
-                                      }),
-                                  );
-                                })
-                                .catch((e) => setError(e.message));
-                            })}
-                          {o.state === "open" &&
-                            can("warehouse") &&
-                            button("Report short pick", () => {
-                              void readReview<Item[]>(
-                                `/api/orders/${o.id}/picks`,
-                              )
-                                .then((picks) => {
-                                  if (!picks) return;
-                                  const available = picks.filter(
-                                    (a: Item) =>
-                                      a.quantity -
-                                        a.consumed -
-                                        a.released -
-                                        a.packed >
-                                      0,
-                                  );
-                                  if (!available.length) {
-                                    setError(
-                                      "No unpacked allocated units remain. Void conflicting packing first.",
-                                    );
-                                    return;
-                                  }
-                                  open(
-                                    "Report unavailable allocated stock",
-                                    [
-                                      select(
-                                        "allocationId",
-                                        "Short allocation",
-                                        available,
-                                        (a) =>
-                                          `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                                        "lineId",
+                                        "Order line",
+                                        o.lines,
+                                        (l) =>
+                                          `${productName(l.product_id, l.description)} · ${l.quantity - l.shipped - l.canceled} open`,
                                       ),
                                       {
                                         name: "quantity",
-                                        label: "Unavailable units",
+                                        label: "Units",
                                         type: "number",
                                         value: 1,
                                       },
                                       reason,
                                     ],
-                                    (v) => {
-                                      const a = available.find(
-                                        (a: Item) => a.id === v.allocationId,
-                                      )!;
-                                      return command("fulfillment.short-pick", {
-                                        ...v,
-                                        orderId: o.id,
-                                        revision: o.revision,
-                                        unitRevision: a.unitRevision,
-                                      });
-                                    },
-                                    "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
-                                  );
-                                })
-                                .catch((e) => setError(e.message));
-                            })}
-                          {can("warehouse", "commercial", "support") &&
-                            button("View short picks", () => {
-                              void showShortPicks(o.id).catch((e) =>
-                                setError(e.message),
-                              );
-                            })}
-                          {o.state === "open" &&
-                            can("warehouse") &&
-                            button("Pack shipment", () => {
-                              void readReview<Item[]>(
-                                `/api/orders/${o.id}/picks`,
-                              )
-                                .then((picks) => {
-                                  if (!picks) return;
-                                  const available = picks.filter(
-                                    (a: Item) => a.packable > 0,
-                                  );
-                                  if (!available.length) {
-                                    setError(
-                                      "No picked units are available to pack. Pick stock or void active packing first.",
-                                    );
-                                    return;
-                                  }
-                                  open(
-                                    "Pack picked units",
-                                    [
-                                      {
-                                        name: "mode",
-                                        label: "Delivery method",
-                                        options: [
+                                    "order.cancel",
+                                    (v) => ({
+                                      ...v,
+                                      orderId: o.id,
+                                      revision: o.revision,
+                                    }),
+                                  ),
+                                )}
+                              {o.state === "open" &&
+                                can("warehouse") &&
+                                button("Pick / pack", () => {
+                                  void readReview<Item[]>(
+                                    `/api/orders/${o.id}/picks`,
+                                  )
+                                    .then((picks) => {
+                                      if (!picks) return;
+                                      open(
+                                        "Confirm picked stock",
+                                        [
+                                          select(
+                                            "allocationId",
+                                            "Allocation",
+                                            picks.filter(
+                                              (a: Item) =>
+                                                a.quantity >
+                                                a.consumed + a.released,
+                                            ),
+                                            (a) =>
+                                              `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin}`,
+                                          ),
                                           {
-                                            value: "collection",
-                                            label: "Customer collection",
+                                            name: "serial",
+                                            scan: "single",
+                                            label:
+                                              "Scan serial (leave blank for bulk)",
+                                            optional: true,
                                           },
                                           {
-                                            value: "carrier",
-                                            label: "Carrier",
+                                            name: "unpick",
+                                            label: "Unpick instead",
+                                            type: "checkbox",
                                           },
                                         ],
-                                      },
-                                      {
-                                        name: "address",
-                                        label: "Destination / collection point",
-                                        type: "textarea",
-                                      },
-                                      ...available.map((a: Item): Field => ({
-                                        name: `pack-${a.id}`,
-                                        label: `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · units to pack`,
-                                        type: "number",
-                                        value: a.packable,
-                                        max: a.packable,
-                                        help: `${a.packable} available; ${a.packed} already packed. Use 0 to leave this allocation for a later shipment.`,
-                                      })),
-                                    ],
-                                    (v) => {
-                                      const lines = available
-                                        .map((a: Item) => ({
-                                          allocationId: a.id,
-                                          quantity: v[`pack-${a.id}`],
-                                        }))
-                                        .filter((l: Item) => l.quantity > 0);
-                                      if (!lines.length)
-                                        throw new Error(
-                                          "Select at least one unit to pack.",
+                                        (v) =>
+                                          command("fulfillment.pick", {
+                                            orderId: o.id,
+                                            allocationId: v.allocationId,
+                                            serial: v.serial || null,
+                                            unpick: !!v.unpick,
+                                          }),
+                                      );
+                                    })
+                                    .catch((e) => setError(e.message));
+                                })}
+                              {o.state === "open" &&
+                                can("warehouse") &&
+                                button("Report short pick", () => {
+                                  void readReview<Item[]>(
+                                    `/api/orders/${o.id}/picks`,
+                                  )
+                                    .then((picks) => {
+                                      if (!picks) return;
+                                      const available = picks.filter(
+                                        (a: Item) =>
+                                          a.quantity -
+                                            a.consumed -
+                                            a.released -
+                                            a.packed >
+                                          0,
+                                      );
+                                      if (!available.length) {
+                                        setError(
+                                          "No unpacked allocated units remain. Void conflicting packing first.",
                                         );
-                                      return command("fulfillment.pack", {
-                                        orderId: o.id,
-                                        revision: o.revision,
-                                        mode: v.mode,
-                                        address: v.address,
-                                        lines,
-                                      });
-                                    },
-                                    "Choose the picked quantities for this shipment. Remaining units stay on the order. Packing holds stock; handover creates the invoice.",
+                                        return;
+                                      }
+                                      open(
+                                        "Report unavailable allocated stock",
+                                        [
+                                          select(
+                                            "allocationId",
+                                            "Short allocation",
+                                            available,
+                                            (a) =>
+                                              `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · ${a.quantity - a.consumed - a.released - a.packed} unpacked`,
+                                          ),
+                                          {
+                                            name: "quantity",
+                                            label: "Unavailable units",
+                                            type: "number",
+                                            value: 1,
+                                          },
+                                          reason,
+                                        ],
+                                        (v) => {
+                                          const a = available.find(
+                                            (a: Item) =>
+                                              a.id === v.allocationId,
+                                          )!;
+                                          return command(
+                                            "fulfillment.short-pick",
+                                            {
+                                              ...v,
+                                              orderId: o.id,
+                                              revision: o.revision,
+                                              unitRevision: a.unitRevision,
+                                            },
+                                          );
+                                        },
+                                        "Report only the allocated units you cannot supply. Their expected book stock is held in quarantine for a separate count or custody review. These units become backordered; reporting does not cancel or invoice them.",
+                                      );
+                                    })
+                                    .catch((e) => setError(e.message));
+                                })}
+                              {can("warehouse", "commercial", "support") &&
+                                button("View short picks", () => {
+                                  void showShortPicks(o.id).catch((e) =>
+                                    setError(e.message),
                                   );
-                                })
-                                .catch((e) => setError(e.message));
-                            })}
-                        </div>
-                      </details>
-                    </div>,
-                  ],
-                )}
+                                })}
+                              {o.state === "open" &&
+                                can("warehouse") &&
+                                button("Pack shipment", () => {
+                                  void readReview<Item[]>(
+                                    `/api/orders/${o.id}/picks`,
+                                  )
+                                    .then((picks) => {
+                                      if (!picks) return;
+                                      const available = picks.filter(
+                                        (a: Item) => a.packable > 0,
+                                      );
+                                      if (!available.length) {
+                                        setError(
+                                          "No picked units are available to pack. Pick stock or void active packing first.",
+                                        );
+                                        return;
+                                      }
+                                      open(
+                                        "Pack picked units",
+                                        [
+                                          {
+                                            name: "mode",
+                                            label: "Delivery method",
+                                            options: [
+                                              {
+                                                value: "collection",
+                                                label: "Customer collection",
+                                              },
+                                              {
+                                                value: "carrier",
+                                                label: "Carrier",
+                                              },
+                                            ],
+                                          },
+                                          {
+                                            name: "address",
+                                            label:
+                                              "Destination / collection point",
+                                            type: "textarea",
+                                          },
+                                          ...available.map(
+                                            (a: Item): Field => ({
+                                              name: `pack-${a.id}`,
+                                              label: `${productName(a.product_id)} · ${a.serial ?? "bulk"} · bin ${a.bin} · units to pack`,
+                                              type: "number",
+                                              value: a.packable,
+                                              max: a.packable,
+                                              help: `${a.packable} available; ${a.packed} already packed. Use 0 to leave this allocation for a later shipment.`,
+                                            }),
+                                          ),
+                                        ],
+                                        (v) => {
+                                          const lines = available
+                                            .map((a: Item) => ({
+                                              allocationId: a.id,
+                                              quantity: v[`pack-${a.id}`],
+                                            }))
+                                            .filter(
+                                              (l: Item) => l.quantity > 0,
+                                            );
+                                          if (!lines.length)
+                                            throw new Error(
+                                              "Select at least one unit to pack.",
+                                            );
+                                          return command("fulfillment.pack", {
+                                            orderId: o.id,
+                                            revision: o.revision,
+                                            mode: v.mode,
+                                            address: v.address,
+                                            lines,
+                                          });
+                                        },
+                                        "Choose the picked quantities for this shipment. Remaining units stay on the order. Packing holds stock; handover creates the invoice.",
+                                      );
+                                    })
+                                    .catch((e) => setError(e.message));
+                                })}
+                            </div>
+                          </details>
+                        </div>,
+                      ],
+                    )}
+                </fieldset>
                 {reservationOrderId &&
-                  orderQueue.items.some(
+                  visibleOrderItems.some(
                     (o: Item) => o.id === reservationOrderId,
                   ) && (
                     <OrderReservations
-                      key={`${reservationOrderId}:${eventViewEpoch}`}
+                      key={`${actor.orgId}:${actor.id}:${reservationOrderId}:${selectedOrderActions ? "selected" : eventViewEpoch}`}
                       orderId={reservationOrderId}
+                      refreshToken={
+                        selectedOrderActions ? eventViewEpoch : undefined
+                      }
                       lines={
-                        orderQueue.items.find(
+                        visibleOrderItems.find(
                           (o: Item) => o.id === reservationOrderId,
                         )!.lines
                       }
@@ -3714,14 +3897,17 @@ function App() {
                     />
                   )}
                 {amendmentOrderId &&
-                  orderQueue.items.some(
+                  visibleOrderItems.some(
                     (o: Item) => o.id === amendmentOrderId,
                   ) && (
                     <OrderAmendments
-                      key={`${amendmentOrderId}:${eventViewEpoch}`}
+                      key={`${actor.orgId}:${actor.id}:${amendmentOrderId}:${selectedOrderActions ? "selected" : eventViewEpoch}`}
                       orderId={amendmentOrderId}
+                      refreshToken={
+                        selectedOrderActions ? eventViewEpoch : undefined
+                      }
                       lines={
-                        orderQueue.items.find(
+                        visibleOrderItems.find(
                           (o: Item) => o.id === amendmentOrderId,
                         )!.lines
                       }
@@ -3819,6 +4005,7 @@ function App() {
             </PageSection>
             <PageSection id="orders-requests">
               <OrderRequests
+                refreshToken={eventViewEpoch}
                 buyer={!staff}
                 canReview={can("commercial")}
                 accountName={accountName}
@@ -5162,26 +5349,24 @@ function App() {
           >
             <PageSection id="purchasing-queue">
               <section className="panel" aria-label="Receive equipment">
-                <h2>Receive equipment</h2>
-                <p>
-                  1. Choose the supplier purchase order for the delivery. 2.
-                  Save its SKU, quantity, bin and serial scans as a draft. 3.
-                  Review and receive to create physical stock. Quarantined units
-                  need inspection before they are available.
-                </p>
-                <p>
-                  {can("warehouse")
-                    ? "Use Receive delivery beside the purchase order below, or continue saved receipt drafts."
-                    : "Commercial staff create purchase orders; a warehouse user assigned to the receiving site confirms deliveries."}
-                </p>
+                <details className="receiving-guidance">
+                  <summary>How to receive equipment</summary>
+                  <p>
+                    1. Choose the supplier purchase order for the delivery. 2.
+                    Save its SKU, quantity, bin and serial scans as a draft. 3.
+                    Review and receive to create physical stock. Quarantined
+                    units need inspection before they are available.
+                  </p>
+                  <p>
+                    {can("warehouse")
+                      ? "Use Receive delivery beside the purchase order below, or continue saved receipt drafts."
+                      : "Commercial staff create purchase orders; a warehouse user assigned to the receiving site confirms deliveries."}
+                  </p>
+                </details>
                 <div className="actions">
                   {button("Continue receipt drafts", () =>
                     updateRoute({ section: "purchasing-drafts" }),
                   )}
-                  {can("commercial") &&
-                    button("Create purchase order for delivery", () =>
-                      setPurchaseEntryOpen(true),
-                    )}
                 </div>
                 {createdPurchaseId && (
                   <div role="status">
@@ -5241,11 +5426,6 @@ function App() {
                       <span>
                         PO <code title={po.id}>{po.id.slice(0, 8)}</code>
                       </span>
-                      {po.state === "open" &&
-                        can("warehouse") &&
-                        button("Receive delivery", (event) =>
-                          receiptDraft(po, undefined, event.currentTarget),
-                        )}
                     </div>,
                     warehouseName(po.warehouse_id),
                     po.lines.map((l: Item) => (
@@ -5266,7 +5446,7 @@ function App() {
                     </span>,
                     po.state === "open" &&
                       can("warehouse") &&
-                      button("Start receipt draft", (event) =>
+                      button("Receive delivery", (event) =>
                         receiptDraft(po, undefined, event.currentTarget),
                       ),
                   ];
@@ -5291,6 +5471,7 @@ function App() {
             </PageSection>
             <PageSection id="purchasing-incoming">
               <IncomingSupplyWorkspace
+                refreshToken={eventViewEpoch}
                 key={`${actor.orgId}:${actor.id}`}
                 scope={`${actor.orgId}:${actor.id}`}
                 editable={can("commercial")}
@@ -5916,6 +6097,7 @@ function App() {
                 <InvoiceDetail
                   key={`${actor.orgId}:${actor.id}:${route.invoiceId}`}
                   invoiceId={route.invoiceId}
+                  refreshToken={eventViewEpoch}
                   accountName={accountName}
                   backLabel={
                     agingInvoiceId === route.invoiceId && agingInvestigation
@@ -5949,7 +6131,11 @@ function App() {
                             </div>
                           </details>
                         )
-                      : undefined
+                      : (invoice) => (
+                          <div className="actions">
+                            {invoiceActionButtons(invoice)}
+                          </div>
+                        )
                   }
                 />
               )}
@@ -6693,26 +6879,33 @@ function App() {
                       >
                         {a.name} · Investigate account balance
                       </button>,
-                      money(a.notDue, a.currency),
-                      money(a.days1to30, a.currency),
-                      money(a.days31to60, a.currency),
-                      money(a.days61to90, a.currency),
-                      money(a.daysOver90, a.currency),
-                      <button
-                        className="record-link"
-                        onClick={() => {
-                          setAgingInvoiceId(null);
-                          setAgingInvestigation({
-                            accountId: a.accountId,
-                            filter: "unknownDue",
-                          });
-                        }}
-                        aria-label={`Investigate unknown due dates for ${a.name}`}
-                      >
-                        {money(a.unknownDue, a.currency)}
-                      </button>,
-                      money(a.creditBalance, a.currency),
-                      money(a.net, a.currency),
+                      ...(
+                        [
+                          ["notDue", "Not due", a.notDue],
+                          ["days1to30", "1–30 days", a.days1to30],
+                          ["days31to60", "31–60 days", a.days31to60],
+                          ["days61to90", "61–90 days", a.days61to90],
+                          ["daysOver90", "Over 90 days", a.daysOver90],
+                          ["unknownDue", "unknown due dates", a.unknownDue],
+                          ["credit", "Credit balance", a.creditBalance],
+                          ["all", "Net balance", a.net],
+                        ] as [AgingFilter, string, number][]
+                      ).map(([filter, label, amount]) => (
+                        <button
+                          key={filter}
+                          className="record-link aging-amount"
+                          onClick={() => {
+                            setAgingInvoiceId(null);
+                            setAgingInvestigation({
+                              accountId: a.accountId,
+                              filter,
+                            });
+                          }}
+                          aria-label={`Investigate ${label} for ${a.name}`}
+                        >
+                          {money(amount, a.currency)}
+                        </button>
+                      )),
                       `${money(a.holds, a.currency)} / ${money(a.pendingRefunds, a.currency)}`,
                     ],
                   )}
@@ -6727,6 +6920,7 @@ function App() {
                   accountId={agingInvestigation.accountId}
                   initialFilter={agingInvestigation.filter}
                   initialReport={extra.aging}
+                  relyWorkspaceRefresh
                   active={route.section === "billing-aging"}
                   onClose={() => {
                     setAgingInvestigation(null);
@@ -6740,7 +6934,7 @@ function App() {
                     updateRoute({ section: "billing-invoices", invoiceId });
                   }}
                   onCustomer={
-                    can("admin", "sales", "finance", "support")
+                    can("admin", "commercial", "finance", "support")
                       ? (customerId) =>
                           navigate({
                             page: "Customers",
@@ -7488,7 +7682,7 @@ function App() {
                               ...v,
                               claimId: c.id,
                             }),
-                          "Record a referral already arranged outside Distributor. This does not contact the manufacturer, move equipment or authorize a customer credit.",
+                          "Record a referral already arranged outside dstrbtr. This does not contact the manufacturer, move equipment or authorize a customer credit.",
                           "Record referral",
                         ),
                       )}
@@ -7975,7 +8169,7 @@ function App() {
                     <h2>Manufacturer case history</h2>
                     <InfoBubble label="Manufacturer case history">
                       Staff record referrals and responses obtained outside
-                      Distributor. Acceptance does not move equipment, approve a
+                      dstrbtr. Acceptance does not move equipment, approve a
                       replacement or issue a credit. Follow the separate
                       authorized return and billing tasks.
                     </InfoBubble>
@@ -8127,6 +8321,7 @@ function App() {
           route.customerId &&
           (data.accounts.find((a: Item) => a.id === route.customerId) ? (
             <CustomerRecord
+              refreshToken={eventViewEpoch}
               key={route.customerId}
               account={data.accounts.find(
                 (a: Item) => a.id === route.customerId,
@@ -9378,7 +9573,7 @@ function App() {
               </section>
             </PageSection>
             <PageSection id="admin-applications">
-              <EnrollmentReview />
+              <EnrollmentReview refreshToken={eventViewEpoch} />
             </PageSection>
           </PageSections>
         )}

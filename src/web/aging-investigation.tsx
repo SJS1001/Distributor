@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { request } from "./api.ts";
+import { ControlIcon } from "./control-icon.tsx";
 import {
   agingFilters,
   agingMatches,
@@ -39,6 +40,7 @@ export function AgingInvestigation({
   onInvoice,
   onCustomer,
   onReport,
+  relyWorkspaceRefresh = false,
 }: {
   accountId: string;
   initialReport: AgingReport;
@@ -48,6 +50,7 @@ export function AgingInvestigation({
   onInvoice: (invoiceId: string) => void;
   onCustomer?: (accountId: string) => void;
   onReport?: (report: AgingReport) => void;
+  relyWorkspaceRefresh?: boolean;
 }) {
   const [refreshed, setRefreshed] = useState<{
       source: AgingReport;
@@ -118,7 +121,7 @@ export function AgingInvestigation({
     invoices = account?.invoices.filter((i) => agingMatches(i, filter)) ?? [];
   return (
     <section
-      className="record-detail"
+      className="record-detail aging-investigation"
       aria-label="Account balance investigation"
     >
       <button type="button" className="secondary back-link" onClick={onClose}>
@@ -133,15 +136,18 @@ export function AgingInvestigation({
         Changing account terms does not change an existing invoice’s recorded
         due date.
       </p>
-      <div className="actions">
-        <button
-          type="button"
-          className="secondary"
-          disabled={busy || !active}
-          onClick={() => void refresh()}
-        >
-          {error ? "Retry account balances" : "Refresh account balances"}
-        </button>
+      <div className="actions aging-investigation-actions">
+        {(!relyWorkspaceRefresh || error) && (
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy || !active}
+            onClick={() => void refresh()}
+          >
+            <ControlIcon name="refresh" />
+            {error ? "Retry account balances" : "Refresh account balances"}
+          </button>
+        )}
         {account && onCustomer && (
           <button
             type="button"
@@ -159,7 +165,7 @@ export function AgingInvestigation({
           current access and balances.
         </p>
       )}
-      <p>
+      <p className="aging-observation">
         Observed{" "}
         <time dateTime={report.observedAt}>
           {new Date(report.observedAt).toLocaleString()}
@@ -172,21 +178,23 @@ export function AgingInvestigation({
         </p>
       ) : (
         <>
-          <label htmlFor={filterId}>Investigate</label>
-          <select
-            id={filterId}
-            value={filter}
-            onChange={(e) => {
-              setFilter(e.target.value as AgingFilter);
-              setLimit(20);
-            }}
-          >
-            {Object.entries(agingFilters).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <div className="aging-investigation-filter">
+            <label htmlFor={filterId}>Investigate</label>
+            <select
+              id={filterId}
+              value={filter}
+              onChange={(e) => {
+                setFilter(e.target.value as AgingFilter);
+                setLimit(20);
+              }}
+            >
+              {Object.entries(agingFilters).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
           <p role="status">
             {Math.min(limit, invoices.length)} of {invoices.length} matching
             invoice records shown
@@ -207,14 +215,26 @@ export function AgingInvestigation({
               <table>
                 <thead>
                   <tr>
-                    <th>Invoice</th>
-                    <th>Recorded due date / basis</th>
-                    <th>Total</th>
-                    <th>Credited</th>
-                    <th>Paid</th>
-                    <th>Refunded</th>
-                    <th>Balance</th>
-                    <th>Pending refunds</th>
+                    <th scope="col">Invoice</th>
+                    <th scope="col">Recorded due date / basis</th>
+                    <th scope="col" className="numeric">
+                      Total
+                    </th>
+                    <th scope="col" className="numeric">
+                      Credited
+                    </th>
+                    <th scope="col" className="numeric">
+                      Paid
+                    </th>
+                    <th scope="col" className="numeric">
+                      Refunded
+                    </th>
+                    <th scope="col" className="numeric">
+                      Balance
+                    </th>
+                    <th scope="col" className="numeric">
+                      Pending refunds
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

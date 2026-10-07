@@ -216,7 +216,7 @@ test("native application review manual invitation activation and buyer boundarie
     );
     const replaced = await link.inputValue();
     await expect(link).toBeFocused();
-    await admin.getByRole("button", { name: "Refresh applications" }).click();
+    await admin.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(admin.getByRole("alert")).toHaveCount(0);
     await expect(link).toHaveValue(replaced);
     // No raw invitation or approval password is retained in browser storage.
@@ -304,7 +304,7 @@ test("native application review manual invitation activation and buyer boundarie
       page.getByRole("button", { name: "Catalog · Add products", exact: true }),
     ).toHaveCount(0);
     await fits(page);
-    await admin.getByRole("button", { name: "Refresh applications" }).click();
+    await admin.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(
       row.getByRole("cell", { name: "Buyer activated", exact: true }),
     ).toBeVisible();

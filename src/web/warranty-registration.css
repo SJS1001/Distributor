@@ -104,3 +104,49 @@
 .warranty-installation-history td {
   overflow-wrap: anywhere;
 }
+
+.retained-claim-coverage {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 16px;
+}
+.retained-claim-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.retained-claim-heading h3,
+.retained-claim-heading h4,
+.retained-assessment > h4,
+.retained-assessment > p {
+  margin: 0;
+}
+.retained-assessment {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  min-width: 0;
+}
+.retained-assessment > p {
+  color: var(--muted);
+  font-size: var(--text-secondary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.retained-claim-coverage summary,
+.warranty-record-panel summary {
+  min-height: 44px;
+  padding-block: 12px;
+  box-sizing: border-box;
+  cursor: pointer;
+  font-weight: 600;
+}
+.retained-claim-coverage summary:focus-visible,
+.warranty-record-panel summary:focus-visible {
+  outline: 2px solid #315fbd;
+  outline-offset: 2px;
+}

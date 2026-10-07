@@ -39,11 +39,13 @@ export function IncomingSupply({
   scope,
   editable,
   onChanged,
+  refreshToken,
 }: {
   orderId: string;
   scope: string;
   editable: boolean;
   onChanged?: () => void;
+  refreshToken?: unknown;
 }) {
   const id = useId();
   const storageKey = `distributor-incoming:${scope}:${orderId}`;
@@ -64,6 +66,8 @@ export function IncomingSupply({
   const [changeKind, setChangeKind] = useState<"release" | "priority">(
     "release",
   );
+  const readOrder = useRef(orderId);
+  const [reading, setReading] = useState(false);
   const inFlight = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
@@ -81,7 +85,11 @@ export function IncomingSupply({
   }, [storageKey, orderId]);
   useEffect(() => {
     const controller = new AbortController();
-    setData(null);
+    if (readOrder.current !== orderId) {
+      readOrder.current = orderId;
+      setData(null);
+    }
+    setReading(true);
     setError("");
     void request<Supply>(
       `/api/orders/${encodeURIComponent(orderId)}/incoming-supply`,
@@ -91,10 +99,17 @@ export function IncomingSupply({
         if (!controller.signal.aborted) setData(value);
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError((e as Error).message);
+        if (!controller.signal.aborted) {
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setData(null);
+          setError((e as Error).message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setReading(false);
       });
     return () => controller.abort();
-  }, [orderId, retry]);
+  }, [orderId, retry, refreshToken]);
   const refresh = () => setRetry((value) => value + 1);
   const submit = async () => {
     if (inFlight.current || storageError || !editable) return;
@@ -204,15 +219,18 @@ export function IncomingSupply({
           {storageError}
         </p>
       )}
-      <button
-        type="button"
-        className="secondary"
-        disabled={busy || !!review}
-        onClick={refresh}
-      >
-        Refresh incoming stock
-      </button>
+      {(error || refreshToken === undefined) && (
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy || !!review}
+          onClick={refresh}
+        >
+          {error ? "Retry incoming stock" : "Refresh incoming stock"}
+        </button>
+      )}
       {!data && !error && <p role="status">Loading incoming stock…</p>}
+      {data && reading && <p role="status">Refreshing incoming stock…</p>}
       {data && (
         <>
           <div
@@ -639,11 +657,13 @@ export function IncomingSupplyWorkspace({
   editable,
   accountName,
   warehouseName,
+  refreshToken,
 }: {
   scope: string;
   editable: boolean;
   accountName: (id: string) => string;
   warehouseName: (id: string) => string;
+  refreshToken?: unknown;
 }) {
   const [page, setPage] = useState<{
     items: Order[];
@@ -653,9 +673,15 @@ export function IncomingSupplyWorkspace({
   const [orderId, setOrderId] = useState("");
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const readCursor = useRef(cursor);
+  const [reading, setReading] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    setPage(null);
+    if (readCursor.current !== cursor) {
+      readCursor.current = cursor;
+      setPage(null);
+    }
+    setReading(true);
     setError("");
     void request<{ items: Order[]; next: string | null }>(
       `/api/orders/page?state=open${cursor ? `&after=${encodeURIComponent(cursor)}` : ""}`,
@@ -665,10 +691,17 @@ export function IncomingSupplyWorkspace({
         if (!controller.signal.aborted) setPage(value);
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError((e as Error).message);
+        if (!controller.signal.aborted) {
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setPage(null);
+          setError((e as Error).message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setReading(false);
       });
     return () => controller.abort();
-  }, [cursor, retry]);
+  }, [cursor, retry, refreshToken]);
   return (
     <section className="incoming-workspace">
       <div className="info-heading">
@@ -693,6 +726,7 @@ export function IncomingSupplyWorkspace({
         </>
       )}
       {!page && !error && <p role="status">Loading open orders…</p>}
+      {page && reading && <p role="status">Refreshing open orders…</p>}
       {page && (
         <>
           {page.items.length > 0 && (
@@ -756,6 +790,7 @@ export function IncomingSupplyWorkspace({
           orderId={orderId}
           scope={scope}
           editable={editable}
+          refreshToken={refreshToken}
         />
       )}
     </section>
