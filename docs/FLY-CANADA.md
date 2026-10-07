@@ -312,3 +312,30 @@ A read-only live capture took 12 screenshots with 0 page errors and 0 business w
 - That dialog closes by its X and by an outside click.
 
 No add-on pairings are seeded; staff configure them. `polish29d-20261006` and the schema 29 database are retained for rollback.
+
+## Full pilot data and home carousel release, 2026-10-06
+
+Source `3f0a316`, schema 30 (unchanged), image `fullseed-20261006` supersedes `addons30-20261006` on the same Toronto Machine (version 15). Digest `sha256:1daf20cb4cdd54d6d6dbec4260555fdaa86fa2251267e7f7ae10c3af5c6e5262`. All 415 tracked source and package files matched, both in the image (checked offline) and on the machine.
+
+The data change used the established procedure:
+
+- The writer was stopped for maintenance.
+- An encrypted backup was taken with the old image and downloaded, and an isolated offline restore passed. The first backup attempt failed because SSH was not yet available after the maintenance restart; a retry succeeded.
+- `seedFullPilot` was staged on a copy under the new image. It was verified with 0 unexpected changes, and 919 prior rows were unchanged.
+- Changed rows were limited to the allowed set: labels (11 products, 3 accounts, 2 warehouses, 1 supplier), 3 purchasing policies widened to the full catalog (removing 33 per-product entitlements), 23 stock units consumed by sales, 2 reused carts, and 3 sequence counters.
+- It was activated with the previous database retained in `/data/rollback-pre-fullseed-20261006`.
+
+After restart:
+
+- Schema 30, hash `19ee63df…`, quick check ok and 0 foreign-key violations.
+- 27 products, 0 SAMPLE labels, 10 customer accounts, 10 trade applications, 28 orders and 21 invoices.
+- Health 200, and the Fly health check passes.
+
+A read-only live check had 0 page errors and 0 business writes. It confirmed:
+
+- The public navigation order is Products, Trade application, Administration, Customer sign in.
+- The featured carousel rotated.
+- No hero sign-in link remains.
+- No SAMPLE wording appears on the staff pages checked.
+
+By owner instruction, screenshots were taken but not sent for this deploy. The onboarding administrator account (Elena Vasquez) remains active with an unrecorded random password; see docs/GREE-PILOT-SAMPLE.md. `addons30-20261006` and the previous database are retained for rollback.
