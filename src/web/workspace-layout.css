@@ -1,0 +1,227 @@
+/* Shared workspace rhythm. Explicit workspace scope wins over legacy role styling. */
+.shell.workspace-shell .workspace-main {
+  padding-top: 18px;
+}
+.shell.workspace-shell .workspace-topbar {
+  margin-bottom: 8px;
+}
+.shell.workspace-shell .workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.shell.workspace-shell .workspace-header > div:first-child {
+  min-width: 0;
+}
+.shell.workspace-shell .workspace-header h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.8px;
+}
+.shell.workspace-shell .workspace-header .page-description {
+  margin-top: 5px;
+  max-width: 76ch;
+}
+.shell.workspace-shell .workspace-actions {
+  padding-top: 0;
+}
+.shell.workspace-shell .qualification {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: -4px 0 12px;
+  font-size: 12px;
+}
+.shell.workspace-shell .page-sections {
+  margin-bottom: 14px;
+  gap: 18px;
+}
+.shell.workspace-shell .queue-controls {
+  margin-top: 12px;
+  padding: 12px;
+  gap: 10px 14px;
+}
+.shell.workspace-shell .queue-field label {
+  margin-bottom: 4px;
+}
+.shell.workspace-shell .queue-controls > button {
+  min-height: 44px;
+}
+.shell.workspace-shell .table-wrap {
+  margin-top: 12px;
+}
+.shell.workspace-shell th,
+.shell.workspace-shell td {
+  padding-block: 10px;
+}
+.shell.workspace-shell .page-tab-panel > .actions:first-child {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+.shell.workspace-shell .workspace-disclosure {
+  margin-block: 12px;
+}
+.shell.workspace-shell .workspace-sidebar {
+  background: #102d50;
+  padding-top: 20px;
+}
+.shell.workspace-shell .workspace-sidebar .brand-mark {
+  background: #77c8ff;
+  color: #102d50;
+}
+.shell.workspace-shell .workspace-sidebar .workspace {
+  margin-block: 12px 16px;
+}
+.shell.workspace-shell .workspace-sidebar #workspace-navigation {
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.shell.workspace-shell .workspace-nav-group {
+  min-width: 0;
+}
+.shell.workspace-shell .workspace-sidebar nav .workspace-group-toggle {
+  width: 100%;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #bcd0e4;
+}
+.shell.workspace-shell .workspace-sidebar .workspace-nav-group nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px 10px;
+  padding-left: 6px;
+  border-left: 1px solid #ffffff26;
+}
+.shell.workspace-shell .workspace-sidebar .workspace-nav-group nav[hidden] {
+  display: none;
+}
+.shell.workspace-shell .workspace-sidebar nav button {
+  min-height: 44px;
+}
+.shell.workspace-shell .workspace-sidebar nav button[aria-current] {
+  background: #234b72;
+  box-shadow: inset 3px 0 #77c8ff;
+}
+.shell.workspace-shell
+  .workspace-sidebar
+  nav
+  button[aria-current]
+  .workspace-icon {
+  color: #77c8ff;
+}
+.shell.workspace-shell .workspace-sidebar .sidebar-bottom {
+  padding-top: 12px;
+}
+.customer-shell .customer-masthead {
+  min-height: 64px;
+}
+.customer-shell .customer-header nav {
+  gap: 26px;
+}
+.customer-shell .customer-header nav button {
+  min-height: 44px;
+  padding-block: 9px 6px;
+}
+@media (min-width: 1200px) {
+  .shell.workspace-shell .queue-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .shell.workspace-shell .workspace-sidebar {
+    padding: 12px 16px;
+  }
+  .shell.workspace-shell .workspace-main {
+    padding: 16px;
+  }
+  .shell.workspace-shell .workspace-header {
+    gap: 10px;
+  }
+  .shell.workspace-shell .workspace-header h1 {
+    font-size: 25px;
+  }
+  .shell.workspace-shell .workspace-header .page-description {
+    font-size: 13px;
+  }
+  .shell.workspace-shell .workspace-header .workspace-actions {
+    gap: 4px;
+  }
+  .shell.workspace-shell .workspace-sidebar #workspace-navigation {
+    margin-block: 12px 0;
+  }
+  .shell.workspace-shell .workspace-sidebar .sidebar-bottom {
+    margin-top: 10px;
+  }
+  .customer-shell .customer-masthead {
+    min-height: 60px;
+  }
+}
+@media (max-width: 420px) {
+  .shell.workspace-shell .workspace-header {
+    flex-wrap: wrap;
+  }
+  .shell.workspace-shell .workspace-header > div:first-child {
+    flex: 1 1 140px;
+  }
+  .shell.workspace-shell
+    .workspace-header:has(.workspace-cart-slot > *)
+    .page-description {
+    display: none;
+  }
+  .shell.workspace-shell
+    .workspace-header:has(.workspace-cart-slot > *)
+    > div:first-child {
+    flex: 1 1 80px;
+  }
+  .shell.workspace-shell .workspace-header h1 {
+    overflow-wrap: anywhere;
+  }
+}
+
+.shell.workspace-shell .fulfillment-guide {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-block: 10px 12px;
+}
+.shell.workspace-shell .fulfillment-guide details {
+  flex: 1;
+  min-width: 0;
+}
+.shell.workspace-shell .fulfillment-guide summary {
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 44px;
+  align-content: center;
+}
+.shell.workspace-shell .fulfillment-guide p,
+.shell.workspace-shell .fulfillment-guide ol {
+  margin: 8px 0;
+}
+@media (max-width: 560px) {
+  .shell.workspace-shell .fulfillment-guide {
+    flex-wrap: wrap;
+  }
+  .shell.workspace-shell .fulfillment-guide details {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 760px) {
+  .customer-shell .customer-header nav {
+    gap: 0;
+  }
+}
+@media (min-width: 1200px) {
+  .shell.workspace-shell .saved-cart-filters .queue-field-actions {
+    grid-column: span 2;
+  }
+}

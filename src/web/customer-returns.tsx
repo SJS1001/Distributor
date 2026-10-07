@@ -7,27 +7,32 @@ export function CustomerReturnsGuide({
   hasSoldEquipment: boolean;
 }) {
   return (
-    <section className="record-detail-panel" aria-label="Request an RMA">
-      <h2>Returns & warranty</h2>
-      <p>
-        Request an RMA (return authorization) or warranty review for equipment
-        sold to your account. Your distributor reviews the request before
-        authorizing a return.
+    <section className="customer-returns-guide" aria-label="Return guidance">
+      <p className="return-authorization-note">
+        <strong>Wait for authorization before sending equipment.</strong>{" "}
+        Confirm return instructions with your distributor. Submitting a request
+        does not approve a refund or replacement.
       </p>
-      <ol>
-        <li>
-          Select your sold serial, explain the issue and provide an evidence
-          reference.
-        </li>
-        <li>
-          Follow the request status below while your distributor reviews it.
-        </li>
-        <li>
-          Wait for authorization and confirm return instructions with your
-          distributor before sending equipment.
-        </li>
-      </ol>
-      <p>Submitting a request does not approve a refund or replacement.</p>
+      <details>
+        <summary>How returns work</summary>
+        <p>
+          Request an RMA (return authorization) or warranty review for equipment
+          sold to your account. Your distributor reviews each request.
+        </p>
+        <ol>
+          <li>
+            Select your sold serial, explain the issue and provide an evidence
+            reference.
+          </li>
+          <li>
+            Follow the request status below while your distributor reviews it.
+          </li>
+          <li>
+            Wait for authorization and confirm return instructions before
+            sending equipment.
+          </li>
+        </ol>
+      </details>
       {!hasSoldEquipment && (
         <p role="status">
           No eligible sold equipment is available for a new request. Only

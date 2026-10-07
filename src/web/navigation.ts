@@ -67,6 +67,8 @@ const sections: Record<string, string[]> = {
   ],
   Account: [
     "customer-accounts",
+    "account-data-location",
+    "account-sign-in",
     "customer-purchasing",
     "customer-pricing",
     "customer-providers",

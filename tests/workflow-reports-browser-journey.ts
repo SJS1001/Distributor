@@ -18,6 +18,7 @@ test("workspace report visibility and order survive reload, remain user scoped, 
   page.on("pageerror", (e) => errors.push(e.message));
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   const reports = page.getByRole("region", { name: "Workspace reports" });
   await expect(
     reports.getByRole("heading", { name: "Sales & receivables", exact: true }),
@@ -33,6 +34,7 @@ test("workspace report visibility and order survive reload, remain user scoped, 
     .getByRole("button", { name: "Move Stock condition up", exact: true })
     .click();
   await page.reload();
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   await expect(
     reports.getByRole("heading", { name: "Sales & receivables", exact: true }),
   ).toHaveCount(0);
@@ -64,6 +66,7 @@ test("workspace report visibility and order survive reload, remain user scoped, 
   ]);
   await login(page, true);
   await navigateWorkspace(page, "Overview");
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   await expect(
     reports.getByRole("heading", {
       name: "Your purchases & balances",
@@ -81,6 +84,7 @@ test("workspace report visibility and order survive reload, remain user scoped, 
     .getByRole("checkbox", { name: "Purchases & balances", exact: true })
     .uncheck();
   await page.reload();
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   await expect(
     reports.getByRole("heading", {
       name: "Your purchases & balances",
@@ -109,6 +113,7 @@ test("financial charts retain actual figures, provide transaction tabs and respe
   page,
 }) => {
   await login(page);
+  await page.getByRole("tab", { name: "Reports", exact: true }).click();
   const report = page.getByRole("region", {
     name: "Sales and adjustment report",
   });

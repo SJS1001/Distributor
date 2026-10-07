@@ -36,7 +36,7 @@ test("phone buyer finds Request RMA, retries a lost reply once, and follows staf
     // Exercise the customer's direct visible header, including its phone menu.
     await navigateWorkspace(page, "Returns");
     await expect(
-      page.getByRole("region", { name: "Request an RMA" }),
+      page.getByRole("region", { name: "Return guidance" }),
     ).toContainText(
       "Submitting a request does not approve a refund or replacement.",
     );
@@ -231,14 +231,9 @@ test("phone buyer finds Request RMA, retries a lost reply once, and follows staf
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    // The familiar Account entry remains available beside the direct header.
+    // Return from Account through the same primary phone navigation.
     await navigateWorkspace(page, "Account");
-    await page
-      .getByRole("button", {
-        name: "Returns and warranty requests",
-        exact: true,
-      })
-      .click();
+    await navigateWorkspace(page, "Returns");
     await expect(row).toContainText("Return authorized");
     expect(errors).toEqual([]);
   } finally {
@@ -255,10 +250,10 @@ test("buyer without sold equipment sees the prerequisite and practical support g
     page.getByRole("button", { name: "Request RMA", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("region", { name: "Request an RMA" }),
+    page.getByRole("region", { name: "Return guidance" }),
   ).toContainText("No eligible sold equipment is available");
   await expect(
-    page.getByRole("region", { name: "Request an RMA" }),
+    page.getByRole("region", { name: "Return guidance" }),
   ).toContainText(
     "contact your distributor with the serial and order or invoice reference",
   );

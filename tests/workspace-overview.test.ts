@@ -7,7 +7,6 @@ import {
   PageSections,
   PageSection,
   WorkspaceNavigation,
-  WorkspaceTabs,
 } from "../src/web/workspace.tsx";
 
 const data = {
@@ -88,7 +87,8 @@ test("overview does not expose unavailable finance, warehouse or order-entry con
     React.createElement(Overview, { ...props, staff: false }),
   );
   assert.doesNotMatch(buyer, /Available units|Receive stock|Manage inventory/);
-  assert.match(buyer, /Track orders/);
+  assert.match(buyer, /Recent orders/);
+  assert.doesNotMatch(buyer, /Quick access/);
 });
 
 test("buyer navigation exposes storefront destinations, reports and the active page", () => {
@@ -115,6 +115,7 @@ test("buyer navigation exposes storefront destinations, reports and the active p
     "Invoices &amp; payments",
     "Reports",
     "Account",
+    "Returns &amp; warranty",
   ])
     assert.ok(html.includes(`>${destination}</button>`));
   assert.match(
@@ -123,18 +124,35 @@ test("buyer navigation exposes storefront destinations, reports and the active p
   );
 });
 
-test("category page tabs expose only authorized destinations and current page", () => {
+test("grouped staff navigation exposes only authorized pages and expands the current group", () => {
   const html = renderToStaticMarkup(
-    React.createElement(WorkspaceTabs, {
+    React.createElement(WorkspaceNavigation, {
       pages: ["Overview", "Orders", "Customers", "Billing", "Security"],
       page: "Customers",
+      organization: "Synthetic organization",
+      name: "Staff",
+      role: "admin",
+      region: "CA",
       navigate: () => {},
+      signOut: () => {},
     }),
   );
   assert.match(html, /aria-label="Sales &amp; customers pages"/);
-  assert.match(html, />Orders<\/button>/);
-  assert.match(html, /aria-current="page"[^]*?Customers<\/button>/);
-  assert.doesNotMatch(html, />Catalog<|>Billing<|>Security</);
+  const sales = html.match(
+    /<nav id="workspace-group-\d+" aria-label="Sales &amp; customers pages"([^>]*)>([^]*?)<\/nav>/,
+  );
+  assert.ok(sales);
+  assert.doesNotMatch(sales[1]!, /hidden/);
+  assert.match(sales[2]!, /<span>Orders<\/span>/);
+  assert.match(sales[2]!, /aria-current="page"[^]*?<span>Customers<\/span>/);
+  assert.doesNotMatch(sales[2]!, />Billing<|>Security</);
+  assert.match(html, /<span>Billing<\/span>/);
+  assert.match(html, /<span>Security<\/span>/);
+  assert.doesNotMatch(
+    html,
+    />Catalog<|>Inventory<|>Purchasing<|>Administration</,
+  );
+  assert.equal((html.match(/aria-current="page"/g) ?? []).length, 1);
 });
 
 test("section tabs expose one panel, retain inactive content and omit unauthorized sections", () => {

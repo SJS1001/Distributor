@@ -32,28 +32,21 @@ export async function navigateWorkspace(
   if (!category)
     throw new Error(`Unknown workspace destination: ${destination}`);
   await expect(page.locator("#workspace-title")).toBeVisible();
-  const pages = page.getByRole("navigation", {
-    name: `${category} pages`,
+  const menu = page.getByRole("button", { name: "Menu", exact: true });
+  if (await menu.isVisible()) await menu.click();
+  const navigation = page.getByRole("navigation", {
+    name: "Workspace",
     exact: true,
   });
-  if (!(await pages.isVisible())) {
-    const menu = page.getByRole("button", { name: "Menu", exact: true });
-    if (await menu.isVisible()) await menu.click();
-    await page
-      .getByRole("navigation", { name: "Workspace", exact: true })
+  const destinationButton = navigation.getByRole("button", {
+    name: destination,
+    exact: true,
+  });
+  if (!(await destinationButton.isVisible()))
+    await navigation
       .getByRole("button", { name: category, exact: true })
       .click();
-  }
-  // A category with one authorized page opens it directly and shows no page
-  // tabs, so wait for either the destination tab or the destination heading.
-  const tab = pages.getByRole("button", { name: destination, exact: true });
-  const title = page.locator("#workspace-title").filter({
-    hasText: new RegExp(
-      `^${destination.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-    ),
-  });
-  await expect(tab.or(title).first()).toBeVisible();
-  if (await tab.isVisible()) await tab.click();
+  await destinationButton.click();
   if (section)
     await page
       .getByRole("tablist", { name: `${destination} sections`, exact: true })
@@ -99,8 +92,8 @@ export async function navigateCustomerWorkspace(
 export async function expectSignedOut(page: Page) {
   await expect(
     page
-      .getByRole("navigation", { name: "Public navigation", exact: true })
-      .getByRole("link", { name: "Administration", exact: true }),
+      .getByRole("contentinfo")
+      .getByRole("link", { name: "Administration entrance", exact: true }),
   ).toBeVisible();
 }
 
@@ -109,9 +102,12 @@ export async function expectSignedOut(page: Page) {
 // journey needs the other entrance.
 export async function openSignIn(page: Page, audience: "customer" | "staff") {
   await page
-    .getByRole("navigation", { name: "Public navigation", exact: true })
+    .getByRole(
+      audience === "customer" ? "navigation" : "contentinfo",
+      audience === "customer" ? { name: "Public navigation", exact: true } : {},
+    )
     .getByRole("link", {
-      name: audience === "customer" ? "Customer sign in" : "Administration",
+      name: audience === "customer" ? "Sign in" : "Administration entrance",
       exact: true,
     })
     .click();

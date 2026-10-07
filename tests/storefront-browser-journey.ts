@@ -52,9 +52,7 @@ for (const width of [1440, 390, 320]) {
     await expect(
       page.getByRole("button", { name: "Refresh", exact: true }),
     ).toHaveCount(1);
-    await expect(page.locator(".page-description")).toContainText(
-      "All prices in CAD.",
-    );
+    await expect(page.locator(".sf-catalog-heading")).toContainText("CAD");
     for (const button of [search, refresh, cart]) {
       await expect(button).toBeVisible();
       await expect(button.locator("svg")).toBeVisible();
@@ -75,6 +73,18 @@ for (const width of [1440, 390, 320]) {
       );
       expect(current.x - (previous.x + previous.width)).toBeLessThanOrEqual(16);
     }
+    const catalogTop = page.getByRole("region", { name: "Product catalog" });
+    await expect(
+      catalogTop.getByRole("heading", { name: "Browse your catalog" }),
+    ).toBeVisible();
+    await expect(catalogTop.locator(".sf-card").first()).toBeVisible();
+    await expect(page.locator(".sf-showcase")).toHaveCount(0);
+    const firstProduct = await catalogTop
+      .locator(".sf-card")
+      .first()
+      .boundingBox();
+    expect(firstProduct!.y).toBeLessThan(440);
+    await expect(search.locator(".search-active-dot")).toHaveCount(0);
     await expect(search).toHaveAttribute(
       "aria-controls",
       (await panel.getAttribute("id"))!,
@@ -89,6 +99,7 @@ for (const width of [1440, 390, 320]) {
     await input.press("Enter");
     const catalog = page.getByRole("region", { name: "Product catalog" });
     await expect(catalog).toContainText("1 matching product loaded");
+    await expect(search.locator(".search-active-dot")).toHaveCount(1);
     await expect(
       catalog.getByRole("button", {
         name: "View Synthetic replacement part",
@@ -134,7 +145,7 @@ for (const width of [1440, 390, 320]) {
     await expect(search).toBeFocused();
     await search.click();
     await expect(input).toBeFocused();
-    await catalog.getByRole("heading", { name: "Browse your catalog" }).click();
+    await page.locator("#workspace-title").click();
     await expect(panel).not.toBeVisible();
     await search.click();
     await expect(input).toBeFocused();
@@ -185,19 +196,13 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, true);
   await expect(
-    page.getByRole("region", { name: "Featured products" }),
+    page.getByRole("region", { name: "Product catalog" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Next featured product" }),
-  ).toBeVisible();
+  await expect(page.locator(".sf-showcase")).toHaveCount(0);
   await page.screenshot({
     path: "/tmp/distributor-storefront-mobile.png",
     fullPage: true,
   });
-  // This fixture has one equipment item; accessories stay in the catalog.
-  await expect(
-    page.getByRole("button", { name: "Next featured product" }),
-  ).toBeDisabled();
   await page
     .getByRole("button", { name: "Search products", exact: true })
     .click();
@@ -425,6 +430,9 @@ test("buyer mobile storefront, native approval, withdrawal and fresh quote resub
     "Invoices & payments",
   );
   await buyerNavigate(page, "Account");
+  await page
+    .getByRole("tab", { name: "Sign-in security", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Your sign-in security" }),
   ).toBeVisible();
@@ -673,19 +681,19 @@ test("staff uploads and publishes permitted resources, edits rules and buyer see
   try {
     const buyer = await context.newPage();
     await login(buyer, true);
-    const featured = buyer.getByRole("region", { name: "Featured products" });
-    await expect(
-      featured.getByRole("heading", {
+    const catalog = buyer.getByRole("region", { name: "Product catalog" });
+    const equipmentCard = catalog.locator(".sf-card").filter({
+      has: buyer.getByRole("heading", {
         name: "Synthetic equipment",
         exact: true,
       }),
-    ).toBeVisible();
-    const photo = featured.getByRole("img", {
+    });
+    const photo = equipmentCard.getByRole("img", {
       name: "Synthetic equipment test graphic",
     });
     await expect(photo).toBeVisible();
     await expect(photo).toHaveJSProperty("naturalWidth", 40);
-    // A photographed eligible equipment item outranks the earlier unpictured SKU.
+    // Both eligible equipment items stay in the compact catalog.
     await expect(
       buyer.getByRole("button", {
         name: "View Synthetic unphotographed equipment",

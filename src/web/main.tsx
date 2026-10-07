@@ -34,7 +34,6 @@ import {
 } from "./navigation.ts";
 import { OrderDetail } from "./order-detail.tsx";
 import { FulfillmentGuide } from "./fulfillment-guide.tsx";
-import { DemoNotice } from "./demo-notice.tsx";
 import { IncomingSupplyWorkspace } from "./incoming-supply.tsx";
 import { savedFilterKey } from "./saved-filters.tsx";
 import { Overview } from "./overview.tsx";
@@ -42,9 +41,7 @@ import {
   PageSections,
   PageSection,
   WorkspaceNavigation,
-  WorkspaceTabs,
   pageDescriptions,
-  workspaceGroups,
 } from "./workspace.tsx";
 import { type QuantitySelection } from "./inventory-quantity.tsx";
 import { OrganizationQuickBooksRevocation } from "./organization-revocation.tsx";
@@ -159,6 +156,7 @@ import "./style.css";
 import "./customer-workspace.css";
 import "./equipment-workspace.css";
 import "./overview-dashboard.css";
+import "./workspace-layout.css";
 const OperationsHealthPanel = deferredPage("Operations health", async () => {
   const module = await import("./operations-health.tsx");
   return { default: module.OperationsHealthPanel };
@@ -2810,8 +2808,75 @@ function App() {
       "Save billing details",
     );
 
+  const securityPanel = (
+    <section className="panel ops-security" id="account-sign-in" tabIndex={-1}>
+      <h2>Your sign-in security</h2>
+      <p>
+        {extra.security?.email} · {extra.security?.sessions ?? 0} active{" "}
+        {(extra.security?.sessions ?? 0) === 1 ? "session" : "sessions"}.
+        Password changes end every session.
+      </p>
+      <div className="ops-security-grid">
+        {extra.security?.mfa && (
+          <div className="ops-card">
+            <MfaSecurity
+              security={extra.security}
+              sessionEnded={clearSession}
+            />
+          </div>
+        )}
+        <section className="ops-card">
+          <h3>Password</h3>
+          <p className="ops-note">
+            Changing your password ends every signed-in session.
+          </p>
+          <PasswordChangeForm
+            busy={busy}
+            submit={(values) =>
+              run(() => command("user.password.change", values))
+            }
+          />
+        </section>
+        <section className="ops-card">
+          <h3>Signed-in sessions</h3>
+          <SessionRevokeRecovery
+            actor={{ id: String(actor.id), orgId: String(actor.orgId) }}
+            sessions={extra.security?.sessionDetails}
+            disabled={busy}
+            onSessionEnded={() =>
+              clearSession(
+                "The selected session ended or is no longer accepted. Sign in again to recover any saved attempt.",
+              )
+            }
+            onChanged={() =>
+              refreshNotice(
+                "The selected session has ended. Your current sign-in stays active.",
+              )
+            }
+          />
+          <p className="ops-note">
+            You will need to sign in again on every device.
+          </p>
+          {button("End all my sessions", () =>
+            open(
+              "End all my sessions",
+              [],
+              () => command("user.sessions.end-own", {}),
+              "This ends your signed-in sessions on every device.",
+              "End sessions",
+            ),
+          )}
+        </section>
+      </div>
+    </section>
+  );
+
   return (
-    <div className={staff ? "shell" : "shell customer-shell"}>
+    <div
+      className={
+        staff ? "shell workspace-shell" : "shell workspace-shell customer-shell"
+      }
+    >
       <a
         className="skip-link"
         href="#workspace-content"
@@ -2826,7 +2891,7 @@ function App() {
         pages={pages}
         page={page}
         organization={data.organization.name}
-        name={actor.name}
+        name={staff ? actor.name : (data.accounts[0]?.name ?? actor.name)}
         role={actor.role}
         region={data.organization.region}
         navigate={navigate}
@@ -2846,6 +2911,26 @@ function App() {
             }
             onNavigate={navigate}
           />
+        </div>
+        <header className="workspace-header">
+          <div>
+            <h1 id="workspace-title" tabIndex={-1}>
+              {!staff && page === "Billing"
+                ? "Invoices & payments"
+                : !staff && page === "Overview"
+                  ? "Reports"
+                  : page}
+            </h1>
+            <p className="page-description">
+              {!staff && page === "Orders"
+                ? "Your orders, approval requests and deliveries."
+                : !staff && page === "Billing"
+                  ? "Your invoices, payment records and outstanding balances."
+                  : !staff && page === "Overview"
+                    ? "Your sales, purchases, spending and pricing history."
+                    : pageDescriptions[page]}
+            </p>
+          </div>
           <div className="workspace-actions">
             <div id="workspace-search-slot" className="workspace-search-slot" />
             <button
@@ -2863,35 +2948,7 @@ function App() {
             </button>
             <div id="workspace-cart-slot" className="workspace-cart-slot" />
           </div>
-        </div>
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">
-              {staff
-                ? workspaceGroups.find((group) => group.pages.includes(page))
-                    ?.name
-                : (data.accounts[0]?.name ?? "Customer portal")}
-            </p>
-            <h1 id="workspace-title" tabIndex={-1}>
-              {!staff && page === "Billing"
-                ? "Invoices & payments"
-                : !staff && page === "Overview"
-                  ? "Reports"
-                  : page}
-            </h1>
-            <p className="page-description">
-              {!staff && page === "Orders"
-                ? "Your orders, approval requests and deliveries."
-                : !staff && page === "Billing"
-                  ? "Your invoices, payment records and outstanding balances."
-                  : !staff && page === "Overview"
-                    ? "Your sales, purchases, spending and pricing history."
-                    : pageDescriptions[page]}
-              {!staff && ` All prices in ${currency}.`}
-            </p>
-          </div>
         </header>
-        <WorkspaceTabs pages={pages} page={page} navigate={navigate} />
         {staff && (
           <div className="qualification">
             Storage region {data.organization.region} · {currency}
@@ -2955,6 +3012,7 @@ function App() {
           (data.accounts[0] ? (
             <Storefront
               key={`${actor.id}:${data.accounts[0].id}`}
+              currency={currency}
               refreshKey={extra.cartRefresh}
               productId={route.productId}
               selectProduct={(productId) => updateRoute({ productId })}
@@ -8031,7 +8089,16 @@ function App() {
             selectedSection={route.section ?? "customer-accounts"}
             selectSection={(section) => updateRoute({ section })}
             items={[
-              { id: "customer-accounts", label: "Accounts" },
+              {
+                id: "customer-accounts",
+                label: staff ? "Accounts" : "Overview & terms",
+              },
+              ...(!staff
+                ? [
+                    { id: "account-data-location", label: "Data location" },
+                    { id: "account-sign-in", label: "Sign-in security" },
+                  ]
+                : []),
 
               ...(admin
                 ? [
@@ -8083,49 +8150,6 @@ function App() {
                 />
               ) : (
                 <>
-                  {" "}
-                  {!staff && (
-                    <section
-                      className="record-detail-panel"
-                      aria-label="Returns and warranty"
-                    >
-                      <h2>Need to return equipment?</h2>
-                      <p>
-                        Request an RMA or warranty review for a sold serial and
-                        follow your distributor’s decision in Returns &
-                        warranty.
-                      </p>
-                      <button
-                        onClick={() =>
-                          navigate({
-                            page: "Returns",
-                            section: "returns-claims",
-                          })
-                        }
-                      >
-                        Returns and warranty requests
-                      </button>
-                    </section>
-                  )}
-                  <nav aria-label="Account topics" className="actions">
-                    {[
-                      ["account-commercial", "Commercial account"],
-                      ["account-data-location", "Data location"],
-                      ["account-sign-in", "Sign-in security"],
-                    ].map(([id, label]) => (
-                      <button
-                        key={id}
-                        className="secondary"
-                        onClick={() => {
-                          const target = document.getElementById(id!);
-                          target?.scrollIntoView({ block: "start" });
-                          target?.focus();
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </nav>
                   <h2 id="account-commercial" tabIndex={-1}>
                     Commercial account
                   </h2>
@@ -8142,79 +8166,60 @@ function App() {
                   {data.accounts.map((a: Item) => (
                     <CustomerMinimumOrderControls key={a.id} accountId={a.id} />
                   ))}
-                  <h2 id="account-data-location" tabIndex={-1}>
-                    Data location
-                  </h2>
-                  <p>
-                    Data location describes where the application stores your
-                    account records. A processor exception is your permission
-                    for a named service, such as payment processing or
-                    accounting, to process information outside that region.
-                    Review that service's terms before accepting. Carrier
-                    services require separate setup and qualification.
-                  </p>
-                  <div className="actions">
-                    {can("commercial") &&
-                      button("Add customer", () =>
-                        simple(
-                          "Add customer account",
-                          [
-                            { name: "name", label: "Customer name" },
-                            {
-                              name: "tier",
-                              label: "Price tier",
-                              value: "standard",
-                            },
-                            {
-                              name: "creditLimit",
-                              label: "Credit limit in cents",
-                              type: "number",
-                            },
-                          ],
-                          "account.create",
-                        ),
-                      )}
-                  </div>
-                  {table(
-                    ["Customer", "Residency", "Actions"],
-                    data.accounts,
-                    (a: Item) => [
-                      a.name,
-                      `${data.organization.region === "CA" ? "Canada" : data.organization.region === "US" ? "United States" : data.organization.region} · ${a.residency_mode.replaceAll("_", " ")}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
-                        .filter(
-                          (p) =>
-                            JSON.parse(a.provider_exceptions).includes(p) &&
-                            !a.providerReviews.some(
-                              (r: Item) => r.provider === p && r.current === 1,
-                            ),
-                        )
-                        .map(
-                          (p) =>
-                            ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
-                        )
-                        .join("")}`,
-                      customerTermsActions(a),
-                    ],
-                  )}
-                  {providerHistoryAccount &&
-                    can("commercial", "finance", "support", "buyer") &&
-                    data.accounts.some(
-                      (a: Item) => a.id === providerHistoryAccount,
-                    ) && (
-                      <ProviderHistory
-                        key={`${providerHistoryAccount}:${eventViewEpoch}`}
-                        account={data.accounts.find(
-                          (a: Item) => a.id === providerHistoryAccount,
-                        )}
-                        close={() => {
-                          setProviderHistoryAccount(null);
-                          providerHistoryOpener.current?.focus();
-                        }}
-                      />
-                    )}
                 </>
               )}
             </PageSection>
+            <PageSection id="account-data-location">
+              <h2 id="account-data-location" tabIndex={-1}>
+                Data location
+              </h2>
+              <p>
+                Data location describes where the application stores your
+                account records. A processor exception is your permission for a
+                named service, such as payment processing or accounting, to
+                process information outside that region. Review that service's
+                terms before accepting. Carrier services require separate setup
+                and qualification.
+              </p>
+              {table(
+                ["Customer", "Residency", "Actions"],
+                data.accounts,
+                (a: Item) => [
+                  a.name,
+                  `${data.organization.region === "CA" ? "Canada" : data.organization.region === "US" ? "United States" : data.organization.region} · ${a.residency_mode.replaceAll("_", " ")}${JSON.parse(a.provider_exceptions).includes("carrier") ? " · Previous carrier exception needs review; no named carrier is authorized by it." : ""}${providerNames
+                    .filter(
+                      (p) =>
+                        JSON.parse(a.provider_exceptions).includes(p) &&
+                        !a.providerReviews.some(
+                          (r: Item) => r.provider === p && r.current === 1,
+                        ),
+                    )
+                    .map(
+                      (p) =>
+                        ` · ${providerChoices.find((c) => c.id === p)?.label} terms require review`,
+                    )
+                    .join("")}`,
+                  customerTermsActions(a),
+                ],
+              )}
+              {providerHistoryAccount &&
+                can("commercial", "finance", "support", "buyer") &&
+                data.accounts.some(
+                  (a: Item) => a.id === providerHistoryAccount,
+                ) && (
+                  <ProviderHistory
+                    key={`${providerHistoryAccount}:${eventViewEpoch}`}
+                    account={data.accounts.find(
+                      (a: Item) => a.id === providerHistoryAccount,
+                    )}
+                    close={() => {
+                      setProviderHistoryAccount(null);
+                      providerHistoryOpener.current?.focus();
+                    }}
+                  />
+                )}
+            </PageSection>
+            <PageSection id="account-sign-in">{securityPanel}</PageSection>
             <PageSection id="customer-providers">
               {admin && (
                 <section className="panel">
@@ -9003,72 +9008,7 @@ function App() {
             </PageSection>
           </PageSections>
         )}
-        {(page === "Security" || (page === "Account" && !staff)) && (
-          <section
-            className="panel ops-security"
-            id="account-sign-in"
-            tabIndex={-1}
-          >
-            <h2>Your sign-in security</h2>
-            <p>
-              {extra.security?.email} · {extra.security?.sessions ?? 0} active{" "}
-              {(extra.security?.sessions ?? 0) === 1 ? "session" : "sessions"}.
-              Password changes end every session.
-            </p>
-            <div className="ops-security-grid">
-              {extra.security?.mfa && (
-                <div className="ops-card">
-                  <MfaSecurity
-                    security={extra.security}
-                    sessionEnded={clearSession}
-                  />
-                </div>
-              )}
-              <section className="ops-card">
-                <h3>Password</h3>
-                <p className="ops-note">
-                  Changing your password ends every signed-in session.
-                </p>
-                <PasswordChangeForm
-                  busy={busy}
-                  submit={(values) =>
-                    run(() => command("user.password.change", values))
-                  }
-                />
-              </section>
-              <section className="ops-card">
-                <h3>Signed-in sessions</h3>
-                <SessionRevokeRecovery
-                  actor={{ id: String(actor.id), orgId: String(actor.orgId) }}
-                  sessions={extra.security?.sessionDetails}
-                  disabled={busy}
-                  onSessionEnded={() =>
-                    clearSession(
-                      "The selected session ended or is no longer accepted. Sign in again to recover any saved attempt.",
-                    )
-                  }
-                  onChanged={() =>
-                    refreshNotice(
-                      "The selected session has ended. Your current sign-in stays active.",
-                    )
-                  }
-                />
-                <p className="ops-note">
-                  You will need to sign in again on every device.
-                </p>
-                {button("End all my sessions", () =>
-                  open(
-                    "End all my sessions",
-                    [],
-                    () => command("user.sessions.end-own", {}),
-                    "This ends your signed-in sessions on every device.",
-                    "End sessions",
-                  ),
-                )}
-              </section>
-            </div>
-          </section>
-        )}
+        {page === "Security" && securityPanel}
         {page === "Administration" && admin && (
           <PageSections
             label="Administration sections"
@@ -9479,7 +9419,6 @@ function PasswordChangeForm({
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <DemoNotice />
     {location.pathname === "/quickbooks/callback" ? (
       <QuickBooksCallback />
     ) : location.pathname === "/quickbooks/organization/callback" ? (

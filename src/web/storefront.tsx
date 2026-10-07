@@ -5,7 +5,6 @@ import { ControlIcon } from "./control-icon.tsx";
 import type { ReferenceRequest } from "./reference-context.ts";
 import { CustomerPrice } from "./customer-pricing.tsx";
 import { AvailabilityBadge } from "./product-availability.tsx";
-import { ManufacturerCollection } from "./manufacturer-collection.tsx";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { request } from "./api.ts";
 import { usePages } from "./billing-inbox.tsx";
@@ -480,7 +479,9 @@ function ProductResults({
   clearFilters,
   productId,
   selectProduct,
+  currency,
 }: {
+  currency?: string;
   accountId: string;
   search: string;
   category: string;
@@ -490,9 +491,8 @@ function ProductResults({
   selectProduct: (productId?: string) => void;
 }) {
   const rows = usePages<CustomerProduct>(
-      `/api/catalog/customer-products/page?accountId=${encodeURIComponent(accountId)}&q=${encodeURIComponent(search)}${category ? `&category=${encodeURIComponent(category)}` : ""}`,
-    ),
-    [featuredIndex, setFeaturedIndex] = useState(0);
+    `/api/catalog/customer-products/page?accountId=${encodeURIComponent(accountId)}&q=${encodeURIComponent(search)}${category ? `&category=${encodeURIComponent(category)}` : ""}`,
+  );
   const triggers = useRef(new Map<string, HTMLButtonElement>()),
     returnTo = useRef<{ key: string; scroll: number } | null>(null);
   useEffect(() => {
@@ -504,17 +504,7 @@ function ProductResults({
       returnTo.current = null;
     }
   }, [productId]);
-  const products = rows.items,
-    photographedEquipment = products.filter(
-      (product) => product.serialized === 1 && product.hasPublishedImage,
-    ),
-    equipment = products.filter((product) => product.serialized === 1),
-    spotlights = photographedEquipment.length
-      ? photographedEquipment
-      : equipment.length
-        ? equipment
-        : products,
-    featured = spotlights[featuredIndex % Math.max(1, spotlights.length)];
+  const products = rows.items;
   function select(product: CustomerProduct, key: string) {
     returnTo.current = { key, scroll: window.scrollY };
     selectProduct(product.id);
@@ -542,98 +532,22 @@ function ProductResults({
           {rows.error}
         </p>
       )}
-      {!search && !category && featured && (
-        <section
-          className="sf-showcase"
-          aria-label="Featured products"
-          aria-roledescription="carousel"
-        >
-          <div className="sf-showcase-copy">
-            <p className="sf-kicker">From your approved catalog</p>
-            <p className="sf-showcase-label">
-              Equipment for your next project.
-            </p>
-            <div
-              className="sf-featured-description"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              <p className="sf-sku">{featured.sku}</p>
-              <h2>{featured.name}</h2>
-              <AvailabilityBadge product={featured} />
-              <div className="sf-showcase-price">
-                <CustomerPrice product={featured} />
-                <span>Before tax</span>
-              </div>
-            </div>
-            <button
-              className="sf-showcase-link"
-              ref={trigger("featured")}
-              onClick={() => select(featured, "featured")}
-            >
-              Explore featured product <Arrow />
-            </button>
-            <div className="sf-carousel-controls">
-              <button
-                className="sf-arrow"
-                aria-label="Previous featured product"
-                disabled={spotlights.length < 2}
-                onClick={() =>
-                  setFeaturedIndex(
-                    (featuredIndex + spotlights.length - 1) % spotlights.length,
-                  )
-                }
-              >
-                <Arrow back />
-              </button>
-              <span className="sf-carousel-position">
-                <strong>
-                  {String((featuredIndex % spotlights.length) + 1).padStart(
-                    2,
-                    "0",
-                  )}
-                </strong>
-                <span>/ {String(spotlights.length).padStart(2, "0")}</span>
-              </span>
-              <button
-                className="sf-arrow"
-                aria-label="Next featured product"
-                disabled={spotlights.length < 2}
-                onClick={() =>
-                  setFeaturedIndex((featuredIndex + 1) % spotlights.length)
-                }
-              >
-                <Arrow />
-              </button>
-            </div>
-          </div>
-          <div className="sf-showcase-media">
-            <span className="sf-showcase-marker" aria-hidden="true">
-              PRODUCT SPOTLIGHT
-            </span>
-            <FeaturedImage key={featured.id} product={featured} />
-          </div>
-        </section>
-      )}
       <section className="sf-catalog" aria-label="Product catalog">
         <div className="sf-catalog-heading">
-          <div>
-            <p className="sf-kicker">Made for your account</p>
-            <h2>Browse your catalog</h2>
+          <h2>Browse your catalog</h2>
+          <div className="sf-results-summary">
+            <p role="status">
+              {products.length} matching{" "}
+              {products.length === 1 ? "product" : "products"} loaded
+              {rows.busy ? " · Loading…" : ""}
+            </p>
+            <span>
+              {currency || products[0]?.currency
+                ? `${currency || products[0]?.currency} · `
+                : ""}
+              Prices before tax
+            </span>
           </div>
-          <p>
-            Approved products.
-            <br />
-            Your account pricing.
-          </p>
-        </div>
-        <div className="sf-results-summary">
-          <p role="status">
-            {products.length} matching{" "}
-            {products.length === 1 ? "product" : "products"} loaded
-            {rows.busy ? " · Loading…" : ""}
-          </p>
-          <span>Prices before tax</span>
         </div>
         <div className="sf-grid">
           {products.map((p) => (
@@ -673,17 +587,6 @@ function ProductResults({
     </>
   );
 }
-function FeaturedImage({ product }: { product: CustomerProduct }) {
-  const resources = useResources(product.id);
-  return (
-    <ProductImage
-      product={product}
-      resource={resources.items.find(
-        (r) => r.kind === "image" && r.state === "published",
-      )}
-    />
-  );
-}
 export function Storefront({
   reference,
   accountId,
@@ -693,7 +596,9 @@ export function Storefront({
   productId,
   selectProduct,
   refreshKey,
+  currency,
 }: {
+  currency?: string;
   refreshKey?: string;
   productId?: string;
   selectProduct: (productId?: string) => void;
@@ -942,6 +847,7 @@ export function Storefront({
           <ProductResults
             key={`${accountId}:${query}:${category}:${refreshKey ?? ""}`}
             accountId={accountId}
+            currency={currency}
             productId={productId}
             selectProduct={selectProduct}
             search={query}
@@ -955,7 +861,6 @@ export function Storefront({
               setCategory("");
             }}
           />
-          {!productId && <ManufacturerCollection />}
         </div>
       </div>
     </CartFeedbackContext.Provider>

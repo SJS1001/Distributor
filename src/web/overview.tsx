@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId, useState } from "react";
 import { InfoBubble } from "./info-bubble.tsx";
 import type { Application } from "../server/application.ts";
 import type { NavigationIntent } from "./navigation.ts";
@@ -139,7 +139,6 @@ export function Overview({
   staff,
   canReadInvoices,
   canPrepare,
-  canReceive = false,
   busy,
   navigate,
   prepare,
@@ -158,6 +157,18 @@ export function Overview({
   accountName: (id: string) => string;
   preferenceScope?: string;
 }) {
+  const viewId = useId();
+  const viewScope = `${staff ? "staff" : "customer"}:${preferenceScope ?? ""}`;
+  const [selection, setSelection] = useState({
+    scope: viewScope,
+    view: "overview",
+  });
+  const activeView =
+    selection.scope === viewScope ? selection.view : "overview";
+  const views = [
+    { id: "overview", label: "Overview" },
+    { id: "reports", label: "Reports" },
+  ];
   const invoice = data.invoiceSummary;
   const metrics = [
     {
@@ -201,359 +212,337 @@ export function Overview({
         ]
       : []),
   ];
-  const routes = staff
-    ? [
-        {
-          page: "Purchasing",
-          title: canReceive ? "Receive stock" : "Review purchasing",
-          detail: canReceive
-            ? "Start a receipt from a purchase order"
-            : "Purchase orders & receipts",
-        },
-        {
-          page: "Inventory",
-          title: "Manage inventory",
-          detail: "Stock & serials",
-        },
-        {
-          page: "Orders",
-          title: "Fulfill orders",
-          detail: "Orders & shipments",
-        },
-        ...(canReadInvoices
-          ? [
-              {
-                page: "Billing",
-                title: "Review billing",
-                detail: "Invoices & payments",
-              },
-            ]
-          : []),
-      ]
-    : [
-        {
-          page: "Orders",
-          title: "Track orders",
-          detail: "Orders & deliveries",
-        },
-        {
-          page: "Billing",
-          title: "Review billing",
-          detail: "Invoices & payments",
-        },
-        {
-          page: "Returns",
-          title: "Manage returns",
-          detail: "Returns & warranty",
-        },
-      ];
   return (
     <div className="overview">
-      <div className="overview-intro">
-        <div>
-          <div className="info-heading">
-            <h2>{staff ? "At a glance" : "Your account at a glance"}</h2>
-            <InfoBubble label="these totals">
-              Current totals across your accessible records
-            </InfoBubble>
-          </div>
-        </div>
-        {canPrepare && (
-          <button className="primary-action" disabled={busy} onClick={prepare}>
-            <WorkspaceIcon name="Orders" />
-            Prepare order
-            <WorkspaceIcon name="arrow" />
-          </button>
-        )}
-      </div>
-      <div className="overview-metrics">
-        {metrics.map((metric) => (
-          <button
-            className="metric-card"
-            key={metric.label}
-            onClick={() =>
-              navigate(
-                metric.page === "Orders"
-                  ? {
-                      page: "Orders",
-                      section: "orders-queue",
-                      orderState: "open",
-                    }
-                  : metric.page === "Billing"
-                    ? {
-                        page: "Billing",
-                        section: "billing-invoices",
-                        invoiceBalance: "unpaid",
-                      }
-                    : {
-                        page: "Inventory",
-                        section: "inventory-stock",
-                        stockView: "available",
-                      },
-              )
-            }
-          >
-            <span className="metric-top">
-              <span>{metric.label}</span>
-              <WorkspaceIcon name={metric.icon} />
-            </span>
-            <strong>{metric.value}</strong>
-            <span className="metric-hint">
-              {metric.hint}
-              <WorkspaceIcon name="arrow" />
-            </span>
-          </button>
-        ))}
-      </div>
-      {data.analytics ? (
-        <OperationalAnalytics
-          preferenceScope={preferenceScope}
-          customer={!staff}
-          data={data.analytics}
-          navigate={navigate}
-          warehouseName={(id) =>
-            String(
-              data.warehouses?.find((warehouse) => warehouse.id === id)?.name ??
-                id,
-            )
-          }
-        />
-      ) : null}
       {data.analytics && (
-        <Attention data={data.analytics} navigate={navigate} />
-      )}
-      <div className="overview-workbench">
-        <section className="dashboard-card recent-orders">
-          <div className="section-title">
-            <div>
-              <span className="section-kicker">Work queue</span>
-              <h2>Recent orders</h2>
-            </div>
-            <button className="text-action" onClick={() => navigate("Orders")}>
-              All orders <WorkspaceIcon name="arrow" />
-            </button>
-          </div>
-          {data.orders.length ? (
-            <>
-              <p className="chart-note">
-                {Math.min(data.orders.length, 8) === 1
-                  ? "Latest recorded order."
-                  : `Latest ${Math.min(data.orders.length, 8)} recorded orders.`}{" "}
-                Open the order queue for all records and actions.
-              </p>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      {staff && <th>Customer</th>}
-                      <th>Order</th>
-                      <th>Status</th>
-                      <th>Created</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.orders.slice(0, 8).map((order) => (
-                      <tr key={order.id}>
-                        {staff && (
-                          <td data-label="Customer">
-                            {accountName(order.account_id)}
-                          </td>
-                        )}
-                        <td data-label="Order">
-                          <button
-                            type="button"
-                            className="record-link"
-                            title={order.id}
-                            onClick={() =>
-                              navigate({
-                                page: "Orders",
-                                section: "orders-queue",
-                                orderId: order.id,
-                              })
-                            }
-                          >
-                            <code>{order.id.slice(0, 8)}</code>
-                          </button>
-                        </td>
-                        <td data-label="Status">
-                          <span
-                            className={`order-state ${order.state === "open" ? "is-open" : ""}`}
-                          >
-                            {order.state.replaceAll("_", " ")}
-                          </span>
-                        </td>
-                        <td data-label="Created">
-                          {new Date(order.created_at).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <div className="dashboard-empty">
-              <ParcelGraphic />
-              <div>
-                <h3>Your order book starts here</h3>
-                <p>
-                  {canPrepare
-                    ? "Prepare an order to review products, quantities and availability before accepting it."
-                    : "Orders will appear here once they have been accepted."}
-                </p>
-                {canPrepare && (
-                  <button
-                    className="text-action"
-                    disabled={busy}
-                    onClick={prepare}
-                  >
-                    Prepare your first order <WorkspaceIcon name="arrow" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-        <section
-          className="workflow-section"
-          aria-labelledby="workflow-heading"
+        <div
+          className="overview-views"
+          role="tablist"
+          aria-label="Report views"
         >
-          <div className="section-title">
-            <h2 id="workflow-heading">Quick access</h2>
+          {views.map((view, index) => (
+            <button
+              type="button"
+              role="tab"
+              id={`${viewId}-${view.id}-tab`}
+              aria-controls={`${viewId}-${view.id}-panel`}
+              aria-selected={activeView === view.id}
+              tabIndex={activeView === view.id ? 0 : -1}
+              key={view.id}
+              onClick={() => setSelection({ scope: viewScope, view: view.id })}
+              onKeyDown={(event) => {
+                const next =
+                  event.key === "ArrowRight"
+                    ? (index + 1) % views.length
+                    : event.key === "ArrowLeft"
+                      ? (index + views.length - 1) % views.length
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? views.length - 1
+                          : null;
+                const nextView = next === null ? undefined : views[next];
+                if (!nextView) return;
+                event.preventDefault();
+                setSelection({ scope: viewScope, view: nextView.id });
+                document
+                  .getElementById(`${viewId}-${nextView.id}-tab`)
+                  ?.focus();
+              }}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div
+        id={`${viewId}-overview-panel`}
+        role={data.analytics ? "tabpanel" : undefined}
+        aria-labelledby={data.analytics ? `${viewId}-overview-tab` : undefined}
+        hidden={Boolean(data.analytics) && activeView !== "overview"}
+      >
+        {data.analytics && (
+          <Attention data={data.analytics} navigate={navigate} />
+        )}
+        <div className="overview-intro">
+          <div>
+            <div className="info-heading">
+              <h2>{staff ? "At a glance" : "Your account at a glance"}</h2>
+              <InfoBubble label="these totals">
+                Current totals across your accessible records
+              </InfoBubble>
+            </div>
           </div>
-          <div className="workflow-path">
-            {routes.map((route) => (
-              <button
-                key={route.page}
-                onClick={() =>
-                  navigate({
-                    page: route.page,
-                    section:
-                      route.page === "Purchasing"
-                        ? "purchasing-queue"
-                        : route.page === "Orders"
-                          ? "orders-queue"
-                          : route.page === "Inventory"
-                            ? "inventory-stock"
-                            : route.page === "Billing"
-                              ? "billing-invoices"
-                              : undefined,
-                  })
-                }
-              >
-                <WorkspaceIcon name={route.page} />
-                <span>
-                  <strong>{route.title}</strong>
-                  <small>{route.detail}</small>
-                </span>
+          {canPrepare && (
+            <button
+              className="primary-action"
+              disabled={busy}
+              onClick={prepare}
+            >
+              <WorkspaceIcon name="Orders" />
+              Prepare order
+              <WorkspaceIcon name="arrow" />
+            </button>
+          )}
+        </div>
+        <div className="overview-metrics">
+          {metrics.map((metric) => (
+            <button
+              className="metric-card"
+              key={metric.label}
+              onClick={() =>
+                navigate(
+                  metric.page === "Orders"
+                    ? {
+                        page: "Orders",
+                        section: "orders-queue",
+                        orderState: "open",
+                      }
+                    : metric.page === "Billing"
+                      ? {
+                          page: "Billing",
+                          section: "billing-invoices",
+                          invoiceBalance: "unpaid",
+                        }
+                      : {
+                          page: "Inventory",
+                          section: "inventory-stock",
+                          stockView: "available",
+                        },
+                )
+              }
+            >
+              <span className="metric-top">
+                <span>{metric.label}</span>
+                <WorkspaceIcon name={metric.icon} />
+              </span>
+              <strong>{metric.value}</strong>
+              <span className="metric-hint">
+                {metric.hint}
                 <WorkspaceIcon name="arrow" />
-              </button>
-            ))}
-          </div>
-        </section>
-      </div>
-      {!data.analytics && (
-        <div className="overview-charts">
-          <section className="dashboard-card">
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="overview-workbench">
+          <section className="dashboard-card recent-orders">
             <div className="section-title">
               <div>
-                <span className="section-kicker">Order book</span>
-                <h2>Order activity</h2>
+                <h2>Recent orders</h2>
               </div>
               <button
                 className="text-action"
                 onClick={() => navigate("Orders")}
               >
-                View orders <WorkspaceIcon name="arrow" />
+                All orders <WorkspaceIcon name="arrow" />
               </button>
             </div>
-            <div
-              className="order-chart"
-              role="img"
-              aria-label={`Order activity: ${number(data.orderCounts.total)} orders. Open: ${number(data.orderCounts.open)}; Closed: ${number(data.orderCounts.total - data.orderCounts.open)}`}
-            >
-              <div className="order-chart-total">
-                <strong>{number(data.orderCounts.total)}</strong>
-                <span>total orders</span>
-              </div>
-              {[
-                {
-                  label: "Open",
-                  value: data.orderCounts.open,
-                  color: "#315fbd",
-                },
-                {
-                  label: "Closed",
-                  value: data.orderCounts.total - data.orderCounts.open,
-                  color: "#9daec5",
-                },
-              ].map((segment) => (
-                <div className="order-bar" key={segment.label}>
-                  <div>
-                    <span>{segment.label}</span>
-                    <strong>{number(segment.value)}</strong>
-                  </div>
-                  <div className="bar-track">
-                    <span
-                      style={{
-                        width: `${data.orderCounts.total ? (segment.value / data.orderCounts.total) * 100 : 0}%`,
-                        background: segment.color,
-                      }}
-                    />
-                  </div>
+            {data.orders.length ? (
+              <>
+                <p className="chart-note">
+                  {Math.min(data.orders.length, 8) === 1
+                    ? "Latest recorded order."
+                    : `Latest ${Math.min(data.orders.length, 8)} recorded orders.`}{" "}
+                  Open the order queue for all records and actions.
+                </p>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        {staff && <th>Customer</th>}
+                        <th>Order</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.orders.slice(0, 8).map((order) => (
+                        <tr key={order.id}>
+                          {staff && (
+                            <td data-label="Customer">
+                              {accountName(order.account_id)}
+                            </td>
+                          )}
+                          <td data-label="Order">
+                            <button
+                              type="button"
+                              className="record-link"
+                              title={order.id}
+                              onClick={() =>
+                                navigate({
+                                  page: "Orders",
+                                  section: "orders-queue",
+                                  orderId: order.id,
+                                })
+                              }
+                            >
+                              <code>{order.id.slice(0, 8)}</code>
+                            </button>
+                          </td>
+                          <td data-label="Status">
+                            <span
+                              className={`order-state ${order.state === "open" ? "is-open" : ""}`}
+                            >
+                              {order.state.replaceAll("_", " ")}
+                            </span>
+                          </td>
+                          <td data-label="Created">
+                            {new Date(order.created_at).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
-            <p className="chart-note">
-              {data.orderCounts.total === 0
-                ? "No orders recorded yet. Accepted orders will appear here."
-                : "Open and closed orders as a share of all accessible orders."}
-            </p>
+              </>
+            ) : (
+              <div className="dashboard-empty">
+                <ParcelGraphic />
+                <div>
+                  <h3>Your order book starts here</h3>
+                  <p>
+                    {canPrepare
+                      ? "Prepare an order to review products, quantities and availability before accepting it."
+                      : "Orders will appear here once they have been accepted."}
+                  </p>
+                  {canPrepare && (
+                    <button
+                      className="text-action"
+                      disabled={busy}
+                      onClick={prepare}
+                    >
+                      Prepare your first order <WorkspaceIcon name="arrow" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
-          {canReadInvoices && (
+        </div>
+        {!data.analytics && (
+          <div className="overview-charts">
             <section className="dashboard-card">
               <div className="section-title">
                 <div>
-                  <span className="section-kicker">Accounts receivable</span>
-                  <h2>Invoice balances</h2>
+                  <span className="section-kicker">Order book</span>
+                  <h2>Order activity</h2>
                 </div>
                 <button
                   className="text-action"
-                  onClick={() => navigate("Billing")}
+                  onClick={() => navigate("Orders")}
                 >
-                  View billing <WorkspaceIcon name="arrow" />
+                  View orders <WorkspaceIcon name="arrow" />
                 </button>
               </div>
-              <DistributionChart
-                label="Invoice balances"
-                unit="invoices"
-                segments={[
+              <div
+                className="order-chart"
+                role="img"
+                aria-label={`Order activity: ${number(data.orderCounts.total)} orders. Open: ${number(data.orderCounts.open)}; Closed: ${number(data.orderCounts.total - data.orderCounts.open)}`}
+              >
+                <div className="order-chart-total">
+                  <strong>{number(data.orderCounts.total)}</strong>
+                  <span>total orders</span>
+                </div>
+                {[
                   {
-                    label: "Balance due",
-                    value: invoice.unpaid,
-                    color: "#ba6b19",
+                    label: "Open",
+                    value: data.orderCounts.open,
+                    color: "#315fbd",
                   },
                   {
-                    label: "Settled",
-                    value: invoice.settled,
-                    color: "#23796d",
+                    label: "Closed",
+                    value: data.orderCounts.total - data.orderCounts.open,
+                    color: "#9daec5",
                   },
-                  {
-                    label: "Credit balance",
-                    value: invoice.credit,
-                    color: "#6671b7",
-                  },
-                ]}
-              />
+                ].map((segment) => (
+                  <div className="order-bar" key={segment.label}>
+                    <div>
+                      <span>{segment.label}</span>
+                      <strong>{number(segment.value)}</strong>
+                    </div>
+                    <div className="bar-track">
+                      <span
+                        style={{
+                          width: `${data.orderCounts.total ? (segment.value / data.orderCounts.total) * 100 : 0}%`,
+                          background: segment.color,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
               <p className="chart-note">
-                {invoice.total === 0
-                  ? "No invoices recorded yet. Issued invoices will appear here."
-                  : "Invoice counts by current balance, across all accessible invoices."}
+                {data.orderCounts.total === 0
+                  ? "No orders recorded yet. Accepted orders will appear here."
+                  : "Open and closed orders as a share of all accessible orders."}
               </p>
             </section>
-          )}
-        </div>
-      )}
+            {canReadInvoices && (
+              <section className="dashboard-card">
+                <div className="section-title">
+                  <div>
+                    <span className="section-kicker">Accounts receivable</span>
+                    <h2>Invoice balances</h2>
+                  </div>
+                  <button
+                    className="text-action"
+                    onClick={() => navigate("Billing")}
+                  >
+                    View billing <WorkspaceIcon name="arrow" />
+                  </button>
+                </div>
+                <DistributionChart
+                  label="Invoice balances"
+                  unit="invoices"
+                  segments={[
+                    {
+                      label: "Balance due",
+                      value: invoice.unpaid,
+                      color: "#ba6b19",
+                    },
+                    {
+                      label: "Settled",
+                      value: invoice.settled,
+                      color: "#23796d",
+                    },
+                    {
+                      label: "Credit balance",
+                      value: invoice.credit,
+                      color: "#6671b7",
+                    },
+                  ]}
+                />
+                <p className="chart-note">
+                  {invoice.total === 0
+                    ? "No invoices recorded yet. Issued invoices will appear here."
+                    : "Invoice counts by current balance, across all accessible invoices."}
+                </p>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+      <div
+        id={`${viewId}-reports-panel`}
+        role={data.analytics ? "tabpanel" : undefined}
+        aria-labelledby={data.analytics ? `${viewId}-reports-tab` : undefined}
+        hidden={!data.analytics || activeView !== "reports"}
+      >
+        {data.analytics ? (
+          <OperationalAnalytics
+            preferenceScope={preferenceScope}
+            customer={!staff}
+            data={data.analytics}
+            navigate={navigate}
+            warehouseName={(id) =>
+              String(
+                data.warehouses?.find((warehouse) => warehouse.id === id)
+                  ?.name ?? id,
+              )
+            }
+          />
+        ) : null}
+      </div>
       <p className="overview-footnote">
         Current snapshot · Totals respect your account and warehouse access. Use
         Refresh to load the latest figures.

@@ -3,8 +3,8 @@
 
 /* Needs attention: one tile per rule, count prominent, flagged tiles accented. */
 .overview .analytics-attention {
-  margin-top: var(--space-4);
-  padding: 20px 22px;
+  margin-top: 0;
+  padding: 14px 16px;
 }
 .overview .attention-head {
   display: flex;
@@ -29,26 +29,24 @@
 .overview .analytics-attention .attention-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-2);
   list-style: none;
   padding: 0;
-  margin: var(--space-4) 0 var(--space-3);
+  margin: var(--space-3) 0 var(--space-2);
 }
 .overview .analytics-attention li + li {
   margin: 0;
 }
 .overview .attention-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "label label"
-    "count arrow";
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) auto 16px;
+  grid-template-areas: "label count arrow";
+  align-items: center;
   gap: var(--space-2);
   width: 100%;
   height: 100%;
-  min-height: 88px;
-  padding: 14px 16px;
+  min-height: 56px;
+  padding: 10px 12px;
   text-align: left;
   background: #f8fafc;
   color: var(--ink);
@@ -63,14 +61,14 @@
 }
 .overview .attention-item > span {
   grid-area: label;
-  align-self: start;
+  align-self: center;
   font-size: var(--text-secondary);
   line-height: 1.45;
   color: #46576b;
 }
 .overview .attention-item > strong {
   grid-area: count;
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 650;
   letter-spacing: -0.6px;
   line-height: 1;
@@ -461,5 +459,97 @@
   .overview .report-card-footer .text-action,
   .overview .recent-orders .text-action {
     min-height: 44px;
+  }
+}
+
+/* One overview view and one supporting report view; each keeps its own state. */
+.overview .overview-views {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.overview .overview-views button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.overview .overview-views button[aria-selected="true"] {
+  border-bottom-color: #315fbd;
+  color: var(--ink);
+  font-weight: 650;
+}
+.overview [role="tabpanel"][hidden] {
+  display: none;
+}
+.overview .overview-intro {
+  margin: 12px 0;
+}
+.overview .overview-intro h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.overview .overview-metrics > .metric-card {
+  padding: 12px 16px;
+}
+.overview .overview-metrics > .metric-card > strong {
+  margin: 8px 0;
+  font-size: clamp(20px, 2vw, 26px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.overview .overview-workbench {
+  grid-template-columns: minmax(0, 1fr);
+  margin: 12px 0;
+}
+.overview .recent-orders {
+  padding: 14px 16px;
+}
+.overview .report-toolbar {
+  margin: 0 0 12px;
+  gap: 12px;
+}
+.overview .report-toolbar .section-kicker {
+  display: none;
+}
+.overview .report-toolbar h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.overview .report-grid {
+  gap: 12px;
+}
+.overview .report-card {
+  gap: 12px;
+  padding: 16px;
+}
+.overview .financial-report-filters {
+  padding: 12px;
+  gap: 10px;
+}
+.overview .financial-metrics {
+  margin: 12px 0;
+  gap: 8px;
+}
+.overview .financial-metrics > div {
+  padding: 10px 12px;
+}
+.overview .financial-metrics strong {
+  margin: 6px 0;
+  font-size: clamp(18px, 2vw, 24px);
+}
+@media (max-width: 760px) {
+  .overview .analytics-attention .attention-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .overview .attention-item {
+    min-height: 56px;
+  }
+  .overview .overview-metrics > .metric-card {
+    padding: 12px;
   }
 }

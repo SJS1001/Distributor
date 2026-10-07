@@ -118,24 +118,28 @@ test("own sessions show a current marker and readable expiry on desktop and phon
   }
 });
 
-test("phone Account topics move keyboard focus to commercial, data location and sign-in sections", async ({
+test("phone Account tabs expose commercial, data location and sign-in sections", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, true);
   await navigateWorkspace(page, "Customers");
-  const topics = page.getByRole("navigation", {
-    name: "Account topics",
+  const topics = page.getByRole("tablist", {
+    name: "Customer workspace sections",
     exact: true,
   });
-  for (const [label, id] of [
-    ["Commercial account", "account-commercial"],
-    ["Data location", "account-data-location"],
-    ["Sign-in security", "account-sign-in"],
+  for (const label of [
+    "Overview & terms",
+    "Data location",
+    "Sign-in security",
   ]) {
-    await topics.getByRole("button", { name: label, exact: true }).click();
-    await expect(page.locator(`#${id}`)).toBeFocused();
-    await expect(page.locator(`#${id}`)).toBeInViewport();
+    const tab = topics.getByRole("tab", { name: label, exact: true });
+    await tab.click();
+    await expect(tab).toBeFocused();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("tabpanel", { name: label, exact: true }),
+    ).toBeVisible();
   }
   await noHorizontalOverflow(page);
 });

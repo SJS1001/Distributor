@@ -22,15 +22,7 @@ test("phone shop preserves local feedback, catalog recovery and cart review prio
   await expect(
     page.getByRole("searchbox", { name: "Search products" }),
   ).toBeVisible();
-  expect(
-    await page
-      .locator(".sf-search")
-      .evaluate((el) => el.getBoundingClientRect().top),
-  ).toBeLessThan(
-    await page
-      .locator(".sf-showcase")
-      .evaluate((el) => el.getBoundingClientRect().top),
-  );
+  await expect(page.locator(".sf-showcase")).toHaveCount(0);
   await page
     .getByRole("searchbox", { name: "Search products" })
     .fill("definitely-no-such-synthetic-product");

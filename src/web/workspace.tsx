@@ -102,12 +102,16 @@ export function WorkspaceNavigation({
   signOut: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const rememberedPages = useRef<Record<string, string>>({});
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const group = workspaceGroups.find((item) => item.pages.includes(page));
-    if (group && pages.includes(page))
-      rememberedPages.current[group.name] = page;
-  }, [page, pages]);
+    if (group) setOpenGroups((current) => ({ ...current, [group.name]: true }));
+  }, [page]);
+  const visit = (destination: string) => {
+    if (destination !== page) navigate(destination);
+    setExpanded(false);
+    document.getElementById("workspace-title")?.focus();
+  };
   if (role === "buyer")
     return (
       <header className="customer-header">
@@ -192,56 +196,58 @@ export function WorkspaceNavigation({
         aria-label="Workspace"
         className={expanded ? "is-expanded" : ""}
       >
-        {(role === "buyer"
-          ? pages
-              .filter((p) => p !== "Returns")
-              .map((p) => ({
-                name: p === "Billing" ? "Invoices & payments" : p,
-                pages: [p],
-              }))
-          : workspaceGroups
-        ).map((group) => {
+        {workspaceGroups.map((group, index) => {
           const visible = group.pages.filter((p) => pages.includes(p));
-          return (
-            visible.length > 0 && (
+          if (!visible.length) return null;
+          if (visible.length === 1)
+            return (
               <button
                 key={group.name}
-                aria-current={group.pages.includes(page) ? "true" : undefined}
-                onClick={() => {
-                  const remembered = rememberedPages.current[group.name];
-                  const destination =
-                    remembered && visible.includes(remembered)
-                      ? remembered
-                      : visible[0];
-                  if (destination && destination !== page)
-                    navigate(destination);
-                  setExpanded(false);
-                  document.getElementById("workspace-title")?.focus();
-                }}
+                aria-current={page === visible[0] ? "page" : undefined}
+                onClick={() => visit(visible[0]!)}
               >
-                <WorkspaceIcon name={group.pages[0] ?? "Overview"} />
-                <span>{group.name}</span>
+                <WorkspaceIcon name={visible[0]!} />
+                <span>{visible[0]}</span>
               </button>
-            )
+            );
+          const open = openGroups[group.name] ?? group.pages.includes(page);
+          return (
+            <div className="workspace-nav-group" key={group.name}>
+              <button
+                className="workspace-group-toggle"
+                aria-expanded={open}
+                aria-controls={`workspace-group-${index}`}
+                onClick={() =>
+                  setOpenGroups((current) => ({
+                    ...current,
+                    [group.name]: !open,
+                  }))
+                }
+              >
+                <span>{group.name}</span>
+                <span aria-hidden="true">{open ? "−" : "+"}</span>
+              </button>
+              <nav
+                id={`workspace-group-${index}`}
+                aria-label={`${group.name} pages`}
+                hidden={!open}
+              >
+                {visible.map((destination) => (
+                  <button
+                    key={destination}
+                    aria-current={page === destination ? "page" : undefined}
+                    onClick={() => visit(destination)}
+                  >
+                    <WorkspaceIcon name={destination} />
+                    <span>{destination}</span>
+                  </button>
+                ))}
+              </nav>
+            </div>
           );
         })}
       </nav>
       <div className="sidebar-bottom">
-        {["admin", "commercial"].includes(role) &&
-          pages.includes("Catalog") && (
-            <button
-              className="sidebar-resource-link"
-              aria-current={page === "Catalog" ? "page" : undefined}
-              onClick={() => {
-                navigate("Catalog");
-                setExpanded(false);
-                document.getElementById("workspace-title")?.focus();
-              }}
-            >
-              <WorkspaceIcon name="Catalog" />
-              <span>Catalog · Add products</span>
-            </button>
-          )}
         <a className="sidebar-resource-link" href="#products">
           <WorkspaceIcon name="Catalog" />
           <span>GREE product library</span>
@@ -266,76 +272,6 @@ export function WorkspaceNavigation({
         <button onClick={signOut}>Sign out</button>
       </div>
     </aside>
-  );
-}
-
-/** Page destinations styled as tabs; navigation semantics keep every page reachable. */
-export function WorkspaceTabs({
-  pages,
-  page,
-  navigate,
-}: {
-  pages: string[];
-  page: string;
-  navigate: (page: string) => void;
-}) {
-  const nav = useRef<HTMLElement>(null);
-  useEffect(() => {
-    nav.current
-      ?.querySelector<HTMLElement>('[aria-current="page"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [page]);
-  if (pages.includes("Shop")) return null;
-  const group = workspaceGroups.find((item) => item.pages.includes(page));
-  if (!group) return null;
-  const visible = group.pages.filter((item) => pages.includes(item));
-  // A single tab only repeats the page heading; it offers no navigation.
-  if (visible.length < 2) return null;
-  return (
-    <nav
-      ref={nav}
-      className="workspace-tabs"
-      aria-label={`${group.name} pages`}
-      title="More pages may be available by scrolling across"
-    >
-      {visible.map((item) => (
-        <button
-          key={item}
-          type="button"
-          aria-current={page === item ? "page" : undefined}
-          onClick={() => {
-            if (item !== page) navigate(item);
-          }}
-          onKeyDown={(event) => {
-            const buttons = Array.from(
-              event.currentTarget.parentElement!.querySelectorAll("button"),
-            );
-            const index = buttons.indexOf(event.currentTarget);
-            const next =
-              event.key === "ArrowRight"
-                ? (index + 1) % buttons.length
-                : event.key === "ArrowLeft"
-                  ? (index - 1 + buttons.length) % buttons.length
-                  : event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? buttons.length - 1
-                      : null;
-            if (next !== null) {
-              event.preventDefault();
-              buttons[next]?.focus();
-              buttons[next]?.scrollIntoView({
-                block: "nearest",
-                inline: "nearest",
-              });
-            }
-          }}
-        >
-          <WorkspaceIcon name={item} />
-          {item}
-        </button>
-      ))}
-    </nav>
   );
 }
 
@@ -383,49 +319,53 @@ export function PageSections({
   }, [selectedSection, active]);
   return (
     <PageSectionContext.Provider value={{ active, items }}>
-      <p className="page-sections-scroll-hint">
-        Scroll sideways for more sections.
-      </p>
-      <div
-        className="page-sections"
-        role="tablist"
-        aria-label={label}
-        title="More sections may be available by scrolling across"
-        ref={tabs}
-      >
-        {items.map((item, index) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            id={`${item.id}-tab`}
-            aria-controls={`${item.id}-panel`}
-            aria-selected={active === item.id}
-            tabIndex={active === item.id ? 0 : -1}
-            onClick={() => choose(item.id)}
-            onKeyDown={(event) => {
-              const next =
-                event.key === "ArrowRight"
-                  ? (index + 1) % items.length
-                  : event.key === "ArrowLeft"
-                    ? (index - 1 + items.length) % items.length
-                    : event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? items.length - 1
-                        : null;
-              if (next === null || !items[next]) return;
-              event.preventDefault();
-              choose(items[next].id);
-              tabs.current
-                ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-                [next]?.focus();
-            }}
+      {items.length > 1 && (
+        <>
+          <p className="page-sections-scroll-hint">
+            Scroll sideways for more sections.
+          </p>
+          <div
+            className="page-sections"
+            role="tablist"
+            aria-label={label}
+            title="More sections may be available by scrolling across"
+            ref={tabs}
           >
-            {item.label}
-          </button>
-        ))}
-      </div>
+            {items.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                id={`${item.id}-tab`}
+                aria-controls={`${item.id}-panel`}
+                aria-selected={active === item.id}
+                tabIndex={active === item.id ? 0 : -1}
+                onClick={() => choose(item.id)}
+                onKeyDown={(event) => {
+                  const next =
+                    event.key === "ArrowRight"
+                      ? (index + 1) % items.length
+                      : event.key === "ArrowLeft"
+                        ? (index - 1 + items.length) % items.length
+                        : event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? items.length - 1
+                            : null;
+                  if (next === null || !items[next]) return;
+                  event.preventDefault();
+                  choose(items[next].id);
+                  tabs.current
+                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                    [next]?.focus();
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {children}
     </PageSectionContext.Provider>
   );
@@ -444,9 +384,12 @@ export function PageSection({
   return (
     <div
       className="page-tab-panel"
-      role="tabpanel"
+      role={sections.items.length > 1 ? "tabpanel" : "region"}
       id={`${id}-panel`}
-      aria-labelledby={`${id}-tab`}
+      aria-labelledby={sections.items.length > 1 ? `${id}-tab` : undefined}
+      aria-label={
+        sections.items.length === 1 ? sections.items[0]?.label : undefined
+      }
       tabIndex={0}
       hidden={sections.active !== id}
     >

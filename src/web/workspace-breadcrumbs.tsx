@@ -9,6 +9,8 @@ import "./workspace-breadcrumbs.css";
 const sectionNames: Record<string, string> = {
   "admin-access": "Staff and buyer access",
   "admin-applications": "Trade applications",
+  "account-data-location": "Data location",
+  "account-sign-in": "Sign-in security",
   "customer-accounts": "Accounts",
   "customer-purchasing": "Purchasing access",
   "customer-pricing": "Pricing",

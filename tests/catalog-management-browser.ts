@@ -1,5 +1,6 @@
 import { createCanvas } from "@napi-rs/canvas";
 import { test, expect, type Page } from "@playwright/test";
+import { navigateWorkspace } from "./workspace-navigation.ts";
 async function login(page: Page, email: string) {
   await page.goto("/#sign-in");
   await page.getByLabel("Email", { exact: true }).fill(email);
@@ -113,9 +114,7 @@ test("commercial product creation offers readable resources with exact failed-re
   browserName,
 }) => {
   await login(page, "catalog-commercial@example.test");
-  await page
-    .getByRole("button", { name: "Catalog · Add products", exact: true })
-    .click();
+  await navigateWorkspace(page, "Catalog");
   let reads = 0;
   await page.route("**/api/catalog/products/*/review", async (route) => {
     if (++reads === 1)
@@ -150,7 +149,7 @@ test("buyer has no catalog-management entry from workspace or public Shop", asyn
 }) => {
   await login(page, "catalog-buyer@example.test");
   await expect(
-    page.getByRole("button", { name: "Catalog · Add products", exact: true }),
+    page.getByRole("button", { name: "Catalog", exact: true }),
   ).toHaveCount(0);
   await page.goto("/#products");
   await expect(
@@ -174,9 +173,7 @@ test("explicit library image draft stays private until published and buyer loads
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page, "admin@example.test");
-  await page
-    .getByRole("button", { name: "Catalog · Add products", exact: true })
-    .click();
+  await navigateWorkspace(page, "Catalog");
   await createProduct(page, `FLOW-LIBRARY-${browserName}`);
   const dialog = page.getByRole("dialog", {
     name: `Manage FLOW-LIBRARY-${browserName}`,
