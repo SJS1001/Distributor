@@ -11,7 +11,11 @@ Owner decision 2 in the [owner guide](OWNER-GUIDE-REMAINING-WORK-2026-10-06.md),
   - the journal expired-session decision (`tests/stock-journal-browser-journey.ts`).
 
   Each expected the stale panel's alert after the server ended the session. User access updates always end that user's sessions (`updateUser` in `src/server/iam.ts`). Both still prove that the refused attempt has no effect and that the retained `localStorage` attempt survives.
-- **Existing behaviour, unchanged.** The notice stays visible next to a later wrong-password error until sign-in succeeds.
+- **Follow-up (owner request, same day).** The next sign-in attempt now clears the notice. A wrong password shows only the login error, and an earlier notice cannot carry into the workspace after a successful sign-in. Verification for this follow-up:
+  - `npm test`: 6,060 passed, 0 failed.
+  - 27 browser configs passed. In the first attempt the main suite never started, because machine load near 50 timed out its server.
+  - On rerun, the main suite passed 342 of 343. The failure was the customer-pricing recovery journey: `route.abort` reported "Route is already handled!" in its own interception.
+  - That journey passed 3 of 3 targeted reruns on the same build and does not use the sign-in form. It is recorded as an intermittent test-harness race, not a fix.
 
 Verification, run serially on the same workstation and toolchain, against the working tree that became this commit:
 

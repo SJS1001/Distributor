@@ -45,8 +45,8 @@ test("a session the server refuses returns staff and buyers to sign-in", async (
       ).toBeVisible();
       // One notice only; the refused read does not add its own error.
       await expect(page.getByRole("alert")).toHaveCount(0);
-      // A wrong password there is a login error; it never adds a second
-      // session-ended notice (the existing one stays until sign-in).
+      // The next sign-in attempt replaces the notice; a wrong password shows
+      // only the login error.
       await page
         .getByLabel("Email", { exact: true })
         .fill("unknown-session-user@example.test");
@@ -55,7 +55,7 @@ test("a session the server refuses returns staff and buyers to sign-in", async (
         .fill("not-the-test-password");
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expect(page.getByText(/Invalid credentials\./)).toBeVisible();
-      await expect(page.getByText(ended, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(ended, { exact: true })).toHaveCount(0);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

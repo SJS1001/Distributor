@@ -1916,6 +1916,8 @@ function App() {
           e.preventDefault();
           setBusy(true);
           setError("");
+          // A sign-in attempt replaces any earlier notice, such as an ended session.
+          setNotice("");
           try {
             const s = await request("/api/login", {
               method: "POST",
