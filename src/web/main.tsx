@@ -2207,7 +2207,7 @@ function App() {
       )}
       <p>
         {pilotPrefilled
-          ? `Demonstration ${publicRoute === "customer-sign-in" ? "customer" : "administrator"} details are filled in. Click Sign in to continue.`
+          ? `${publicRoute === "customer-sign-in" ? "Customer" : "Administrator"} details are filled in. Select Sign in to continue.`
           : "Enter the email and password for your account."}
       </p>
       <form

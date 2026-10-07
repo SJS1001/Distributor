@@ -18,6 +18,20 @@ const GreeProductLibrary = lazy(() =>
   })),
 );
 
+// Present single- and multi-zone equipment together without losing either range.
+const homepageCategories = [
+  {
+    ...preview.categories[0]!,
+    id: "ductless",
+    title: "Ductless mini-splits",
+    count: preview.categories
+      .filter((c) => ["mini-splits", "multi-zone-mini-splits"].includes(c.id))
+      .reduce((total, c) => total + c.count, 0),
+  },
+  { ...preview.categories[1]!, title: "Central heat pumps" },
+  { ...preview.categories[3]!, title: "Commercial systems" },
+];
+
 export type PublicRoute =
   | "products"
   | "product"
@@ -114,36 +128,11 @@ export function PublicSite({
       >
         Skip to content
       </a>
-      <div className="public-utility">
-        <span>Canadian HVAC trade supply</span>
-        {!signedIn && <a href="#apply">Become a trade customer →</a>}
-      </div>
       <header className="public-header">
         <a href="#home" className="public-wordmark" aria-label="dstrbtr home">
           dstrbtr<span className="public-brand-dot">.</span>
         </a>
-        <span className="public-header-descriptor">
-          HEATING & COOLING
-          <br />
-          FOR THE CANADIAN TRADE
-        </span>
         <nav aria-label="Public navigation">
-          <a
-            href="#products"
-            aria-current={
-              route === "products" || route === "product" ? "page" : undefined
-            }
-          >
-            Products
-          </a>
-          {!signedIn && (
-            <a
-              href="#apply"
-              aria-current={route === "apply" ? "page" : undefined}
-            >
-              Trade application
-            </a>
-          )}
           {signedIn ? (
             <>
               {catalogHref && <a href={catalogHref}>Manage catalog</a>}
@@ -159,12 +148,7 @@ export function PublicSite({
           ) : (
             <>
               <a
-                href="#admin-sign-in"
-                aria-current={route === "admin-sign-in" ? "page" : undefined}
-              >
-                Administration
-              </a>
-              <a
+                className="public-entry-sign-in"
                 href="#customer-sign-in"
                 aria-current={
                   route === "customer-sign-in" || route === "sign-in"
@@ -172,7 +156,14 @@ export function PublicSite({
                     : undefined
                 }
               >
-                Customer sign in <span aria-hidden="true">→</span>
+                Sign in
+              </a>
+              <a
+                className="public-entry-apply"
+                href="#apply"
+                aria-current={route === "apply" ? "page" : undefined}
+              >
+                Apply for a trade account
               </a>
             </>
           )}
@@ -207,49 +198,36 @@ export function PublicSite({
           <>
             <section className="public-hero">
               <div className="public-hero-copy">
-                <p className="public-eyebrow">GREE HEATING & COOLING SYSTEMS</p>
+                <p className="public-eyebrow">GREE HEATING & COOLING</p>
                 <h1>
-                  Comfort starts
+                  Equipment for your
                   <br />
-                  with the right system.
+                  next installation.
                 </h1>
                 <p className="public-lead">
-                  Explore equipment for your next installation. Product
-                  information, technical documents and a trade account built
-                  around your business.
+                  Explore systems, specifications and technical documents.
+                  <br />
+                  Sign in to see your account pricing and order.
                 </p>
                 <div className="public-hero-actions">
                   <a href="#products" className="public-primary">
                     Explore products <span aria-hidden="true">→</span>
                   </a>
                 </div>
-                <div className="public-hero-assurance">
-                  <span>Residential & commercial</span>
-                  <span>Manufacturer documentation</span>
-                </div>
               </div>
               <FeaturedCarousel />
             </section>
-            <div className="public-equipment-strip">
-              <span>DUCTLESS MINI-SPLITS</span>
-              <span>CENTRAL HEAT PUMPS</span>
-              <span>COMMERCIAL SYSTEMS</span>
-              <a href="#products">View the full range →</a>
-            </div>
             <section className="public-products-section">
               <div className="public-section-heading">
                 <div>
-                  <p className="public-eyebrow">
-                    EQUIPMENT FOR EVERY APPLICATION
-                  </p>
                   <h2>Find your system.</h2>
                 </div>
                 <a href="#products">
-                  Browse all products <span aria-hidden="true">→</span>
+                  All products <span aria-hidden="true">→</span>
                 </a>
               </div>
               <div className="public-category-grid">
-                {preview.categories.map((category) => (
+                {homepageCategories.map((category) => (
                   <a
                     key={category.id}
                     className="public-category-card"
@@ -274,128 +252,6 @@ export function PublicSite({
                     </p>
                   </a>
                 ))}
-              </div>
-            </section>
-            <section
-              className="public-access"
-              aria-labelledby="public-access-title"
-            >
-              <div className="public-access-heading">
-                <p className="public-eyebrow">YOUR TRADE WORKSPACE</p>
-                <h2 id="public-access-title">
-                  Everything you need to get to work.
-                </h2>
-              </div>
-              <div
-                className={`public-access-paths${signedIn ? " is-signed-in" : ""}`}
-              >
-                {sessionAudience === "staff" && (
-                  <a
-                    className="public-access-link public-scanner-tool"
-                    href="#scanner"
-                  >
-                    <span className="public-index">WAREHOUSE TOOL</span>
-                    <span className="public-access-title">
-                      Barcode scanner <span aria-hidden="true">→</span>
-                    </span>
-                    <span className="public-access-description">
-                      Open it here or send the link to your phone.
-                    </span>
-                  </a>
-                )}
-
-                <a
-                  className="public-access-link public-customer"
-                  href={signedIn ? accountHref : "#customer-sign-in"}
-                >
-                  <span className="public-index">
-                    {signedIn ? "" : "01 / "}
-                    {sessionAudience === "staff"
-                      ? "DISTRIBUTOR STAFF"
-                      : signedIn
-                        ? "YOUR ACCOUNT"
-                        : "EXISTING CUSTOMERS"}
-                  </span>
-                  <span className="public-access-title">
-                    {signedIn ? accountLabel : "Customer sign in"}{" "}
-                    <span aria-hidden="true">→</span>
-                  </span>
-                  <span className="public-access-description">
-                    {sessionAudience === "staff"
-                      ? "Return to your administration workspace."
-                      : "Open your catalog, account pricing and orders."}
-                  </span>
-                </a>
-                {!signedIn && (
-                  <a className="public-access-link" href="#apply">
-                    <span className="public-index">
-                      02 / NEW TRADE CUSTOMERS
-                    </span>
-                    <span className="public-access-title">
-                      Apply for a trade account{" "}
-                      <span aria-hidden="true">→</span>
-                    </span>
-                    <span className="public-access-description">
-                      Send your business details for review.
-                    </span>
-                  </a>
-                )}
-                {!signedIn && (
-                  <div className="public-staff-entrances">
-                    <a
-                      className="public-access-link public-admin"
-                      href="#admin-sign-in"
-                    >
-                      <span className="public-index">
-                        03 / DISTRIBUTOR STAFF
-                      </span>
-                      <span className="public-access-title">
-                        Administration entrance{" "}
-                        <span aria-hidden="true">→</span>
-                      </span>
-                      <span className="public-access-description">
-                        Sign in to your staff workspace.
-                      </span>
-                    </a>
-                    <a className="public-scanner-link" href="#scanner">
-                      Barcode scanner <span aria-hidden="true">→</span>
-                      <small>
-                        Open it here or send the link to your phone.
-                      </small>
-                    </a>
-                  </div>
-                )}
-              </div>
-            </section>
-            <section className="public-trade-note">
-              <div>
-                <p className="public-eyebrow">ACCOUNT ACCESS</p>
-                <h2>
-                  Product knowledge.
-                  <br />
-                  Business confidence.
-                </h2>
-              </div>
-              <div>
-                <p>
-                  Browse the public manufacturer library to compare equipment,
-                  view product photography and download supporting documents.
-                  Your approved account gives you the equipment, pricing and
-                  purchasing options available to your business.
-                </p>
-                {!signedIn && (
-                  <>
-                    <p>
-                      New to dstrbtr? Applications are reviewed before access is
-                      granted. If approved, an administrator provides a private
-                      invitation to activate your account.
-                    </p>
-                    <a href="#apply" className="public-text-link">
-                      Apply for a trade account{" "}
-                      <span aria-hidden="true">→</span>
-                    </a>
-                  </>
-                )}
               </div>
             </section>
           </>
@@ -561,15 +417,14 @@ export function PublicSite({
           Canadian HVAC trade
           <br />
           Equipment information · Business purchasing by approved account
-          <br />
-          <small className="demo-notice">
-            Demonstration site — prices and stock are illustrative.
-          </small>
         </p>
-        <a href={signedIn ? accountHref : "#admin-sign-in"}>
-          {signedIn ? accountLabel : "Administration entrance"}{" "}
-          <span aria-hidden="true">→</span>
-        </a>
+        <nav aria-label="Public tools">
+          <a href="#scanner">Barcode scanner</a>
+          <a href={signedIn ? accountHref : "#admin-sign-in"}>
+            {signedIn ? accountLabel : "Administration entrance"}{" "}
+            <span aria-hidden="true">→</span>
+          </a>
+        </nav>
       </footer>
     </div>
   );
@@ -935,54 +790,77 @@ function FeaturedCarousel() {
         </div>
       </a>
       {featured.length > 1 && (
-        <>
-          <div className="public-feature-controls">
-            <button
-              type="button"
-              onClick={() =>
-                setIndex((i) => (i + featured.length - 1) % featured.length)
-              }
-            >
-              ← Previous
-            </button>
-            <span aria-live={paused || reducedMotion ? "polite" : "off"}>
-              {index + 1} of {featured.length}
-            </span>
-            <button
-              type="button"
-              onClick={() => setIndex((i) => (i + 1) % featured.length)}
-            >
-              Next →
-            </button>
-            <button
-              type="button"
-              disabled={reducedMotion}
-              onClick={() => setPaused((value) => !value)}
-            >
-              {reducedMotion
-                ? "Rotation off"
-                : paused
-                  ? "Play rotation"
-                  : "Pause rotation"}
-            </button>
-          </div>
-          {reducedMotion && (
-            <small className="public-motion-note">
-              Rotation is off for your reduced motion preference.
-            </small>
-          )}
+        <div className="public-feature-controls">
+          <button
+            type="button"
+            aria-label="Previous system"
+            title="Previous system"
+            onClick={() =>
+              setIndex((i) => (i + featured.length - 1) % featured.length)
+            }
+          >
+            <span aria-hidden="true">←</span>
+          </button>
           <div className="public-feature-dots">
             {featured.map((p, i) => (
               <button
                 key={p.id}
                 type="button"
                 aria-label={`Show ${p.title}`}
+                title={p.title}
                 aria-current={i === index ? "true" : undefined}
                 onClick={() => setIndex(i)}
               />
             ))}
           </div>
-        </>
+          <button
+            type="button"
+            aria-label="Next system"
+            title="Next system"
+            onClick={() => setIndex((i) => (i + 1) % featured.length)}
+          >
+            <span aria-hidden="true">→</span>
+          </button>
+          <button
+            type="button"
+            disabled={reducedMotion}
+            aria-label={
+              reducedMotion
+                ? "Rotation off"
+                : paused
+                  ? "Play rotation"
+                  : "Pause rotation"
+            }
+            title={
+              reducedMotion
+                ? "Rotation is off for your reduced motion preference"
+                : paused
+                  ? "Play rotation"
+                  : "Pause rotation"
+            }
+            onClick={() => setPaused((value) => !value)}
+          >
+            <svg
+              aria-hidden="true"
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="currentColor"
+            >
+              {paused && !reducedMotion ? (
+                <path d="M5 3l10 6-10 6z" />
+              ) : (
+                <path d="M4 3h3v12H4zM11 3h3v12h-3z" />
+              )}
+            </svg>
+          </button>
+          <span
+            className="public-visually-hidden"
+            aria-live={paused || reducedMotion ? "polite" : "off"}
+          >
+            {index + 1} of {featured.length}
+          </span>
+        </div>
       )}
     </div>
   );

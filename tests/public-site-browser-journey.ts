@@ -116,7 +116,7 @@ test("public site: mobile application, approval boundary and sign-in navigation"
   await page.goto("/");
   await expect(
     page.getByRole("heading", {
-      name: /Comfort starts.*with the right system/,
+      name: /Equipment for your.*next installation/,
     }),
   ).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
@@ -168,8 +168,8 @@ test("public entrances are distinct, fit desktop and phone, and keep legacy sign
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
-    const paths = page.locator(".public-access-paths");
-    await expect(paths.getByRole("link")).toHaveCount(4);
+    const paths = page.locator(".public-header, .public-footer");
+    await expect(page.locator(".public-header nav a")).toHaveCount(2);
     await expect(page.locator("body")).toHaveJSProperty("scrollWidth", width);
     for (const [href, heading] of [
       ["#customer-sign-in", "Customer sign in."],
@@ -592,13 +592,12 @@ test("bundled camera decoder reads a real QR frame without native BarcodeDetecto
           draw();
           const stream = canvas.captureStream(10);
           const timer = setInterval(draw, 100);
-          (window as any).scannerStopped = false;
+          (window as any).scannerStream = stream;
           for (const track of stream.getTracks()) {
             const stop = track.stop.bind(track);
             track.stop = () => {
               stop();
               clearInterval(timer);
-              (window as any).scannerStopped = true;
             };
           }
           return stream;
@@ -612,7 +611,17 @@ test("bundled camera decoder reads a real QR frame without native BarcodeDetecto
   await expect(
     page.getByText("Detected: GREE-SAMPLE-CAMERA-001"),
   ).toBeVisible();
-  expect(await page.evaluate(() => (window as any).scannerStopped)).toBe(true);
+  // WebKit can return different JS wrappers for the same native track. Verify
+  // the actual stream state instead of observing an override on one wrapper.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).scannerStream
+          .getTracks()
+          .every((track: MediaStreamTrack) => track.readyState === "ended"),
+      ),
+    )
+    .toBe(true);
   await expect(
     page.getByLabel("Barcode or serial number", { exact: true }),
   ).toHaveValue("");
@@ -767,7 +776,7 @@ test("public navigation follows the actual customer or staff session and logout 
     navigation.getByRole("link", { name: "My workspace", exact: true }),
   ).toHaveCount(0);
   await expect(
-    navigation.getByRole("link", { name: "Trade application" }),
+    navigation.getByRole("link", { name: "Apply for a trade account" }),
   ).toBeVisible();
   await page.goto("/#products");
   await expect(
@@ -833,8 +842,8 @@ test("public navigation follows the actual customer or staff session and logout 
       });
     }
     await page.setViewportSize({ width: 1280, height: 720 });
-    await navigation
-      .getByRole("link", { name: "Products", exact: true })
+    await page
+      .getByRole("link", { name: "Explore products", exact: false })
       .click();
     await expect(
       page.getByRole("link", { name: "View account pricing" }),
@@ -863,7 +872,7 @@ test("public navigation follows the actual customer or staff session and logout 
       navigation.getByRole("button", { name: "Sign out", exact: true }),
     ).toHaveCount(0);
     await expect(
-      navigation.getByRole("link", { name: "Customer sign in" }),
+      navigation.getByRole("link", { name: "Sign in", exact: true }),
     ).toBeVisible();
     await expect(
       navigation.getByRole("link", { name: accountLabel!, exact: true }),
@@ -885,7 +894,7 @@ test("public navigation follows the actual customer or staff session and logout 
     await expect(page).toHaveURL(productUrl);
     await expect(page.locator(".gree-detail h1")).toHaveText(productName);
     await expect(
-      navigation.getByRole("link", { name: "Customer sign in" }),
+      navigation.getByRole("link", { name: "Sign in", exact: true }),
     ).toBeVisible();
     await page.goto("/#products");
     await expect(
@@ -940,7 +949,7 @@ test("public sign out retains a failed session for retry and disables duplicate 
   expect(requests).toBe(2);
   release();
   await expect(
-    navigation.getByRole("link", { name: "Customer sign in" }),
+    navigation.getByRole("link", { name: "Sign in", exact: true }),
   ).toBeVisible();
   expect((await page.request.get("/api/session")).status()).toBe(401);
 });
@@ -1150,9 +1159,12 @@ test("public pricing entry preserves equipment for guests and staff and reaches 
   await page.goto("/#home");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    const container = await page.locator(".public-access-paths").boundingBox();
-    const card = await page.locator(".public-customer").boundingBox();
-    expect(Math.abs(container!.width - card!.width)).toBeLessThan(2);
+    await expect(
+      page.locator('.public-header a[href="#page=Shop"]'),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(width);
     await page.screenshot({
       path: testInfo.outputPath(`buyer-card-${width}.png`),
       fullPage: true,
@@ -1175,7 +1187,7 @@ test("public pricing entry preserves equipment for guests and staff and reaches 
   await expect(
     page
       .getByRole("navigation", { name: "Public navigation", exact: true })
-      .getByRole("link", { name: "Customer sign in", exact: false }),
+      .getByRole("link", { name: "Sign in", exact: true }),
   ).toBeVisible();
   await page.goto("/#admin-sign-in");
   await page.getByLabel("Email", { exact: true }).fill("admin@example.test");

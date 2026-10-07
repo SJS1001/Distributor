@@ -23,6 +23,22 @@ export type GreeProduct = {
 };
 export const greeProducts = catalogData.products as GreeProduct[];
 export const greeCategories = catalogData.categories;
+const browseCategories = [
+  {
+    id: "ductless",
+    title: "Ductless mini-splits",
+    productIds: [
+      ...new Set(
+        greeCategories
+          .filter((c) =>
+            ["mini-splits", "multi-zone-mini-splits"].includes(c.id),
+          )
+          .flatMap((c) => c.productIds),
+      ),
+    ],
+  },
+  ...greeCategories,
+];
 export const productHref = (product: GreeProduct) =>
   `#product=${encodeURIComponent(product.id)}`;
 function currentHash() {
@@ -119,7 +135,9 @@ export function GreeProductLibrary({
         </a>
       </section>
     );
-  const selectedCategory = greeCategories.find((item) => item.id === category);
+  const selectedCategory = browseCategories.find(
+    (item) => item.id === category,
+  );
   const visible = greeProducts.filter(
     (product) =>
       (!selectedCategory || selectedCategory.productIds.includes(product.id)) &&
@@ -169,7 +187,7 @@ export function GreeProductLibrary({
             }
           >
             <option value="all">All products</option>
-            {greeCategories.map((item) => (
+            {browseCategories.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.title}
               </option>
