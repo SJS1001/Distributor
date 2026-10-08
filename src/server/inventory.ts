@@ -166,6 +166,7 @@ export class Inventory {
     private identity: Identity,
     startupMaintenance = true,
     private incomingInspection?: (actor: Actor, unitId: string) => void,
+    private warrantyCustodyGuard?: (actor: Actor, unitId: string) => void,
   ) {
     this.store = database.owned("inventory");
     this.store.migrate(incomingSupplyInitialize("inventory"));
@@ -740,6 +741,7 @@ export class Inventory {
     actor = this.custodyActor(actor, []);
     const u = this.unit(actor, input.unitId);
     site(actor, u.warehouse_id);
+    this.warrantyCustodyGuard?.(actor, u.id);
     check(
       this.purchaseOrigin(actor, u.id) === input.receiptId,
       "PROVENANCE",
@@ -1393,6 +1395,7 @@ export class Inventory {
       },
       () => {
         const u = this.unit(actor, input.unitId);
+        this.warrantyCustodyGuard?.(actor, u.id);
         check(
           u.revision === input.revision,
           "REVISION",
@@ -1455,6 +1458,7 @@ export class Inventory {
     const u = this.unit(actor, input.unitId),
       count = integer(input.count, "count", 0, 100000),
       reason = text(input.reason, "count reason", 1000);
+    this.warrantyCustodyGuard?.(actor, u.id);
     integer(input.revision, "stock revision", 1);
     check(
       u.revision === input.revision,
@@ -1855,6 +1859,7 @@ export class Inventory {
         const u = this.unit(actor, r.unit_id);
         let revision = u.revision;
         if (input.decision === "approve") {
+          this.warrantyCustodyGuard?.(actor, u.id);
           check(
             u.revision === r.stock_revision,
             "REVISION",
@@ -2692,6 +2697,7 @@ export class Inventory {
       () => {
         const u = this.unit(actor, input.unitId),
           qty = integer(input.quantity, "transfer quantity", 1, 100000);
+        this.warrantyCustodyGuard?.(actor, u.id);
         this.warehouse(actor, input.destinationId);
         check(
           input.destinationId !== u.warehouse_id,
@@ -3724,13 +3730,65 @@ export class Inventory {
       "STATE",
       "Unit is not currently in sold custody.",
     );
+    return this.previousSoldCustody(actor, unitId);
+  }
+  // Warranty uses the last completed ownership while equipment is in repair.
+  previousSoldCustody(actor: Actor, unitId: string) {
+    actor = this.custodyReader(actor);
+    this.unit(actor, unitId);
     const custody = this.store.get<{ type: string; reference: string }>(
-      "SELECT type,reference FROM inventory_movements WHERE org_id=? AND unit_id=? AND type IN('shipment','replacement.handover') ORDER BY rowid DESC LIMIT 1",
+      "SELECT type,reference FROM inventory_movements WHERE org_id=? AND unit_id=? AND type IN('shipment','replacement.handover','repair.handover') ORDER BY rowid DESC LIMIT 1",
       actor.orgId,
       unitId,
     );
     check(custody, "NOT_FOUND", "Sold custody evidence is missing.", 404);
     return custody;
+  }
+  handoverRepair(
+    actor: Actor,
+    input: {
+      unitId: string;
+      unitRevision: number;
+      serial: string;
+      evidence: string;
+    },
+    claimId: string,
+  ) {
+    this.database.requireTransaction();
+    actor = this.custodyActor(actor, ["warehouse"]);
+    const u = this.unit(actor, input.unitId);
+    site(actor, u.warehouse_id);
+    check(
+      u.revision === integer(input.unitRevision, "Stock revision", 1),
+      "REVISION",
+      "Returned equipment changed; review it again before handover.",
+    );
+    check(
+      u.serial === text(input.serial, "Repaired serial"),
+      "SERIAL",
+      "Scan the original repaired serial.",
+    );
+    check(
+      u.state === "stock" &&
+        u.quantity === 1 &&
+        u.condition === "quarantine" &&
+        this.reserved(u.id) === 0,
+      "STATE",
+      "Repair handover requires the original unreserved quarantined equipment.",
+    );
+    this.store.run(
+      "UPDATE inventory_units SET state='sold',quantity=0,revision=revision+1 WHERE id=?",
+      u.id,
+    );
+    this.movement(
+      actor,
+      u,
+      "repair.handover",
+      -1,
+      claimId,
+      text(input.evidence, "Repair handover evidence", 2000),
+    );
+    return { unitId: u.id, unitRevision: u.revision + 1 };
   }
   receiveReturn(
     actor: Actor,

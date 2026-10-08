@@ -75,6 +75,19 @@ const roles: Role[] = [
 function passwordHash(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString("hex");
 }
+// Fixed windows count every admitted password calculation, including successful
+// logins. Account failure limits remain separate. The peer budget allows shared
+// NAT users more attempts than the eight-failure account budget.
+export const LOGIN_ADMISSION_LIMITS = Object.freeze({
+  windowMs: 60_000,
+  global: 180,
+  peer: 60,
+  maximumRows: 8192,
+  cleanupRows: 128,
+});
+// Longer than any accepted email (254 characters), so callers cannot select or
+// clear a transport counter by supplying it as an account identifier.
+const loginBudgetPrefix = `login-budget:${":".repeat(254)}`;
 export class Identity {
   private store: Store;
   readonly mfa: MultiFactor;
@@ -401,14 +414,97 @@ export class Identity {
   private recordAuthenticationFailure(email: string, timestamp: number) {
     // Count in SQL so simultaneous processes cannot overwrite a prior failure.
     this.store.run(
-      "INSERT INTO iam_attempts VALUES(?,1,?) ON CONFLICT(email) DO UPDATE SET count=CASE WHEN iam_attempts.reset_at<=? THEN 1 ELSE iam_attempts.count+1 END,reset_at=CASE WHEN iam_attempts.reset_at<=? THEN excluded.reset_at ELSE iam_attempts.reset_at END",
+      // A simultaneous successful login can clear this account's reservation
+      // during hashing. Recheck capacity atomically before recreating the row.
+      "INSERT INTO iam_attempts SELECT ?,1,? WHERE EXISTS(SELECT 1 FROM iam_attempts WHERE email=?) OR (SELECT count(*) FROM iam_attempts)<? ON CONFLICT(email) DO UPDATE SET count=CASE WHEN iam_attempts.reset_at<=? THEN 1 ELSE iam_attempts.count+1 END,reset_at=CASE WHEN iam_attempts.reset_at<=? THEN excluded.reset_at ELSE iam_attempts.reset_at END",
       email,
       timestamp + 900000,
+      email,
+      LOGIN_ADMISSION_LIMITS.maximumRows,
       timestamp,
       timestamp,
     );
   }
-  login(email: string, password: string, code?: string, userAgent?: unknown) {
+  private admitLogin(email: string, address?: string) {
+    if (address !== undefined) text(address, "Login transport address", 512);
+    const allowed = this.database.transaction(() => {
+      const timestamp = Date.now();
+      this.store.run(
+        "DELETE FROM iam_attempts WHERE email IN (SELECT email FROM iam_attempts WHERE reset_at<=? ORDER BY reset_at,email LIMIT ?)",
+        timestamp,
+        LOGIN_ADMISSION_LIMITS.cleanupRows,
+      );
+      const buckets = [
+        {
+          key: `${loginBudgetPrefix}:global`,
+          maximum: LOGIN_ADMISSION_LIMITS.global,
+        },
+        ...(address === undefined
+          ? []
+          : [
+              {
+                key: `${loginBudgetPrefix}:peer:${digest(address)}`,
+                maximum: LOGIN_ADMISSION_LIMITS.peer,
+              },
+            ]),
+      ].map((bucket) => ({
+        ...bucket,
+        old: this.store.get(
+          "SELECT count,reset_at FROM iam_attempts WHERE email=?",
+          bucket.key,
+        ),
+      }));
+      // A blocked peer consumes no additional shared budget.
+      if (
+        buckets.some(
+          (bucket) =>
+            bucket.old &&
+            Number(bucket.old.reset_at) > timestamp &&
+            Number(bucket.old.count) >= bucket.maximum,
+        )
+      )
+        return false;
+      const count = Number(
+        this.store.get("SELECT count(*) AS n FROM iam_attempts")!.n,
+      );
+      const newRows =
+        buckets.filter((bucket) => !bucket.old).length +
+        (this.store.get("SELECT email FROM iam_attempts WHERE email=?", email)
+          ? 0
+          : 1);
+      if (count + newRows > LOGIN_ADMISSION_LIMITS.maximumRows) return false;
+      for (const bucket of buckets)
+        this.store.run(
+          "INSERT INTO iam_attempts VALUES(?,1,?) ON CONFLICT(email) DO UPDATE SET count=CASE WHEN iam_attempts.reset_at<=? THEN 1 ELSE iam_attempts.count+1 END,reset_at=CASE WHEN iam_attempts.reset_at<=? THEN excluded.reset_at ELSE iam_attempts.reset_at END",
+          bucket.key,
+          timestamp + LOGIN_ADMISSION_LIMITS.windowMs,
+          timestamp,
+          timestamp,
+        );
+      // Reserve the account slot under the same SQLite lock as admission.
+      // Another connection can run during scrypt; arithmetic alone would let
+      // both reserve the last free slot and exceed the durable storage bound.
+      this.store.run(
+        "INSERT INTO iam_attempts VALUES(?,0,?) ON CONFLICT(email) DO NOTHING",
+        email,
+        timestamp + 900000,
+      );
+      return true;
+    });
+    check(
+      allowed,
+      "RATE_LIMIT",
+      "Too many login attempts. Try again later.",
+      429,
+    );
+  }
+  login(
+    email: string,
+    password: string,
+    code?: string,
+    userAgent?: unknown,
+    address?: string,
+  ) {
     email = text(email, "email", 254).toLowerCase();
     check(
       typeof password === "string" && password.length <= 256,
@@ -429,6 +525,9 @@ export class Identity {
       "Too many login attempts. Try again later.",
       429,
     );
+    // Commit admission before scrypt and outside failed authentication rollback.
+    // Native callers share the global budget; HTTP supplies a qualified peer.
+    this.admitLogin(email, address);
     const user = this.store.get("SELECT * FROM iam_users WHERE email=?", email);
     // Perform the same expensive calculation when no principal exists.
     const computed = passwordHash(
@@ -827,6 +926,38 @@ export class Identity {
       "Too many authentication attempts. Try again later.",
       429,
     );
+    if (throttle) {
+      // Reauthentication shares the account failure limit, but does not spend
+      // login transport budgets. Reserve its failure slot before hashing too.
+      const reserved = this.database.transaction(() => {
+        this.store.run(
+          "DELETE FROM iam_attempts WHERE email IN (SELECT email FROM iam_attempts WHERE reset_at<=? ORDER BY reset_at,email LIMIT ?)",
+          timestamp,
+          LOGIN_ADMISSION_LIMITS.cleanupRows,
+        );
+        if (
+          !this.store.get(
+            "SELECT email FROM iam_attempts WHERE email=?",
+            email,
+          ) &&
+          Number(this.store.get("SELECT count(*) AS n FROM iam_attempts")!.n) >=
+            LOGIN_ADMISSION_LIMITS.maximumRows
+        )
+          return false;
+        this.store.run(
+          "INSERT INTO iam_attempts VALUES(?,0,?) ON CONFLICT(email) DO NOTHING",
+          email,
+          timestamp + 900000,
+        );
+        return true;
+      });
+      check(
+        reserved,
+        "RATE_LIMIT",
+        "Too many authentication attempts. Try again later.",
+        429,
+      );
+    }
     if (!this.passwordMatches(current, password)) {
       // Outside the business transaction so a denied command cannot roll back throttling.
       if (throttle) this.recordAuthenticationFailure(email, timestamp);

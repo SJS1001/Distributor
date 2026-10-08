@@ -90,9 +90,7 @@ test.describe(() => {
       .locator("summary")
       .filter({ hasText: "Pricing change history" })
       .click();
-    await page
-      .getByRole("button", { name: "Refresh latest pricing history" })
-      .click();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(
       page.getByText("Reason: Agreed synthetic 25 percent discount", {
         exact: true,

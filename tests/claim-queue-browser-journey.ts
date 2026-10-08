@@ -1,4 +1,7 @@
-import { navigateWorkspace } from "./workspace-navigation.ts";
+import {
+  navigateCustomerWorkspace,
+  navigateWorkspace,
+} from "./workspace-navigation.ts";
 import { test, expect, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3130";
 const pattern = "**/api/warranty/claims/page?*";
@@ -22,26 +25,13 @@ async function login(page: Page, email = "admin@example.test", buyer = false) {
   if (buyer) await buyerNav(page, "Returns");
   else await nav(page, "Returns");
 }
-// Buyers use the customer header: Overview is labelled Reports and Returns is
-// reached from Account. A phone header collapses the navigation behind Menu.
+// Buyers reach Returns directly from the customer header; the shared helper
+// follows the visible desktop navigation or collapsed phone menu.
 async function buyerNav(page: Page, name: "Reports" | "Returns") {
-  const target = page
-    .getByRole("navigation", { name: "Workspace", exact: true })
-    .getByRole("button", {
-      name: name === "Returns" ? "Account" : name,
-      exact: true,
-    });
-  if (!(await target.isVisible()))
-    await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await target.click();
-  if (name === "Returns")
-    await page
-      .getByRole("button", {
-        name: "Returns and warranty requests",
-        exact: true,
-      })
-      .click();
-  await expect(page.locator("#workspace-title")).toHaveText(name);
+  await navigateCustomerWorkspace(
+    page,
+    name === "Reports" ? "Overview" : "Returns",
+  );
 }
 test("browser: phone claim queue retains pages on failure, retries the same cursor, filters states and reaches the oldest claim", async ({
   page,

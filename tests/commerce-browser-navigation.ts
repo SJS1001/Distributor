@@ -45,6 +45,6 @@ export async function expectSignedOut(page: Page) {
   await expect(
     page
       .getByRole("navigation", { name: "Public navigation", exact: true })
-      .getByRole("link", { name: "Customer sign in", exact: true }),
+      .getByRole("link", { name: "Sign in", exact: true }),
   ).toBeVisible();
 }

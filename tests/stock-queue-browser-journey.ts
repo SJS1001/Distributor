@@ -288,7 +288,7 @@ test("browser: replacement search discards superseded and closed navigation refr
     else if (action === "navigate")
       await page
         .getByRole("navigation", { name: "Workspace", exact: true })
-        .getByRole("button", { name: "Workspace", exact: true })
+        .getByRole("button", { name: "Overview", exact: true })
         .press("Enter");
     else
       await page

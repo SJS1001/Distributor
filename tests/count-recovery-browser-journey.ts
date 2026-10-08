@@ -220,14 +220,12 @@ test.describe("retained count recovery", () => {
             await page
               .getByRole("button", { name: "Sign out", exact: true })
               .click();
-            // Sign-out returns to the signed-out public site.
+            // Staff sign-out returns to the signed-out staff entrance.
             await expect(
-              page
-                .getByRole("navigation", {
-                  name: "Public navigation",
-                  exact: true,
-                })
-                .getByRole("link", { name: "Administration", exact: true }),
+              page.getByRole("heading", {
+                name: "Administration sign in.",
+                exact: true,
+              }),
             ).toBeVisible();
             await login(page);
           }

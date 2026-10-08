@@ -52,6 +52,7 @@ export const movementSigns: Record<
   "replacement.reserve": "zero",
   "replacement.cancel": "zero",
   "replacement.handover": "negative",
+  "repair.handover": "negative",
 };
 export type CostWindow = {
   afterSequence: number;

@@ -98,7 +98,7 @@ test("browser: retired customer product receives saved and new delivery scans at
     .filter({ has: page.getByTitle(po.id, { exact: true }) });
   await nav("Purchase orders");
   await poRow
-    .getByRole("button", { name: "Start receipt draft", exact: true })
+    .getByRole("button", { name: "Receive delivery", exact: true })
     .click();
   const lineChoice = page.getByLabel("Purchase line", { exact: true });
   await expect(lineChoice.locator("option:checked")).toContainText(

@@ -7553,10 +7553,17 @@ function App() {
                   <span className="claim-issue">{c.issue}</span>,
                   <span className="ops-state" data-state={c.state}>
                     {staff ? (
-                      c.state
+                      c.state === "disposed" && c.disposition === "repair" ? (
+                        "Repaired equipment handed over"
+                      ) : (
+                        c.state
+                      )
                     ) : (
                       <CustomerReturnStatus
                         state={c.state}
+                        repaired={
+                          c.state === "disposed" && c.disposition === "repair"
+                        }
                         credited={!!c.credit_id}
                         replaced={
                           c.replacements?.some(
@@ -7702,6 +7709,48 @@ function App() {
                           (v) => ({ ...v, claimId: c.id }),
                         ),
                       )}
+                    {c.state === "repair" &&
+                      !c.credit_id &&
+                      !c.replacements?.some(
+                        (r: Item) => r.state !== "cancelled",
+                      ) &&
+                      can("warehouse") &&
+                      button("Return repaired equipment", () => {
+                        void readReview(
+                          `/api/warranty/claims/${encodeURIComponent(c.id)}/repair-review`,
+                        ).then((review) => {
+                          if (!review) return;
+                          open(
+                            "Record repaired equipment handover",
+                            [
+                              {
+                                name: "serial",
+                                label: "Scan repaired serial",
+                                scan: "single",
+                              },
+                              {
+                                name: "recipient",
+                                label: "Handover recipient",
+                              },
+                              {
+                                name: "evidence",
+                                label:
+                                  "Collection or carrier handover evidence",
+                                type: "textarea",
+                              },
+                              reason,
+                            ],
+                            (v) =>
+                              command("warranty.repair.handover", {
+                                ...v,
+                                claimId: review.claimId,
+                                unitRevision: review.unitRevision,
+                              }),
+                            `Record actual collection or carrier handover of serial ${review.serial} to its original customer. This returns the original equipment, preserves its existing warranty, and does not create an invoice or credit. Reviewed stock revision: ${review.unitRevision}.`,
+                            "Confirm repaired equipment handover",
+                          );
+                        });
+                      })}
                     {["inspected", "repair"].includes(c.state) &&
                       !c.replacements?.some(
                         (r: Item) => r.state === "reserved",
@@ -7777,6 +7826,7 @@ function App() {
                         ),
                       )}
                     {c.state === "disposed" &&
+                      c.disposition !== "repair" &&
                       !c.credit_id &&
                       !c.replacements?.some(
                         (r: Item) => r.state !== "cancelled",
@@ -7797,6 +7847,42 @@ function App() {
                         Actions
                       </summary>
                       <div className="actions">
+                        {c.repairHandover &&
+                          button("View repaired equipment handover", () =>
+                            open(
+                              "Repaired equipment handover receipt",
+                              [],
+                              async () => ({}),
+                              <dl>
+                                <dt>Serial</dt>
+                                <dd>{c.repairHandover.serial}</dd>
+                                <dt>Handed over</dt>
+                                <dd>
+                                  <ReadableTime
+                                    value={c.repairHandover.completedAt}
+                                  />
+                                </dd>
+                                <dt>Existing coverage end</dt>
+                                <dd>
+                                  <ReadableTime
+                                    value={c.repairHandover.coverageEnd}
+                                  />
+                                </dd>
+                                {staff && (
+                                  <>
+                                    <dt>Recipient</dt>
+                                    <dd>{c.repairHandover.recipient}</dd>
+                                    <dt>Handover evidence</dt>
+                                    <dd>{c.repairHandover.evidence}</dd>
+                                    <dt>Reason</dt>
+                                    <dd>{c.repairHandover.reason}</dd>
+                                  </>
+                                )}
+                              </dl>,
+                              "Close receipt",
+                              true,
+                            ),
+                          )}
                         <RetainedClaimCoverage
                           key={c.id}
                           claimId={c.id}

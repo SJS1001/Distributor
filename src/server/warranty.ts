@@ -35,6 +35,28 @@ import type {
 } from "../shared/warranty-coverage.ts";
 import type { SoldSerial, SoldSerialPage } from "../shared/sold-serials.ts";
 import { claimStates, type ClaimQueueQuery } from "../shared/claim-queue.ts";
+import type {
+  WarrantyRepairReview,
+  WarrantyRepairHandoverInput,
+  WarrantyRepairHandoverReceipt,
+} from "../shared/warranty-repair.ts";
+type Entitlement = {
+  shipmentId: string;
+  ownershipId: string;
+  invoiceId: string;
+  coverageEnd: string;
+  shippedAt: string;
+  returnStartedAt: string;
+  source: WarrantyCoverage["source"];
+  provisionalDays: number | null;
+  policy: CoveragePolicy | null;
+  inheritedFromClaimId: string | null;
+};
+type RepairReceipt = {
+  version: 1;
+  receipt: WarrantyRepairHandoverReceipt;
+  entitlement: Entitlement;
+};
 export type Claim = {
   id: string;
   org_id: string;
@@ -123,6 +145,21 @@ export class Warranty {
   ) => void;
   readonly evidence: WarrantyEvidence;
   readonly registration: WarrantyRegistration;
+  // Owning task-shaped guard: inventory never reads warranty tables. Check in
+  // the stock command transaction so a disposition cannot race the mutation.
+  assertGeneralStockMutation(actor: Actor, unitId: string) {
+    this.database.requireTransaction();
+    actor = this.identity.currentActor(actor);
+    check(
+      !this.store.get(
+        "SELECT id FROM warranty_claims WHERE org_id=? AND unit_id=? AND state IN('received','inspected','repair') LIMIT 1",
+        actor.orgId,
+        unitId,
+      ),
+      "WARRANTY_CUSTODY",
+      "Returned customer equipment must be resolved through its warranty claim before general stock changes.",
+    );
+  }
   constructor(
     private database: Database,
     private platform: Platform,
@@ -403,12 +440,7 @@ export class Warranty {
                 this.inventory.unit(actor, c.unit_id).warehouse_id,
               )),
         )
-        .map((c) => ({
-          ...c,
-          replacements: this.replacementRecords(actor, c.id),
-          manufacturerCases:
-            actor.role === "buyer" ? [] : this.manufacturerRecords(actor, c.id),
-        }));
+        .map((c) => this.claimProjection(actor, c));
     });
   }
   claimPage(actor: Actor, input: ClaimQueueQuery = {}) {
@@ -497,6 +529,22 @@ export class Warranty {
   private claimProjection(actor: Actor, claim: Claim) {
     return {
       ...claim,
+      ...(claim.state === "disposed" && claim.disposition === "repair"
+        ? {
+            repairHandover:
+              actor.role === "buyer"
+                ? (() => {
+                    const {
+                      recipient: _,
+                      evidence: __,
+                      reason: ___,
+                      ...receipt
+                    } = this.repairReceipt(actor, claim.id).receipt;
+                    return receipt;
+                  })()
+                : this.repairReceipt(actor, claim.id).receipt,
+          }
+        : {}),
       replacements: this.replacementRecords(actor, claim.id),
       manufacturerCases:
         actor.role === "buyer" ? [] : this.manufacturerRecords(actor, claim.id),
@@ -1188,9 +1236,31 @@ export class Warranty {
       return { items, next: rows.length > 20 ? items.at(-1)!.revision : null };
     });
   }
-  private entitlement(actor: Actor, unitId: string, accountId: string) {
+  private entitlement(
+    actor: Actor,
+    unitId: string,
+    accountId: string,
+  ): Entitlement {
     this.identity.customer(actor, accountId);
     const custody = this.inventory.soldCustody(actor, unitId);
+    return this.entitlementForCustody(actor, unitId, accountId, custody);
+  }
+  private entitlementForCustody(
+    actor: Actor,
+    unitId: string,
+    accountId: string,
+    custody: { type: string; reference: string },
+  ): Entitlement {
+    if (custody.type === "repair.handover") {
+      const c = this.claimRecord(actor, custody.reference);
+      check(
+        c.account_id === accountId && c.unit_id === unitId,
+        "NOT_FOUND",
+        "No repaired serial belongs to this account.",
+        404,
+      );
+      return this.repairReceipt(actor, c.id).entitlement;
+    }
     if (custody.type === "replacement.handover") {
       const r = this.store.get<Replacement>(
         "SELECT * FROM warranty_replacements WHERE org_id=? AND id=? AND new_unit_id=? AND state='handed_over'",
@@ -1429,6 +1499,17 @@ export class Warranty {
         this.fulfillment.soldSerial(actor, custody.reference, unitId)?.shipment
           .account_id ?? null
       );
+    if (custody.type === "repair.handover") {
+      const c = this.store.get<Claim>(
+        "SELECT * FROM warranty_claims WHERE org_id=? AND id=? AND unit_id=? AND state='disposed' AND disposition='repair'",
+        actor.orgId,
+        custody.reference,
+        unitId,
+      );
+      return c && (actor.role !== "buyer" || c.account_id === actor.accountId)
+        ? c.account_id
+        : null;
+    }
     if (custody.type !== "replacement.handover") return null;
     const row = this.store.get<{ accountId: string }>(
       `SELECT c.account_id AS accountId FROM warranty_replacements r
@@ -2056,6 +2137,137 @@ export class Warranty {
       },
     );
   }
+  private repairReceipt(actor: Actor, claimId: string): RepairReceipt {
+    const row = this.store.get<{ reason: string }>(
+      "SELECT reason FROM warranty_decisions WHERE org_id=? AND claim_id=? AND action='repair.handover' ORDER BY rowid DESC LIMIT 1",
+      actor.orgId,
+      claimId,
+    );
+    check(
+      row,
+      "NOT_FOUND",
+      "Repair handover ownership evidence is missing.",
+      404,
+    );
+    const saved = JSON.parse(row.reason) as RepairReceipt;
+    check(
+      saved.version === 1 &&
+        saved.receipt.claimId === claimId &&
+        saved.receipt.state === "disposed" &&
+        !!saved.entitlement.ownershipId,
+      "STATE",
+      "Repair handover ownership evidence is invalid.",
+    );
+    this.coverageDate(saved.entitlement.shippedAt);
+    this.coverageDate(saved.entitlement.coverageEnd);
+    this.coverageDate(saved.entitlement.returnStartedAt);
+    return saved;
+  }
+  repairReview(actor: Actor, claimId: string): WarrantyRepairReview {
+    return this.database.transaction(() => {
+      actor = this.authority(actor, ["warehouse"]);
+      return this.repairReadiness(actor, claimId);
+    });
+  }
+  private repairReadiness(actor: Actor, claimId: string): WarrantyRepairReview {
+    const c = this.claimRecord(actor, text(claimId, "Claim ID")),
+      u = this.inventory.unit(actor, c.unit_id);
+    site(actor, u.warehouse_id);
+    check(
+      c.state === "repair" && !c.credit_id && !this.hasReplacement(actor, c.id),
+      "REMEDY",
+      "Repair handover requires a repairing claim without credit or active replacement.",
+    );
+    check(
+      u.serial &&
+        u.state === "stock" &&
+        u.quantity === 1 &&
+        u.condition === "quarantine",
+      "STATE",
+      "The original repaired serial must remain in quarantine.",
+    );
+    return {
+      claimId: c.id,
+      unitId: u.id,
+      unitRevision: u.revision,
+      serial: u.serial,
+      warehouseId: u.warehouse_id,
+      accountId: c.account_id,
+      shipmentId: c.shipment_id,
+      invoiceId: c.invoice_id,
+      coverageEnd: c.coverage_end,
+    };
+  }
+  handoverRepair(
+    actor: Actor,
+    key: string,
+    input: WarrantyRepairHandoverInput,
+  ): WarrantyRepairHandoverReceipt {
+    return this.platform.command(
+      actor,
+      "warranty.repair.handover",
+      key,
+      input,
+      () => {
+        actor = this.authority(actor, ["warehouse"]);
+        const c = this.claimRecord(actor, input.claimId);
+        site(actor, this.inventory.unit(actor, c.unit_id).warehouse_id);
+      },
+      () => {
+        const reviewed = this.repairReadiness(actor, input.claimId),
+          c = this.claimRecord(actor, reviewed.claimId);
+        const recipient = text(input.recipient, "Recipient", 200),
+          evidence = text(input.evidence, "Repair handover evidence", 2000),
+          reason = text(input.reason, "Repair completion reason", 1000);
+        const entitlement = this.entitlementForCustody(
+          actor,
+          reviewed.unitId,
+          c.account_id,
+          this.inventory.previousSoldCustody(actor, reviewed.unitId),
+        );
+        // Retained claim dates win over any historical current-policy fallback.
+        const captured = this.claimCoverageRecord(c).snapshot;
+        entitlement.coverageEnd = c.coverage_end;
+        if (captured) {
+          entitlement.policy = captured.policy;
+          entitlement.shippedAt = captured.shippedAt;
+        }
+        const handed = this.inventory.handoverRepair(
+          actor,
+          { ...input, unitId: reviewed.unitId, evidence },
+          c.id,
+        );
+        const receipt: WarrantyRepairHandoverReceipt = {
+          ...handed,
+          claimId: c.id,
+          serial: reviewed.serial,
+          state: "disposed",
+          recipient,
+          evidence,
+          reason,
+          completedAt: now(),
+          shipmentId: c.shipment_id,
+          invoiceId: c.invoice_id,
+          coverageEnd: c.coverage_end,
+        };
+        this.store.run(
+          "UPDATE warranty_claims SET state='disposed',disposition='repair' WHERE id=?",
+          c.id,
+        );
+        this.recordActivity(
+          actor,
+          c.id,
+          "repair.handover",
+          JSON.stringify({
+            version: 1,
+            receipt,
+            entitlement,
+          } satisfies RepairReceipt),
+        );
+        return receipt;
+      },
+    );
+  }
   credit(
     actor: Actor,
     key: string,
@@ -2074,6 +2286,7 @@ export class Warranty {
         const claim = this.claimRecord(actor, input.claimId);
         check(
           claim.state === "disposed" &&
+            claim.disposition !== "repair" &&
             !claim.credit_id &&
             !this.hasReplacement(actor, claim.id),
           "STATE",

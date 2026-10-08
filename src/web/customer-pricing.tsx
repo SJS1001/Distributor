@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { request, RequestError } from "./api.ts";
 import type {
   PricingHistoryEntry,
   PricingPolicy,
   ProductMsrp,
 } from "../shared/customer-pricing.ts";
+import { sendRetainedCommand } from "./retained-command.ts";
 import "./record-forms.css";
 import "./customer-pricing.css";
 
@@ -26,6 +27,7 @@ export function usePricingChange(
   recoveryScope: string,
   description = "Pricing",
   allowedCommands: string[] = [],
+  refresh?: { token?: unknown; dirty: React.MutableRefObject<boolean> },
 ) {
   const storageKey = `distributor-pricing:${recoveryScope}:${command}:${Object.values(identity).join(":")}`;
   const [recovery] = useState(() => {
@@ -56,54 +58,76 @@ export function usePricingChange(
   });
   const [attempt, setAttempt] = useState(recovery.attempt),
     [blocked, setBlocked] = useState(recovery.error);
+  const pending = useRef(recovery.attempt);
+  const reviewed = useRef<any>(null);
+  const [latest, setLatest] = useState<any>(null);
   const [value, setValue] = useState<any>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [epoch, setEpoch] = useState(0),
-    [rejected, setRejected] = useState(false);
+    [epoch, setEpoch] = useState(0);
+  useEffect(() => {
+    if (value) reviewed.current = value;
+  }, [value]);
   useEffect(() => {
     const c = new AbortController();
     setBusy(true);
     setError("");
     void request(path, { signal: c.signal })
       .then((v) => {
-        if (!c.signal.aborted) setValue(v);
+        if (!c.signal.aborted) {
+          setLatest(v);
+          if (!refresh || (!refresh.dirty.current && !pending.current))
+            setValue(v);
+          else if (reviewed.current) setValue(reviewed.current);
+          else if (pending.current)
+            setValue({ ...v, ...pending.current.payload });
+        }
       })
       .catch((e) => {
-        if (!c.signal.aborted) setError(e.message);
+        if (!c.signal.aborted) {
+          setError(e.message);
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status)) {
+            setValue(null);
+            setLatest(null);
+          }
+        }
       })
       .finally(() => {
         if (!c.signal.aborted) setBusy(false);
       });
     return () => c.abort();
-  }, [path, epoch]);
+  }, [path, epoch, refresh?.token]);
   async function send(next: Attempt) {
+    let definitivelyRejected = false;
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      setAttempt(next);
-      await request(`/api/commands/${next.command ?? command}`, {
-        method: "POST",
-        headers: { "idempotency-key": next.key },
-        body: JSON.stringify(next.payload),
-      });
-      localStorage.removeItem(storageKey);
+      await sendRetainedCommand(
+        storageKey,
+        next.command ?? command,
+        next,
+        () => {
+          pending.current = next;
+          setAttempt(next);
+        },
+        () => {
+          definitivelyRejected = true;
+          pending.current = null;
+          setAttempt(null);
+        },
+      );
+      pending.current = null;
       setAttempt(null);
-      setRejected(false);
+      if (refresh) refresh.dirty.current = false;
       setNotice(`${description} saved.`);
       setEpoch((e) => e + 1);
       return true;
     } catch (e) {
       setError((e as Error).message);
-      if (
-        e instanceof RequestError &&
-        e.status < 500 &&
-        ![401, 403, 408, 429].includes(e.status)
-      )
-        setRejected(true);
+      if (!pending.current && !definitivelyRejected)
+        setBlocked((e as Error).message);
       return false;
     } finally {
       setBusy(false);
@@ -118,7 +142,7 @@ export function usePricingChange(
         </p>
       )}
       {notice && <p role="status">{notice}</p>}
-      {attempt && (
+      {attempt && value && (
         <div className="pricing-recovery">
           <p role="status">
             A reviewed change is awaiting confirmation. Retry sends exactly the
@@ -149,33 +173,19 @@ export function usePricingChange(
               ? "Retry saved pricing change"
               : `Retry saved ${description.toLowerCase()}`}
           </button>
-          {rejected && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                try {
-                  localStorage.removeItem(storageKey);
-                  setAttempt(null);
-                  setRejected(false);
-                  setValue(null);
-                  setEpoch((e) => e + 1);
-                } catch {
-                  setBlocked(
-                    "Browser storage is unavailable. Restore it and reload.",
-                  );
-                }
-              }}
-            >
-              Discard rejected change and reload
-            </button>
-          )}
         </div>
       )}
     </>
   );
   return {
     value,
+    latest,
+    retainedPayload: attempt?.payload,
+    error,
+    reviewLatest: () =>
+      setValue((v: any) =>
+        v && latest ? { ...v, revision: latest.revision } : latest,
+      ),
     busy,
     locked: busy || !!attempt || !!blocked,
     recoveryUi,
@@ -220,16 +230,22 @@ function CustomerEditor({
   accountId,
   currency,
   recoveryScope,
+  refreshToken,
 }: {
   accountId: string;
   currency: string;
   recoveryScope: string;
+  refreshToken?: unknown;
 }) {
+  const dirty = useRef(false);
   const change = usePricingChange(
     `/api/catalog/pricing/${encodeURIComponent(accountId)}`,
     "catalog.pricing.set",
     { accountId },
     recoveryScope,
+    "Pricing",
+    [],
+    { token: refreshToken, dirty },
   );
   const [mode, setMode] = useState("tier"),
     [multiplier, setMultiplier] = useState("0.75"),
@@ -238,13 +254,17 @@ function CustomerEditor({
     [sample, setSample] = useState("100");
   useEffect(() => {
     const v = change.value as PricingPolicy | null;
-    if (v) {
+    if (v && !dirty.current) {
       setMode(v.multiplierBp === null ? "tier" : "multiplier");
       setMultiplier(String((v.multiplierBp ?? 7500) / 10000));
       setDisplay(v.displayMode);
-      setReason("");
+      setReason(String(change.retainedPayload?.reason ?? ""));
     }
   }, [change.value]);
+  const stale =
+    !!change.value &&
+    !!change.latest &&
+    change.value.revision !== change.latest.revision;
   const bp = Math.round(Number(multiplier) * 10000),
     valid =
       multiplier.trim() !== "" &&
@@ -257,10 +277,30 @@ function CustomerEditor({
   return (
     <div className="pricing-editor">
       {change.recoveryUi}
+      {stale && (
+        <p role="status">
+          Pricing changed since this draft was reviewed. Your edits and reviewed
+          revision are retained. Current agreement:{" "}
+          {change.latest.multiplierBp === null
+            ? "existing tier prices"
+            : `MSRP × ${change.latest.multiplierBp / 10000}`}
+          ;{" "}
+          {change.latest.displayMode === "detailed"
+            ? "MSRP and savings shown"
+            : "net price only"}
+          ; revision {change.latest.revision}.
+        </p>
+      )}
+      {stale && !change.locked && (
+        <button type="button" onClick={change.reviewLatest}>
+          Use latest pricing revision for this draft
+        </button>
+      )}
       {change.value ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (stale) return;
             if (mode === "multiplier" && !valid) return;
             void change.save({
               accountId,
@@ -276,7 +316,13 @@ function CustomerEditor({
             <div className="record-form-grid">
               <label>
                 Price calculation
-                <select value={mode} onChange={(e) => setMode(e.target.value)}>
+                <select
+                  value={mode}
+                  onChange={(e) => {
+                    dirty.current = true;
+                    setMode(e.target.value);
+                  }}
+                >
                   <option value="tier">Existing tier and base prices</option>
                   <option value="multiplier">
                     Multiply each product’s MSRP
@@ -287,9 +333,10 @@ function CustomerEditor({
                 Prices shown to this customer
                 <select
                   value={display}
-                  onChange={(e) =>
-                    setDisplay(e.target.value as PricingPolicy["displayMode"])
-                  }
+                  onChange={(e) => {
+                    dirty.current = true;
+                    setDisplay(e.target.value as PricingPolicy["displayMode"]);
+                  }}
                 >
                   <option value="net_only">Net price only</option>
                   <option value="detailed">
@@ -309,7 +356,10 @@ function CustomerEditor({
                     step="0.0001"
                     required
                     value={multiplier}
-                    onChange={(e) => setMultiplier(e.target.value)}
+                    onChange={(e) => {
+                      dirty.current = true;
+                      setMultiplier(e.target.value);
+                    }}
                     aria-describedby={`multiplier-help-${accountId}`}
                   />
                 </label>
@@ -381,21 +431,29 @@ function CustomerEditor({
                 required
                 maxLength={1000}
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => {
+                  dirty.current = true;
+                  setReason(e.target.value);
+                }}
               />
             </label>
             <div className="record-form-footer">
-              <button type="submit" disabled={mode === "multiplier" && !valid}>
+              <button
+                type="submit"
+                disabled={stale || (mode === "multiplier" && !valid)}
+              >
                 Save customer pricing
               </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={change.locked}
-                onClick={change.reload}
-              >
-                Reload current pricing
-              </button>
+              {(change.error || refreshToken === undefined) && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={change.locked}
+                  onClick={change.reload}
+                >
+                  Reload current pricing
+                </button>
+              )}
             </div>
           </fieldset>
         </form>
@@ -414,7 +472,11 @@ function CustomerEditor({
           </button>
         </>
       )}
-      <PricingHistory accountId={accountId} currency={currency} />
+      <PricingHistory
+        accountId={accountId}
+        currency={currency}
+        refreshToken={refreshToken}
+      />
     </div>
   );
 }
@@ -422,10 +484,12 @@ export function CustomerPricingControls({
   accounts,
   selectedOnly = false,
   recoveryScope,
+  refreshToken,
 }: {
   selectedOnly?: boolean;
   accounts: { id: string; name: string; currency: string }[];
   recoveryScope: string;
+  refreshToken?: unknown;
 }) {
   const [id, setId] = useState(accounts[0]?.id ?? "");
   const account = accounts.find((a) => a.id === id);
@@ -455,6 +519,7 @@ export function CustomerPricingControls({
           accountId={id}
           currency={account.currency}
           recoveryScope={recoveryScope}
+          refreshToken={refreshToken}
         />
       ) : (
         <p>Create a customer before assigning a price agreement.</p>
@@ -577,10 +642,12 @@ function PricingHistory({
   accountId,
   productId,
   currency,
+  refreshToken,
 }: {
   accountId?: string;
   productId?: string;
   currency: string;
+  refreshToken?: unknown;
 }) {
   const [page, setPage] = useState<{
       items: PricingHistoryEntry[];
@@ -606,13 +673,17 @@ function PricingHistory({
         if (!c.signal.aborted) setPage(v);
       })
       .catch((e) => {
-        if (!c.signal.aborted) setError(e.message);
+        if (!c.signal.aborted) {
+          setError(e.message);
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setPage(null);
+        }
       })
       .finally(() => {
         if (!c.signal.aborted) setBusy(false);
       });
     return () => c.abort();
-  }, [accountId, productId, after, epoch]);
+  }, [accountId, productId, after, epoch, refreshToken]);
   return (
     <details className="pricing-history">
       <summary>Pricing change history</summary>
@@ -642,16 +713,18 @@ function PricingHistory({
         <p>No pricing changes recorded.</p>
       )}
       <div className="actions">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setAfter(null);
-            setEpoch((e) => e + 1);
-          }}
-        >
-          Refresh latest pricing history
-        </button>
+        {(refreshToken === undefined || after !== null) && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setAfter(null);
+              setEpoch((e) => e + 1);
+            }}
+          >
+            Refresh latest pricing history
+          </button>
+        )}
         {page?.next && (
           <button
             type="button"

@@ -229,6 +229,8 @@ export class Application {
             this.identity,
             security.startupMaintenance !== false,
             (actor, unitId) => this.orders.inspectIncoming(actor, unitId),
+            (actor, unitId) =>
+              this.warranty.assertGeneralStockMutation(actor, unitId),
           );
           this.labels = new StockLabels(
             this.database,

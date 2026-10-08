@@ -53,10 +53,12 @@ export function CustomerReturnStatus({
   state,
   credited,
   replaced,
+  repaired = false,
 }: {
   state: string;
   credited: boolean;
   replaced: boolean;
+  repaired?: boolean;
 }) {
   const statuses: Record<string, [string, string]> = {
     submitted: [
@@ -93,10 +95,15 @@ export function CustomerReturnStatus({
             "Replacement handed over",
             "View collection or shipping details in Replacements.",
           ]
-        : [
-            "Equipment disposition recorded",
-            "A credit or replacement is a separate decision. Contact your distributor about the outcome.",
-          ],
+        : repaired
+          ? [
+              "Repaired equipment handed over",
+              "Your original equipment has been returned. Its existing warranty dates are preserved.",
+            ]
+          : [
+              "Equipment disposition recorded",
+              "A credit or replacement is a separate decision. Contact your distributor about the outcome.",
+            ],
   };
   const [label, next] = statuses[state] ?? [
     state,

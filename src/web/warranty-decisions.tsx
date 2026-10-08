@@ -2,6 +2,39 @@ import React, { useEffect, useRef } from "react";
 import { usePages } from "./billing-inbox.tsx";
 import type { WarrantyDecision } from "../shared/warranty-decisions.ts";
 
+function activityDetail(item: WarrantyDecision) {
+  if (item.action !== "repair.handover" || !item.reason) return item.reason;
+  try {
+    const saved = JSON.parse(item.reason);
+    const receipt = saved?.receipt;
+    if (
+      saved?.version !== 1 ||
+      !receipt ||
+      ![
+        receipt.serial,
+        receipt.recipient,
+        receipt.evidence,
+        receipt.reason,
+      ].every((value) => typeof value === "string")
+    )
+      return "Repaired equipment handover recorded. Open the claim’s handover receipt for details.";
+    return (
+      <dl>
+        <dt>Original serial</dt>
+        <dd>{receipt.serial}</dd>
+        <dt>Recipient</dt>
+        <dd>{receipt.recipient}</dd>
+        <dt>Handover evidence</dt>
+        <dd>{receipt.evidence}</dd>
+        <dt>Reason</dt>
+        <dd>{receipt.reason}</dd>
+      </dl>
+    );
+  } catch {
+    return "Repaired equipment handover recorded. Open the claim’s handover receipt for details.";
+  }
+}
+
 export function WarrantyDecisions({
   claimId,
   buyer,
@@ -80,7 +113,7 @@ export function WarrantyDecisions({
                     <>
                       <td>
                         <div className="claim-activity-detail">
-                          {item.reason}
+                          {activityDetail(item)}
                         </div>
                       </td>
                       <td>{item.actorId}</td>

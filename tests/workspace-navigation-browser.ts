@@ -370,10 +370,10 @@ test("browser: addressable orders preserve filters, list place and history with 
     await expect(
       queue.getByRole("status").filter({ hasText: /orders loaded/ }),
     ).toHaveText("30 orders loaded · All results shown");
-    await queue.getByText("Saved filters", { exact: true }).click();
-    await queue
-      .getByRole("button", { name: "Save current filter", exact: true })
-      .click();
+    // Customers use the visible status filter; saved staff presets are absent.
+    await expect(queue.getByText("Saved filters", { exact: true })).toHaveCount(
+      0,
+    );
     // View contract: record currency differs from the organization default.
     await page.route("**/api/orders/queue-001", async (route) => {
       const response = await route.fetch();

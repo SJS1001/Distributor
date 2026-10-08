@@ -229,6 +229,7 @@ export function CustomerRecord({
           <CustomerSummary
             account={account}
             role={role}
+            refreshToken={refreshToken}
             onTab={onTab}
             onNavigate={onNavigate}
           />
@@ -321,6 +322,8 @@ export function CustomerRecord({
               key={account.id}
               accounts={[account]}
               selectedOnly
+              recoveryScope={recoveryScope}
+              refreshToken={refreshToken}
             />
           )}
         </PageSection>
@@ -331,6 +334,7 @@ export function CustomerRecord({
               accounts={[account]}
               selectedOnly
               recoveryScope={recoveryScope}
+              refreshToken={refreshToken}
             />
           ) : (
             <section className="panel">
@@ -352,6 +356,7 @@ export function CustomerRecord({
           <CustomerContactsEditor
             accountId={account.id}
             recoveryScope={recoveryScope}
+            refreshToken={refreshToken}
           />
         </PageSection>
       </PageSections>
@@ -368,11 +373,13 @@ const pending: SummaryFigure = { value: "…", detail: "", state: "loading" };
 function CustomerSummary({
   account,
   role,
+  refreshToken,
   onTab,
   onNavigate,
 }: {
   account: Account;
   role: string;
+  refreshToken?: unknown;
   onTab: (t: CustomerTab) => void;
   onNavigate: (route: NavigationIntent) => void;
 }) {
@@ -390,23 +397,21 @@ function CustomerSummary({
       if (!c.signal.aborted)
         set({ value: "—", detail: "Unavailable", state: "unavailable" });
     };
-    setOrders(pending);
-    setDue(pending);
-    setContact(pending);
     if (canOrders)
       void request<{ items: any[]; next: string | null }>(
         `/api/orders/page?accountId=${id}&state=open`,
         { signal: c.signal },
       )
-        .then((p) =>
+        .then((p) => {
+          if (c.signal.aborted) return;
           setOrders({
             value: `${p.items.length}${p.next ? "+" : ""}`,
             detail: p.items[0]
               ? `Latest ${new Date(p.items[0].created_at).toLocaleDateString()}`
               : "No open orders",
             state: "ready",
-          }),
-        )
+          });
+        })
         .catch(unavailable(setOrders));
     if (canInvoices)
       void request<{ items: any[]; next: string | null }>(
@@ -414,6 +419,7 @@ function CustomerSummary({
         { signal: c.signal },
       )
         .then((p) => {
+          if (c.signal.aborted) return;
           const total = p.items.reduce((sum, i) => sum + i.balance, 0);
           setDue({
             value: p.next
@@ -431,6 +437,7 @@ function CustomerSummary({
         signal: c.signal,
       })
         .then((p) => {
+          if (c.signal.aborted) return;
           const active = p.items.filter((x) => !x.archived);
           const first = active[0];
           setContact({
@@ -445,7 +452,7 @@ function CustomerSummary({
         })
         .catch(unavailable(setContact));
     return () => c.abort();
-  }, [account.id, role]);
+  }, [account.id, role, refreshToken]);
   const card = (
     label: string,
     figure: SummaryFigure,
@@ -658,7 +665,13 @@ function HistoryList({
         setNext(p.next);
       }
     } catch (e) {
-      if (!c.signal.aborted) setError((e as Error).message);
+      if (!c.signal.aborted) {
+        setError((e as Error).message);
+        if (e instanceof RequestError && [401, 403, 404].includes(e.status)) {
+          setItems([]);
+          setNext(null);
+        }
+      }
     } finally {
       if (!c.signal.aborted) setBusy(false);
     }
@@ -796,9 +809,11 @@ function HistoryList({
 function CustomerContactsEditor({
   accountId,
   recoveryScope,
+  refreshToken,
 }: {
   accountId: string;
   recoveryScope: string;
+  refreshToken?: unknown;
 }) {
   const key = `distributor-customer-contact:${recoveryScope}:${accountId}`;
   type Attempt = { key: string; payload: SaveCustomerContact };
@@ -879,12 +894,18 @@ function CustomerContactsEditor({
       `/api/accounts/${encodeURIComponent(accountId)}/contacts`,
       { signal: c.signal },
     )
-      .then(setPage)
+      .then((p) => {
+        if (!c.signal.aborted) setPage(p);
+      })
       .catch((e) => {
-        if (!c.signal.aborted) setError(e.message);
+        if (!c.signal.aborted) {
+          setError(e.message);
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status))
+            setPage(null);
+        }
       });
     return () => c.abort();
-  }, [accountId, epoch]);
+  }, [accountId, epoch, refreshToken]);
   async function save(a: Attempt) {
     setBusy(true);
     setError("");
@@ -949,10 +970,21 @@ function CustomerContactsEditor({
           </button>
         )}
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <>
+          <p role="alert">{error}</p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setEpoch((e) => e + 1)}
+          >
+            Retry contacts
+          </button>
+        </>
+      )}
       {recovery.error && <p role="alert">{recovery.error}</p>}
       {notice && <p role="status">{notice}</p>}
-      {attempt && (
+      {attempt && page?.canManage && (
         <div role="status" className="customer-contact-recovery">
           <p>
             A saved contact change needs confirmation. Retry the identical
@@ -966,7 +998,17 @@ function CustomerContactsEditor({
           </button>
         </div>
       )}
-      {editing && !attempt && (
+      {editing &&
+        draft.contactId &&
+        page?.items.find((c) => c.id === draft.contactId)?.revision !==
+          draft.expectedRevision && (
+          <p role="status">
+            This contact changed since you started editing. Your draft and
+            reviewed revision are retained. Cancel the edit and open the current
+            contact before saving.
+          </p>
+        )}
+      {editing && !attempt && page?.canManage && (
         <form
           className="customer-contact-form"
           onSubmit={(e) => {
@@ -1010,7 +1052,15 @@ function CustomerContactsEditor({
               Archived contact
             </label>
             <div className="record-form-footer">
-              <button>Save contact</button>
+              <button
+                disabled={
+                  !!draft.contactId &&
+                  page.items.find((c) => c.id === draft.contactId)?.revision !==
+                    draft.expectedRevision
+                }
+              >
+                Save contact
+              </button>
               <button
                 type="button"
                 className="secondary"

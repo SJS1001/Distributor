@@ -1839,6 +1839,21 @@ export function commands(
       schema: obj({ claimId: str, reason: str }),
       run: (a, k, p) => app.warranty.credit(a, k, p),
     },
+    "warranty.repair.handover": {
+      schema: obj({
+        claimId: { type: "string", minLength: 1, maxLength: 160 },
+        unitRevision: {
+          type: "integer",
+          minimum: 1,
+          maximum: 1_000_000_000,
+        },
+        serial: { type: "string", minLength: 1, maxLength: 160 },
+        recipient: { type: "string", minLength: 1, maxLength: 200 },
+        evidence: { type: "string", minLength: 1, maxLength: 2000 },
+        reason: { type: "string", minLength: 1, maxLength: 1000 },
+      }),
+      run: (a, k, p) => app.warranty.handoverRepair(a, k, p),
+    },
     "warranty.replacement.reserve": {
       schema: obj({
         claimId: str,
@@ -2320,6 +2335,11 @@ export async function createHttp(app: Application, options: HttpOptions) {
           p.password,
           p.code,
           request.headers["user-agent"],
+          enrollmentClientAddress(
+            request.ip,
+            request.headers["fly-client-ip"],
+            options.enrollmentFlyProxy ?? false,
+          ),
         );
       reply.setCookie("distributor_session", session.token, cookieOptions);
       return {
@@ -3293,6 +3313,19 @@ export async function createHttp(app: Application, options: HttpOptions) {
         request.params.unitId,
         request.query.accountId,
       ),
+  );
+  http.get<{ Params: { claimId: string } }>(
+    "/api/warranty/claims/:claimId/repair-review",
+    {
+      schema: {
+        params: obj({
+          claimId: { type: "string", minLength: 1, maxLength: 160 },
+        }),
+        querystring: obj({}),
+      },
+    },
+    async (request) =>
+      app.warranty.repairReview(actor(request), request.params.claimId),
   );
   http.get<{ Params: { claimId: string } }>(
     "/api/warranty/claims/:claimId/assessment",

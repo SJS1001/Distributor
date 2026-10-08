@@ -96,7 +96,7 @@ test("browser: phone purchase queue preserves scoped pages on failure, retries e
     .getByRole("row")
     .filter({ has: page.getByTitle("purchase-queue-001", { exact: true }) });
   await oldestOpen
-    .getByRole("button", { name: "Start receipt draft", exact: true })
+    .getByRole("button", { name: "Receive delivery", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByLabel("Purchase line", { exact: true })).toHaveValue(

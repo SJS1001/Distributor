@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from "react";
-import { command, request } from "./api.ts";
+import React, { useEffect, useRef, useState } from "react";
+import { request, RequestError } from "./api.ts";
+import { sendRetainedCommand } from "./retained-command.ts";
 import { usePages } from "./billing-inbox.tsx";
 import type {
   PurchasingPolicy,
+  PurchasingPolicyInput,
   ProductPurchasingPolicy,
+  ProductPurchasingPolicyInput,
 } from "../shared/purchasing.ts";
 import type { CatalogProduct } from "../shared/catalog-lifecycle.ts";
 import "./record-forms.css";
@@ -62,71 +65,205 @@ function ProductChoices({
     </fieldset>
   );
 }
-function CustomerPolicy({ accountId }: { accountId: string }) {
+function CustomerPolicy({
+  accountId,
+  refreshToken,
+  recoveryScope,
+}: {
+  accountId: string;
+  recoveryScope: string;
+  refreshToken?: unknown;
+}) {
+  const storageKey = `distributor-purchasing:${recoveryScope}:${accountId}`;
+  type Attempt = { key: string; payload: PurchasingPolicyInput };
+  const [recovery] = useState(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return { attempt: null as Attempt | null, error: "" };
+      const saved = JSON.parse(raw) as Attempt;
+      const p = saved.payload;
+      if (
+        raw.length > 20000 ||
+        !/^[a-f0-9-]{36}$/.test(saved.key) ||
+        !p ||
+        p.accountId !== accountId ||
+        !Number.isInteger(p.revision) ||
+        p.revision < 0 ||
+        !["none", "all", "selected"].includes(p.mode) ||
+        typeof p.requiresReview !== "boolean" ||
+        !Array.isArray(p.productIds) ||
+        !p.productIds.every((id) => typeof id === "string") ||
+        typeof p.reason !== "string" ||
+        !p.reason.trim() ||
+        p.reason.length > 1000
+      )
+        throw Error();
+      return { attempt: saved, error: "" };
+    } catch {
+      return {
+        attempt: null,
+        error:
+          "Saved purchasing change cannot be read. Restore browser storage and reload before changing this record.",
+      };
+    }
+  });
+  const dirty = useRef(!!recovery.attempt),
+    pending = useRef(recovery.attempt);
+  const [blocked, setBlocked] = useState(recovery.error);
+  const reviewed = useRef<PurchasingPolicy | null>(null);
+  const [latest, setLatest] = useState<PurchasingPolicy | null>(null),
+    [retained, setRetained] = useState(recovery.attempt);
   const [policy, setPolicy] = useState<PurchasingPolicy | null>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [reason, setReason] = useState(""),
+    [reason, setReason] = useState(recovery.attempt?.payload.reason ?? ""),
     [epoch, setEpoch] = useState(0);
   useEffect(() => {
+    if (policy) reviewed.current = policy;
+  }, [policy]);
+  useEffect(() => {
     const controller = new AbortController();
-    setPolicy(null);
     setError("");
     void request<PurchasingPolicy>(
       `/api/catalog/purchasing/${encodeURIComponent(accountId)}`,
       { signal: controller.signal },
     )
-      .then(setPolicy)
+      .then((p) => {
+        if (controller.signal.aborted) return;
+        setLatest(p);
+        if (!dirty.current && !pending.current) setPolicy(p);
+        else if (reviewed.current) setPolicy(reviewed.current);
+        else if (pending.current)
+          setPolicy({ ...p, ...pending.current.payload });
+      })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
+        if (!controller.signal.aborted) {
+          setError(e.message);
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status)) {
+            setPolicy(null);
+            setLatest(null);
+          }
+        }
       });
     return () => controller.abort();
-  }, [accountId, epoch]);
+  }, [accountId, epoch, refreshToken]);
+  const stale = !!policy && !!latest && policy.revision !== latest.revision;
+  async function save(attempt: Attempt) {
+    let definitivelyRejected = false;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await sendRetainedCommand(
+        storageKey,
+        "catalog.purchasing.set",
+        attempt,
+        () => {
+          pending.current = attempt;
+          setRetained(attempt);
+        },
+        () => {
+          definitivelyRejected = true;
+          pending.current = null;
+          setRetained(null);
+        },
+      );
+      pending.current = null;
+      setRetained(null);
+      dirty.current = false;
+      setReason("");
+      setNotice("Customer purchasing rules saved.");
+      setEpoch((e) => e + 1);
+    } catch (e) {
+      setError((e as Error).message);
+      if (!pending.current && !definitivelyRejected)
+        setBlocked((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
+      {blocked && <p role="alert">{blocked}</p>}
       {error && (
         <p role="alert" className="error">
           {error}
         </p>
       )}
       {notice && <p role="status">{notice}</p>}
+      {stale && (
+        <p role="status">
+          Purchasing rules changed since this draft was reviewed. Your edits and
+          reviewed revision are retained. Current rules: {latest?.mode} product
+          access;{" "}
+          {latest?.requiresReview
+            ? "every order requires approval"
+            : "orders follow product review rules"}
+          ; {latest?.productIds.length ?? 0} selected products; revision{" "}
+          {latest?.revision}.
+        </p>
+      )}
+      {stale && !retained && latest && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setPolicy((p) =>
+              p ? { ...p, revision: latest.revision } : latest,
+            );
+          }}
+        >
+          Use latest purchasing revision for this draft
+        </button>
+      )}
+      {retained && policy && (
+        <div role="status">
+          <p>
+            A purchasing change needs confirmation. Retry sends the identical
+            saved values and revision.
+          </p>
+          <button
+            type="button"
+            disabled={busy || !policy || !!blocked}
+            onClick={() => void save(retained)}
+          >
+            Retry saved purchasing change
+          </button>
+        </div>
+      )}
       {policy ? (
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            setBusy(true);
-            setError("");
-            setNotice("");
-            try {
-              await command("catalog.purchasing.set", {
+            if (stale || retained || blocked) return;
+            void save({
+              key: crypto.randomUUID(),
+              payload: {
                 ...policy,
                 productIds: policy.mode === "selected" ? policy.productIds : [],
                 reason,
-              });
-              setReason("");
-              setNotice("Customer purchasing rules saved.");
-              setEpoch(epoch + 1);
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
+              },
+            });
           }}
         >
-          <fieldset disabled={busy} className="record-form-card">
+          <fieldset
+            disabled={busy || !!retained || !!blocked}
+            className="record-form-card"
+          >
             <legend>Customer purchasing access</legend>
             <label className="purchasing-access">
               Catalog access
               <select
                 aria-label="Catalog access"
                 value={policy.mode}
-                onChange={(e) =>
+                onChange={(e) => {
+                  dirty.current = true;
                   setPolicy({
                     ...policy,
                     mode: e.target.value as PurchasingPolicy["mode"],
-                  })
-                }
+                  });
+                }}
               >
                 <option value="none">No product access</option>
                 <option value="selected">Selected products</option>
@@ -137,16 +274,20 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
               <input
                 type="checkbox"
                 checked={policy.requiresReview}
-                onChange={(e) =>
-                  setPolicy({ ...policy, requiresReview: e.target.checked })
-                }
+                onChange={(e) => {
+                  dirty.current = true;
+                  setPolicy({ ...policy, requiresReview: e.target.checked });
+                }}
               />
               Require distributor approval for every order
             </label>
             {policy.mode === "selected" && (
               <ProductChoices
                 selected={policy.productIds}
-                change={(productIds) => setPolicy({ ...policy, productIds })}
+                change={(productIds) => {
+                  dirty.current = true;
+                  setPolicy({ ...policy, productIds });
+                }}
                 disabled={busy}
               />
             )}
@@ -156,7 +297,10 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
                 required
                 maxLength={1000}
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => {
+                  dirty.current = true;
+                  setReason(e.target.value);
+                }}
               />
             </label>
             <p className="record-form-note">
@@ -164,15 +308,19 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
               acceptance checks. Product rules may independently require review.
             </p>
             <div className="record-form-footer">
-              <button type="submit">Save customer purchasing rules</button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => setEpoch(epoch + 1)}
-              >
-                Reload current purchasing rules
+              <button type="submit" disabled={stale}>
+                Save customer purchasing rules
               </button>
+              {(error || refreshToken === undefined) && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setEpoch((e) => e + 1)}
+                >
+                  Reload current purchasing rules
+                </button>
+              )}
             </div>
           </fieldset>
         </form>
@@ -187,7 +335,7 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
             type="button"
             className="secondary"
             disabled={busy}
-            onClick={() => setEpoch(epoch + 1)}
+            onClick={() => setEpoch((e) => e + 1)}
           >
             Reload current purchasing rules
           </button>
@@ -199,8 +347,12 @@ function CustomerPolicy({ accountId }: { accountId: string }) {
 export function CustomerPurchasingRules({
   accounts,
   selectedOnly = false,
+  refreshToken,
+  recoveryScope = "standalone",
 }: {
+  recoveryScope?: string;
   selectedOnly?: boolean;
+  refreshToken?: unknown;
   accounts: { id: string; name: string }[];
 }) {
   const [id, setId] = useState(accounts[0]?.id ?? "");
@@ -220,38 +372,171 @@ export function CustomerPurchasingRules({
         </label>
       )}
       {id ? (
-        <CustomerPolicy key={id} accountId={id} />
+        <CustomerPolicy
+          key={`${recoveryScope}:${id}`}
+          accountId={id}
+          refreshToken={refreshToken}
+          recoveryScope={recoveryScope}
+        />
       ) : (
         <p>Create a customer before assigning product access.</p>
       )}
     </section>
   );
 }
-export function ProductPurchasingRules({ productId }: { productId: string }) {
+export function ProductPurchasingRules({
+  productId,
+  recoveryScope = "standalone",
+  refreshToken,
+}: {
+  productId: string;
+  recoveryScope?: string;
+  refreshToken?: unknown;
+}) {
+  const storageKey = `distributor-product-purchasing:${recoveryScope}:${productId}`;
+  type Attempt = { key: string; payload: ProductPurchasingPolicyInput };
+  const [recovery] = useState(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return { attempt: null as Attempt | null, error: "" };
+      const saved = JSON.parse(raw) as Attempt;
+      const p = saved.payload;
+      if (
+        raw.length > 20000 ||
+        !/^[a-f0-9-]{36}$/.test(saved.key) ||
+        !p ||
+        p.productId !== productId ||
+        !Number.isInteger(p.revision) ||
+        p.revision < 0 ||
+        typeof p.requiresReview !== "boolean" ||
+        typeof p.reason !== "string" ||
+        !p.reason.trim() ||
+        p.reason.length > 1000
+      )
+        throw Error();
+      return { attempt: saved, error: "" };
+    } catch {
+      return {
+        attempt: null,
+        error:
+          "Saved purchasing change cannot be read. Restore browser storage and reload before changing this record.",
+      };
+    }
+  });
+  const dirty = useRef(!!recovery.attempt),
+    pending = useRef(recovery.attempt);
+  const [blocked, setBlocked] = useState(recovery.error);
+  const reviewed = useRef<ProductPurchasingPolicy | null>(null);
+  const [latest, setLatest] = useState<ProductPurchasingPolicy | null>(null),
+    [retained, setRetained] = useState(recovery.attempt);
   const [policy, setPolicy] = useState<ProductPurchasingPolicy | null>(null),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [reason, setReason] = useState(""),
-    [epoch, setEpoch] = useState(0),
-    [notice, setNotice] = useState("");
+    [reason, setReason] = useState(recovery.attempt?.payload.reason ?? ""),
+    [epoch, setEpoch] = useState(0);
   useEffect(() => {
-    const c = new AbortController();
-    setPolicy(null);
+    if (policy) reviewed.current = policy;
+  }, [policy]);
+  useEffect(() => {
+    const controller = new AbortController();
     setError("");
     void request<ProductPurchasingPolicy>(
       `/api/catalog/products/${encodeURIComponent(productId)}/purchasing`,
-      { signal: c.signal },
+      { signal: controller.signal },
     )
-      .then(setPolicy)
+      .then((p) => {
+        if (controller.signal.aborted) return;
+        setLatest(p);
+        if (!dirty.current && !pending.current) setPolicy(p);
+        else if (reviewed.current) setPolicy(reviewed.current);
+        else if (pending.current)
+          setPolicy({ ...p, ...pending.current.payload });
+      })
       .catch((e) => {
-        if (!c.signal.aborted) setError(e.message);
+        if (!controller.signal.aborted) {
+          setError(e.message);
+          if (e instanceof RequestError && [401, 403, 404].includes(e.status)) {
+            setPolicy(null);
+            setLatest(null);
+          }
+        }
       });
-    return () => c.abort();
-  }, [productId, epoch]);
+    return () => controller.abort();
+  }, [productId, epoch, refreshToken]);
+  const stale = !!policy && !!latest && policy.revision !== latest.revision;
+  async function save(attempt: Attempt) {
+    let definitivelyRejected = false;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await sendRetainedCommand(
+        storageKey,
+        "catalog.product-purchasing.set",
+        attempt,
+        () => {
+          pending.current = attempt;
+          setRetained(attempt);
+        },
+        () => {
+          definitivelyRejected = true;
+          pending.current = null;
+          setRetained(null);
+        },
+      );
+      pending.current = null;
+      setRetained(null);
+      dirty.current = false;
+      setReason("");
+      setNotice("Product purchasing rule saved.");
+      setEpoch((e) => e + 1);
+    } catch (e) {
+      setError((e as Error).message);
+      if (!pending.current && !definitivelyRejected)
+        setBlocked((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <>
       <h3>Product purchasing rules</h3>
+      {blocked && <p role="alert">{blocked}</p>}
       {error && <p role="alert">{error}</p>}
+      {stale && (
+        <p role="status">
+          Product purchasing rules changed since this draft was reviewed. Your
+          edits and reviewed revision are retained. Current revision{" "}
+          {latest?.revision}.
+        </p>
+      )}
+      {stale && !retained && latest && (
+        <button
+          type="button"
+          disabled={busy || !!blocked}
+          onClick={() =>
+            setPolicy((p) => (p ? { ...p, revision: latest.revision } : latest))
+          }
+        >
+          Use latest product purchasing revision for this draft
+        </button>
+      )}
+      {retained && policy && (
+        <div role="status">
+          <p>
+            A product purchasing change needs confirmation. Retry sends the
+            identical saved values and revision.
+          </p>
+          <button
+            type="button"
+            disabled={busy || !!blocked}
+            onClick={() => void save(retained)}
+          >
+            Retry saved product purchasing change
+          </button>
+        </div>
+      )}
       {notice && <p role="status">{notice}</p>}
       {!policy && (
         <>
@@ -269,32 +554,26 @@ export function ProductPurchasingRules({ productId }: { productId: string }) {
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            setBusy(true);
-            setError("");
-            try {
-              await command("catalog.product-purchasing.set", {
-                ...policy,
-                reason,
-              });
-              setReason("");
-              setNotice("Product purchasing rule saved.");
-              setEpoch(epoch + 1);
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
+            if (stale || retained || blocked) return;
+            void save({
+              key: crypto.randomUUID(),
+              payload: { ...policy, reason },
+            });
           }}
         >
-          <fieldset disabled={busy} className="record-form-card">
+          <fieldset
+            disabled={busy || !!retained || !!blocked}
+            className="record-form-card"
+          >
             <legend>Order review</legend>
             <label className="record-form-check">
               <input
                 type="checkbox"
                 checked={policy.requiresReview}
-                onChange={(e) =>
-                  setPolicy({ ...policy, requiresReview: e.target.checked })
-                }
+                onChange={(e) => {
+                  dirty.current = true;
+                  setPolicy({ ...policy, requiresReview: e.target.checked });
+                }}
               />
               Require distributor approval for orders containing this product
             </label>
@@ -304,7 +583,10 @@ export function ProductPurchasingRules({ productId }: { productId: string }) {
                 required
                 maxLength={1000}
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => {
+                  dirty.current = true;
+                  setReason(e.target.value);
+                }}
               />
             </label>
             <p className="record-form-note">
@@ -312,7 +594,9 @@ export function ProductPurchasingRules({ productId }: { productId: string }) {
               rules.
             </p>
             <div className="record-form-footer">
-              <button>Save product purchasing rule</button>
+              <button type="submit" disabled={stale}>
+                Save product purchasing rule
+              </button>
               <button
                 type="button"
                 className="secondary"

@@ -1,5 +1,19 @@
 import { test, expect, type Page } from "@playwright/test";
 import { navigateWorkspace } from "./workspace-navigation.ts";
+// Isolated HTTP fixture: WebKit otherwise upgrades local asset requests to HTTPS.
+// Production headers are unchanged.
+test.beforeEach(async ({ page }) => {
+  await page.route("http://127.0.0.1:3261/", async (route) => {
+    const response = await route.fetch();
+    const headers = response.headers();
+    if (headers["content-security-policy"])
+      headers["content-security-policy"] = headers[
+        "content-security-policy"
+      ].replace(/upgrade-insecure-requests;?/g, "");
+    await route.fulfill({ response, headers });
+  });
+});
+
 async function login(page: Page, buyer = false) {
   await page.goto(buyer ? "/#customer-sign-in" : "/#admin-sign-in");
   await page
@@ -205,6 +219,7 @@ test("buyer Account stays separate and staff customer URLs are denied", async ({
   await login(page, true);
   await page.goto("/#page=Account");
   await expect(page.locator("#workspace-title")).toHaveText("Account");
+  await page.getByRole("tab", { name: "Data location", exact: true }).click();
   await expect(
     page.getByText("Residency choice", { exact: true }),
   ).toBeVisible();

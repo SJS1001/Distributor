@@ -713,7 +713,11 @@ export function CatalogResourceWorkspace({
           />
         </PageSection>
         <PageSection id="catalog-rules">
-          <ProductPurchasingRules productId={product.id} />
+          <ProductPurchasingRules
+            key={`${recoveryScope}:${product.id}`}
+            productId={product.id}
+            recoveryScope={recoveryScope}
+          />
         </PageSection>
       </PageSections>
     </section>

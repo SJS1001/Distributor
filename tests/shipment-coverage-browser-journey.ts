@@ -24,7 +24,7 @@ async function login(page: Page, email: string, buyer = false) {
   return csrf;
 }
 // Buyers use the customer header: Overview is labelled Reports and Returns is
-// reached from Account. A phone header collapses the navigation behind Menu.
+// labelled Returns & warranty. A phone header collapses navigation behind Menu.
 async function buyerNav(page: Page, name: "Reports" | "Returns") {
   const target = page
     .getByRole("navigation", { name: "Workspace", exact: true })
@@ -35,7 +35,9 @@ async function buyerNav(page: Page, name: "Reports" | "Returns") {
   if (!(await target.isVisible()))
     await page.getByRole("button", { name: "Menu", exact: true }).click();
   await target.click();
-  await expect(page.locator("#workspace-title")).toHaveText(name);
+  await expect(page.locator("#workspace-title")).toHaveText(
+    name === "Returns" ? "Returns & warranty" : name,
+  );
 }
 test("browser: phone claim retains handover policy across later revisions, transient coverage reads and lost claim replies", async ({
   page,

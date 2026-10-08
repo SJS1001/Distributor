@@ -21,7 +21,7 @@ async function signOut(page: Page) {
     .getByRole("button", { name: "Sign out", exact: true })
     .click();
   await expect(
-    page.getByRole("link", { name: "Customer sign in", exact: true }).first(),
+    page.getByRole("link", { name: "Sign in", exact: true }).first(),
   ).toBeVisible();
 }
 async function openNotes(page: Page) {
