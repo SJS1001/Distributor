@@ -1,12 +1,17 @@
 .staff-catalog {
   min-width: 0;
 }
-.catalog-product-link {
+.staff-catalog .catalog-product-link {
   display: flex;
   align-items: center;
   gap: 12px;
   text-align: left;
   min-height: 44px;
+  background: transparent;
+  color: var(--text, #153557);
+  border: 0;
+  padding: 4px;
+  box-shadow: none;
 }
 .catalog-product-link small {
   display: block;
