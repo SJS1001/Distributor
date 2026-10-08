@@ -1734,6 +1734,7 @@
   position: relative;
   min-width: 0;
   gap: 0;
+  transform: translateY(10%);
 }
 .public-site .public-equipment-feature {
   position: relative;
@@ -2010,7 +2011,7 @@
   }
   .public-site .public-hero {
     grid-template-columns: 1fr;
-    padding: 32px 20px;
+    padding: 32px 20px 44px;
     gap: 28px;
   }
   .public-site .public-hero h1 {

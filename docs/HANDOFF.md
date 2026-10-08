@@ -3839,3 +3839,9 @@ Final unchanged-build verification: 16/16 focused UI/carousel checks plus 40/40 
 ## Taller homepage carousel — 2026-10-08
 
 Owner requested a taller carousel image and slightly lower controls. From base 18d5e8f, the public image area now scales from 260px to 280px (previously 223px), and the controls have 16px separation (previously 10px). Desktop screenshot reviewed; all 16 focused Chromium/WebKit layout and interaction checks pass, including narrow phones and touch targets. Build, CSS formatting and diff checks pass. Private receipts: local-evidence/release-20261008/carousel-taller-*. Local preview restored on port3125. No deployment; production remains d0886bc. Pending Orders work and unrelated untracked paths remain preserved.
+
+## Carousel vertical placement — 2026-10-08
+
+Owner requested moving the carousel and its controls down together another 10%. The whole carousel group shifts by 10% of its height (about 35–37px), preserving image dimensions and control spacing. Mobile hero bottom padding increases 12px to retain separation from the next section. Initial focused Chromium/WebKit checks passed 16/16; final verification after mobile spacing adjustment is recorded below. Private receipts remain under local-evidence/release-20261008/carousel-lower-*. No deployment; production remains d0886bc. Unrelated work is preserved.
+
+Final build and focused Chromium/WebKit checks pass 16/16 after mobile spacing adjustment; CSS formatting and diff checks pass. Desktop placement reviewed, and measured 320/390px spacing informed the mobile correction. Local preview restored at port3125; source/docs committed and pushed on the authorized branch.
