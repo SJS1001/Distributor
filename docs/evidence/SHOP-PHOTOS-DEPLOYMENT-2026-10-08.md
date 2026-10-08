@@ -1,0 +1,17 @@
+# Shop and staff Catalog photograph correction — 2026-10-08
+
+Owner authorized fixing photographs and deploying production while retaining sample sign-in credentials. Application source `c8b8b5eaef71a1b8e34ff643592f027a1225896b` includes the photograph behavior in `94e550bbacddc524867440d971160c9f523617cb` and a neutral Catalog thumbnail-link style correction identified during live visual review.
+
+Shop requests published-image-first ordering. Keyset pagination preserves all eligible products without duplicates; searches, categories, selected products and customer pricing/entitlements remain enforced. Other catalog consumers retain default SKU order. Administration Catalog displays published thumbnail images beside product names; selecting the product opens its existing image/document manager. Loading, missing publication and failed reads have distinct statuses. Draft photographs remain private from buyers.
+
+Eight matched GREE equipment families already had published photographs. Previously, sixteen unpictured accessory/control records appeared ahead of the equipment in Shop, and staff Catalog did not render thumbnails. This update surfaces existing published photographs; it does not claim to photograph or identify generic accessories/controllers with insufficient manufacturer/model information. Those records remain available and explicitly lack a published photo.
+
+Workstation evidence: native catalog discovery/media/entry/lifecycle28/28; Chromium/WebKit catalog management8/8, repeated after neutral-link styling8/8; type/build pass; changed-file React Doctor no findings (87/100). Tests cover cross-page ordering, no omissions/duplicates, draft isolation, search/selected-product preservation, publication, buyer image bytes and staff thumbnails.
+
+Production: https://dstrbtr.ca/ serves image `registry.fly.io/distributor-ca-sjs1001:shop-images33-style-20261008`, digest `sha256:6c76f0b1dabebd987282c431463f42ba92c5bf7dc562af697ea057c4e4c8d48b`, on the existing Toronto Machine and volume. Configuration compares equal except image; sample sign-ins and disabled provider integrations are preserved. No migration or database replacement. All536 runtime/build files match the image; schema33 CA fingerprint unchanged, SQLite integrity ok and no foreign-key violations.
+
+Fresh encrypted native backup SHA256 `86b98b298bad34d73a7d6cea67f8fe9e528f1250e12dd359a49cca85d366f29b` restored successfully in a pinned previous-image container with networking disabled. Backup and key remain private. Previous `public33-20261008` image is retained for code rollback; preserve the live database during an image rollback.
+
+Final live photograph checks pass8/8 across Chromium/WebKit,1440px/390px: the first eight Shop products have published images, the first visible photograph loads actual pixels, staff Catalog photographs load and open the correct manager. Desktop screenshots reviewed directly; final neutral thumbnail links corrected a heavy inherited button background found during the first live review. Final live workspace traversal passes84/84 across the same engines/widths: all15 administration and6 customer pages, sign-in/out and signed-out session boundary, zero page errors/overflow/attempted business writes.
+
+This bounded correction does not qualify physical devices, real providers, operational capacity/disaster recovery or unidentified product photographs. Those limitations remain in the earlier release review. No CI, PR, merge, new infrastructure or gate advancement. Private logs/receipts remain excluded from Git.
