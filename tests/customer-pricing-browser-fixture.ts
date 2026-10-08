@@ -1,5 +1,5 @@
 import { fixture } from "./fixtures.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 // The customer pricing journey's synthetic server. Its own config, the shared
 // browser fleet and the remaining-navigation setup all start this same server.

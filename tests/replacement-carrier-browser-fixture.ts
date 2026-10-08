@@ -3,7 +3,7 @@ import {
   replacementAdapter,
 } from "./replacement-carrier-fixture.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 // Local synthetic transport only; no carrier endpoint or device is contacted.
 export async function replacementCarrierBrowser(

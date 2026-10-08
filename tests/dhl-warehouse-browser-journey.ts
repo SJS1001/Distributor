@@ -284,7 +284,9 @@ for (const variant of variants)
     }
     await prepare.click();
     if (variant.lost) {
-      await expect(pane.getByRole("alert")).toContainText("Failed to fetch");
+      await expect(pane.getByRole("alert")).toContainText(
+        /Failed to fetch|Load failed/,
+      );
       await prepare.click();
       await expect(
         pane.getByRole("heading", { name: "Current booking", exact: true }),

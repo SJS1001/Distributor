@@ -1,5 +1,5 @@
 import { fixture } from "./fixtures.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function costCorrectionBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   const costs = f.app.integration.costs;

@@ -142,7 +142,13 @@ function ModalForm({ dialog, busy, error, close, submit }: ModalProps) {
     // Disabling the submit button can move focus outside the dialog. Restore
     // it after a rejected command so keyboard recovery remains available.
     const element = ref.current;
-    if (!busy && error && element && !element.contains(document.activeElement))
+    if (
+      !busy &&
+      error &&
+      element &&
+      (document.activeElement === element ||
+        !element.contains(document.activeElement))
+    )
       focusModal(element);
   }, [busy, error]);
   // Close only when both press and release land on the backdrop, so selecting

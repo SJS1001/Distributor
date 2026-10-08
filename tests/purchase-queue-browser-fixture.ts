@@ -1,6 +1,6 @@
 import { fixture } from "./fixtures.ts";
 import { seedPurchaseQueue } from "./purchase-queue-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function purchaseQueueBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   f.app.database

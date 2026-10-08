@@ -1,7 +1,7 @@
 import { fixture, accept, chooseProviders } from "./fixtures.ts";
 import { DhlTestClient } from "../src/server/dhl-test.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 import { PDFDocument } from "pdf-lib";
 import assert from "node:assert/strict";
 

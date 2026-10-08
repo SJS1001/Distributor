@@ -117,7 +117,9 @@ test("browser: phone carrier settings review retains exact retries, blocks drift
     })
     .check();
   await prepare.click();
-  await expect(pane.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(pane.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   await prepare.click();
   await expect(
     pane.getByRole("heading", { name: "Current booking", exact: true }),

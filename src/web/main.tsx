@@ -2297,7 +2297,12 @@ function App() {
     <button
       className="secondary"
       disabled={busy || unavailable}
-      onClick={action}
+      onClick={(event) => {
+        // Safari does not focus buttons on pointer activation. Dialogs must
+        // remember the actual task entrance for their keyboard return path.
+        event.currentTarget.focus();
+        action(event);
+      }}
     >
       {label}
     </button>
@@ -3212,15 +3217,34 @@ function App() {
                   <div className="actions">
                     {can("commercial", "buyer") &&
                       button("Prepare order", () => placeOrder())}
+                    {can("warehouse") && (
+                      <>
+                        {button("Fulfill an order", () =>
+                          updateRoute({
+                            orderState: "open",
+                            orderReservation: undefined,
+                          }),
+                        )}
+                        <InfoBubble label="Order fulfillment">
+                          <ol>
+                            <li>
+                              Choose an open order's Actions and pick its
+                              allocated stock.
+                            </li>
+                            <li>
+                              Pack the picked quantities for collection or
+                              carrier delivery.
+                            </li>
+                            <li>
+                              Open Shipments to record actual handover and
+                              create its invoice. Packing alone does not create
+                              an invoice.
+                            </li>
+                          </ol>
+                        </InfoBubble>
+                      </>
+                    )}
                   </div>
-                  {can("warehouse") && (
-                    <FulfillmentGuide
-                      shipments={false}
-                      navigate={() =>
-                        updateRoute({ section: "orders-shipments" })
-                      }
-                    />
-                  )}
                 </div>
                 <OrderQueueControls
                   queue={orderQueue}
@@ -5398,7 +5422,10 @@ function App() {
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => setPurchaseEntryOpen(true)}
+                        onClick={(event) => {
+                          event.currentTarget.focus();
+                          setPurchaseEntryOpen(true);
+                        }}
                       >
                         Create purchase order
                       </button>

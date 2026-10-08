@@ -5,7 +5,7 @@ import {
 import { client as canadaPostCreation } from "./canada-post-creation-fixture.ts";
 import { manifestClient as canadaPostManifest } from "./canada-post-manifest-fixture.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 export async function canadaPostBrowser(after: (fn: () => void) => void) {
   // Independent, strictly synthetic warehouse fixture. Guarded writes deliberately

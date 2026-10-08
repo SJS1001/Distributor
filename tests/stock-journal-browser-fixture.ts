@@ -1,6 +1,6 @@
 // Synthetic frozen journals only. No receiver transport or actual finance evidence.
 import { journalFixture, postedResult } from "./stock-journal-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 import { policy } from "./cost-correction-fixture.ts";
 import { cancellationFixture } from "./stock-journal-cancellation-fixture.ts";
 

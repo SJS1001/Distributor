@@ -4,7 +4,7 @@ import {
 } from "./carrier-configuration-fixture.ts";
 import { DomainError } from "../src/server/core.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 // Pure constructor metadata and a synthetic guarded lost response. No provider
 // transport is installed or called by this independent browser database.

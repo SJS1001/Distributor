@@ -1,6 +1,6 @@
 import { fixture } from "./fixtures.ts";
 import { seedStockQueue, inspectedClaim } from "./stock-queue-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function stockQueueBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   inspectedClaim(f);

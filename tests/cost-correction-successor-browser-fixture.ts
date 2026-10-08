@@ -5,7 +5,7 @@ import {
   outcomeInput,
   policy,
 } from "./cost-correction-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function costCorrectionSuccessorBrowser(
   after: (fn: () => void) => void,
 ) {

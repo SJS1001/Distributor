@@ -1,6 +1,6 @@
 import { fixture } from "./fixtures.ts";
 import { seedOperationsHealth, oldest } from "./operations-health-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 export async function operationsHealthBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after }, { eventReports: false });

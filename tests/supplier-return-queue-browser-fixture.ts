@@ -1,6 +1,6 @@
 import { fixture } from "./fixtures.ts";
 import { seedSupplierReturns } from "./supplier-return-queue-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function supplierReturnQueueBrowser(
   after: (fn: () => void) => void,
 ) {

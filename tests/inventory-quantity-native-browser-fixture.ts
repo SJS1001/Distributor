@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { canonical } from "../src/server/core.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 import type { Region } from "../src/server/iam.ts";
 import { fixture } from "./fixtures.ts";
 

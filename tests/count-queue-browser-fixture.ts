@@ -1,6 +1,6 @@
 import { fixture } from "./fixtures.ts";
 import { countQueueFixture } from "./count-queue-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 export async function countQueueBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });

@@ -205,6 +205,42 @@ async function port() {
   );
   return value;
 }
+// Observation time changes on each read; all business values must remain equal.
+function businessDashboard(dashboard) {
+  const value = structuredClone(dashboard);
+  for (const [holder, key] of [
+    [value.analytics.orders.period, "asOf"],
+    [value.analytics.invoices.period, "asOf"],
+    [value.analytics.invoices, "agingAsOf"],
+  ]) {
+    assert.equal(typeof holder[key], "string");
+    assert.ok(
+      Number.isFinite(Date.parse(holder[key])),
+      "Invalid observation time.",
+    );
+    delete holder[key];
+  }
+  return value;
+}
+function assertDashboardEqual(actual, expected, message) {
+  try {
+    assert.deepEqual(actual, expected, message);
+  } catch (error) {
+    const paths = [];
+    function compare(a, b, path) {
+      if (Object.is(a, b)) return;
+      if (a && b && typeof a === "object" && typeof b === "object") {
+        for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+          compare(a[key], b[key], `${path}.${key}`);
+        }
+      } else paths.push(path);
+    }
+    compare(actual, expected, "dashboard");
+    // Retain only field paths, never customer values or credentials.
+    receipt.dashboardDifferencePaths = paths;
+    throw error;
+  }
+}
 async function regionCheck(region) {
   const directory = join(work, region);
   await mkdir(directory, { mode: 0o700 });
@@ -413,7 +449,7 @@ async function regionCheck(region) {
           quarantine: false,
         });
       }
-      const dashboard = await read("/api/dashboard");
+      const dashboard = businessDashboard(await read("/api/dashboard"));
       assert.equal(dashboard.organization.region, region);
       assert.equal(
         dashboard.organization.currency,
@@ -427,7 +463,7 @@ async function regionCheck(region) {
         unit = dashboard.stock[0];
         prepared = new Map();
       } else
-        assert.deepEqual(
+        assertDashboardEqual(
           dashboard,
           original,
           "Restart changed stock/business state.",
@@ -469,8 +505,8 @@ async function regionCheck(region) {
           );
       }
       assert.equal((await read("/api/stock/labels")).length, 3);
-      assert.deepEqual(
-        await read("/api/dashboard"),
+      assertDashboardEqual(
+        businessDashboard(await read("/api/dashboard")),
         original,
         "Label export changed native business state.",
       );

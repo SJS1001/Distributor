@@ -38,7 +38,7 @@ import { coveragePolicyBrowser } from "./coverage-policy-browser-fixture.ts";
 import { countPolicyBrowser } from "./count-policy-browser-fixture.ts";
 import { CarrierRuntime } from "../src/server/carrier-runtime.ts";
 import { chooseProviders, fixture, accept, ship } from "./fixtures.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 import { QuickBooksBrowser } from "../src/server/quickbooks-browser.ts";
 import {
   ProviderRuntime,

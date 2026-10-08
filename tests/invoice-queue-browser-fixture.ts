@@ -1,6 +1,6 @@
 import { fixture, accept, ship } from "./fixtures.ts";
 import { seedInvoiceQueue } from "./invoice-queue-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function invoiceQueueBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   const native = ship(f, accept(f, 2).id).invoiceId;

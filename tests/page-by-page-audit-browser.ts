@@ -462,6 +462,29 @@ test("every administration and customer destination exposes usable sections and 
       .click();
     await expect(productDialog).toBeHidden();
     expect(productReads).toBeGreaterThanOrEqual(2);
+    await navigateWorkspace(page, "Orders");
+    await page
+      .getByRole("combobox", { name: "Order state", exact: true })
+      .selectOption("closed");
+    await page
+      .getByRole("button", { name: "Fulfill an order", exact: true })
+      .click();
+    await expect(
+      page.getByRole("combobox", { name: "Order state", exact: true }),
+    ).toHaveValue("open");
+    const fulfillmentInfo = page.getByRole("button", {
+      name: "About Order fulfillment",
+      exact: true,
+    });
+    await fulfillmentInfo.click();
+    await expect(fulfillmentInfo).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      page.getByText("Packing alone does not create an invoice.", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(fulfillmentInfo).toHaveAttribute("aria-expanded", "false");
     await page.goto(
       origin +
         "/" +

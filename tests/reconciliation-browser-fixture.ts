@@ -1,5 +1,5 @@
 import { fixture, accept, ship } from "./fixtures.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function reconciliationBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   const sale = ship(f, accept(f).id);

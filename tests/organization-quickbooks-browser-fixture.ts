@@ -1,6 +1,6 @@
 // Dedicated synthetic organization authority, independent of buyer credentials.
 import { fixture, syntheticDisclosure } from "./fixtures.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 import { OrganizationQuickBooksBrowser } from "../src/server/organization-quickbooks-browser.ts";
 
 export async function organizationQuickBooksBrowser(

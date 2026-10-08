@@ -267,7 +267,9 @@ test("browser: Canada Post phone group preparation survives a lost reply, recove
       exact: true,
     })
     .click();
-  await expect(panel.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(panel.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   await expect(
     panel.getByRole("checkbox", {
       name: `Select Canada Post booking ${first.items[0].id}`,
@@ -641,7 +643,9 @@ test("browser: Canada Post failed selection can be reviewed again and wholly uns
       exact: true,
     })
     .click();
-  await expect(review.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(review.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   await review
     .getByRole("button", {
       name: "Retry current Canada Post group",

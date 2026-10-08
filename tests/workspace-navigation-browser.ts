@@ -1,7 +1,7 @@
 // These journeys own their servers on ports the shared browser fixture fleet
 // does not bind, so they also run inside browser.spec.ts.
 import { test, expect } from "@playwright/test";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 import { replacementCarrierFixture } from "./replacement-carrier-fixture.ts";
 import { navigateWorkspace } from "./workspace-navigation.ts";
 
@@ -12,6 +12,19 @@ test("browser: secondary pages load on demand and recover a failed download with
   const f = replacementCarrierFixture({ after: (fn) => cleanup.push(fn) });
   const origin = "http://127.0.0.1:3245";
   const http = await createHttp(f.app, { origin });
+  let downloads = 0;
+  // A real temporary server failure exercises reload recovery without relying
+  // on browser-specific interception/cache behavior.
+  http.addHook("onRequest", async (request, reply) => {
+    if (/\/assets\/operations-health-.*\.js/.test(request.url)) {
+      downloads++;
+      if (downloads === 1)
+        return reply
+          .code(503)
+          .header("Cache-Control", "no-store")
+          .send("Synthetic temporary module outage");
+    }
+  });
   const chunks: string[] = [];
   page.on("request", (request) => {
     if (
@@ -31,12 +44,6 @@ test("browser: secondary pages load on demand and recover a failed download with
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.locator("#workspace-title")).toHaveText("Overview");
     expect(chunks).toEqual([]);
-    let downloads = 0;
-    await page.route("**/assets/operations-health-*.js", async (route) => {
-      downloads++;
-      if (downloads === 1) await route.abort("failed");
-      else await route.continue();
-    });
     await navigateWorkspace(page, "Operations health");
     await expect(page.getByRole("alert")).toHaveText(
       "Unable to load operations health. Reload the workspace to try again.",

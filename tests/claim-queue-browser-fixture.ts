@@ -1,6 +1,6 @@
 import { fixture } from "./fixtures.ts";
 import { seedClaimQueue } from "./claim-queue-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function claimQueueBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   seedClaimQueue(f);

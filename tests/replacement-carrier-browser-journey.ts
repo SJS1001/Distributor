@@ -103,7 +103,9 @@ test("browser: phone replacement carrier preparation, private label and exact di
     exact: true,
   });
   await prepare.click();
-  await expect(pane.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(pane.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   await prepare.click();
   await expect(
     pane.getByRole("heading", { name: "Current booking", exact: true }),

@@ -3,7 +3,7 @@ import {
   seedCatalogEntry,
   seedSavedCartQueue,
 } from "./catalog-entry-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function catalogEntryBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   seedCatalogEntry(f);

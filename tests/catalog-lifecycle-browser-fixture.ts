@@ -1,5 +1,5 @@
 import { fixture } from "./fixtures.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 export async function catalogLifecycleBrowser(after: (fn: () => void) => void) {
   const f = fixture({ after });
   for (let n = 0; n < 43; n++)

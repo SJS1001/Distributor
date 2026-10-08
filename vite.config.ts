@@ -11,5 +11,16 @@ export default defineConfig({
       },
     },
   },
-  build: { outDir: "dist" },
+  build: {
+    outDir: "dist",
+    modulePreload: {
+      // WebKit can retain failed preloaded modules across document reloads
+      // (https://bugs.webkit.org/show_bug.cgi?id=270357). Let dynamic imports
+      // fetch their JavaScript directly; keep CSS and initial HTML preloads.
+      resolveDependencies: (_url, dependencies, { hostType }) =>
+        hostType === "js"
+          ? dependencies.filter((path) => path.endsWith(".css"))
+          : dependencies,
+    },
+  },
 });

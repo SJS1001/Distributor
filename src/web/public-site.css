@@ -1786,9 +1786,18 @@
   display: flex;
   flex-wrap: nowrap;
   gap: 6px;
-  padding: 16px 0 0;
+  padding: 10px 0 6px;
   border: 0;
   background: transparent;
+}
+@media (min-width: 901px) {
+  .public-site .public-feature-carousel {
+    width: 112%;
+    margin-left: -12%;
+  }
+  .public-site .public-equipment-feature > img {
+    padding: 8px 16px 0;
+  }
 }
 .public-site .public-feature-controls > button {
   display: inline-flex;

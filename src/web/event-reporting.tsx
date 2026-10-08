@@ -235,6 +235,7 @@ export function EventReporting({
                           <button
                             className="secondary"
                             onClick={(event) => {
+                              event.currentTarget.focus();
                               opener.current = event.currentTarget;
                               setSelected(row.event_id);
                             }}
@@ -244,7 +245,12 @@ export function EventReporting({
                           {admin &&
                             data.registered &&
                             ["retry", "quarantined"].includes(row.state) && (
-                              <button onClick={() => retry(row)}>
+                              <button
+                                onClick={(event) => {
+                                  event.currentTarget.focus();
+                                  retry(row);
+                                }}
+                              >
                                 Review retry
                               </button>
                             )}

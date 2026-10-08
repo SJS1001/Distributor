@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { setup, raw } from "./canada-post-fixture.ts";
 import { client } from "./canada-post-creation-fixture.ts";
 import { manifestClient } from "./canada-post-manifest-fixture.ts";
-import { createHttp } from "../src/server/http.ts";
+import { createHttp } from "./browser-http.ts";
 
 // An independent browser-only database. Synthetic aged claims represent an
 // interrupted writer; actual paused callback fencing is verified in API tests.

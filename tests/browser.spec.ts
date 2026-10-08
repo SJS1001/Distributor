@@ -1256,6 +1256,14 @@ async function installScanHarness(page: Page) {
       };
       return stream;
     };
+    // WebKit can return a fresh MediaDevices wrapper for each property read.
+    // Hold the real API object so the permission harness remains installed;
+    // streams below are still native canvas MediaStreams.
+    const mediaDevices = navigator.mediaDevices;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: mediaDevices,
+    });
     Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
       configurable: true,
       value: async () => {
@@ -3392,7 +3400,7 @@ test("browser: provision/change password, retry one grant review, deactivate/rea
     await next(page);
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
-      "Failed to fetch",
+      /Failed to fetch|Load failed/,
     );
     await next(page);
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -6227,7 +6235,9 @@ test("browser: authenticator setup retries, required second factor, recovery reu
   await panel
     .getByRole("button", { name: "Set up authenticator", exact: true })
     .click();
-  await expect(panel.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(panel.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   await panel
     .getByRole("button", { name: "Set up authenticator", exact: true })
     .click();
@@ -6334,7 +6344,9 @@ test("browser: authenticator setup retries, required second factor, recovery reu
   await panel
     .getByRole("button", { name: "Enable authenticator", exact: true })
     .click();
-  await expect(panel.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(panel.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   expect(lostConfirm).toBe(true);
   expect((await page.request.get("/api/session")).status()).toBe(401);
   await page.unroute("**/api/security/mfa/confirm");
@@ -9842,7 +9854,9 @@ test("browser: provider acceptance history retains pages and exact terms, isolat
       if (action === "Navigation") await nav(page, "Orders");
       else
         await page.getByRole("button", { name: action, exact: true }).click();
-      expect((await failed).failure()?.errorText).toContain("ERR_ABORTED");
+      expect((await failed).failure()?.errorText).toMatch(
+        /ERR_ABORTED|cancelled/,
+      );
       cancelled = true;
       if (action === "Refresh")
         await expect(history.getByRole("status")).toHaveText(
@@ -10854,7 +10868,10 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const login = async (p: Page, email: string) => {
-    await p.goto("/#sign-in");
+    // Reuse the sign-in page shown after session revocation. A redundant
+    // document navigation can interrupt its initial reads in WebKit.
+    if (!(await p.getByLabel("Email", { exact: true }).isVisible()))
+      await p.goto("/#sign-in");
     await p.getByLabel("Email", { exact: true }).fill(email);
     await p
       .getByLabel("Password", { exact: true })
@@ -11002,7 +11019,9 @@ test("browser: phone carrier review retries a lost committed prepare, cancels an
   await review
     .getByRole("button", { name: "Prepare reviewed booking", exact: true })
     .click();
-  await expect(review.getByRole("alert")).toContainText("Failed to fetch");
+  await expect(review.getByRole("alert")).toContainText(
+    /Failed to fetch|Load failed/,
+  );
   await review
     .getByRole("button", { name: "Prepare reviewed booking", exact: true })
     .click();
@@ -13533,7 +13552,7 @@ test("browser: warranty activity page, retry, cancel and preserve buyer privacy"
 const soldSerialTest = test.extend<{ soldSerialOrigin: string }>({
   soldSerialOrigin: async ({}, use) => {
     const { fixture } = await import("./fixtures.ts");
-    const { createHttp } = await import("../src/server/http.ts");
+    const { createHttp } = await import("./browser-http.ts");
     const cleanup: (() => void)[] = [];
     const f = fixture({ after: (fn) => cleanup.push(fn) });
     try {

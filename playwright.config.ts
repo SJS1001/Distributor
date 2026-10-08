@@ -13,6 +13,7 @@ export default defineConfig({
     command: "tsx tests/browser-server.ts",
     url: "http://127.0.0.1:3117/api/health",
     reuseExistingServer: false,
-    timeout: 30000,
+    // Seeded native fixture fleet can exceed 30 seconds on a shared workstation.
+    timeout: 120000,
   },
 });

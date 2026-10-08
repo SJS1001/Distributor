@@ -57,11 +57,16 @@ test.describe(() => {
       .getByLabel("Reason for pricing change")
       .fill("Agreed synthetic 25 percent discount");
     let payload: string | undefined, key: string | undefined;
+    let finishAbort!: () => void;
+    const aborted = new Promise<void>((resolve) => {
+      finishAbort = resolve;
+    });
     await page.route("**/api/commands/catalog.pricing.set", async (route) => {
       payload = route.request().postData()!;
       key = route.request().headers()["idempotency-key"];
       await route.fetch();
       await route.abort("failed");
+      finishAbort();
     });
     await page
       .getByRole("button", { name: "Save customer pricing", exact: true })
@@ -69,6 +74,9 @@ test.describe(() => {
     await expect(
       page.getByRole("button", { name: "Retry saved pricing change" }),
     ).toBeVisible();
+    // Do not remove interception while the committed lost reply is still
+    // being aborted; WebKit can publish the retry control before that finishes.
+    await aborted;
     await page.unroute("**/api/commands/catalog.pricing.set");
     await page.reload();
     await pricing(page, false);
