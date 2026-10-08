@@ -1737,7 +1737,7 @@
 }
 .public-site .public-equipment-feature {
   position: relative;
-  height: 267px;
+  height: auto;
   overflow: hidden;
   border-radius: 6px;
   box-shadow: none;
@@ -1756,16 +1756,17 @@
 }
 .public-site .public-equipment-feature > img {
   width: 100%;
-  height: 187px;
+  height: 223px;
+  flex-shrink: 0;
   object-fit: contain;
   padding: 30px 28px 12px;
   background: #fff;
 }
 .public-site .public-feature-caption {
-  padding: 4px 18px;
+  padding: 8px 18px;
   border: 0;
   background: #fff;
-  min-height: 24px;
+  min-height: 42px;
 }
 .public-site .public-feature-caption small {
   display: none;
@@ -1875,6 +1876,8 @@
 }
 .public-site .public-section-heading > a {
   font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .public-site .public-category-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));

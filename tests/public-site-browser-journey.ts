@@ -389,13 +389,13 @@ test("public site: admin reviews explicit terms and manually hands off invitatio
 test("public site: actual isolated submission, administrator approval, activation and buyer login", async ({
   page,
   browser,
+  browserName,
 }) => {
   const password = "synthetic-approved-buyer-password";
-  const email = "native-enrollment-ui@example.test";
+  const email = `native-enrollment-ui-${browserName}@example.test`;
+  const business = `Synthetic Native Ontario Trades ${browserName}`;
   await page.goto("/#apply");
-  await page
-    .getByLabel("Business name", { exact: true })
-    .fill("Synthetic Native Ontario Trades");
+  await page.getByLabel("Business name", { exact: true }).fill(business);
   await page.getByLabel("Contact name").fill("Native Synthetic Buyer");
   await page.getByLabel("Business email").fill(email);
   await page.getByLabel("Phone", { exact: true }).fill("416-555-0101");
@@ -425,7 +425,7 @@ test("public site: actual isolated submission, administrator approval, activatio
     await navigateWorkspace(admin, "Administration", "Trade applications");
     await admin
       .getByRole("button", {
-        name: "Approve Synthetic Native Ontario Trades",
+        name: `Approve ${business}`,
         exact: true,
       })
       .click();
@@ -497,7 +497,7 @@ test("public site: actual isolated submission, administrator approval, activatio
     await expect(
       admin
         .getByRole("row")
-        .filter({ hasText: "Synthetic Native Ontario Trades" })
+        .filter({ hasText: business })
         .getByRole("cell", { name: "Buyer activated", exact: true }),
     ).toBeVisible();
   } finally {

@@ -877,9 +877,11 @@ function FeaturedCarousel() {
           </button>
           <span
             className="public-visually-hidden"
-            aria-live={paused || reducedMotion ? "polite" : "off"}
+            aria-live={
+              paused || focused || hovered || reducedMotion ? "polite" : "off"
+            }
           >
-            {index + 1} of {featured.length}
+            {index + 1} of {featured.length}: {product.title}
           </span>
         </div>
       )}
