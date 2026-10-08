@@ -210,3 +210,102 @@ test("Shop locations allow only safe product metadata", () => {
     undefined,
   );
 });
+
+test("photo-first customer discovery paginates published photos before unpictured products without omissions", async (t) => {
+  const f = fixture(t),
+    p = seedCustomerPricing(f);
+  const { createCanvas } = await import("@napi-rs/canvas");
+  const canvas = createCanvas(10, 10);
+  canvas.getContext("2d").fillRect(0, 0, 10, 10);
+  const ids: string[] = [];
+  for (let i = 0; i < 25; i++) {
+    const product = f.app.catalog.create(f.actor, `photo-sort-${i}`, {
+      sku: `${i < 21 ? "AA" : "ZZ"}-${String(i).padStart(2, "0")}`,
+      name: `Discovery fixture ${i}`,
+      serialized: false,
+      unitPrice: 1000,
+      taxBasisPoints: 1300,
+    });
+    ids.push(product.id);
+    if (i >= 20) {
+      const image = await f.app.catalogMedia.upload(
+        f.actor,
+        `photo-upload-${i}`,
+        product.id,
+        {
+          kind: "image",
+          title: "Synthetic photo",
+          altText: "Synthetic fixture artwork",
+          mediaType: "image/png",
+          contentBase64: canvas.toBuffer("image/png").toString("base64"),
+        },
+      );
+      if (i > 20)
+        await f.app.catalogMedia.publish(
+          f.actor,
+          `photo-publish-${i}`,
+          product.id,
+          image.id,
+          {
+            expectedVersion: image.version,
+            permissionAffirmed: true,
+            permissionBasis: "Owned synthetic fixture artwork",
+          },
+        );
+    }
+  }
+  const first = f.app.catalog.customerProductPage(
+    p.buyer,
+    f.buyer,
+    undefined,
+    "",
+    "",
+    undefined,
+    "images-first",
+  );
+  assert.deepEqual(
+    first.items.slice(0, 4).map((p) => p.id),
+    ids.slice(21),
+  );
+  assert.ok(first.next);
+  const second = f.app.catalog.customerProductPage(
+    p.buyer,
+    f.buyer,
+    first.next!,
+    "",
+    "",
+    undefined,
+    "images-first",
+  );
+  const all = [...first.items, ...second.items];
+  assert.equal(second.next, null);
+  assert.equal(all.length, 26);
+  assert.equal(new Set(all.map((p) => p.id)).size, 26);
+  assert.ok(all.slice(4).every((p) => !p.hasPublishedImage));
+  const selected = f.app.catalog.customerProductPage(
+    p.buyer,
+    f.buyer,
+    undefined,
+    "",
+    "bulk",
+    ids[0],
+    "images-first",
+  );
+  assert.deepEqual(
+    selected.items.map((p) => p.id),
+    [ids[0]],
+  );
+  assert.throws(
+    () =>
+      f.app.catalog.customerProductPage(
+        p.buyer,
+        f.buyer,
+        undefined,
+        "",
+        "",
+        undefined,
+        "invalid",
+      ),
+    /supported catalog sort/,
+  );
+});

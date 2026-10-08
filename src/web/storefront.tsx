@@ -491,7 +491,7 @@ function ProductResults({
   selectProduct: (productId?: string) => void;
 }) {
   const rows = usePages<CustomerProduct>(
-    `/api/catalog/customer-products/page?accountId=${encodeURIComponent(accountId)}&q=${encodeURIComponent(search)}${category ? `&category=${encodeURIComponent(category)}` : ""}`,
+    `/api/catalog/customer-products/page?sort=images-first&accountId=${encodeURIComponent(accountId)}&q=${encodeURIComponent(search)}${category ? `&category=${encodeURIComponent(category)}` : ""}`,
   );
   const triggers = useRef(new Map<string, HTMLButtonElement>()),
     returnTo = useRef<{ key: string; scroll: number } | null>(null);

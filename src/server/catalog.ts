@@ -1363,6 +1363,7 @@ export class Catalog {
     query = "",
     category = "",
     productId?: string,
+    sort = "sku",
   ): CustomerProductPage {
     return this.database.transaction(() => {
       actor = this.catalogActor(actor, ["commercial", "buyer"]);
@@ -1382,6 +1383,14 @@ export class Catalog {
         "Choose a supported product category.",
         400,
       );
+      check(
+        ["sku", "images-first"].includes(sort),
+        "VALIDATION",
+        "Choose a supported catalog sort.",
+        400,
+      );
+      const imageRank =
+        "EXISTS(SELECT 1 FROM catalog_resources r WHERE r.org_id=p.org_id AND r.product_id=p.id AND r.kind='image' AND r.state='published')";
       const selectedId =
         productId === undefined ? "" : text(productId, "Product ID", 128);
       const search = query.trim();
@@ -1415,8 +1424,8 @@ export class Catalog {
          FROM catalog_products p LEFT JOIN catalog_prices t ON t.org_id=p.org_id AND t.product_id=p.id AND t.tier=?
          WHERE p.org_id=? AND p.active=1 AND ${this.entitlementPredicate()} AND ${this.priceablePredicate()} AND (?='' OR instr(lower(p.sku),lower(?))>0 OR instr(lower(p.name),lower(?))>0)
          AND (?='' OR p.serialized=?) AND (?='' OR p.id=?)
-         ${cursor ? "AND (p.sku>? OR (p.sku=? AND p.id>?))" : ""}
-         ORDER BY p.sku,p.id LIMIT 21`,
+         ${cursor ? (sort === "images-first" ? `AND (${imageRank}<? OR (${imageRank}=? AND (p.sku>? OR (p.sku=? AND p.id>?))))` : "AND (p.sku>? OR (p.sku=? AND p.id>?))") : ""}
+         ORDER BY ${sort === "images-first" ? imageRank + " DESC," : ""}p.sku,p.id LIMIT 21`,
         customer.tier,
         actor.orgId,
         accountId,
@@ -1428,7 +1437,19 @@ export class Catalog {
         category === "serialized" ? 1 : 0,
         selectedId,
         selectedId,
-        ...(cursor ? [cursor.sku, cursor.sku, cursor.id] : []),
+        ...(cursor
+          ? [
+              ...(sort === "images-first"
+                ? [
+                    Number(this.hasPublishedImage(actor.orgId, cursor.id)),
+                    Number(this.hasPublishedImage(actor.orgId, cursor.id)),
+                  ]
+                : []),
+              cursor.sku,
+              cursor.sku,
+              cursor.id,
+            ]
+          : []),
       );
       const items = rows.slice(0, 20).map((product) => {
         check(

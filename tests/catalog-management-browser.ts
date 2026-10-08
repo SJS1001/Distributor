@@ -268,6 +268,22 @@ test("explicit library image draft stays private until published and buyer loads
       .getByRole("button", { name: "Publish to eligible buyers", exact: true })
       .click();
     await expect(editor).toContainText("published");
+    await dialog
+      .getByRole("button", { name: "Close product management", exact: true })
+      .click();
+    await page.reload();
+    const thumbnail = page
+      .getByRole("button", {
+        name: `Images & documents for Product FLOW-LIBRARY-${browserName} (FLOW-LIBRARY-${browserName})`,
+        exact: true,
+      })
+      .locator("img");
+    await expect(thumbnail).toBeVisible();
+    await expect
+      .poll(() =>
+        thumbnail.evaluate((node) => (node as HTMLImageElement).naturalWidth),
+      )
+      .toBe(4);
     await buyer.reload();
     await buyer
       .getByRole("button", { name: "Search products", exact: true })

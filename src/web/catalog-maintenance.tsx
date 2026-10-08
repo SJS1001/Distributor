@@ -1,3 +1,4 @@
+import { ProductImage, useResources } from "./storefront.tsx";
 import { request } from "./api.ts";
 import type { CatalogReview } from "../shared/catalog-lifecycle.ts";
 import { InfoBubble } from "./info-bubble.tsx";
@@ -26,6 +27,27 @@ type Actions = {
   history: (id: string) => void;
   price: (product: CatalogProduct) => void;
 };
+function CatalogThumbnail({ product }: { product: CatalogProduct }) {
+  const resources = useResources(product.id);
+  const image = resources.items.find(
+    (r) => r.kind === "image" && r.state === "published",
+  );
+  return (
+    <span className="catalog-thumbnail">
+      {image ? (
+        <ProductImage product={product} resource={image} />
+      ) : (
+        <span>
+          {resources.busy
+            ? "Loading photo…"
+            : resources.error
+              ? "Photo unavailable"
+              : "No published photo"}
+        </span>
+      )}
+    </span>
+  );
+}
 function Products({
   search,
   state,
@@ -96,11 +118,17 @@ function Products({
                         actions.manage(p, event.currentTarget, true)
                       }
                     >
-                      {p.name}
-                      <small>Images & documents</small>
+                      <CatalogThumbnail product={p} />
+                      <span>
+                        {p.name}
+                        <small>Images & documents</small>
+                      </span>
                     </button>
                   ) : (
-                    p.name
+                    <span className="catalog-product-link">
+                      <CatalogThumbnail product={p} />
+                      <span>{p.name}</span>
+                    </span>
                   )}
                 </td>
                 <td>{p.serialized ? "Required" : "Bulk"}</td>
