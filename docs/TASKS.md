@@ -1,5 +1,7 @@
 # Distributor task list
 
+The separately proposed standalone company platform has its own incremental [SaaS buildout task list](SAAS-BUILDOUT-TASKS.md), estimates and published-demo preservation plan. Its S-001–S-010 work packages are not completed by the existing application's D-series evidence.
+
 Date: 2026-09-30. Full application engineering is authorized and underway. These 44 tasks remain the acceptance baseline; none is VERIFIED. Current implementation coverage and remaining work are tracked in [IMPLEMENTATION.md](IMPLEMENTATION.md). G0 business/operator decisions and product gates remain unresolved. Optional UB work is separately scoped.
 
 Effort is an initial range in developer-days (five days per person-week), excluding QA/operator time and external waits. Responsibility labels are roles, not assignments. Each row requires the evidence receipt defined in [evidence instructions](evidence/README.md); column-specific artifacts supplement that receipt. Re-estimate after G0/G1. Gates and reusable test fixtures are in [checkpoints](CHECKPOINTS.md).
