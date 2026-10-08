@@ -800,7 +800,17 @@ function FeaturedCarousel() {
               setIndex((i) => (i + featured.length - 1) % featured.length)
             }
           >
-            <span aria-hidden="true">←</span>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m10 3-5 5 5 5" />
+            </svg>
           </button>
           <div className="public-feature-dots">
             {featured.map((p, i) => (
@@ -820,7 +830,17 @@ function FeaturedCarousel() {
             title="Next system"
             onClick={() => setIndex((i) => (i + 1) % featured.length)}
           >
-            <span aria-hidden="true">→</span>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m6 3 5 5-5 5" />
+            </svg>
           </button>
           <button
             type="button"

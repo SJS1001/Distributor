@@ -152,7 +152,7 @@ test("public secondary text and sign-in action meet normal-text contrast", async
   await contrast(".public-form-card .login button", background);
 });
 
-test("approved public layout keeps square categories and controls inside the carousel", async ({
+test("approved public layout keeps square categories and compact controls below the carousel", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -176,9 +176,11 @@ test("approved public layout keeps square categories and controls inside the car
     expect(controls!.x + controls!.width).toBeLessThanOrEqual(
       carousel!.x + carousel!.width,
     );
-    expect(controls!.y + controls!.height).toBeLessThanOrEqual(
-      carousel!.y + carousel!.height,
-    );
+    expect(controls!.y).toBeGreaterThanOrEqual(carousel!.y + carousel!.height);
+    const previous = await page
+      .getByRole("button", { name: "Previous system" })
+      .boundingBox();
+    expect(previous!.height).toBe(32);
     await expect(page.locator(".public-equipment-feature button")).toHaveCount(
       0,
     );
